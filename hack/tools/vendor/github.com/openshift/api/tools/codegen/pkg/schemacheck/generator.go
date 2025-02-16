@@ -1,6 +1,7 @@
 package schemacheck
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -79,10 +80,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the schemacheck generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping API schema check for %s", groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	errs := []error{}
@@ -92,73 +93,85 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	comparatorOptions.DisabledComparators = g.disabledComparators
 
 	if err := comparatorOptions.Validate(); err != nil {
-		return fmt.Errorf("could not validate comparator options: %w", err)
+		return nil, fmt.Errorf("could not validate comparator options: %w", err)
 	}
 
 	comparatorConfig, err := comparatorOptions.Complete()
 	if err != nil {
-		return fmt.Errorf("could not complete comparator options: %w", err)
+		return nil, fmt.Errorf("could not complete comparator options: %w", err)
 	}
+
+	var results []generation.Result
 
 	for _, version := range groupCtx.Versions {
 		klog.V(1).Infof("Verifying API schema for for %s/%s", groupCtx.Name, version.Name)
 
-		if err := g.genGroupVersion(groupCtx.Name, version, comparatorConfig); err != nil {
+		r, err := g.genGroupVersion(groupCtx.Name, version, comparatorConfig)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("could not run schemacheck generator for group/version %s/%s: %w", groupCtx.Name, version.Name, err))
 		}
+
+		results = append(results, r...)
 	}
 
 	if len(errs) > 0 {
-		return kerrors.NewAggregate(errs)
+		return results, kerrors.NewAggregate(errs)
 	}
 
-	return nil
+	return results, nil
 }
 
 // genGroupVersion runs the schemacheck generator against a particular version of the API group.
-func (g *generator) genGroupVersion(group string, version generation.APIVersionContext, comparatorConfig *options.ComparatorConfig) error {
+func (g *generator) genGroupVersion(group string, version generation.APIVersionContext, comparatorConfig *options.ComparatorConfig) ([]generation.Result, error) {
 	contexts, err := loadSchemaCheckGenerationContextsForVersion(version, g.comparisonBase)
 	if err != nil {
-		return fmt.Errorf("could not load schema check generation contexts for group/version %s/%s: %w", group, version.Name, err)
+		return nil, fmt.Errorf("could not load schema check generation contexts for group/version %s/%s: %w", group, version.Name, err)
 	}
 
 	if len(contexts) == 0 {
 		klog.V(1).Infof("No CRD manifests found for %s/%s", group, version.Name)
-		return nil
+		return nil, nil
 	}
 
 	var manifestErrs []error
+	var results []generation.Result
 
 	for _, context := range contexts {
 		klog.V(1).Infof("Verifying schema for %s\n", context.manifestName)
 		comparisonResults, errs := comparatorConfig.ComparatorRegistry.Compare(context.oldCRD, context.manifestCRD, comparatorConfig.ComparatorNames...)
-		if len(errs) > 0 {
-			return fmt.Errorf("could not compare manifests for %s: %w", context.manifestName, kerrors.NewAggregate(errs))
+
+		result := generation.Result{
+			Generator: g.Name(),
+			Group:     group,
+			Version:   version.Name,
+			Manifest:  context.manifestName,
+			Errors:    errs,
 		}
+
+		manifestErrs = append(manifestErrs, errs...)
 
 		for _, comparisonResult := range comparisonResults {
 			for _, msg := range comparisonResult.Errors {
-				manifestErrs = append(manifestErrs, fmt.Errorf("error in %s: %s: %v", context.manifestName, comparisonResult.Name, msg))
-			}
-		}
-
-		for _, comparisonResult := range comparisonResults {
-			for _, msg := range comparisonResult.Warnings {
-				klog.Warningf("warning in %s: %s: %v", context.manifestName, comparisonResult.Name, msg)
+				err := fmt.Errorf("%s: %w", comparisonResult.Name, errors.New(msg))
+				manifestErrs = append(manifestErrs, err)
+				result.Errors = append(result.Errors, err)
 			}
 		}
 		for _, comparisonResult := range comparisonResults {
-			for _, msg := range comparisonResult.Infos {
-				klog.Infof("info in %s: %s: %v", context.manifestName, comparisonResult.Name, msg)
+			for _, warning := range comparisonResult.Warnings {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s: %s", comparisonResult.Name, warning))
 			}
 		}
+		for _, comparisonResult := range comparisonResults {
+			for _, info := range comparisonResult.Infos {
+				result.Info = append(result.Info, fmt.Sprintf("%s: %s", comparisonResult.Name, info))
+			}
+		}
+
+		results = append(results, result)
 	}
 
-	if len(manifestErrs) > 0 {
-		return kerrors.NewAggregate(manifestErrs)
-	}
-
-	return nil
+	return results, kerrors.NewAggregate(manifestErrs)
 }
 
 // schemaCheckGenerationContext contains the context required to verify the schema for a particular

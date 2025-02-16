@@ -2,10 +2,11 @@ package emptypartialschemas
 
 import (
 	"fmt"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/gengo/types"
 	"strconv"
 	"strings"
+
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/gengo/types"
 )
 
 // known tags that are handled by empty partial schema generation.
@@ -80,6 +81,17 @@ func extractFeatureGatesFromValidationMarker(comments []string, tagName string) 
 			if len(featureGate) > 0 {
 				ret = append(ret, featureGate)
 			}
+		}
+	}
+
+	for _, tagVal := range tagVals {
+		requiredFeatureGates := extractNamedValuesFromSingleLine(tagVal)["requiredFeatureGate"]
+
+		// Use + as the separator between required feature gates in file names.
+		requiredFeatureGates = strings.Replace(requiredFeatureGates, ";", "+", -1)
+
+		if len(requiredFeatureGates) > 0 {
+			ret = append(ret, requiredFeatureGates)
 		}
 	}
 

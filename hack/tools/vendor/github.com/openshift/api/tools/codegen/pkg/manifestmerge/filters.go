@@ -2,15 +2,16 @@ package manifestmerge
 
 import (
 	"fmt"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
+
 	"github.com/openshift/api/tools/codegen/pkg/utils"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"os"
-	"path"
-	"path/filepath"
 	kyaml "sigs.k8s.io/yaml"
-	"strings"
 )
 
 func AllKnownFeatureSets(payloadFeatureGatePath string) (sets.String, error) {
@@ -149,7 +150,7 @@ func (f *ForFeatureGates) UseManifest(data []byte) (bool, error) {
 		return true, nil
 	}
 
-	return manifestFeatureGates.HasAny(f.allowedFeatureGates.UnsortedList()...), nil
+	return f.allowedFeatureGates.HasAll(manifestFeatureGates.UnsortedList()...), nil
 }
 
 func (f *ForFeatureGates) String() string {
