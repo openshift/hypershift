@@ -494,6 +494,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
 	}
 
+	log.Info("reconciling proxy CA bundle")
+	if err := r.reconcileProxyCABundle(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
+	}
+
 	if util.HCPOAuthEnabled(hcp) {
 		log.Info("reconciling oauth serving cert ca bundle")
 		if err := r.reconcileOAuthServingCertCABundle(ctx, hcp); err != nil {
@@ -1327,6 +1332,29 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile the %s ConfigMap: %w", client.ObjectKeyFromObject(userCAConfigMap), err)
+		}
+	}
+	return nil
+}
+
+func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	proxyCADestination := manifests.OpenShiftUserCABundle()
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		cpProxyCA := &corev1.ConfigMap{}
+		cpProxyCA.Namespace = hcp.Namespace
+		cpProxyCA.Name = hcp.Spec.Configuration.Proxy.TrustedCA.Name
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpProxyCA), cpProxyCA); err != nil {
+			return fmt.Errorf("cannot get proxy CA bundle ConfigMap: %w", err)
+		}
+		if _, err := r.CreateOrUpdate(ctx, r.client, proxyCADestination, func() error {
+			proxyCADestination.Data = cpProxyCA.Data
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the proxy CA bundle ConfigMap: %w", err)
+		}
+	} else {
+		if _, err := util.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
+			return err
 		}
 	}
 	return nil
