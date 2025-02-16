@@ -18,10 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
 	json "encoding/json"
-	"fmt"
-	"time"
 
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"

@@ -18,7 +18,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
 	time "time"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"

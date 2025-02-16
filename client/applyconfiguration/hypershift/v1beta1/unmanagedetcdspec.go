@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+)
+
 // UnmanagedEtcdSpecApplyConfiguration represents an declarative configuration of the UnmanagedEtcdSpec type for use
 // with apply.
 type UnmanagedEtcdSpecApplyConfiguration struct {

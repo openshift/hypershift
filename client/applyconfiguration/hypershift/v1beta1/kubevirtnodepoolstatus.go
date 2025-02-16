@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+)
+
 // KubeVirtNodePoolStatusApplyConfiguration represents an declarative configuration of the KubeVirtNodePoolStatus type for use
 // with apply.
 type KubeVirtNodePoolStatusApplyConfiguration struct {

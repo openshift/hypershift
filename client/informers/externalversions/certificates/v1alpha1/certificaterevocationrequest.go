@@ -18,7 +18,6 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
 	time "time"
 
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"

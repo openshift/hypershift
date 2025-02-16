@@ -18,6 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	v1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

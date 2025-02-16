@@ -19,6 +19,7 @@ package v1beta1
 
 import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	v1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 )
 
 // RouterFilterApplyConfiguration represents an declarative configuration of the RouterFilter type for use

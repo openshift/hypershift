@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1alpha1
 
+import (
+	v1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
+)
+
 // SizeConfigurationApplyConfiguration represents an declarative configuration of the SizeConfiguration type for use
 // with apply.
 type SizeConfigurationApplyConfiguration struct {

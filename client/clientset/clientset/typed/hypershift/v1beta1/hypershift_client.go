@@ -18,8 +18,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	"net/http"
-
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	rest "k8s.io/client-go/rest"

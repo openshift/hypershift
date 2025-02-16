@@ -18,10 +18,7 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
 	json "encoding/json"
-	"fmt"
-	"time"
 
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"

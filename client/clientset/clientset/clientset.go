@@ -18,9 +18,6 @@ limitations under the License.
 package clientset
 
 import (
-	"fmt"
-	"net/http"
-
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1"

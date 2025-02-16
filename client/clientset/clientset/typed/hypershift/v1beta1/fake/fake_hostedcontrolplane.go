@@ -18,9 +18,7 @@ limitations under the License.
 package fake
 
 import (
-	"context"
 	json "encoding/json"
-	"fmt"
 
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"

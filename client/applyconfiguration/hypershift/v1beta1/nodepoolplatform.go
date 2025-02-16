@@ -19,6 +19,7 @@ package v1beta1
 
 import (
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 )
 
 // NodePoolPlatformApplyConfiguration represents an declarative configuration of the NodePoolPlatform type for use

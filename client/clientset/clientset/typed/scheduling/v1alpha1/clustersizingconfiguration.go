@@ -18,10 +18,7 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
 	json "encoding/json"
-	"fmt"
-	"time"
 
 	v1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"

@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+)
+
 // NodePoolPlatformStatusApplyConfiguration represents an declarative configuration of the NodePoolPlatformStatus type for use
 // with apply.
 type NodePoolPlatformStatusApplyConfiguration struct {
