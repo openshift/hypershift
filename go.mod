@@ -48,7 +48,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/openshift/api v0.0.0-20250213010142-f5b09d13c01f
 	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
-	github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
+	github.com/openshift/cloud-credential-operator v0.0.0-20250120201329-db5f2531a5b4
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250123060244-3b77fb55b835
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
@@ -91,7 +91,7 @@ require (
 	k8s.io/kube-scheduler v0.32.2
 	k8s.io/kubectl v0.32.2
 	k8s.io/pod-security-admission v0.32.2
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	kubevirt.io/api v1.4.0
 	kubevirt.io/containerized-data-importer-api v1.61.1
 	sigs.k8s.io/cluster-api v1.9.4

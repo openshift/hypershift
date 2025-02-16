@@ -499,8 +499,8 @@ github.com/openshift/api v0.0.0-20250213010142-f5b09d13c01f h1:HH+BqfxONWB2kknhC
 github.com/openshift/api v0.0.0-20250213010142-f5b09d13c01f/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
 github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a h1:duO3JMrUOqVx50QhzxvDeOYIwTNOB8/EEuRLPyvAMBg=
 github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a/go.mod h1:Qw3ThpzVZ0bfTILpBNYg4LGyjtNxfyCiGh/uDLOOTP8=
-github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e h1:X0et0+WqSmnW0CS//XdLFLvJvzt8TFJzfFE1XJ2rXNg=
-github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e/go.mod h1:4AWWBNPuWzPtT77xDONlObrazPlBCKXd+16lupnIrQc=
+github.com/openshift/cloud-credential-operator v0.0.0-20250120201329-db5f2531a5b4 h1:nrD3npDGt5bvwNXZKTzzEuZTI/4Uo5PbrkpAjfxhxtE=
+github.com/openshift/cloud-credential-operator v0.0.0-20250120201329-db5f2531a5b4/go.mod h1:Lzu29TMne5LsgPnyw2n9jrPiD5t6uyG5aE6KFy8cz6w=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f h1:YWIaRFHMNzxi26FbT0TE9zl4pBzfeiZjQJv0JUzibUc=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f/go.mod h1:RNzrOK4TA6LdyrgrEvb1TXjOnhRC+iBmnBoAa/4ivBw=
 github.com/openshift/cluster-node-tuning-operator v0.0.0-20250123060244-3b77fb55b835 h1:AN2ZaBNt5YrJmO7QbE4ULW4UD+8RnJRtpLuchcLVAno=
@@ -955,8 +955,8 @@ k8s.io/pod-security-admission v0.32.2 h1:zDfAb/t0LbNU3z0ZMHtCb1zp8x05gWCGhmBYpUp
 k8s.io/pod-security-admission v0.32.2/go.mod h1:yxMPB3i1pGMLfxbe4BiWMuowMD7cdHR32y4nCj4wH+s=
 k8s.io/utils v0.0.0-20210802155522-efc7438f0176/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20211116205334-6203023598ed/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 h1:M3sRQVHv7vB20Xc2ybTt7ODCeFj6JSWYFzOFnYeS6Ro=
-k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
+k8s.io/utils v0.0.0-20241210054802-24370beab758 h1:sdbE21q2nlQtFh65saZY+rRM6x6aJJI8IUa1AmH/qa0=
+k8s.io/utils v0.0.0-20241210054802-24370beab758/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd h1:KJXBX9dOmRTUWduHg1gnWtPGIEl+GMh8UHdrBEZgOXE=
 knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd/go.mod h1:36cYnaOVHkzmhgybmYX6zDaTl3PakFeJQJl7wi6/RLE=
 kubevirt.io/api v1.4.0 h1:dDLyQLSp9obzsDrv3cyL1olIc/66IWVaGiR3gfPfgT0=
