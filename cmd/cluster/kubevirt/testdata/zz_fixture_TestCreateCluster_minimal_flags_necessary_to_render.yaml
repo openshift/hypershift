@@ -8,7 +8,7 @@ status: {}
 ---
 apiVersion: v1
 data:
-  .dockerconfigjson: null
+  .dockerconfigjson: ZmFrZQ==
 kind: Secret
 metadata:
   creationTimestamp: null

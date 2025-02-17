@@ -20,6 +20,13 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(context.Background())
+	tempDir := t.TempDir()
+
+	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+
+	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+		t.Fatalf("failed to write pullSecret: %v", err)
+	}
 
 	for _, testCase := range []struct {
 		name string
@@ -30,6 +37,8 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--external-api-server-address=fakeAddress", // if we don't set it, the machine's IP is looked up, which isn't portable
 				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 			},
 		},
 	} {

@@ -66,6 +66,12 @@ func TestCreateCluster(t *testing.T) {
 		t.Fatalf("failed to write infra: %v", err)
 	}
 
+	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+
+	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+		t.Fatalf("failed to write pullSecret: %v", err)
+	}
+
 	for _, testCase := range []struct {
 		name string
 		args []string
@@ -77,6 +83,8 @@ func TestCreateCluster(t *testing.T) {
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",
 				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
@@ -95,6 +103,7 @@ func TestCreateCluster(t *testing.T) {
 				"--instance-type=Standard_DS2_v2",
 				"--disk-storage-account-type=Standard_LRS",
 				"--render-sensitive",
+				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
@@ -115,6 +124,7 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-offer=aro4",
 				"--marketplace-sku=aro_414",
 				"--marketplace-version=414.92.2024021",
+				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
@@ -126,12 +136,16 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--availability-zones=1,2",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
 			name: "with disabled capabilities",
 			args: []string{
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",
@@ -143,6 +157,8 @@ func TestCreateCluster(t *testing.T) {
 		{
 			name: "with KubeAPIServerDNSName",
 			args: []string{
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",

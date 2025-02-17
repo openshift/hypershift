@@ -45,7 +45,6 @@ import (
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Namespace:                      "clusters",
-		Name:                           "example",
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
 		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
 		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
@@ -626,6 +625,14 @@ type ValidatedCreateOptions struct {
 }
 
 func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOptions, error) {
+	if opts.Name == "" {
+		return nil, errors.New("--name is required")
+	}
+
+	if opts.PullSecretFile == "" {
+		return nil, errors.New("--pull-secret is required")
+	}
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}

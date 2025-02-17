@@ -180,11 +180,14 @@ func TestCreateCluster(t *testing.T) {
 				"--role-arn=fakeRoleARN",
 				"--pull-secret=" + pullSecretFile,
 				"--render-sensitive",
+				"--name=example",
 			},
 		},
 		{
 			name: "default creation flags for cesar",
 			args: []string{
+				"--pull-secret=" + pullSecretFile,
+				"--name=example",
 				"--sts-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
 				"--iam-json=" + iamFile,
@@ -206,6 +209,7 @@ func TestCreateCluster(t *testing.T) {
 		{
 			name: "minimal with KubeAPIServerDNSName",
 			args: []string{
+				"--name=example",
 				"--sts-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
 				"--iam-json=" + iamFile,
