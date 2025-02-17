@@ -374,6 +374,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		machineDeployment.Annotations = map[string]string{}
 	}
 	machineDeployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	machineDeployment.Annotations[capiv1.MachineSetSkipPreflightChecksAnnotation] = string(capiv1.MachineSetPreflightCheckAll)
+
 	// Delete any paused annotation
 	delete(machineDeployment.Annotations, capiv1.PausedAnnotation)
 	if machineDeployment.GetLabels() == nil {
@@ -931,6 +933,8 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 		return err
 	}
 	machineSet.Annotations[nodePoolAnnotationMaxUnavailable] = strconv.Itoa(maxUnavailable)
+
+	machineSet.Annotations[capiv1.MachineSetSkipPreflightChecksAnnotation] = string(capiv1.MachineSetPreflightCheckAll)
 
 	// Set selector and template
 	machineSet.Spec.ClusterName = capiClusterName
