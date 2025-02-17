@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -348,11 +349,6 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 		return "", fmt.Errorf("failed to encode image global config: %w", err)
 	}
 
-	// This PR https://github.com/openshift/api/pull/1928 introduced a string field which has no omitempty tag.
-	// This results in our mashaling transparently changing. This produces a different configuration Hash.
-	// This PR drops the field when empty from the mashaled string to keep backward compatibility.
-	// Implementing this at the marshal operation level might result in undesired impact as we might potentially modify other fields and ordering is not deterministic
-	str := globalConfigBytes.String()
-	str = strings.ReplaceAll(str, ",\"imageStreamImportMode\":\"\"", "")
-	return str, nil
+	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	return backwardcompat.GetBackwardCompatibleConfigString(globalConfigBytes.String()), nil
 }
