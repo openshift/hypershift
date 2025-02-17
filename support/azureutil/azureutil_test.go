@@ -213,7 +213,7 @@ func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 				},
 				{
 					Name:  config.ManagedAzureCredentialsFilePath,
-					Value: "my-credentials-file",
+					Value: config.ManagedAzureCertificatePath + "my-credentials-file",
 				},
 			},
 		},

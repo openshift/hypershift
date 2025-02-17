@@ -206,7 +206,7 @@ func CreateEnvVarsForAzureManagedIdentity(azureClientID, azureTenantID, azureCer
 		},
 		{
 			Name:  config.ManagedAzureCredentialsFilePath,
-			Value: azureCredentialsName,
+			Value: config.ManagedAzureCertificatePath + azureCredentialsName,
 		},
 	}
 }
