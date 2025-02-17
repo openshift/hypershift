@@ -3426,6 +3426,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
 							fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
 							fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
+							"--feature-gates=MachineSetPreflightChecks=false",
 						},
 						LivenessProbe: &corev1.Probe{
 							ProbeHandler: corev1.ProbeHandler{
