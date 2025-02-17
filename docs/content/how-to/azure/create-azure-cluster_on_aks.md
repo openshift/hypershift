@@ -48,6 +48,10 @@ DNS_ZONE_NAME="<DNS_RECORD_NAME>.hypershift.azure.devcluster.openshift.com"
 PARENT_DNS_ZONE="hypershift.azure.devcluster.openshift.com"
 PARENT_DNS_RG="os4-common"
 HC_NAME=<HC_NAME>
+AKS_CLUSTER_NAME=<AKS_CLUSTER_NAME>
+AZURE_DISK_MI_NAME=<AZURE_DISK_MI_NAME>
+AZURE_FILE_MI_NAME=<AZURE_FILE_MI_NAME>
+IMAGE_REGISTRY_MI_NAME=<IMAGE_REGISTRY_MI_NAME>
 ```
 
 You can look up `USER_ACCOUNT_ID` by searching for your account in azure portal's search box and selecting Microsoft
@@ -144,9 +148,7 @@ EOF
 
 ### 7. Create and Save Managed Identities for the Data Plane Component
 ```shell
-AZURE_DISK_MI_NAME="azure-disk-dp-mi"
-AZURE_FILE_MI_NAME="azure-file-dp-mi"
-IMAGE_REGISTRY_MI_NAME="image-registry-dp-mi"
+
 
 AZURE_DISK_CLIENT_ID=$(az identity create --name $AZURE_DISK_MI_NAME --resource-group $PERSISTENT_RG_NAME --query clientId -o tsv)
 AZURE_FILE_CLIENT_ID=$(az identity create --name $AZURE_FILE_MI_NAME --resource-group $PERSISTENT_RG_NAME --query clientId -o tsv)
@@ -395,6 +397,6 @@ hypershift create cluster azure \
 You can delete the cluster by using the following command:
 ```shell
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
---name $CLUSTER_NAME \
+--name $HC_NAME \
 --azure-creds $ASP_AKS_CREDS
 ```
