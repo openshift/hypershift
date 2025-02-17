@@ -3124,7 +3124,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3188,7 +3187,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               disk:
@@ -3251,7 +3249,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               file:
@@ -3314,7 +3311,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               imageRegistry:
@@ -3377,7 +3373,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               ingress:
@@ -3440,7 +3435,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3525,7 +3519,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -3589,7 +3582,6 @@ spec:
                                 required:
                                 - certificateName
                                 - clientID
-                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                             required:
@@ -4370,7 +4362,6 @@ spec:
                             required:
                             - certificateName
                             - clientID
-                            - credentialsSecretName
                             - objectEncoding
                             type: object
                         required:
