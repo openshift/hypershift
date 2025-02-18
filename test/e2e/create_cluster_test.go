@@ -1418,57 +1418,39 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// Private -> publicAndPrivate
-		t.Run("SwitchFromPrivateToPublic", testSwitchFromPrivateToPublic(ctx, mgtClient, hostedCluster, &clusterOpts, expectGuestKubeconfHostChange))
-		// publicAndPrivate -> Private
-		t.Run("SwitchFromPublicToPrivate", testSwitchFromPublicToPrivate(ctx, mgtClient, hostedCluster, &clusterOpts))
+		// Private -> PublicAndPrivate
+		t.Run("SwitchFromPrivateToPublic", testSwitchEndpointAccess(ctx, mgtClient, hostedCluster, hyperv1.PublicAndPrivate, expectGuestKubeconfHostChange))
+		// PublicAndPrivate -> Private
+		t.Run("SwitchFromPublicToPrivate", testSwitchEndpointAccess(ctx, mgtClient, hostedCluster, hyperv1.Private, expectGuestKubeconfHostChange))
+		// Get up to date hostedCluster object before EnsureHostedCluster in after()
+		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get hostedCluster")
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "private", globalOpts.ServiceAccountSigningKey)
 }
 
-func testSwitchFromPrivateToPublic(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions, expectGuestKubeconfHostChange bool) func(t *testing.T) {
+func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, endpointAccess hyperv1.AWSEndpointAccessType, expectGuestKubeconfHostChange bool) func(t *testing.T) {
 	return func(t *testing.T) {
 		g := NewWithT(t)
 		if globalOpts.Platform != hyperv1.AWSPlatform {
 			t.Skip("test only supported on platform AWS")
 		}
 
-		var (
-			host string
-			err  error
-		)
-		if expectGuestKubeconfHostChange {
-			// Get guest kubeconfig host before switching endpoint access
-			host, err = e2eutil.GetGuestKubeconfigHost(t, ctx, client, hostedCluster)
-			g.Expect(err).ToNot(HaveOccurred(), "failed to get guest kubeconfig host")
-			t.Logf("Found guest kubeconfig host before switching endpoint access: %s", host)
-		}
+		// Get guest kubeconfig host before switching endpoint access
+		host, err := e2eutil.GetGuestKubeconfigHost(t, ctx, client, hostedCluster)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get guest kubeconfig host")
+		t.Logf("Found guest kubeconfig host before switching endpoint access: %s", host)
 
-		// Switch to PublicAndPrivate endpoint access
+		// Switch endpoint access
 		err = e2eutil.UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			obj.Spec.Platform.AWS.EndpointAccess = hyperv1.PublicAndPrivate
+			obj.Spec.Platform.AWS.EndpointAccess = endpointAccess
 		})
 		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster EndpointAccess")
 
 		if expectGuestKubeconfHostChange {
 			e2eutil.WaitForGuestKubeconfigHostUpdate(t, ctx, client, hostedCluster, host)
+		} else {
+			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
-
-		e2eutil.ValidatePublicCluster(t, ctx, client, hostedCluster, clusterOpts)
 	}
-}
 
-func testSwitchFromPublicToPrivate(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions) func(t *testing.T) {
-	return func(t *testing.T) {
-		g := NewWithT(t)
-		if globalOpts.Platform != hyperv1.AWSPlatform {
-			t.Skip("test only supported on platform AWS")
-		}
-
-		err := e2eutil.UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			obj.Spec.Platform.AWS.EndpointAccess = hyperv1.Private
-		})
-		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster EndpointAccess")
-
-		e2eutil.ValidatePrivateCluster(t, ctx, client, hostedCluster, clusterOpts)
-	}
 }

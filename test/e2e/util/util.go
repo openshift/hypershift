@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
@@ -200,7 +201,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	if IsLessThan(Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
-		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 			if err != nil {
 				t.Logf("attempt to connect failed: %s", err)
@@ -215,7 +216,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(30*time.Minute),
+			}, nil, WithTimeout(10*time.Minute),
 		)
 
 	}
@@ -261,7 +262,39 @@ func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client 
 		return true, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host update")
-	t.Logf("Guest kubeconfig host switched from %s to %s", oldHost, newHost)
+	t.Logf("kubeconfig host switched from %s to %s", oldHost, newHost)
+}
+
+func WaitForGuestKubeconfigHostResolutionUpdate(t *testing.T, ctx context.Context, uri string, endpointAccess hyperv1.AWSEndpointAccessType) {
+	g := NewWithT(t)
+	visibility := "public"
+	if endpointAccess == hyperv1.Private {
+		visibility = "private"
+	}
+	t.Logf("Waiting for guest kubeconfig host to resolve to %s address", visibility)
+	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		host := strings.TrimPrefix(uri, "https://")
+		host = strings.Split(host, ":")[0]
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			t.Logf("failed to resolve guest kubeconfig host: %v", err)
+			return false, nil
+		}
+		ip := ips[0].String()
+		if endpointAccess == hyperv1.Private {
+			if strings.HasPrefix(ip, "10.") {
+				t.Logf("kubeconfig host now resolves to private address")
+				return true, nil
+			}
+		} else {
+			if !strings.HasPrefix(ip, "10.") {
+				t.Logf("kubeconfig host now resolves to public address")
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host resolution to update")
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
@@ -387,8 +420,13 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout image %s", hostedCluster.Namespace, hostedCluster.Name, image),
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	var lastVersionCompletionTime *metav1.Time
+	if hostedCluster.Status.Version != nil &&
+		len(hostedCluster.Status.Version.History) > 0 {
+		lastVersionCompletionTime = hostedCluster.Status.Version.History[0].CompletionTime
+	}
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
@@ -407,13 +445,18 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 				if len(ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).History) == 0 {
 					return false, "HostedCluster has no version history", nil
 				}
+				if lastVersionCompletionTime != nil &&
+					hostedCluster.Status.Version.History[0].CompletionTime != nil &&
+					lastVersionCompletionTime.Equal(hostedCluster.Status.Version.History[0].CompletionTime) {
+					return false, "HostedCluster version history has not been updated yet", nil
+				}
 				if wanted, got := hostedCluster.Status.Version.Desired.Image, hostedCluster.Status.Version.History[0].Image; wanted != got {
 					return false, fmt.Sprintf("desired image %s doesn't match most recent image in history %s", wanted, got), nil
 				}
 				if wanted, got := configv1.CompletedUpdate, hostedCluster.Status.Version.History[0].State; wanted != got {
 					return false, fmt.Sprintf("wanted most recent version history to have state %s, has state %s", wanted, got), nil
 				}
-				return true, fmt.Sprintf("image %s rolled out", image), nil
+				return true, "cluster rolled out", nil
 			},
 		},
 		WithTimeout(30*time.Minute),
@@ -1549,7 +1592,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster)
 	}
 
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -1592,7 +1635,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster)
 	}
 
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)

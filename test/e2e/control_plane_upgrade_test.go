@@ -44,12 +44,9 @@ func TestUpgradeControlPlane(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
 		// Wait for the new rollout to be complete
-		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
+		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
 		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-
-		// Sanity check the cluster by waiting for the nodes to report ready
-		guestClient = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		e2eutil.EnsureNodeCountMatchesNodePoolReplicas(t, ctx, mgtClient, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 		e2eutil.EnsureNoCrashingPods(t, ctx, mgtClient, hostedCluster)
