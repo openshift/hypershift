@@ -271,7 +271,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, err
 		}
-		err = assignRole(objectID, "Azure Red Hat OpenShift Image Registry Operator Role", managedRG)
+		err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
 		if err != nil {
 			return nil, err
 		}
@@ -280,7 +280,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, err
 		}
-		err = assignRole(objectID, "Azure Red Hat OpenShift Storage Operator Role", managedRG)
+		err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
 		if err != nil {
 			return nil, err
 		}
@@ -289,7 +289,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		if err != nil {
 			return nil, err
 		}
-		err = assignRole(objectID, "Azure Red Hat OpenShift Azure Files Storage Operator Role", managedRG)
+		err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
 		if err != nil {
 			return nil, err
 		}
@@ -824,32 +824,32 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
 	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
 
-	role := "Contributor"
+	role := "b24988ac-6180-42a0-ab88-20f7382dd24c"
 
 	scopes := []string{managedRG}
 
 	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
 	switch component {
 	case cloudProvider:
-		role = "Azure Red Hat OpenShift Cloud Controller Manager Role"
+		role = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
 		scopes = append(scopes, nsgRG, vnetRG)
 	case ingress:
-		role = "Azure Red Hat OpenShift Cluster Ingress Operator Role"
+		role = "0336e1d3-7a87-462b-b6db-342b63f7802c"
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
 		if assignCustomHCPRoles {
-			role = "Azure Red Hat OpenShift Control Plane Operator Role"
+			role = "7d8bb4e4-6fa7-4545-96cf-20fce11b705d"
 		}
 	case azureFile:
-		role = "Azure Red Hat OpenShift Azure Files Storage Operator Role"
+		role = "0d7aedc0-15fd-4a67-a412-efad370c947e"
 		scopes = append(scopes, nsgRG, vnetRG)
 	case azureDisk:
-		role = "Azure Red Hat OpenShift Storage Operator Role"
+		role = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
 	case cncc:
-		role = "Azure Red Hat OpenShift Network Operator Role"
+		role = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
 	case ciro:
-		role = "Azure Red Hat OpenShift Image Registry Operator Role"
+		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
 		if assignCustomHCPRoles {

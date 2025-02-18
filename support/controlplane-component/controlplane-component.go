@@ -123,7 +123,7 @@ type controlPlaneWorkload struct {
 	// if provided, availabilityProber container and required volumes will be injected into the deployment/statefulset.
 	availabilityProberOpts *util.AvailabilityProberOpts
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
-	// and the volume mounts for that secret withing the given mountPath.
+	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
 }
 
