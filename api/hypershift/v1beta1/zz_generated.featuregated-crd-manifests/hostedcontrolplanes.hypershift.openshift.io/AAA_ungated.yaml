@@ -2000,7 +2000,7 @@ spec:
                   If not defined, ReleaseImage is used
                 type: string
               controllerAvailabilityPolicy:
-                default: SingleReplica
+                default: HighlyAvailable
                 description: |-
                   ControllerAvailabilityPolicy specifies the availability policy applied to
                   critical control plane components. The default value is SingleReplica.

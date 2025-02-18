@@ -2062,10 +2062,14 @@ spec:
                 description: |-
                   controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
                   Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+                  This field is immutable.
                 enum:
                 - HighlyAvailable
                 - SingleReplica
                 type: string
+                x-kubernetes-validations:
+                - message: ControllerAvailabilityPolicy is immutable
+                  rule: self == oldSelf
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
