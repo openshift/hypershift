@@ -80,6 +80,7 @@ import (
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
+	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -257,6 +258,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		dnsoperatorv2.NewComponent(),
 		machineapproverv2.NewComponent(),
 		ingressoperatorv2.NewComponent(),
+		snapshotcontrollerv2.NewComponent(),
 	)
 }
 
@@ -1348,6 +1350,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			if err := r.reconcileCSIDriver(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
 				return fmt.Errorf("failed to reconcile csi driver: %w", err)
 			}
+
+			// Reconcile CSI snapshot controller operator
+			r.Log.Info("Reconciling CSI snapshot controller operator")
+			if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
+			}
 		}
 	}
 
@@ -1356,14 +1364,6 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.Log.Info("Reconciling ignition-server configs")
 		if err := r.reconcileIgnitionServerConfigs(ctx, hostedControlPlane, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile ignition-server configs: %w", err)
-		}
-	}
-
-	if IsStorageAndCSIManaged(hostedControlPlane) {
-		// Reconcile CSI snapshot controller operator
-		r.Log.Info("Reconciling CSI snapshot controller operator")
-		if err := r.reconcileCSISnapshotControllerOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile CSI snapshot controller operator: %w", err)
 		}
 	}
 
