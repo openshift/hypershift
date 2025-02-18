@@ -320,7 +320,7 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 
 	// Wait for the rollout to be complete
-	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
+	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster)
 
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
