@@ -1599,6 +1599,156 @@ spec:
                     description: AllowAllInClusterTraffic allows all ingress and egress
                       traffic between cluster nodes when set to true.
                     type: boolean
+                  controlPlaneNodesSecurityGroupRules:
+                    description: controlPlaneNodesSecurityGroupRules defines the rules
+                      that should be applied to control plane nodes.
+                    items:
+                      description: |-
+                        SecurityGroupRuleSpec represent the basic information of the associated OpenStack
+                        Security Group Role.
+                        For now this is only used for the allNodesSecurityGroupRules but when we add
+                        other security groups, we'll need to add a validation because
+                        Remote* fields are mutually exclusive.
+                      properties:
+                        description:
+                          description: description of the security group rule.
+                          type: string
+                        direction:
+                          description: |-
+                            direction in which the security group rule is applied. The only values
+                            allowed are "ingress" or "egress". For a compute instance, an ingress
+                            security group rule is applied to incoming (ingress) traffic for that
+                            instance. An egress rule is applied to traffic leaving the instance.
+                          type: string
+                        etherType:
+                          description: |-
+                            etherType must be IPv4 or IPv6, and addresses represented in CIDR must match the
+                            ingress or egress rules.
+                          type: string
+                        name:
+                          description: |-
+                            name of the security group rule.
+                            It's used to identify the rule so it can be patched and will not be sent to the OpenStack API.
+                          type: string
+                        portRangeMax:
+                          description: |-
+                            portRangeMax is a number in the range that is matched by the security group
+                            rule. The portRangeMin attribute constrains the portRangeMax attribute.
+                          type: integer
+                        portRangeMin:
+                          description: |-
+                            portRangeMin is a number in the range that is matched by the security group
+                            rule. If the protocol is TCP or UDP, this value must be less than or equal
+                            to the value of the portRangeMax attribute.
+                          type: integer
+                        protocol:
+                          description: protocol is the protocol that is matched by
+                            the security group rule.
+                          type: string
+                        remoteGroupID:
+                          description: |-
+                            remoteGroupID is the remote group ID to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          type: string
+                        remoteIPPrefix:
+                          description: |-
+                            remoteIPPrefix is the remote IP prefix to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          type: string
+                        remoteManagedGroups:
+                          description: |-
+                            remoteManagedGroups is the remote managed groups to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          items:
+                            enum:
+                            - bastion
+                            - controlplane
+                            - worker
+                            type: string
+                          type: array
+                      required:
+                      - direction
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
+                  workerNodesSecurityGroupRules:
+                    description: workerNodesSecurityGroupRules defines the rules that
+                      should be applied to worker nodes.
+                    items:
+                      description: |-
+                        SecurityGroupRuleSpec represent the basic information of the associated OpenStack
+                        Security Group Role.
+                        For now this is only used for the allNodesSecurityGroupRules but when we add
+                        other security groups, we'll need to add a validation because
+                        Remote* fields are mutually exclusive.
+                      properties:
+                        description:
+                          description: description of the security group rule.
+                          type: string
+                        direction:
+                          description: |-
+                            direction in which the security group rule is applied. The only values
+                            allowed are "ingress" or "egress". For a compute instance, an ingress
+                            security group rule is applied to incoming (ingress) traffic for that
+                            instance. An egress rule is applied to traffic leaving the instance.
+                          type: string
+                        etherType:
+                          description: |-
+                            etherType must be IPv4 or IPv6, and addresses represented in CIDR must match the
+                            ingress or egress rules.
+                          type: string
+                        name:
+                          description: |-
+                            name of the security group rule.
+                            It's used to identify the rule so it can be patched and will not be sent to the OpenStack API.
+                          type: string
+                        portRangeMax:
+                          description: |-
+                            portRangeMax is a number in the range that is matched by the security group
+                            rule. The portRangeMin attribute constrains the portRangeMax attribute.
+                          type: integer
+                        portRangeMin:
+                          description: |-
+                            portRangeMin is a number in the range that is matched by the security group
+                            rule. If the protocol is TCP or UDP, this value must be less than or equal
+                            to the value of the portRangeMax attribute.
+                          type: integer
+                        protocol:
+                          description: protocol is the protocol that is matched by
+                            the security group rule.
+                          type: string
+                        remoteGroupID:
+                          description: |-
+                            remoteGroupID is the remote group ID to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          type: string
+                        remoteIPPrefix:
+                          description: |-
+                            remoteIPPrefix is the remote IP prefix to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          type: string
+                        remoteManagedGroups:
+                          description: |-
+                            remoteManagedGroups is the remote managed groups to be associated with this security group rule.
+                            You can specify either remoteGroupID or remoteIPPrefix or remoteManagedGroups.
+                          items:
+                            enum:
+                            - bastion
+                            - controlplane
+                            - worker
+                            type: string
+                          type: array
+                      required:
+                      - direction
+                      - name
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                 required:
                 - allowAllInClusterTraffic
                 type: object
@@ -1916,6 +2066,16 @@ spec:
             required:
             - identityRef
             type: object
+            x-kubernetes-validations:
+            - message: bastion floating IP cannot be set when disableExternalNetwork
+                is true
+              rule: 'has(self.disableExternalNetwork) && self.disableExternalNetwork
+                ? !has(self.bastion) || !has(self.bastion.floatingIP) : true'
+            - message: disableAPIServerFloatingIP cannot be false when disableExternalNetwork
+                is true
+              rule: 'has(self.disableExternalNetwork) && self.disableExternalNetwork
+                ? has(self.disableAPIServerFloatingIP) && self.disableAPIServerFloatingIP
+                : true'
           status:
             description: OpenStackClusterStatus defines the observed state of OpenStackCluster.
             properties:
