@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -15,7 +16,10 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -25,6 +29,8 @@ const (
 	oauthLoginTemplateVolumeName     = "login-template"
 	oauthProvidersTemplateVolumeName = "providers-template"
 	auditWebhookConfigFileVolumeName = "oauth-audit-webhook"
+
+	KubeadminSecretHashAnnotation = "hypershift.openshift.io/kubeadmin-secret-hash"
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -97,6 +103,19 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				})
 			}
 		}
+	}
+
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(deployment.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get kubeadmin password secret: %v", err)
+		}
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
+	} else {
+		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
+			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		}
+		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
 	}
 
 	return nil

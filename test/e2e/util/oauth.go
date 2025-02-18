@@ -75,13 +75,8 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 		})
 		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
 
-		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
 		g.Expect(err).ToNot(HaveOccurred())
-		// we know we're the only real clients for these test servers, so turn off client-side throttling
-		guestConfig.QPS = -1
-		guestConfig.Burst = -1
-
 		// wait for oauth route to be ready
 		oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)
 		// wait for oauth config map to be reconciled
@@ -95,6 +90,18 @@ func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client c
 
 		validateClusterPostIDP(t, ctx, client, hostedCluster)
 	})
+}
+
+func guestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	if err != nil {
+		return nil, err
+	}
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+	return guestConfig, nil
 }
 
 func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Route, restConfig *restclient.Config, username, password string) string {
@@ -152,7 +159,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	route := hcpmanifests.OauthServerExternalPublicRoute(hcpNamespace)
 
-	err := wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(route), route)
 		if err != nil {
 			return false, nil
@@ -168,7 +175,7 @@ func WaitForOAuthRouteReady(t *testing.T, ctx context.Context, client crclient.C
 	transport, err := restclient.TransportFor(restclient.AnonymousClientConfig(restConfig))
 	g.Expect(err).ToNot(HaveOccurred(), "Error getting transport")
 
-	err = wait.PollImmediateWithContext(ctx, time.Second, time.Minute, func(ctx context.Context) (done bool, err error) {
+	err = wait.PollUntilContextTimeout(ctx, time.Second, time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		resp, err := transport.RoundTrip(request)
 		if resp != nil && resp.StatusCode == http.StatusOK {
 			return true, nil
@@ -232,7 +239,7 @@ func WaitForOauthConfig(t *testing.T, ctx context.Context, client crclient.Clien
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 	oauthConfigCM := hcpmanifests.OAuthServerConfig(hcpNamespace)
 
-	err := wait.PollImmediateWithContext(ctx, time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		err = client.Get(context.Background(), crclient.ObjectKeyFromObject(oauthConfigCM), oauthConfigCM)
 		if err != nil {
 			return false, nil
@@ -270,10 +277,22 @@ func validateClusterPreIDP(t *testing.T, ctx context.Context, client crclient.Cl
 	err = client.Get(ctx, crclient.ObjectKeyFromObject(oauthDeployment), oauthDeployment)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	// validate oauthDeployment has kubeadmin password hash annotation if not using CPOV2.
-	if _, ok := hostedCluster.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; !ok {
-		g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(oauth.KubeadminSecretHashAnnotation))
-	}
+	// validate oauthDeployment has kubeadmin password hash annotation.
+	g.Expect(oauthDeployment.Spec.Template.ObjectMeta.Annotations).To(HaveKey(oauth.KubeadminSecretHashAnnotation))
+
+	// validate login with kubeadmin password
+	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	// wait for oauth route to be ready
+	oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)
+	// wait for oauth token request to succeed
+	password := string(kubeadminPasswordSecret.Data["password"])
+	access_token := WaitForOAuthToken(t, ctx, oauthRoute, guestConfig, "kubeadmin", password)
+
+	user, err := GetUserForToken(guestConfig, access_token)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(user.Name).To(Equal("kube:admin"))
+
 }
 
 func validateClusterPostIDP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {

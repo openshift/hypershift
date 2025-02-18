@@ -142,6 +142,8 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 				"get",
 				"list",
 				"watch",
+				"patch",
+				"update",
 			},
 		},
 		{
