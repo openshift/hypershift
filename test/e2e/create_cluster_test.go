@@ -1269,6 +1269,19 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch hc := o.(type) {
+		case *hyperv1.HostedCluster:
+			hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				Image: &configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"badregistry.io"},
+					},
+				},
+			}
+		}
+	}
+
 	// find kms key ARN using alias
 	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
@@ -1308,6 +1321,13 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 				obj.Annotations = make(map[string]string)
 			}
 			obj.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] = "true"
+			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				Image: &configv1.ImageSpec{
+					RegistrySources: configv1.RegistrySources{
+						BlockedRegistries: []string{"badregistry.io"},
+					},
+				},
+			}
 		}
 	}
 
