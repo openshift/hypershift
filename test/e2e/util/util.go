@@ -976,6 +976,17 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
+
+		err = UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+				obj.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+			}
+			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+				obj.Spec.ControllerAvailabilityPolicy = hyperv1.HighlyAvailable
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
 	})
 }
 

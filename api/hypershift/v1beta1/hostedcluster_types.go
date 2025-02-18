@@ -458,7 +458,9 @@ type HostedClusterSpec struct {
 
 	// controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
 	// Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+	// This field is immutable.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControllerAvailabilityPolicy is immutable"
 	// +kubebuilder:default:="HighlyAvailable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
