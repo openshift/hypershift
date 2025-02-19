@@ -77,10 +77,9 @@ func reconcileConfig(
 		APIVersion: openshiftcpv1.GroupVersion.String(),
 	}
 
-	// Do not modify cfg.Controllers!
-	// This field is currently owned by the HCCO.
-	// When we add Capabilities support, we will set Controllers here
-	// but we have to remove setting it in the HCCO at the same time.
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+	}
 
 	cfg.Build.ImageTemplateFormat.Format = dockerBuilderImage
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
@@ -89,6 +88,7 @@ func reconcileConfig(
 	if capabilities.IsImageRegistryCapabilityEnabled(caps) {
 		cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
 	}
+
 	if imageConfig != nil {
 		cfg.DockerPullSecret.RegistryURLs = imageConfig.ExternalRegistryHostnames
 	}
