@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/blang/semver"
@@ -57,6 +58,17 @@ func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pull
 
 func AtLeast(t *testing.T, version semver.Version) {
 	if releaseVersion.LT(version) {
+		t.Skipf("Only tested in %s and later", version)
+	}
+}
+
+func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) {
+	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
+		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
+		AtLeast(t, version)
+	}
+	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
+	if cpoVersion.LT(version) {
 		t.Skipf("Only tested in %s and later", version)
 	}
 }

@@ -1283,7 +1283,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
-		AtLeast(t, Version418)
+		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking that all ValidatingAdmissionPolicies are present")
 		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
@@ -1309,7 +1309,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
-		AtLeast(t, Version418)
+		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
 		apiServer := &configv1.APIServer{
