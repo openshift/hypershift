@@ -285,7 +285,8 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
-Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.</p>
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -5105,7 +5106,8 @@ AvailabilityPolicy
 <td>
 <em>(Optional)</em>
 <p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
-Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.</p>
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>

@@ -96,7 +96,7 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControllerAvailabilityPolicy is immutable"
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
 	// InfrastructureAvailabilityPolicy specifies the availability policy applied
