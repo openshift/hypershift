@@ -90,7 +90,7 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 }
 
 type ServiceAccountKubeConfigOpts struct {
-	Name, Namespace, MountPath string
+	Name, Namespace, MountPath, ContainerName string
 }
 
 func (b *controlPlaneWorkloadBuilder[T]) Build() ControlPlaneComponent {

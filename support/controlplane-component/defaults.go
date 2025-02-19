@@ -51,6 +51,10 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 		return nil, err
 	}
 
+	if c.serviceAccountKubeConfigOpts != nil {
+		c.addServiceAccountKubeconfigVolumes(podTemplateSpec)
+	}
+
 	if c.konnectivityContainerOpts != nil {
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &podTemplateSpec.Spec)
 	}
@@ -61,10 +65,6 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 			kas.InClusterKASReadyURL(cpContext.HCP.Spec.Platform.Type), availabilityProberImage,
 			&podTemplateSpec.Spec,
 			util.WithOptions(c.availabilityProberOpts))
-	}
-
-	if c.serviceAccountKubeConfigOpts != nil {
-		c.addServiceAccountKubeconfigVolumes(podTemplateSpec)
 	}
 
 	deploymentConfig := &config.DeploymentConfig{

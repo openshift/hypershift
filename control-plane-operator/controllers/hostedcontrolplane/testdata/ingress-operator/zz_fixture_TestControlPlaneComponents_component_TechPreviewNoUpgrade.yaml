@@ -1,0 +1,28 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: ingress-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: ingress-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: ingress-operator Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: ingress-operator
+  - group: ""
+    kind: Secret
+    name: ingress-operator-service-account-kubeconfig
+  version: 4.18.0
