@@ -47,7 +47,13 @@ func (c *controlPlaneWorkload) addServiceAccountKubeconfigVolumes(podTemplateSpe
 	}
 	podTemplateSpec.Spec.Volumes = append(podTemplateSpec.Spec.Volumes, volume)
 
+	containerName := c.serviceAccountKubeConfigOpts.ContainerName
 	for i := range podTemplateSpec.Spec.Containers {
+		// if containerName is specified, only mount to this container, otherwise mount to all containers.
+		if containerName != "" && containerName != podTemplateSpec.Spec.Containers[i].Name {
+			continue
+		}
+
 		volumeMount := corev1.VolumeMount{
 			Name:      volumeName,
 			MountPath: c.serviceAccountKubeConfigOpts.MountPath,

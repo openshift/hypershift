@@ -68,6 +68,7 @@ import (
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
@@ -255,6 +256,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ntov2.NewComponent(),
 		dnsoperatorv2.NewComponent(),
 		machineapproverv2.NewComponent(),
+		ingressoperatorv2.NewComponent(),
 	)
 }
 
@@ -1294,12 +1296,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	r.Log.Info("Reconciling IngressOperator")
-	if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile ingress operator: %w", err)
-	}
-
 	if !r.IsCPOV2 {
+		r.Log.Info("Reconciling IngressOperator")
+		if err := r.reconcileIngressOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile ingress operator: %w", err)
+		}
+
 		// Reconcile hosted cluster config operator
 		r.Log.Info("Reconciling Hosted Cluster Config Operator")
 		if err := r.reconcileHostedClusterConfigOperator(ctx, hostedControlPlane, userReleaseImageProvider, infraStatus, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists); err != nil {
