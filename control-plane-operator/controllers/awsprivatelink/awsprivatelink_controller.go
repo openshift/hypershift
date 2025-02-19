@@ -243,8 +243,6 @@ func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, 
 	ec2Client := ec2.New(awsEndpointSession, awsConfig)
 
 	route53Config := aws.NewConfig()
-	// Hardcode region for route53 config
-	route53Config.Region = aws.String("us-east-1")
 	route53Client := route53.New(awsRoute53Session, route53Config)
 
 	return ec2Client, route53Client, nil

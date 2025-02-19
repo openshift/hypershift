@@ -90,6 +90,12 @@ const (
 	ConfigNamespace        = "openshift-config"
 	ConfigManagedNamespace = "openshift-config-managed"
 	CloudProviderCMName    = "cloud-provider-config"
+	awsCredentialsTemplate = `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = %s
+`
 )
 
 var (
@@ -1457,16 +1463,24 @@ func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.Ho
 	return nil
 }
 
-const awsCredentialsTemplate = `[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-sts_regional_endpoints = regional
-`
+func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
+	if roleArn == "" {
+		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
+	}
+	if region == "" {
+		return "", fmt.Errorf("a region must be specified for cross-partition compatibility in AssumeRole credentials")
+	}
+	return fmt.Sprintf(awsCredentialsTemplate, roleArn, region), nil
+}
 
 func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
 	var errs []error
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		var region string
+		if hcp.Spec.Platform.AWS != nil {
+			region = hcp.Spec.Platform.AWS.Region
+		}
 		syncSecret := func(secret *corev1.Secret, arn string) error {
 			ns := &corev1.Namespace{}
 			err := r.client.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
@@ -1477,8 +1491,11 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 				}
 				return fmt.Errorf("failed to get secret namespace %s: %w", secret.Namespace, err)
 			}
+			credentials, err := buildAWSWebIdentityCredentials(arn, region)
+			if err != nil {
+				return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
+			}
 			if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-				credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 				secret.Data = map[string][]byte{"credentials": []byte(credentials)}
 				secret.Type = corev1.SecretTypeOpaque
 				return nil
