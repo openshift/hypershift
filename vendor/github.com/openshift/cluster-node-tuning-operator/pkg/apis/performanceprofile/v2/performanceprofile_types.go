@@ -65,6 +65,10 @@ type PerformanceProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector"`
 	// RealTimeKernel defines a set of real time kernel related parameters. RT kernel won't be installed when not set.
 	RealTimeKernel *RealTimeKernel `json:"realTimeKernel,omitempty"`
+	// KernelPageSize defines the kernel page size. 4k is the default, 64k is only supported on aarch64
+	// +default="4k"
+	// +optional
+	KernelPageSize *KernelPageSize `json:"kernelPageSize,omitempty"`
 	// Additional kernel arguments.
 	// +optional
 	AdditionalKernelArgs []string `json:"additionalKernelArgs,omitempty"`
@@ -130,6 +134,12 @@ type HardwareTuning struct {
 	// ReservedCpuFreq defines a maximum frequency to be set across reserved cpus
 	ReservedCpuFreq *CPUfrequency `json:"reservedCpuFreq,omitempty"`
 }
+
+// KernelPageSize defines the size of the kernel pages.
+// The allowed values for this depend on CPU architecture
+// For x86/amd64, the only valid value is 4k.
+// For aarch64, the valid values are 4k, 64k.
+type KernelPageSize string
 
 // HugePageSize defines size of huge pages
 // The allowed values for this depend on CPU architecture

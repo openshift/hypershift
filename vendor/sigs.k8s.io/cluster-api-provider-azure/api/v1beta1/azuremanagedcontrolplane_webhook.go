@@ -31,12 +31,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	"sigs.k8s.io/cluster-api-provider-azure/util/versions"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 )
@@ -72,20 +70,9 @@ func (mw *azureManagedControlPlaneWebhook) Default(_ context.Context, obj runtim
 	if !ok {
 		return apierrors.NewBadRequest("expected an AzureManagedControlPlane")
 	}
-	if m.Spec.NetworkPlugin == nil {
-		networkPlugin := AzureNetworkPluginName
-		m.Spec.NetworkPlugin = &networkPlugin
-	}
 
-	setDefault[*string](&m.Spec.NetworkPlugin, ptr.To(AzureNetworkPluginName))
-	setDefault[*string](&m.Spec.LoadBalancerSKU, ptr.To("Standard"))
-	setDefault[*Identity](&m.Spec.Identity, &Identity{
-		Type: ManagedControlPlaneIdentityTypeSystemAssigned,
-	})
-	setDefault[*bool](&m.Spec.EnablePreviewFeatures, ptr.To(false))
 	m.Spec.Version = setDefaultVersion(m.Spec.Version)
 	m.Spec.SKU = setDefaultSku(m.Spec.SKU)
-	m.Spec.AutoScalerProfile = setDefaultAutoScalerProfile(m.Spec.AutoScalerProfile)
 	m.Spec.FleetsMember = setDefaultFleetsMember(m.Spec.FleetsMember, m.Labels)
 
 	if err := m.setDefaultSSHPublicKey(); err != nil {
@@ -110,14 +97,6 @@ func (mw *azureManagedControlPlaneWebhook) ValidateCreate(_ context.Context, obj
 	m, ok := obj.(*AzureManagedControlPlane)
 	if !ok {
 		return nil, apierrors.NewBadRequest("expected an AzureManagedControlPlane")
-	}
-	// NOTE: AzureManagedControlPlane relies upon MachinePools, which is behind a feature gate flag.
-	// The webhook must prevent creating new objects in case the feature flag is disabled.
-	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return nil, field.Forbidden(
-			field.NewPath("spec"),
-			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
-		)
 	}
 
 	return nil, m.Validate(mw.Client)

@@ -548,6 +548,11 @@ spec:
                       type: object
                     type: array
                 type: object
+              controlPlaneEnabled:
+                default: true
+                description: ControlPlaneEnabled enables control plane components
+                  in the cluster.
+                type: boolean
               controlPlaneEndpoint:
                 description: |-
                   ControlPlaneEndpoint represents the endpoint used to communicate with the control plane. It is not recommended to set

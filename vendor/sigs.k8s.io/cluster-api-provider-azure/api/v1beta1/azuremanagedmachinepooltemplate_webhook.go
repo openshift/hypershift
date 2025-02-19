@@ -25,12 +25,10 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/ptr"
-	capifeature "sigs.k8s.io/cluster-api/feature"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"sigs.k8s.io/cluster-api-provider-azure/feature"
 	webhookutils "sigs.k8s.io/cluster-api-provider-azure/util/webhook"
 )
 
@@ -77,13 +75,6 @@ func (mpw *azureManagedMachinePoolTemplateWebhook) ValidateCreate(_ context.Cont
 	mp, ok := obj.(*AzureManagedMachinePoolTemplate)
 	if !ok {
 		return nil, apierrors.NewBadRequest("expected an AzureManagedMachinePoolTemplate")
-	}
-
-	if !feature.Gates.Enabled(capifeature.MachinePool) {
-		return nil, field.Forbidden(
-			field.NewPath("spec"),
-			"can be set only if the Cluster API 'MachinePool' feature flag is enabled",
-		)
 	}
 
 	var errs []error

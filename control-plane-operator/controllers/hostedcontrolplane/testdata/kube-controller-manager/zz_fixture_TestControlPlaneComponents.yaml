@@ -120,8 +120,10 @@ spec:
         - --feature-gates=PrivateHostedZoneAWS=true
         - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
+        - --feature-gates=VSphereMultiVCenters=true
         - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=AdminNetworkPolicy=true
+        - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
         - --feature-gates=HardwareSpeed=true
@@ -133,6 +135,7 @@ spec:
         - --feature-gates=NodeDisruptionPolicy=true
         - --feature-gates=VSphereDriverConfiguration=true
         - --feature-gates=ChunkSizeMiB=true
+        - --feature-gates=PersistentIPsForVirtualization=true
         - --feature-gates=MultiArchInstallAWS=true
         - --feature-gates=MultiArchInstallGCP=true
         - --feature-gates=IngressControllerLBSubnetsAWS=true
@@ -143,15 +146,15 @@ spec:
         - --feature-gates=KMSv1=true
         - --feature-gates=ConsolePluginContentSecurityPolicy=false
         - --feature-gates=GatewayAPI=false
-        - --feature-gates=CSIDriverSharedResource=false
         - --feature-gates=MachineAPIProviderOpenStack=false
         - --feature-gates=InsightsConfigAPI=false
         - --feature-gates=InsightsRuntimeExtractor=false
         - --feature-gates=SigstoreImageVerification=false
-        - --feature-gates=VSphereMultiVCenters=false
+        - --feature-gates=VSphereHostVMGroupZonal=false
+        - --feature-gates=VSphereMultiDisk=false
         - --feature-gates=RouteExternalCertificate=false
+        - --feature-gates=CPMSMachineNamePrefix=false
         - --feature-gates=NetworkSegmentation=false
-        - --feature-gates=AdditionalRoutingCapabilities=false
         - --feature-gates=RouteAdvertisements=false
         - --feature-gates=OVNObservability=false
         - --feature-gates=EtcdBackendQuota=false
@@ -169,6 +172,7 @@ spec:
         - --feature-gates=PinnedImages=false
         - --feature-gates=UpgradeStatus=false
         - --feature-gates=Example=false
+        - --feature-gates=Example2=false
         - --feature-gates=PlatformOperators=false
         - --feature-gates=NewOLM=false
         - --feature-gates=InsightsOnDemandDataGather=false
@@ -176,13 +180,16 @@ spec:
         - --feature-gates=MetricsCollectionProfiles=false
         - --feature-gates=ClusterAPIInstallIBMCloud=false
         - --feature-gates=MachineAPIMigration=false
-        - --feature-gates=PersistentIPsForVirtualization=false
         - --feature-gates=ClusterMonitoringConfig=false
         - --feature-gates=MultiArchInstallAzure=false
         - --feature-gates=ImageStreamImportMode=false
         - --feature-gates=VSphereMultiNetworks=false
         - --feature-gates=IngressControllerDynamicConfigurationManager=false
         - --feature-gates=MinimumKubeletVersion=false
+        - --feature-gates=NutanixMultiSubnets=false
+        - --feature-gates=KMSEncryptionProvider=false
+        - --feature-gates=HighlyAvailableArbiter=false
+        - --feature-gates=ClusterVersionOperatorConfiguration=false
         - --feature-gates=ServiceAccountTokenNodeBinding=false
         - --feature-gates=NodeSwap=false
         - --feature-gates=DynamicResourceAllocation=false

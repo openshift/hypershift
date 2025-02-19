@@ -152,7 +152,6 @@ func (r *AzureMachineTemplate) Default(_ context.Context, obj runtime.Object) er
 	if err := t.Spec.Template.Spec.SetDefaultSSHPublicKey(); err != nil {
 		ctrl.Log.WithName("SetDefault").Error(err, "SetDefaultSSHPublicKey failed")
 	}
-	t.Spec.Template.Spec.SetDefaultCachingType()
 	t.Spec.Template.Spec.SetDataDisksDefaults()
 	t.Spec.Template.Spec.SetNetworkInterfacesDefaults()
 	return nil

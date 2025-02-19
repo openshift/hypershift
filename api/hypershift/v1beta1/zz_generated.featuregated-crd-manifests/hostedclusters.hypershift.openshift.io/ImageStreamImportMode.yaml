@@ -1206,7 +1206,7 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
+                          networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
@@ -2011,7 +2011,7 @@ spec:
                         type: string
                       mastersSchedulable:
                         description: |-
-                          MastersSchedulable allows masters nodes to be schedulable. When this flag is
+                          mastersSchedulable allows masters nodes to be schedulable. When this flag is
                           turned on, all the master nodes in the cluster will be made schedulable,
                           so that workload pods can run on them. The default value for this field is false,
                           meaning none of the master nodes are schedulable.
@@ -4921,6 +4921,17 @@ spec:
                       description: Release represents an OpenShift release image and
                         associated metadata.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -5037,6 +5048,17 @@ spec:
                         release:
                           description: release is the target of the update.
                           properties:
+                            architecture:
+                              description: |-
+                                architecture is an optional field that indicates the
+                                value of the cluster architecture. In this context cluster
+                                architecture means either a single architecture or a multi
+                                architecture.
+                                Valid values are 'Multi' and empty.
+                              enum:
+                              - Multi
+                              - ""
+                              type: string
                             channels:
                               description: |-
                                 channels is the set of Cincinnati channels to which the release
@@ -5096,12 +5118,12 @@ spec:
                                     fail to evaluate.
                                   properties:
                                     promql:
-                                      description: promQL represents a cluster condition
+                                      description: promql represents a cluster condition
                                         based on PromQL.
                                       properties:
                                         promql:
                                           description: |-
-                                            PromQL is a PromQL query classifying clusters. This query
+                                            promql is a PromQL query classifying clusters. This query
                                             query should return a 1 in the match case and a 0 in the
                                             does-not-match case. Queries which return no time
                                             series, or which return values besides 0 or 1, are
@@ -5168,6 +5190,17 @@ spec:
                       If the cluster is not yet fully initialized desired will be set
                       with the information available, which may be an image or a tag.
                     properties:
+                      architecture:
+                        description: |-
+                          architecture is an optional field that indicates the
+                          value of the cluster architecture. In this context cluster
+                          architecture means either a single architecture or a multi
+                          architecture.
+                          Valid values are 'Multi' and empty.
+                        enum:
+                        - Multi
+                        - ""
+                        type: string
                       channels:
                         description: |-
                           channels is the set of Cincinnati channels to which the release
