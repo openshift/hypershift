@@ -187,7 +187,7 @@ func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyU
 		// If the URL is a cloud API or it should not be proxied, then
 		// send it through the dialer directly.
 		if (connectDirectlyToCloudAPIs && isCloudAPI(host)) || proxyURL == nil {
-			log.V(4).Info("Host is cloud API or should not use a proxy with it, dialing directly through konnectivity")
+			log.V(4).Info("Host is cloud API or should not use a proxy with it, dialing directly bypassing konnectivity and honouring proxy environment variables. This environment vairables should be set to the management cluster ones")
 			return httpProxy.Tr.Dial(network, addr)
 		}
 		log.V(4).Info("Using proxy to dial", "proxy", proxyURL)
