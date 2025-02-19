@@ -72,11 +72,11 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 	}
 }
 
-func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir string, serviceAccountSigningKey []byte) {
+func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
 	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
 
 	// create a hypershift cluster for the test
-	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey, artifactDir)
+	hostedCluster := h.createHostedCluster(opts, platform, serviceAccountSigningKey, name, artifactDir)
 
 	// if cluster creation failed, immediately try and clean up.
 	if h.Failed() {
@@ -214,7 +214,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	})
 }
 
-func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte, artifactDir string) *hyperv1.HostedCluster {
+func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, serviceAccountSigningKey []byte, name, artifactDir string) *hyperv1.HostedCluster {
 	g := NewWithT(h.T)
 	start := time.Now()
 
@@ -279,7 +279,7 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	hc := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace.Name,
-			Name:      SimpleNameGenerator.GenerateName("example-"),
+			Name:      SimpleNameGenerator.GenerateName(fmt.Sprintf("%s-", name)),
 		},
 		Spec: hyperv1.HostedClusterSpec{
 			Platform: hyperv1.PlatformSpec{
