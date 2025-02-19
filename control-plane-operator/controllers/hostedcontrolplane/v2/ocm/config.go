@@ -49,17 +49,14 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 }
 
 func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities) {
-	// Do not modify cfg.Controllers!
-	// This field is currently owned by the HCCO.
-	// When we add Capabilities support, we will set Controllers here
-	// but we have to remove setting it in the HCCO at the same time.
-
 	cfg.Build.ImageTemplateFormat.Format = releaseImageProvider.GetImage("docker-builder")
 	cfg.Deployer.ImageTemplateFormat.Format = releaseImageProvider.GetImage("deployer")
 
 	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
 		cfg.DockerPullSecret.InternalRegistryHostname = ""
 	}
+
 	if configuration != nil && configuration.Image != nil {
 		cfg.DockerPullSecret.RegistryURLs = configuration.Image.ExternalRegistryHostnames
 	}
