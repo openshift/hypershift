@@ -386,6 +386,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 			}
+			// TODO(fmissi): remove this when Hypershift Capabilities becomes GA
 			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
 				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
