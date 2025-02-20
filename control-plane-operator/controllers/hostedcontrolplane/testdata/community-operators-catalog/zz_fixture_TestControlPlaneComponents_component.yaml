@@ -1,0 +1,25 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: community-operators-catalog
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: community-operators-catalog Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: community-operators-catalog Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: Service
+    name: community-operators
+  version: 4.18.0
