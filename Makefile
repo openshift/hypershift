@@ -321,6 +321,13 @@ run-operator-locally-aws-dev:
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum"
 
+## Run Karpenter upstream e2e tests. Requires KARPENTER_CORE_DIR to be set and the current context to be set to a hosted cluster with AutoNode enabled.
+## Also requires the e2e annotation to be set on the hosted cluster like this:
+## e.g.: oc annotate -n HOSTED_CLUSTER_NS hcp/CLUSTER_NAME hypershift.openshift.io/karpenter-core-e2e-override=true
+.PHONY: karpenter-upstream-e2e 
+karpenter-upstream-e2e:
+	./karpenter-operator/e2e/upstream-e2e.sh
+
 ## --------------------------------------
 ## Tooling Binaries
 ## --------------------------------------
