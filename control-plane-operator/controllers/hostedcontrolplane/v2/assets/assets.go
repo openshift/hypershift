@@ -9,6 +9,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,6 +21,7 @@ var manifestsAssets embed.FS
 const (
 	deploymentManifest  = "deployment.yaml"
 	statefulSetManifest = "statefulset.yaml"
+	cronJobManifest     = "cronjob.yaml"
 )
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
@@ -40,6 +42,16 @@ func LoadStatefulSetManifest(componentName string) (*appsv1.StatefulSet, error) 
 	}
 
 	return sts, nil
+}
+
+func LoadCronJobManifest(componentName string) (*batchv1.CronJob, error) {
+	cronJob := &batchv1.CronJob{}
+	_, _, err := LoadManifestInto(componentName, cronJobManifest, cronJob)
+	if err != nil {
+		return nil, err
+	}
+
+	return cronJob, nil
 }
 
 // LoadManifest decodes the manifest data and load it into a new object.
@@ -72,7 +84,7 @@ func ForEachManifest(componentName string, action func(manifestName string) erro
 			return nil
 		}
 		manifestName := d.Name()
-		if manifestName == deploymentManifest || manifestName == statefulSetManifest {
+		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest {
 			return nil
 		}
 

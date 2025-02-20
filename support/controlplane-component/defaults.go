@@ -27,11 +27,13 @@ var (
 		"openshift-oauth-apiserver",
 		"oauth-openshift",
 		"router",
+		"packageserver",
 	)
 )
 
-func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32, existingResources map[string]corev1.ResourceRequirements) (*config.DeploymentConfig, error) {
-	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() {
+func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32) (*config.DeploymentConfig, error) {
+	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() ||
+		c.Name() == "packageserver" { // TODO: investigate why packageserver needs AutomountServiceAccountToken or set NeedsManagementKASAccess to true.
 		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(true)
 	} else {
 		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(false)
@@ -69,7 +71,6 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 
 	deploymentConfig := &config.DeploymentConfig{
 		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
-		Resources:                 existingResources,
 		AdditionalLabels: map[string]string{
 			hyperv1.ControlPlaneComponentLabel: c.Name(),
 		},
@@ -100,7 +101,7 @@ func (c *controlPlaneWorkload) defaultOptions(cpContext ControlPlaneContext, pod
 	return deploymentConfig, nil
 }
 
-func (c *controlPlaneWorkload) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
+func (c *controlPlaneWorkload[T]) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
 	if c.rolloutSecretsNames == nil && c.rolloutConfigMapsNames == nil {
 		return nil
 	}
