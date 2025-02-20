@@ -17,7 +17,6 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
-	hcpolm "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
@@ -139,8 +138,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
-	ImageMetaDataProvider     util.RegistryClientImageMetadataProvider
-	hcpolm.GetDigestFN
+	ImageMetaDataProvider     util.ImageMetadataProvider
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -196,7 +194,6 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
-		GetDigestFN:               opts.GetDigestFN,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 	}})
 	if err != nil {
@@ -1695,7 +1692,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 
 	olmCatalogImagesOnce.Do(func() {
 		var err error
-		p, err = olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.GetDigestFN, &r.ImageMetaDataProvider)
+		p, err = olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.ImageMetaDataProvider)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
 			return

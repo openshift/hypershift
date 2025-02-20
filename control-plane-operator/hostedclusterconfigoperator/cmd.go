@@ -315,8 +315,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthPort:             o.OAuthPort,
 		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		EnableCIDebugOutput:   o.enableCIDebugOutput,
-		ImageMetaDataProvider: *imageMetaDataProvider,
-		GetDigestFN:           imageMetaDataProvider.GetDigest,
+		ImageMetaDataProvider: imageMetaDataProvider,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)

@@ -3988,7 +3988,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 
 			var getCatalogImagesErr error
 			olmCatalogImagesOnce.Do(func() {
-				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider.GetDigest, r.ImageMetadataProvider, isImageRegistryOverrides)
+				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
 				if err != nil {
 					getCatalogImagesErr = err
 					return

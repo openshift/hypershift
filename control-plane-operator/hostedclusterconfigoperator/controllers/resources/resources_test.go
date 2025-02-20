@@ -17,8 +17,8 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -37,8 +37,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	"github.com/opencontainers/go-digest"
 )
 
 type testClient struct {
@@ -142,17 +140,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
-		imageMetaDataProvider := supportutil.RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: map[string][]string{},
-		}
-
-		fakeGetDigest := func(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
-			dockerImageRef := &reference.DockerImageReference{
-				Registry:  "registry.redhat.io",
-				Namespace: "redhat",
-			}
-			return "", dockerImageRef, nil
-		}
+		imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
 
 		r := &reconciler{
 			client:                 fakeClient,
@@ -164,8 +152,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
-			ImageMetaDataProvider:  imageMetaDataProvider,
-			GetDigestFN:            fakeGetDigest,
+			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -207,9 +194,7 @@ func TestReconcileOLM(t *testing.T) {
 	ctx := context.Background()
 	pullSecret := fakePullSecret()
 
-	fakeGetDigest := func(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
-		return "", nil, nil
-	}
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
 
 	testCases := []struct {
 		name                string
@@ -295,7 +280,7 @@ func TestReconcileOLM(t *testing.T) {
 		cpClient:               cpClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 		rootCA:                 "fake",
-		GetDigestFN:            fakeGetDigest,
+		ImageMetaDataProvider:  &imageMetaDataProvider,
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
