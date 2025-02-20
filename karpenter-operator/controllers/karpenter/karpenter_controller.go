@@ -186,8 +186,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
-		return ctrl.Result{}, err
+	// Don't reconcile if Karpenter E2E override is set.
+	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
+		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if err := r.reconcileKarpenter(ctx, hcp); err != nil {
