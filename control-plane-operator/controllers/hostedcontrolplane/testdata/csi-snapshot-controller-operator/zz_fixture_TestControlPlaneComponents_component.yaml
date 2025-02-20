@@ -1,0 +1,32 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: csi-snapshot-controller-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: csi-snapshot-controller-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: csi-snapshot-controller-operator Deployment Progressing condition not
+      found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ServiceAccount
+    name: csi-snapshot-controller-operator
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: csi-snapshot-controller-operator-role
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: csi-snapshot-controller-operator-role
+  version: 4.18.0
