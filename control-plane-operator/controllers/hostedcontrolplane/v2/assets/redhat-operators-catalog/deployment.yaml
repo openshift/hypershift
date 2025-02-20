@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redhat-operators-catalog
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"}, {"from":{"kind":"ImageStreamTag","name":"catalogs:redhat-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
+spec:
+  selector:
+    matchLabels:
+      olm.catalogSource: redhat-operators
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
+      labels:
+        olm.catalogSource: redhat-operators
+        app: redhat-operators-catalog
+        hypershift.openshift.io/control-plane-component: redhat-operators-catalog
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - args:
+          - serve
+          - /extracted-catalog/catalog
+          - --cache-dir=/extracted-catalog/cache
+          command:
+          - /bin/opm
+          name: registry
+          image: catalogs:redhat-operators
+          ports:
+            - containerPort: 50051
+              name: grpc
+              protocol: TCP
+          terminationMessagePath: /dev/termination-log
+          readinessProbe:
+            exec:
+              command:
+                - grpc_health_probe
+                - '-addr=:50051'
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - grpc_health_probe
+                - '-addr=:50051'
+            initialDelaySeconds: 10
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          startupProbe:
+            exec:
+              command:
+                - grpc_health_probe
+                - '-addr=:50051'
+            timeoutSeconds: 1
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 15
+          resources:
+            requests:
+              cpu: 10m
+              memory: 420Mi
+          volumeMounts:
+          - mountPath: /extracted-catalog
+            name: catalog-content
+      initContainers:
+        - args:
+          - /bin/copy-content
+          - /utilities/copy-content
+          command:
+          - cp
+          image: operator-lifecycle-manager
+          name: extract-utilities
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+          - mountPath: /utilities
+            name: utilities
+        - args:
+          - --catalog.from=/configs
+          - --catalog.to=/extracted-catalog/catalog
+          - --cache.from=/tmp/cache
+          - --cache.to=/extracted-catalog/cache
+          command:
+          - /utilities/copy-content
+          image: from:imagestream
+          name: extract-content
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: FallbackToLogsOnError
+          volumeMounts:
+          - mountPath: /utilities
+            name: utilities
+          - mountPath: /extracted-catalog
+            name: catalog-content
+      volumes:
+        - emptyDir: {}
+          name: utilities
+        - emptyDir: {}
+          name: catalog-content

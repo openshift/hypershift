@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: packageserver
+spec:
+  revisionHistoryLimit: 1
+  selector:
+    matchLabels:
+      app: packageserver
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: packageserver
+    spec:
+      containers:
+      - args:
+        - -v=4
+        - --secure-port
+        - "5443"
+        - --global-namespace
+        - openshift-marketplace
+        - --kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authentication-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        - --authorization-kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        command:
+        - /bin/package-server
+        env:
+        - name: OPERATOR_CONDITION_NAME
+          value: packageserver
+        - name: GRPC_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
+        image: operator-lifecycle-manager
+        livenessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /healthz
+            port: 5443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: packageserver
+        ports:
+        - containerPort: 5443
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 5443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 10m
+            memory: 250Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmpfs
+        - mountPath: /apiserver.local.config/certificates
+          name: apiservice-cert
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-cert
+        - mountPath: /etc/openshift/kubeconfig
+          name: kubeconfig
+          readOnly: true
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - emptyDir: {}
+        name: tmpfs
+      - name: apiservice-cert
+        secret:
+          defaultMode: 0640
+          items:
+          - key: tls.crt
+            path: apiserver.crt
+          - key: tls.key
+            path: apiserver.key
+          secretName: packageserver-cert
+      - name: webhook-cert
+        secret:
+          defaultMode: 0640
+          secretName: packageserver-cert
+      - name: kubeconfig
+        secret:
+          defaultMode: 0640
+          secretName: service-network-admin-kubeconfig

@@ -77,6 +77,7 @@ import (
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
+	olmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/olm"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
@@ -255,6 +256,9 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ntov2.NewComponent(),
 		dnsoperatorv2.NewComponent(),
 		machineapproverv2.NewComponent(),
+	)
+	r.components = append(r.components,
+		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
 }
 
@@ -1012,6 +1016,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		ImageMetadataProvider:     r.ImageMetadataProvider,
+		DigestLister:              registryclient.GetListDigest,
 	}
 
 	var errs []error
@@ -1319,12 +1324,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 				return fmt.Errorf("failed to reconcile cloud controller manager: %w", err)
 			}
 		}
-	}
 
-	// Reconcile OLM
-	r.Log.Info("Reconciling OLM")
-	if err := r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile olm: %w", err)
+		// Reconcile OLM
+		r.Log.Info("Reconciling OLM")
+		if err := r.reconcileOperatorLifecycleManager(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile olm: %w", err)
+		}
 	}
 
 	// Reconcile image registry operator
