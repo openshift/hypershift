@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -45,6 +46,18 @@ const (
 	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
 	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
 )
+
+type JSONMapper func(jsonData []byte) []byte
+
+// NewOmitFieldIfEmptyJSONMapper is a JSONMapper that omits the given field
+// in case it was empty.
+func NewOmitFieldIfEmptyJSONMapper(field string) JSONMapper {
+	return func(data []byte) []byte {
+		stringData := string(data)
+		stringData = RemoveEmptyJSONField(stringData, field)
+		return []byte(stringData)
+	}
+}
 
 // ParseNamespacedName expects a string with the format "namespace/name"
 // and returns the proper types.NamespacedName.
@@ -231,16 +244,44 @@ func HashSimple(o interface{}) string {
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
 // The struct is first marshalled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
-	hash := fnv.New32a()
+	return HashStructWithJSONMapper(data, nil)
+}
+
+// HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
+// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// JSON before computing the hash or nil if no transformation is needed.
+func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
-	_, err = hash.Write(jsonData)
+	if mapper != nil {
+		jsonData = mapper(jsonData)
+	}
+	return HashBytes(jsonData)
+}
+
+// HashBytes takes a byte array and returns a 32-bit FNV-1a hashed version of the byte array as a string
+func HashBytes(data []byte) (string, error) {
+	hash := fnv.New32a()
+	_, err := hash.Write(data)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%08x", hash.Sum32()), nil
+}
+
+// RemoveEmptyJSONField removes a field from a given JSON if it's empty regardless of its position
+func RemoveEmptyJSONField(stringData string, field string) string {
+	pattern := fmt.Sprintf(`,?\s*"%s":\s*""`, regexp.QuoteMeta(field)) // Safely interpolate
+	re := regexp.MustCompile(pattern)
+	// Replace occurrences
+	stringData = re.ReplaceAllString(stringData, "")
+
+	// Trim any remaining leading or trailing commas to keep JSON valid
+	stringData = regexp.MustCompile(`\s*,\s*}`).ReplaceAllString(stringData, "}")
+	stringData = regexp.MustCompile(`{\s*,\s*`).ReplaceAllString(stringData, "{")
+	return stringData
 }
 
 // ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string

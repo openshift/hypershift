@@ -771,3 +771,94 @@ func TestIsIPv4Address(t *testing.T) {
 		})
 	}
 }
+
+func TestRemoveEmptyJSONField(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		field    string
+		expected string
+	}{
+		{
+			name:     "Remove empty field from JSON - at the end",
+			input:    `{"field1": "value1", "field2": ""}`,
+			field:    "field2",
+			expected: `{"field1": "value1"}`,
+		},
+		{
+			name:     "Remove empty field from JSON - at the beginning",
+			input:    `{"field1": "", "field2": "value2"}`,
+			field:    "field1",
+			expected: `{"field2": "value2"}`,
+		},
+		{
+			name:     "Remove empty field from JSON - in the middle",
+			input:    `{"field1": "value1", "field2": "", "field3": "value3"}`,
+			field:    "field2",
+			expected: `{"field1": "value1", "field3": "value3"}`,
+		},
+		{
+			name:     "Remove empty field from JSON - without spaces - at the beginning",
+			input:    `{"field1":"","field2":"value2"}`,
+			field:    "field1",
+			expected: `{"field2":"value2"}`,
+		},
+		{
+			name:     "Remove empty field from JSON - without spaces - in the middle",
+			input:    `{"field1":"value1","field2":"","field3":"value3"}`,
+			field:    "field2",
+			expected: `{"field1":"value1","field3":"value3"}`,
+		},
+		{
+			name:     "Remove empty field from JSON - without spaces - at the end",
+			input:    `{"field1":"value1","field2":""}`,
+			field:    "field2",
+			expected: `{"field1":"value1"}`,
+		},
+
+		{
+			name:     "Keep non-empty field from JSON",
+			input:    `{"field1": "value1", "field2": "value2"}`,
+			field:    "field2",
+			expected: `{"field1": "value1", "field2": "value2"}`,
+		},
+		{
+			name:     "Remove non-existent field from JSON returns the same JSON",
+			input:    `{"field1": "value1"}`,
+			field:    "field2",
+			expected: `{"field1": "value1"}`,
+		},
+		{
+			name:     "Empty JSON returns empty JSON",
+			input:    `{}`,
+			field:    "field1",
+			expected: `{}`,
+		},
+		{
+			name:     "Empty JSON returns empty JSON - empty field",
+			input:    `{}`,
+			field:    "",
+			expected: `{}`,
+		},
+		{
+			name:     "Remove nested empty field from JSON",
+			input:    `{"field1": "value1", "field2": {"field3": ""}}`,
+			field:    "field3",
+			expected: `{"field1": "value1", "field2": {}}`,
+		},
+		{
+			name:     "Remove nested empty field from JSON - in the middle",
+			input:    `{"field1": "value1", "field2": {"field3": "value3", "field4": "value4", "field5": ""}}`,
+			field:    "field5",
+			expected: `{"field1": "value1", "field2": {"field3": "value3", "field4": "value4"}}`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := RemoveEmptyJSONField(test.input, test.field)
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}

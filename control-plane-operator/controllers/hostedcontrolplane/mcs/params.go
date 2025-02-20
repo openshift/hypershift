@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -47,7 +47,8 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 	image := globalconfig.ImageConfig()
 	globalconfig.ReconcileImageConfig(image, hcp)
 
-	hcConfigurationHash, err := util.HashStruct(hcp.Spec.Configuration)
+	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	hcConfigurationHash, err := backwardcompat.GetBackwardCompatibleConfigHash(hcp.Spec.Configuration)
 	if err != nil {
 		return &MCSParams{}, fmt.Errorf("failed to hash HCP configuration: %w", err)
 	}

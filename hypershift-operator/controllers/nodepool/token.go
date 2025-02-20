@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -101,7 +102,9 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	// This inconsistency was introduced by https://github.com/openshift/hypershift/pull/3795
 	// See reconcileTokenSecret and https://github.com/openshift/hypershift/pull/4057 for more info on how this is used.
 	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-	hcConfigurationHash, err := supportutil.HashStruct(configGenerator.hostedCluster.Spec.Configuration)
+
+	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	hcConfigurationHash, err := backwardcompat.GetBackwardCompatibleConfigHash(configGenerator.hostedCluster.Spec.Configuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
 	}
