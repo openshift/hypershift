@@ -351,6 +351,10 @@ const (
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
+
+	// KarpenterCoreE2EOverrideAnnotation is an annotation that allows overriding the default behavior of the Karpenter Operator
+	// for upstream Karpenter core E2E testing purposes.
+	KarpenterCoreE2EOverrideAnnotation = "hypershift.openshift.io/karpenter-core-e2e-override"
 )
 
 // +kubebuilder:validation:Enum=ImageRegistry
