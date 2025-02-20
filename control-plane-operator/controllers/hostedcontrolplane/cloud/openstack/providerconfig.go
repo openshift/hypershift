@@ -28,6 +28,7 @@ func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, sec
 	}
 	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
+		secret.Data[CASecretKey] = caCertData
 		secret.Data[CABundleKey] = caCertData
 	}
 	secret.Data[CloudConfigKey] = []byte(config)
