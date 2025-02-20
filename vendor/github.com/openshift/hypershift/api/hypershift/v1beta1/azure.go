@@ -501,7 +501,7 @@ type ManagedIdentity struct {
 	// TODO set the validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=127
 	// TODO set validation:Pattern=`^[a-zA-Z0-9-]+$`
-	CredentialsSecretName string `json:"credentialsSecretName"`
+	CredentialsSecretName string `json:"credentialsSecretName,omitempty"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
