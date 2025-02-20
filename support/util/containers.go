@@ -53,6 +53,12 @@ func UpsertEnvVar(c *corev1.Container, envVar corev1.EnvVar) {
 	c.Env = append(c.Env, envVar)
 }
 
+func UpsertEnvVars(c *corev1.Container, envVars []corev1.EnvVar) {
+	for _, v := range envVars {
+		UpsertEnvVar(c, v)
+	}
+}
+
 const (
 
 	// CPOImageName is the name under which components can find the CPO image in the release image..
