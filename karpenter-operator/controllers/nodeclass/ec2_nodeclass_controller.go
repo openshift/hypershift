@@ -225,7 +225,6 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
 		MetadataOptions:          openshiftEC2NodeClass.Spec.KarpenterMetadataOptions(),
-		Context:                  openshiftEC2NodeClass.Spec.Context,
 	}
 
 	var subnetSelectorTerms []awskarpenterv1.SubnetSelectorTerm
