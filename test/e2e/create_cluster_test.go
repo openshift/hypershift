@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -51,6 +52,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					// {
+					// 	name: "when disabledCapabilities is set to ImageRegistry it should pass",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Capabilities = &hyperv1.Capabilities{
+					// 			DisabledCapabilities: []hyperv1.OptionalCapability{
+					// 				hyperv1.ImageRegistryCapability,
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "",
+					// },
+					// {
+					// 	name: "when disabledCapabilities is set to an unsupported capability it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Capabilities = &hyperv1.Capabilities{
+					// 			DisabledCapabilities: []hyperv1.OptionalCapability{
+					// 				hyperv1.OptionalCapability("AnInvalidCapability"),
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "TODO: invalid value",
+					// },
 					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -876,7 +899,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -1276,7 +1298,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1318,7 +1339,6 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1372,6 +1392,38 @@ func TestCreateClusterPrivate(t *testing.T) {
 
 func TestCreateClusterPrivateWithRouteKAS(t *testing.T) {
 	testCreateClusterPrivate(t, true)
+}
+
+// TestCreateClusterWithDisabledCapabilities implements a test that creates a cluster
+// with the ImageRegistry capability disabled, then attempts to enable it.
+func TestCreateClusterWithDisabledCapabilities(t *testing.T) {
+	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
+	}
+
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch obj := o.(type) {
+		case *hyperv1.HostedCluster:
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				DisabledCapabilities: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
+			_ = obj
+		}
+	}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// TODO: check that image registry component's resources are not installed in the
+		// control plane and hosted cluster
+		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // testCreateClusterPrivate implements a smoke test that creates a private cluster.
