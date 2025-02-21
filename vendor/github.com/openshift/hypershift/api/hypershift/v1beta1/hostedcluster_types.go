@@ -360,7 +360,7 @@ const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.C
 
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)", message="disabledCapabilities is required once set"
+// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable"
 type Capabilities struct {
 	// disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
 	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
@@ -372,7 +372,6 @@ type Capabilities struct {
 	// Once set, this field cannot be changed.
 	//
 	// +listType=atomic
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="disabledCapabilities is immutable"
 	// +optional
 	DisabledCapabilities []OptionalCapability `json:"disabledCapabilities,omitempty"`
 }
