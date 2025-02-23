@@ -26,7 +26,7 @@ require (
 	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
-	github.com/coreos/ignition/v2 v2.18.0
+	github.com/coreos/ignition/v2 v2.20.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v0.0.0-20231117061959-7cc037d33fb5
@@ -238,7 +238,7 @@ require (
 	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/genproto v0.0.0-20240311173647-c811ad7063a7 // indirect
+	google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576 // indirect
 	google.golang.org/protobuf v1.36.1 // indirect
