@@ -16,11 +16,11 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.30
 	github.com/Azure/msi-dataplane v0.4.0
 	github.com/IBM-Cloud/power-go-client v1.6.0
-	github.com/IBM/go-sdk-core/v5 v5.17.4
+	github.com/IBM/go-sdk-core/v5 v5.18.1
 	github.com/IBM/ibm-cos-sdk-go v1.10.3
 	github.com/IBM/networking-go-sdk v0.45.0
 	github.com/IBM/platform-services-go-sdk v0.64.4
-	github.com/IBM/vpc-go-sdk v0.50.0
+	github.com/IBM/vpc-go-sdk v0.64.1
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/aws/karpenter-provider-aws v1.0.8
