@@ -19,6 +19,7 @@ package genall
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -91,7 +92,7 @@ var OutputToNothing = outputToNothing{}
 type outputToNothing struct{}
 
 func (o outputToNothing) Open(_ *loader.Package, _ string) (io.WriteCloser, error) {
-	return nopCloser{io.Discard}, nil
+	return nopCloser{ioutil.Discard}, nil
 }
 
 // +controllertools:marker:generateHelp:category=""

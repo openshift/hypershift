@@ -18,6 +18,7 @@ package loader
 
 import (
 	"fmt"
+
 	"go/ast"
 	"strconv"
 	"sync"
@@ -163,7 +164,7 @@ func allReferencedPackages(pkg *Package, filterNodes NodeFilter) []*Package {
 		refsByFile[file] = refs
 	}
 
-	EachType(pkg, func(file *ast.File, _ *ast.GenDecl, spec *ast.TypeSpec) {
+	EachType(pkg, func(file *ast.File, decl *ast.GenDecl, spec *ast.TypeSpec) {
 		refs := refsByFile[file]
 		refs.collectReferences(spec.Type, filterNodes)
 	})
