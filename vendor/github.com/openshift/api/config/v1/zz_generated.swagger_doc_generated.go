@@ -1198,8 +1198,8 @@ func (AWSPlatformStatus) SwaggerDoc() map[string]string {
 
 var map_AWSResourceTag = map[string]string{
 	"":      "AWSResourceTag is a tag to apply to AWS resources created for the cluster.",
-	"key":   "key is the key of the tag",
-	"value": "value is the value of the tag. Some AWS service do not support empty values. Since tags are added to resources in many services, the length of the tag value must meet the requirements of all services.",
+	"key":   "key sets the key of the AWS resource tag key-value pair. Key is required when defining an AWS resource tag. Key should consist of between 1 and 128 characters, and may contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'.",
+	"value": "value sets the value of the AWS resource tag key-value pair. Value is required when defining an AWS resource tag. Value should consist of between 1 and 256 characters, and may contain only the set of alphanumeric characters, space (' '), '_', '.', '/', '=', '+', '-', ':', and '@'. Some AWS service do not support empty values. Since tags are added to resources in many services, the length of the tag value must meet the requirements of all services.",
 }
 
 func (AWSResourceTag) SwaggerDoc() map[string]string {
@@ -1392,6 +1392,7 @@ var map_GCPPlatformStatus = map[string]string{
 	"resourceLabels":          "resourceLabels is a list of additional labels to apply to GCP resources created for the cluster. See https://cloud.google.com/compute/docs/labeling-resources for information on labeling GCP resources. GCP supports a maximum of 64 labels per resource. OpenShift reserves 32 labels for internal use, allowing 32 labels for user configuration.",
 	"resourceTags":            "resourceTags is a list of additional tags to apply to GCP resources created for the cluster. See https://cloud.google.com/resource-manager/docs/tags/tags-overview for information on tagging GCP resources. GCP supports a maximum of 50 tags per resource.",
 	"cloudLoadBalancerConfig": "cloudLoadBalancerConfig holds configuration related to DNS and cloud load balancers. It allows configuration of in-cluster DNS as an alternative to the platform default DNS implementation. When using the ClusterHosted DNS type, Load Balancer IP addresses must be provided for the API and internal API load balancers as well as the ingress load balancer.",
+	"serviceEndpoints":        "serviceEndpoints specifies endpoints that override the default endpoints used when creating clients to interact with GCP services. When not specified, the default endpoint for the GCP region will be used. Only 1 endpoint override is permitted for each GCP service. The maximum number of endpoint overrides allowed is 9.",
 }
 
 func (GCPPlatformStatus) SwaggerDoc() map[string]string {
@@ -1417,6 +1418,16 @@ var map_GCPResourceTag = map[string]string{
 
 func (GCPResourceTag) SwaggerDoc() map[string]string {
 	return map_GCPResourceTag
+}
+
+var map_GCPServiceEndpoint = map[string]string{
+	"":     "GCPServiceEndpoint store the configuration of a custom url to override existing defaults of GCP Services.",
+	"name": "name is the name of the GCP service whose endpoint is being overridden. This must be provided and cannot be empty.\n\nAllowed values are Compute, Container, CloudResourceManager, DNS, File, IAM, ServiceUsage, Storage, and TagManager.\n\nAs an example, when setting the name to Compute all requests made by the caller to the GCP Compute Service will be directed to the endpoint specified in the url field.",
+	"url":  "url is a fully qualified URI that overrides the default endpoint for a client using the GCP service specified in the name field. url is required, must use the scheme https, must not be more than 253 characters in length, and must be a valid URL according to Go's net/url package (https://pkg.go.dev/net/url#URL)\n\nAn example of a valid endpoint that overrides the Compute Service: \"https://compute-myendpoint1.p.googleapis.com\"",
+}
+
+func (GCPServiceEndpoint) SwaggerDoc() map[string]string {
+	return map_GCPServiceEndpoint
 }
 
 var map_IBMCloudPlatformSpec = map[string]string{
