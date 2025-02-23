@@ -16,8 +16,6 @@ func GetRegion(zone string) (region string, err error) {
 		region = "sao"
 	case strings.HasPrefix(zone, "us-east"):
 		region = "us-east"
-	case strings.HasPrefix(zone, "tor"):
-		region = "tor"
 	case strings.HasPrefix(zone, "eu-de-"):
 		region = "eu-de"
 	case strings.HasPrefix(zone, "lon"):
@@ -36,6 +34,8 @@ func GetRegion(zone string) (region string, err error) {
 		region = "wdc"
 	case strings.HasPrefix(zone, "tor"):
 		region = "tor"
+	case strings.HasPrefix(zone, "che"):
+		region = "che"
 	default:
 		return "", fmt.Errorf("region not found for the zone, talk to the developer to add the support into the tool: %s", zone)
 	}
@@ -95,7 +95,7 @@ var Regions = map[string]Region{
 			"mad02",
 			"mad04",
 		},
-		SysTypes: []string{"s1022"},
+		SysTypes: []string{"s1022", "e980"},
 		VPCZones: []string{"eu-es-1", "eu-es-2", "eu-es-3"},
 	},
 	"mon": {
@@ -141,7 +141,7 @@ var Regions = map[string]Region{
 		VPCRegion:   "jp-tok",
 		COSRegion:   "jp-tok",
 		Zones:       []string{"tok04"},
-		SysTypes:    []string{"s922", "e980"},
+		SysTypes:    []string{"s922", "e980", "s1022"},
 		VPCZones:    []string{"jp-tok-1", "jp-tok-2", "jp-tok-3"},
 	},
 	"tor": {
@@ -167,7 +167,7 @@ var Regions = map[string]Region{
 		Zones: []string{
 			"us-south",
 		},
-		SysTypes: []string{"s922", "e980"},
+		SysTypes: []string{"s922", "e980", "e880"},
 		VPCZones: []string{"us-south-1", "us-south-2", "us-south-3"},
 	},
 	"wdc": {
@@ -180,6 +180,16 @@ var Regions = map[string]Region{
 		},
 		SysTypes: []string{"s922", "e980"},
 		VPCZones: []string{"us-east-1", "us-east-2", "us-east-3"},
+	},
+	"che": {
+		Description: "Chennai, India",
+		VPCRegion:   "",
+		COSRegion:   "",
+		Zones: []string{
+			"che01",
+		},
+		SysTypes: []string{"s922", "e980"},
+		VPCZones: []string{},
 	},
 }
 
