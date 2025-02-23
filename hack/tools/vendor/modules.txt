@@ -1723,8 +1723,8 @@ mvdan.cc/gofumpt/internal/version
 # mvdan.cc/unparam v0.0.0-20240528143540-8a5130ca722f
 ## explicit; go 1.21
 mvdan.cc/unparam/check
-# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.0.0-20240809124726-b901265f16d5
-## explicit; go 1.22.0
+# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.0
+## explicit; go 1.20
 sigs.k8s.io/controller-tools/cmd/controller-gen
 sigs.k8s.io/controller-tools/pkg/crd
 sigs.k8s.io/controller-tools/pkg/crd/markers
@@ -1754,5 +1754,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
-# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.0.0-20240809124726-b901265f16d5
+# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.0
 # k8s.io/code-generator => k8s.io/code-generator v0.30.1

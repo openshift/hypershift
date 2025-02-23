@@ -18,7 +18,7 @@ package schemapatcher
 
 import (
 	"fmt"
-	"os"
+	"io/ioutil"
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
@@ -92,7 +92,7 @@ func (g Generator) Generate(ctx *genall.GenerationContext) (result error) {
 		Collector: ctx.Collector,
 		Checker:   ctx.Checker,
 		// Indicates the parser on whether to register the ObjectMeta type or not
-		GenerateEmbeddedObjectMeta: g.GenerateEmbeddedObjectMeta != nil && *g.GenerateEmbeddedObjectMeta,
+		GenerateEmbeddedObjectMeta: g.GenerateEmbeddedObjectMeta != nil && *g.GenerateEmbeddedObjectMeta == true,
 	}
 
 	crdgen.AddKnownTypes(parser)
@@ -335,7 +335,7 @@ func (e *partialCRD) setVersionedSchemata(newSchemata map[string]apiext.JSONSche
 // minimally invasive.  Returned CRDs are mapped by group-kind.
 func crdsFromDirectory(ctx *genall.GenerationContext, dir string) (map[schema.GroupKind]*partialCRDSet, error) {
 	res := map[schema.GroupKind]*partialCRDSet{}
-	dirEntries, err := os.ReadDir(dir)
+	dirEntries, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -367,11 +367,6 @@ func crdsFromDirectory(ctx *genall.GenerationContext, dir string) (map[schema.Gr
 
 		if !isSupportedAPIExtGroupVer(typeMeta.APIVersion) {
 			return nil, fmt.Errorf("load %q: apiVersion %q not supported", filepath.Join(dir, fileInfo.Name()), typeMeta.APIVersion)
-		}
-
-		// this is a patch that allows us to skip manifests to support things like TechPreviewNoUpgrade manifests.
-		if !mayHandleFile(fileInfo.Name(), rawContent) {
-			continue
 		}
 
 		// collect the group-kind and versions from the actual structured form

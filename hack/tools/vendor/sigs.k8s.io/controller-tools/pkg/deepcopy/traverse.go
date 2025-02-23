@@ -374,8 +374,7 @@ func (c *copyMethodMaker) genMapDeepCopy(actualName *namingInfo, mapType *types.
 				c.IfElse("val == nil", func() {
 					c.Line("(*out)[key] = nil")
 				}, func() {
-					c.Line("inVal := (*in)[key]")
-					c.Line("in, out := &inVal, &outVal")
+					c.Line("in, out := &val, &outVal")
 					c.genDeepCopyIntoBlock(&namingInfo{typeInfo: mapType.Elem()}, mapType.Elem())
 				})
 				c.Line("(*out)[key] = outVal")
