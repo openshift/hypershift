@@ -387,7 +387,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 func cvoBootstrapScript(clusterVersionJSON []byte) string {
 	payloadDir := volumeMounts.Path(cvoContainerBootstrap().Name, cvoVolumePayload().Name)
 	scriptTemplate := `#!/bin/bash
-set -euo pipefail
+set -xeuo pipefail
 MANIFEST_DIR=%s/manifests
 ls -la ${MANIFEST_DIR}
 cat > /tmp/clusterversion.json <<EOF
