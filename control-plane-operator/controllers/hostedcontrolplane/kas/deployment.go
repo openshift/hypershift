@@ -1013,8 +1013,9 @@ set -o nounset
 set -o pipefail
 
 function cleanup() {
-	kill -- -$$
+	pkill -P $$$
 	wait
+	exit
 }
 trap cleanup SIGTERM
 
