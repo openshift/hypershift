@@ -186,13 +186,11 @@ spec:
                       type: string
                     type: array
                     x-kubernetes-list-type: atomic
-                    x-kubernetes-validations:
-                    - message: disabledCapabilities is immutable
-                      rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
-                - message: disabledCapabilities is required once set
-                  rule: '!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)'
+                - message: Capabilities is immutable. Changes might result in unpredictable
+                    and disruptive behavior.
+                  rule: self == oldSelf
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default

@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
@@ -64,7 +65,6 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 		KASPodPort:                   util.KASPodPort(hcp),
 		TLSSecurityProfile:           tlsSecurityProfile(hcp.Spec.Configuration),
 		AdditionalCORSAllowedOrigins: additionalCORSAllowedOrigins(hcp.Spec.Configuration),
-		InternalRegistryHostName:     config.DefaultImageRegistryHostname,
 		ExternalRegistryHostNames:    externalRegistryHostNames(hcp.Spec.Configuration),
 		DefaultNodeSelector:          defaultNodeSelector(hcp.Spec.Configuration),
 		AdvertiseAddress:             util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
@@ -116,6 +116,10 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 	kasConfig.MaxMutatingRequestsInflight = fmt.Sprint(defaultMaxMutatingRequestsInflight)
 	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
 		kasConfig.MaxMutatingRequestsInflight = mutatingReqInflight
+	}
+
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		kasConfig.InternalRegistryHostName = config.DefaultImageRegistryHostname
 	}
 
 	return kasConfig
