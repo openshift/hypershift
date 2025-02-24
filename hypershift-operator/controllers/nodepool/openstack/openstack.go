@@ -1,17 +1,26 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/openstackutil"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/upsert"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 )
 
-func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
+func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (*capiopenstackv1beta1.OpenStackMachineTemplateSpec, error) {
 	openStackMachineTemplate := &capiopenstackv1beta1.OpenStackMachineTemplateSpec{Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{Spec: capiopenstackv1beta1.OpenStackMachineSpec{
 		Flavor: ptr.To(nodePool.Spec.Platform.OpenStack.Flavor),
 	}}}
@@ -21,12 +30,13 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			Name: ptr.To(nodePool.Spec.Platform.OpenStack.ImageName),
 		}
 	} else {
-		// TODO(emilien): Add support for using the image from the release payload.
-		// This will be possible when CAPO supports managing images in the OpenStack cluster:
-		// https://github.com/kubernetes-sigs/cluster-api-provider-openstack/pull/2130
-		// For 4.17 we might leave this as is and let the user provide the image name as
-		// we plan to deliver the OpenStack provider as a dev preview.
-		return nil, fmt.Errorf("image name is required")
+		releaseVersion, err := releaseinfo.OpenStackReleaseImage(releaseImage)
+		if err != nil {
+			return nil, err
+		}
+		openStackMachineTemplate.Template.Spec.Image.ImageRef = &capiopenstackv1beta1.ResourceReference{
+			Name: "rhcos-" + releaseVersion,
+		}
 	}
 
 	// TODO: add support for BYO network/subnet
@@ -72,4 +82,91 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 		openStackMachineTemplate.Template.Spec.Ports = append(openStackMachineTemplate.Template.Spec.Ports, additionalPorts...)
 	}
 	return openStackMachineTemplate, nil
+}
+
+func getOpenStackClusterForHostedCluster(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (capiopenstackv1beta1.OpenStackCluster, error) {
+	cluster := capiopenstackv1beta1.OpenStackCluster{}
+
+	if err := c.Get(ctx, types.NamespacedName{Namespace: controlPlaneNamespace, Name: hcluster.Name}, &cluster); err != nil {
+		return cluster, fmt.Errorf("failed to list Machines: %w", err)
+	}
+
+	return cluster, nil
+}
+
+func ReconcileOpenStackImageCR(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) error {
+	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
+	if err != nil {
+		return err
+	}
+	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
+	openstackCluster, err := getOpenStackClusterForHostedCluster(ctx, client, hcluster, controlPlaneNamespace)
+	if err != nil {
+		return err
+	}
+	openStackImage := orc.Image{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "rhcos-" + releaseVersion,
+			Namespace: controlPlaneNamespace,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: openstackCluster.APIVersion,
+					Kind:       openstackCluster.Kind,
+					Name:       openstackCluster.Name,
+					UID:        openstackCluster.UID,
+				},
+			},
+		},
+		Spec: orc.ImageSpec{},
+	}
+
+	if _, err := createOrUpdate(ctx, client, &openStackImage, func() error {
+		err := reconcileOpenStackImageSpec(hcluster, &openStackImage.Spec, release)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func reconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage) error {
+	imageURL, imageHash, err := releaseinfo.OpenstackDefaultImage(release)
+	if err != nil {
+		return fmt.Errorf("failed to lookup RHCOS image: %w", err)
+	}
+
+	openStackImageSpec.CloudCredentialsRef = orc.CloudCredentialsReference{
+		SecretName: hcluster.Spec.Platform.OpenStack.IdentityRef.Name,
+		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
+	}
+	releaseVersion, err := releaseinfo.OpenStackReleaseImage(release)
+	if err != nil {
+		return err
+	}
+
+	openStackImageSpec.Resource = &orc.ImageResourceSpec{
+		Name: "rhcos-" + releaseVersion,
+		Content: &orc.ImageContent{
+			DiskFormat: "qcow2",
+			Download: &orc.ImageContentSourceDownload{
+				URL:        imageURL,
+				Decompress: ptr.To(orc.ImageCompressionGZ),
+				Hash: &orc.ImageHash{
+					Algorithm: "sha256",
+					Value:     imageHash,
+				},
+			},
+		},
+	}
+	if hcluster.Annotations != nil {
+		cleanup, ok := hcluster.Annotations[hyperv1.CleanupORCImageResourcesAnnotation]
+		if ok && cleanup == "false" {
+			openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach}
+		}
+	}
+
+	return nil
 }

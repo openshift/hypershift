@@ -204,7 +204,9 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
-						"--v=2",
+						// We need to set the log level to 4 to get the logs from ORC.
+						// Once ORC follows logging guidelines, we should use V(2) again.
+						"--v=4",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -402,14 +404,14 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ipaddresses", "ipaddresses/status"},
 			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
+		// The following rule is required for CAPO to reconcile the Images resources created by ORC,
 		// which is a dependency since CAPO v0.11.0.
 		// This rule is also defined in the Hypershift Operator and the Hypershift CLI when creating
 		// the cluster.
 		{
 			APIGroups: []string{"openstack.k-orc.cloud"},
-			Resources: []string{"images"},
-			Verbs:     []string{"list", "watch"},
+			Resources: []string{"images", "images/status"},
+			Verbs:     []string{rbacv1.VerbAll},
 		},
 	}
 }
