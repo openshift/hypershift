@@ -1447,7 +1447,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	for _, resource := range r.managedResources() {
 		resourceType := fmt.Sprintf("%T", resource)
 		switch resourceType {
-		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool":
+		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService":
 			// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
 			// but never create an Endpoints resource
 
@@ -1456,6 +1456,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			// We don't create a StatefulSet but we watch them for etcd health check and recovery
 
 			// We watch NodePools but don't create them
+
+			// We watch AWSEndpointServices to propagate conditions to the HostedCluster
 			continue
 		}
 		watchedResources.Insert(resourceType)

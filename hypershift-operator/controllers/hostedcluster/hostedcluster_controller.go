@@ -246,6 +246,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
 		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
+		&hyperv1.AWSEndpointService{},
 		&capiv1.Cluster{},
 		&appsv1.Deployment{},
 		&prometheusoperatorv1.PodMonitor{},
