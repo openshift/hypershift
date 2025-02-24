@@ -222,8 +222,6 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	awsConfig := aws.NewConfig()
 	r.ec2Client = ec2.New(awsEndpointSession, awsConfig)
 	route53Config := aws.NewConfig()
-	// Hardcode region for route53 config
-	route53Config.Region = aws.String("us-east-1")
 	r.route53Client = route53.New(awsRoute53Session, route53Config)
 
 	return nil
