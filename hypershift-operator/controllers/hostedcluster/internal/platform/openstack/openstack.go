@@ -30,11 +30,13 @@ const (
 
 type OpenStack struct {
 	capiProviderImage string
+	orcImage          string
 }
 
-func New(capiProviderImage string) *OpenStack {
+func New(capiProviderImage string, orcImage string) *OpenStack {
 	return &OpenStack{
 		capiProviderImage: capiProviderImage,
+		orcImage:          orcImage,
 	}
 }
 
@@ -163,13 +165,21 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	image := a.capiProviderImage
+	capoImage := a.capiProviderImage
 	if envImage := os.Getenv(images.OpenStackCAPIProviderEnvVar); len(envImage) > 0 {
-		image = envImage
+		capoImage = envImage
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIOpenStackProviderImage]; ok {
-		image = override
+		capoImage = override
 	}
+	orcImage := a.orcImage
+	if envImage := os.Getenv(images.OpenStackResourceControllerEnvVar); len(envImage) > 0 {
+		orcImage = envImage
+	}
+	if override, ok := hcluster.Annotations[hyperv1.OpenStackResourceControllerImage]; ok {
+		orcImage = override
+	}
+	allowPrivilegeEscalation := false
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
@@ -188,7 +198,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 				},
 				Containers: []corev1.Container{{
 					Name:            "manager",
-					Image:           image,
+					Image:           capoImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Command:         []string{"/manager"},
 					Args: []string{
@@ -230,6 +240,64 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 							Name:      "capi-webhooks-tls",
 							ReadOnly:  true,
 							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+						},
+					},
+					Env: []corev1.EnvVar{
+						{
+							Name: "MY_NAMESPACE",
+							ValueFrom: &corev1.EnvVarSource{
+								FieldRef: &corev1.ObjectFieldSelector{
+									FieldPath: "metadata.namespace",
+								},
+							},
+						},
+					},
+				}, {
+					Name:            "orc-manager",
+					Image:           orcImage,
+					ImagePullPolicy: corev1.PullIfNotPresent,
+					Command:         []string{"/manager"},
+					Args: []string{
+						"--namespace=$(MY_NAMESPACE)",
+						"--leader-elect",
+						"--health-probe-bind-address=:8081",
+					},
+					SecurityContext: &corev1.SecurityContext{
+						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+						Capabilities: &corev1.Capabilities{
+							Drop: []corev1.Capability{
+								"ALL",
+							},
+						},
+					},
+					LivenessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/healthz",
+								Port: intstr.FromInt(8081),
+							},
+						},
+						InitialDelaySeconds: 15,
+						PeriodSeconds:       20,
+					},
+					ReadinessProbe: &corev1.Probe{
+						ProbeHandler: corev1.ProbeHandler{
+							HTTPGet: &corev1.HTTPGetAction{
+								Path: "/readyz",
+								Port: intstr.FromInt(8081),
+							},
+						},
+						InitialDelaySeconds: 5,
+						PeriodSeconds:       10,
+					},
+					Resources: corev1.ResourceRequirements{
+						Limits: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("500m"),
+							corev1.ResourceMemory: resource.MustParse("128Mi"),
+						},
+						Requests: corev1.ResourceList{
+							corev1.ResourceCPU:    resource.MustParse("10m"),
+							corev1.ResourceMemory: resource.MustParse("64Mi"),
 						},
 					},
 					Env: []corev1.EnvVar{
