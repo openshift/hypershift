@@ -6,6 +6,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -38,7 +39,7 @@ func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMa
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
-	adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build)
+	adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities)
 	configStr, err := util.SerializeResource(config, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
@@ -47,14 +48,14 @@ func adaptConfigMap(cpContext component.ControlPlaneContext, cm *corev1.ConfigMa
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build) {
-	// Do not modify cfg.Controllers!
-	// This field is currently owned by the HCCO.
-	// When we add Capabilities support, we will set Controllers here
-	// but we have to remove setting it in the HCCO at the same time.
-
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities) {
 	cfg.Build.ImageTemplateFormat.Format = releaseImageProvider.GetImage("docker-builder")
 	cfg.Deployer.ImageTemplateFormat.Format = releaseImageProvider.GetImage("deployer")
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+		cfg.DockerPullSecret.InternalRegistryHostname = ""
+	}
 
 	if configuration != nil && configuration.Image != nil {
 		cfg.DockerPullSecret.RegistryURLs = configuration.Image.ExternalRegistryHostnames

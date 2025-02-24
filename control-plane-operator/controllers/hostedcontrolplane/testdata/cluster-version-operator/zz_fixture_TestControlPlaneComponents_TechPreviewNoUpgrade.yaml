@@ -129,53 +129,56 @@ spec:
         - -c
         - |-
           cp -R /manifests /var/payload/
-          rm /var/payload/manifests/*_deployment.yaml
-          rm /var/payload/manifests/*_servicemonitor.yaml
+          rm -f /var/payload/manifests/*_deployment.yaml
+          rm -f /var/payload/manifests/*_servicemonitor.yaml
           cp -R /release-manifests /var/payload/
-          rm /var/payload/release-manifests/0000_50_olm_00-pprof-config.yaml
-          rm /var/payload/release-manifests/0000_50_olm_00-pprof-rbac.yaml
-          rm /var/payload/release-manifests/0000_50_olm_00-pprof-secret.yaml
-          rm /var/payload/release-manifests/0000_50_olm_01-olm-operator.serviceaccount.yaml
-          rm /var/payload/release-manifests/0000_50_olm_02-services.yaml
-          rm /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.yaml
-          rm /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_olm_06-psm-operator.service.yaml
-          rm /var/payload/release-manifests/0000_50_olm_06-psm-operator.servicemonitor.yaml
-          rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
-          rm /var/payload/release-manifests/0000_50_olm_07-collect-profiles.cronjob.yaml
-          rm /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.yaml
-          rm /var/payload/release-manifests/0000_50_olm_15-packageserver.clusterserviceversion.yaml
-          rm /var/payload/release-manifests/0000_50_olm_99-operatorstatus.yaml
-          rm /var/payload/release-manifests/0000_90_olm_00-service-monitor.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_04_service_account.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_05_role.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_06_role_binding.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_07_configmap.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_08_service.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_09_operator-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_09_operator.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_10_clusteroperator.yaml
-          rm /var/payload/release-manifests/0000_50_operator-marketplace_11_service_monitor.yaml
-          rm /var/payload/release-manifests/0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_80_machine-config_01_containerruntimeconfigs.crd.yaml
-          rm /var/payload/release-manifests/0000_80_machine-config_01_kubeletconfigs.crd.yaml
-          rm /var/payload/release-manifests/0000_80_machine-config_01_machineconfigs.crd.yaml
-          rm /var/payload/release-manifests/0000_80_machine-config_01_machineconfigpools-Default.crd.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_20-performance-profile.crd.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-service.yaml
-          rm /var/payload/release-manifests/0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_50_cloud-credential-operator_01-operator-config.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-authentication-operator_02_config.cr.yaml
-          rm /var/payload/release-manifests/0000_90_etcd-operator_03_prometheusrule.yaml
-          rm /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml
-          rm /var/payload/release-manifests/0000_03_marketplace-operator_02_operatorhub.cr.yaml
+          rm -f /var/payload/manifests/*-Default*.yaml
+          rm -f /var/payload/manifests/*-CustomNoUpgrade*.yaml
+          rm -f /var/payload/manifests/*-DevPreviewNoUpgrade*.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_00-pprof-config.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_00-pprof-rbac.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_00-pprof-secret.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_01-olm-operator.serviceaccount.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_02-services.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.service.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.servicemonitor.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_07-collect-profiles.cronjob.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_15-packageserver.clusterserviceversion.yaml
+          rm -f /var/payload/release-manifests/0000_50_olm_99-operatorstatus.yaml
+          rm -f /var/payload/release-manifests/0000_90_olm_00-service-monitor.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_04_service_account.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_05_role.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_06_role_binding.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_07_configmap.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_08_service.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_09_operator-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_09_operator.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_10_clusteroperator.yaml
+          rm -f /var/payload/release-manifests/0000_50_operator-marketplace_11_service_monitor.yaml
+          rm -f /var/payload/release-manifests/0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_80_machine-config_01_containerruntimeconfigs.crd.yaml
+          rm -f /var/payload/release-manifests/0000_80_machine-config_01_kubeletconfigs.crd.yaml
+          rm -f /var/payload/release-manifests/0000_80_machine-config_01_machineconfigs.crd.yaml
+          rm -f /var/payload/release-manifests/0000_80_machine-config_01_machineconfigpools-Default.crd.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_20-performance-profile.crd.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-service.yaml
+          rm -f /var/payload/release-manifests/0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_50_cloud-credential-operator_01-operator-config.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-authentication-operator_02_config.cr.yaml
+          rm -f /var/payload/release-manifests/0000_90_etcd-operator_03_prometheusrule.yaml
+          rm -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml
+          rm -f /var/payload/release-manifests/0000_03_marketplace-operator_02_operatorhub.cr.yaml
           cat > /var/payload/release-manifests/0000_01_cleanup.yaml <<EOF
           ---
           apiVersion: apiextensions.k8s.io/v1
