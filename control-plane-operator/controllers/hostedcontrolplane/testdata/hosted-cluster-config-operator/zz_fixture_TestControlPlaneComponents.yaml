@@ -129,6 +129,9 @@ spec:
           name: kubeconfig
         - mountPath: /etc/kubernetes/root-ca
           name: root-ca
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: openshift-config-managed-trusted-ca-bundle
+          readOnly: true
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -185,4 +188,12 @@ spec:
           defaultMode: 420
           name: kubelet-client-ca
         name: cluster-signer-ca
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: openshift-config-managed-trusted-ca-bundle
+          optional: true
+        name: openshift-config-managed-trusted-ca-bundle
 status: {}
