@@ -311,7 +311,7 @@ func opTokenWithPrefs(opType *operationType, assignOpType *operationType, prefer
 }
 
 func expressionOpToken(expression string) yqAction {
-	return func(rawToken lexer.Token) (*token, error) {
+	return func(_ lexer.Token) (*token, error) {
 		prefs := expressionOpPreferences{expression: expression}
 		expressionOp := &Operation{OperationType: expressionOpType, Preferences: prefs}
 		return &token{TokenType: operationToken, Operation: expressionOp}, nil
@@ -517,15 +517,15 @@ func parentWithLevel() yqAction {
 
 		prefs := parentOpPreferences{Level: level}
 		op := &Operation{OperationType: getParentOpType, Value: getParentOpType.Type, StringValue: value, Preferences: prefs}
-		return &token{TokenType: operationToken, Operation: op}, nil
+		return &token{TokenType: operationToken, Operation: op, CheckForPostTraverse: true}, nil
 	}
 }
 
 func parentWithDefaultLevel() yqAction {
-	return func(rawToken lexer.Token) (*token, error) {
+	return func(_ lexer.Token) (*token, error) {
 		prefs := parentOpPreferences{Level: 1}
 		op := &Operation{OperationType: getParentOpType, Value: getParentOpType.Type, StringValue: getParentOpType.Type, Preferences: prefs}
-		return &token{TokenType: operationToken, Operation: op}, nil
+		return &token{TokenType: operationToken, Operation: op, CheckForPostTraverse: true}, nil
 	}
 }
 
