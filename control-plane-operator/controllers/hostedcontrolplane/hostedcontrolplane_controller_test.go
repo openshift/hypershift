@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/image/docker10"
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -44,6 +45,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -66,6 +68,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
+	"github.com/opencontainers/go-digest"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -1612,7 +1615,8 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
 	reconciler := &HostedControlPlaneReconciler{
-		ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 	}
 	reconciler.registerComponents()
 
@@ -1664,8 +1668,17 @@ func TestControlPlaneComponents(t *testing.T) {
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-			Result:   &dockerv1client.DockerImageConfig{},
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{
+						"io.openshift.release": "4.16.10",
+					},
+				},
+			},
 			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		DigestLister: func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
+			return "", nil
 		},
 		HCP:           hcp,
 		SkipPredicate: true,
@@ -1701,15 +1714,22 @@ func TestControlPlaneComponents(t *testing.T) {
 				t.Fatalf("failed to list statfulsets: %v", err)
 			}
 
-			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 {
-				t.Fatalf("expected one of deployment or statefulSet to exist for component %s", component.Name())
+			var cronJobs batchv1.CronJobList
+			if err := fakeClient.List(context.Background(), &cronJobs); err != nil {
+				t.Fatalf("failed to list cronJobs: %v", err)
+			}
+
+			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 {
+				t.Fatalf("expected one of deployment, statefulSet or cronJob to exist for component %s", component.Name())
 			}
 
 			var workload client.Object
 			if len(deployments.Items) > 0 {
 				workload = &deployments.Items[0]
-			} else {
+			} else if len(statfulsets.Items) > 0 {
 				workload = &statfulsets.Items[0]
+			} else {
+				workload = &cronJobs.Items[0]
 			}
 
 			yaml, err := util.SerializeResource(workload, api.Scheme)

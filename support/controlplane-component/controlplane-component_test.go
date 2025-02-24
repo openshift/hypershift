@@ -2,12 +2,16 @@ package controlplanecomponent
 
 import (
 	"context"
+	"crypto/x509/pkix"
+	"fmt"
 	"reflect"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -59,12 +63,10 @@ func NewComponent() ControlPlaneComponent {
 
 func TestReconcile(t *testing.T) {
 	tests := []struct {
-		name         string
-		workloadType workloadType
+		name string
 	}{
 		{
-			name:         "when reconciling a Deployment workload it should enforce builtin hypershift opinions",
-			workloadType: deploymentWorkloadType,
+			name: "when reconciling a Deployment workload it should enforce builtin hypershift opinions",
 		},
 		// TODO(alberto): add StatefulSet test case.
 	}
@@ -76,6 +78,10 @@ func TestReconcile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+
+			fakeObjects, err := componentsFakeObjects()
+			g.Expect(err).ToNot(HaveOccurred())
+
 			cpContext := ControlPlaneContext{
 				Context:                  context.Background(),
 				CreateOrUpdateProviderV2: upsert.NewV2(false),
@@ -91,20 +97,19 @@ func TestReconcile(t *testing.T) {
 					},
 				},
 				Client: fake.NewClientBuilder().WithScheme(scheme).
-					WithObjects(componentsFakeDependencies()...).Build(),
+					WithObjects(fakeObjects...).Build(),
 			}
 
 			c := NewComponent()
-
-			err := c.Reconcile(cpContext)
+			err = c.Reconcile(cpContext)
 			g.Expect(err).NotTo(HaveOccurred())
+
 			got := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testComponentName,
 					Namespace: testComponentNamespace,
 				},
 			}
-
 			cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(got), got)
 			g.Expect(err).NotTo(HaveOccurred())
 
@@ -231,11 +236,9 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
-func componentsFakeDependencies() []client.Object {
-	var fakeComponents []client.Object
-
+func componentsFakeObjects() ([]client.Object, error) {
 	// we need this to exist for components to reconcile
-	fakeComponentTemplate := &hyperv1.ControlPlaneComponent{
+	fakeComponent := &hyperv1.ControlPlaneComponent{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kube-apiserver",
 			Namespace: testComponentNamespace,
@@ -251,15 +254,26 @@ func componentsFakeDependencies() []client.Object {
 		},
 	}
 
-	fakeComponents = append(fakeComponents, fakeComponentTemplate)
-	pullSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: testComponentNamespace},
-		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: []byte(`{}`),
-		},
+	rootCA := manifests.RootCAConfigMap(testComponentNamespace)
+	rootCA.Data = map[string]string{
+		certs.CASignerCertMapKey: "fake",
 	}
 
-	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
+	key, cert, err := certs.GenerateSelfSignedCertificate(&caCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate self signed CA: %v", err)
+	}
+	csrSigner := manifests.CSRSignerCASecret(testComponentNamespace)
+	csrSigner.Data = map[string][]byte{
+		certs.CASignerCertMapKey: certs.CertToPem(cert),
+		certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(key),
+	}
 
-	return fakeComponents
+	fakeObjects := []client.Object{
+		fakeComponent,
+		rootCA,
+		csrSigner,
+	}
+	return fakeObjects, nil
 }

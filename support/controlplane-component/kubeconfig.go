@@ -17,7 +17,7 @@ const (
 	ServiceAccountKubeconfigVolumeName = "service-account-kubeconfig"
 )
 
-func (c *controlPlaneWorkload) adaptServiceAccountKubeconfigSecret(cpContext WorkloadContext, secret *corev1.Secret) error {
+func (c *controlPlaneWorkload[T]) adaptServiceAccountKubeconfigSecret(cpContext WorkloadContext, secret *corev1.Secret) error {
 	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
 		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
@@ -30,11 +30,11 @@ func (c *controlPlaneWorkload) adaptServiceAccountKubeconfigSecret(cpContext Wor
 	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, c.serviceAccountKubeConfigOpts.Namespace, c.serviceAccountKubeConfigOpts.Name)
 }
 
-func (c *controlPlaneWorkload) serviceAccountKubeconfigSecretName() string {
+func (c *controlPlaneWorkload[T]) serviceAccountKubeconfigSecretName() string {
 	return c.name + "-service-account-kubeconfig"
 }
 
-func (c *controlPlaneWorkload) addServiceAccountKubeconfigVolumes(podTemplateSpec *corev1.PodTemplateSpec) {
+func (c *controlPlaneWorkload[T]) addServiceAccountKubeconfigVolumes(podTemplateSpec *corev1.PodTemplateSpec) {
 	volumeName := "service-account-kubeconfig"
 	volume := corev1.Volume{
 		Name: volumeName,
@@ -62,7 +62,7 @@ func (c *controlPlaneWorkload) addServiceAccountKubeconfigVolumes(podTemplateSpe
 	}
 }
 
-func (c *controlPlaneWorkload) serviceAccountKubeconfigSecret(cpContext WorkloadContext) *corev1.Secret {
+func (c *controlPlaneWorkload[T]) serviceAccountKubeconfigSecret(namespace string) *corev1.Secret {
 	return &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -70,7 +70,7 @@ func (c *controlPlaneWorkload) serviceAccountKubeconfigSecret(cpContext Workload
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.serviceAccountKubeconfigSecretName(),
-			Namespace: cpContext.HCP.Namespace,
+			Namespace: namespace,
 		},
 		Data: map[string][]byte{
 			"kubeconfig": []byte(""),
