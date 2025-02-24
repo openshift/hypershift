@@ -88,7 +88,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 		if err := recover(); err != nil {
 			// on a panic, print error and mark test as failed so postTeardown() is skipped
 			// panics from subtests can't be caught by this.
-			h.Errorf(string(debug.Stack()))
+			h.Errorf("%s", string(debug.Stack()))
 		}
 
 		h.teardown(hostedCluster, opts, artifactDir, false)
