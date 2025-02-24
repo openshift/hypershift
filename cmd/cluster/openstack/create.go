@@ -44,16 +44,18 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackCACertFile, "openstack-ca-cert-file", opts.OpenStackCACertFile, "Path to the OpenStack CA certificate file (optional)")
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
+	flags.StringVar(&opts.OpenStackKubeAPIServerVirtualIP, "openstack-kube-apiserver-virtual-ip", opts.OpenStackKubeAPIServerVirtualIP, "Virtual IP address for the kubeapi-server (optional)")
 	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
 }
 
 type RawCreateOptions struct {
-	OpenStackCredentialsFile   string
-	OpenStackCloud             string
-	OpenStackCACertFile        string
-	OpenStackExternalNetworkID string
-	OpenStackIngressFloatingIP string
-	OpenStackDNSNameservers    []string
+	OpenStackCredentialsFile        string
+	OpenStackCloud                  string
+	OpenStackCACertFile             string
+	OpenStackExternalNetworkID      string
+	OpenStackIngressFloatingIP      string
+	OpenStackKubeAPIServerVirtualIP string
+	OpenStackDNSNameservers         []string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -170,6 +172,10 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 
 	if o.OpenStackIngressFloatingIP != "" {
 		cluster.Spec.Platform.OpenStack.IngressFloatingIP = o.OpenStackIngressFloatingIP
+	}
+
+	if o.OpenStackKubeAPIServerVirtualIP != "" {
+		cluster.Spec.Platform.OpenStack.KubeAPIServerVirtualIP = o.OpenStackKubeAPIServerVirtualIP
 	}
 
 	// If the user has specified DNS nameservers, it'll be used when creating the managed subnet(s).
