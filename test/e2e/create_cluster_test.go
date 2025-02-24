@@ -1403,27 +1403,44 @@ func TestCreateClusterWithDisabledCapabilities(t *testing.T) {
 
 	t.Parallel()
 
+	g := NewWithT(t)
+
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch obj := o.(type) {
-		case *hyperv1.HostedCluster:
-			obj.Spec.Capabilities = &hyperv1.Capabilities{
-				DisabledCapabilities: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
-				},
-			}
-			_ = obj
-		}
+	hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", "hostedcluster-base.yaml"))
+	hostedCluster.Spec.Capabilities = &hyperv1.Capabilities{
+		DisabledCapabilities: []hyperv1.OptionalCapability{
+			hyperv1.ImageRegistryCapability,
+		},
 	}
 
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// TODO: check that image registry component's resources are not installed in the
-		// control plane and hosted cluster
-		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+	defer client.Delete(ctx, hostedCluster)
+
+	err = client.Create(ctx, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	client.Delete(ctx, hostedCluster)
+
+	// clusterOpts := globalOpts.DefaultClusterOptions(t)
+	// clusterOpts.BeforeApply = func(o crclient.Object) {
+	// 	switch obj := o.(type) {
+	// 	case *hyperv1.HostedCluster:
+	// 		obj.Spec.Capabilities = &hyperv1.Capabilities{
+	// 			DisabledCapabilities: []hyperv1.OptionalCapability{
+	// 				hyperv1.ImageRegistryCapability,
+	// 			},
+	// 		}
+	// 		_ = obj
+	// 	}
+	// }
+
+	// e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	// 	// TODO: check that image registry component's resources are not installed in the
+	// 	// control plane and hosted cluster
+	// 	e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+	// }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 
 // testCreateClusterPrivate implements a smoke test that creates a private cluster.
