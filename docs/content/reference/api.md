@@ -3799,7 +3799,9 @@ field is not used by the plugin, it can be left unset.</p>
 <p>
 <p>clusterNetworking specifies network configuration for a cluster.
 All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is performed by the controllers.
-Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.</p>
+Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
+TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
+TODO(alberto): Use CEL cidr library for all these validation when all management clusters are &gt;= 1.31.</p>
 </p>
 <table>
 <thead>
@@ -4965,8 +4967,6 @@ which contain any of the given tags will be excluded from the result.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedCluster">HostedCluster</a>)
 </p>
 <p>
-<p>TODO(alberto): Use CEL cidr library for all these validation when all management clusters are &gt;= 1.31.
-TODO(alberto): Move this down to the networking section when IBMCloud has finished valid input migration.</p>
 </p>
 <table>
 <thead>

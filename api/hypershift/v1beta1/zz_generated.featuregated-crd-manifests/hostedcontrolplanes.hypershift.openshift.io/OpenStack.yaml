@@ -2438,6 +2438,14 @@ spec:
                         once set.
                       rule: self == oldSelf
                 type: object
+                x-kubernetes-validations:
+                - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
+                    must be unique and non-overlapping
+                  rule: (!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s,
+                    c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m,
+                    self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
+                    self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
+                    self.serviceNetwork.all(s, c.cidr != s.cidr)))))
               nodeSelector:
                 additionalProperties:
                   type: string
