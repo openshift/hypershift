@@ -2556,6 +2556,14 @@ spec:
                         once set.
                       rule: self == oldSelf
                 type: object
+                x-kubernetes-validations:
+                - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
+                    must be unique and non-overlapping
+                  rule: (!has(self.machineNetwork) && self.clusterNetwork.all(c, self.serviceNetwork.all(s,
+                    c.cidr != s.cidr)) || (has(self.machineNetwork) && (self.machineNetwork.all(m,
+                    self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
+                    self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
+                    self.serviceNetwork.all(s, c.cidr != s.cidr)))))
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -4736,14 +4744,6 @@ spec:
                 != "") : true'
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
-            - message: CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork
-                must be unique and non-overlapping
-              rule: (self.platform.type == "IBMCloud" || !has(self.networking.machineNetwork)
-                && self.networking.clusterNetwork.all(c, self.networking.serviceNetwork.all(s,
-                c.cidr != s.cidr)) || (has(self.networking.machineNetwork) && (self.networking.machineNetwork.all(m,
-                self.networking.clusterNetwork.all(c, m.cidr != c.cidr)) && self.networking.machineNetwork.all(m,
-                self.networking.serviceNetwork.all(s, m.cidr != s.cidr)) && self.networking.clusterNetwork.all(c,
-                self.networking.serviceNetwork.all(s, c.cidr != s.cidr)))))
           status:
             description: Status is the latest observed status of the HostedCluster.
             properties:
