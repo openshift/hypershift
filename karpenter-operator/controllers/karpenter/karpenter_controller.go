@@ -203,12 +203,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileEC2NodeClassOwnedFields(ctx, userDataSecret, hcp); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	if err := r.reconcileEC2NodeClassDefault(ctx, userDataSecret, hcp); err != nil {
-		return ctrl.Result{}, err
+	// Don't manage the EC2NodeClass during an upstream karpenter e2e test.
+	if hcp.Annotations[hyperv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
+		if err := r.reconcileEC2NodeClassOwnedFields(ctx, userDataSecret, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
+		if err := r.reconcileEC2NodeClassDefault(ctx, userDataSecret, hcp); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if err := r.reconcileKarpenter(ctx, hcp); err != nil {
