@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -1230,6 +1231,12 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
+		if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+			}
+		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
@@ -1821,11 +1828,9 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 		}
 	}
 	return errs
-
 }
 
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
