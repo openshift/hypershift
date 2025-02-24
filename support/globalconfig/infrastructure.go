@@ -36,6 +36,9 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	}
 
 	infra.Status.APIServerURL = fmt.Sprintf("https://%s:%d", apiServerAddress, apiServerPort)
+	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
+		infra.Status.APIServerURL = fmt.Sprintf("https://%s:%d", hcp.Spec.KubeAPIServerDNSName, apiServerPort)
+	}
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
