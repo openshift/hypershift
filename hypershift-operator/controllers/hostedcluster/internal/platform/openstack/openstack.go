@@ -261,6 +261,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
 						"--health-probe-bind-address=:8081",
+						"--v=4",
 					},
 					SecurityContext: &corev1.SecurityContext{
 						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
