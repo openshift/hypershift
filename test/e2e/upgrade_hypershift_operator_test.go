@@ -219,5 +219,5 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 					"Pre-upgrade and post-upgrade MachineDeployment generations should match")
 			}
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
 }
