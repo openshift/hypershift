@@ -96,6 +96,7 @@ hostedclusters.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - AutoNodeKarpenter
+  - ClusterVersionOperatorConfiguration
   - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
@@ -150,6 +151,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   Category: cluster-api
   FeatureGates:
   - AutoNodeKarpenter
+  - ClusterVersionOperatorConfiguration
   - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC

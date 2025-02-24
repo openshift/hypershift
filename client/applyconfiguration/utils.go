@@ -112,6 +112,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworking"):
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
+		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
@@ -236,6 +238,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackPlatformSpec"):
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
+		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):
