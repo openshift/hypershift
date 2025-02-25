@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/rest"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
@@ -156,24 +157,22 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 
-	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
+	uncachedClientRestConfig := opts.Manager.GetConfig()
+	uncachedClientRestConfig.WarningHandler = rest.NoWarnings{}
+	uncachedClient, err := client.New(uncachedClientRestConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create uncached client: %w", err)
 	}
 
 	// if kubevirt infra config is not used, it is being set the same as the mgmt config
-	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
+	kubevirtInfraClientRestConfig := opts.KubevirtInfraConfig
+	kubevirtInfraClientRestConfig.WarningHandler = rest.NoWarnings{}
+	kubevirtInfraClient, err := client.New(kubevirtInfraClientRestConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)

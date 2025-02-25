@@ -220,7 +220,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedCluster{}, builder.WithPredicates(hyperutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		})
 	for _, managedResource := range r.managedResources() {
