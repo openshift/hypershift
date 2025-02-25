@@ -3,6 +3,8 @@ package kas
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
+	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 )
 
@@ -100,7 +102,19 @@ func NewComponent() component.ControlPlaneComponent {
 			component.EnableForPlatform(hyperv1.AWSPlatform),
 			component.WithAdaptFunction(adaptAWSPodIdentityWebhookKubeconfigSecret),
 		).
+		WithManifestAdapter(
+			"azure-kms-secretprovider.yaml",
+			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
+			component.WithPredicate(enableAzureKMSSecretProvider),
+		).
 		RolloutOnConfigMapChange("kas-config", "kas-audit-config", "auth-config").
 		RolloutOnSecretChange("kas-secret-encryption-config").
 		Build()
+}
+
+func enableAzureKMSSecretProvider(cpContext component.WorkloadContext) bool {
+	if cpContext.HCP.Spec.SecretEncryption != nil && cpContext.HCP.Spec.SecretEncryption.KMS != nil && cpContext.HCP.Spec.SecretEncryption.Type == hyperv1.KMS {
+		return azureutil.IsAroHCP()
+	}
+	return false
 }
