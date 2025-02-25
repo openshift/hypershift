@@ -323,6 +323,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
+				Reason: hyperv1.WaitingForAvailableReason,
 			},
 		},
 		"hosted controlplane with availability false should cause unavailability": {
@@ -336,13 +337,18 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
 				Status: hyperv1.HostedControlPlaneStatus{
 					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionFalse},
+						{
+							Type:   string(hyperv1.HostedControlPlaneAvailable),
+							Status: metav1.ConditionFalse,
+							Reason: hyperv1.KASLoadBalancerNotReachableReason,
+						},
 					},
 				},
 			},
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
+				Reason: hyperv1.KASLoadBalancerNotReachableReason,
 			},
 		},
 		"should be available": {
@@ -366,6 +372,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
 			},
 		},
 	}
@@ -374,7 +381,6 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			actualCondition := computeHostedClusterAvailability(&test.Cluster, test.ControlPlane)
 			// Clear fields irrelevant for diffing
 			actualCondition.ObservedGeneration = 0
-			actualCondition.Reason = ""
 			actualCondition.Message = ""
 			if !equality.Semantic.DeepEqual(test.ExpectedCondition, actualCondition) {
 				t.Error(cmp.Diff(test.ExpectedCondition, actualCondition))

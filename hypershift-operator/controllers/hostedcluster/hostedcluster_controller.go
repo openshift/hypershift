@@ -3752,6 +3752,7 @@ func computeHostedClusterAvailability(hcluster *hyperv1.HostedCluster, hcp *hype
 	if hcpAvailableCondition != nil {
 		hcpAvailableStatus = hcpAvailableCondition.Status
 		hcpAvailableMessage = hcpAvailableCondition.Message
+		hcpAvailableReason = hcpAvailableCondition.Reason
 		if hcpAvailableStatus == metav1.ConditionTrue {
 			hcpAvailableReason = hyperv1.AsExpectedReason
 			hcpAvailableMessage = "The hosted control plane is available"
