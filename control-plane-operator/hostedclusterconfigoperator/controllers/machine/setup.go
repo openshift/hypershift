@@ -84,13 +84,12 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed building kubevirt infra cache: %w", err)
 	}
 	// if kubevirt infra config is not used, it is being set the same as the mgmt config
-	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
+	kubevirtInfraClientRestConfig := opts.KubevirtInfraConfig
+	kubevirtInfraClientRestConfig.WarningHandler = rest.NoWarnings{}
+	kubevirtInfraClient, err := client.New(kubevirtInfraClientRestConfig, client.Options{
 		Scheme: kubevirtScheme,
 		Mapper: kubevirtMapper,
 		Cache:  &client.CacheOptions{Reader: kubevirtInfraCache},
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)

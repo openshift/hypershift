@@ -127,8 +127,17 @@ type OperatorStatus struct {
 	// readyReplicas indicates how many replicas are ready and at the desired state
 	ReadyReplicas int32 `json:"readyReplicas"`
 
+	// latestAvailableRevision is the deploymentID of the most recent deployment
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self >= oldSelf",message="must only increase"
+	LatestAvailableRevision int32 `json:"latestAvailableRevision,omitempty"`
+
 	// generations are used to determine when an item needs to be reconciled or has changed in a way that needs a reaction.
-	// +listType=atomic
+	// +listType=map
+	// +listMapKey=group
+	// +listMapKey=resource
+	// +listMapKey=namespace
+	// +listMapKey=name
 	// +optional
 	Generations []GenerationStatus `json:"generations,omitempty"`
 }
@@ -136,15 +145,29 @@ type OperatorStatus struct {
 // GenerationStatus keeps track of the generation for a given resource so that decisions about forced updates can be made.
 type GenerationStatus struct {
 	// group is the group of the thing you're tracking
+	// +kubebuilder:validation:Required
 	Group string `json:"group"`
+
 	// resource is the resource type of the thing you're tracking
+	// +kubebuilder:validation:Required
 	Resource string `json:"resource"`
+
 	// namespace is where the thing you're tracking is
+	// +kubebuilder:validation:Required
 	Namespace string `json:"namespace"`
+
 	// name is the name of the thing you're tracking
+	// +kubebuilder:validation:Required
 	Name string `json:"name"`
+
+	// TODO: Add validation for lastGeneration. The value for this field should generally increase, except when the associated
+	// resource has been deleted and re-created. To accurately validate this field, we should introduce a new UID field and only
+	// enforce an increasing value in lastGeneration when the UID remains unchanged. A change in the UID indicates that the resource
+	// was re-created, allowing the lastGeneration value to reset or decrease.
+
 	// lastGeneration is the last generation of the workload controller involved
 	LastGeneration int64 `json:"lastGeneration"`
+
 	// hash is an optional field set for resources without generation that are content sensitive like secrets and configmaps
 	Hash string `json:"hash"`
 }
@@ -165,12 +188,34 @@ var (
 
 // OperatorCondition is just the standard condition fields.
 type OperatorCondition struct {
+	// type of condition in CamelCase or in foo.example.com/CamelCase.
+	// ---
+	// Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
+	// useful (see .node.status.conditions), the ability to deconflict is important.
+	// The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+	// +required
 	// +kubebuilder:validation:Required
-	Type               string          `json:"type"`
-	Status             ConditionStatus `json:"status"`
-	LastTransitionTime metav1.Time     `json:"lastTransitionTime,omitempty"`
-	Reason             string          `json:"reason,omitempty"`
-	Message            string          `json:"message,omitempty"`
+	// +kubebuilder:validation:Pattern=`^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$`
+	// +kubebuilder:validation:MaxLength=316
+	Type string `json:"type" protobuf:"bytes,1,opt,name=type"`
+
+	// status of the condition, one of True, False, Unknown.
+	// +required
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=True;False;Unknown
+	Status ConditionStatus `json:"status"`
+
+	// lastTransitionTime is the last time the condition transitioned from one status to another.
+	// This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+	// +required
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Type=string
+	// +kubebuilder:validation:Format=date-time
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+
+	Reason string `json:"reason,omitempty"`
+
+	Message string `json:"message,omitempty"`
 }
 
 type ConditionStatus string
@@ -202,10 +247,6 @@ type StaticPodOperatorSpec struct {
 // node status must be tracked.
 type StaticPodOperatorStatus struct {
 	OperatorStatus `json:",inline"`
-
-	// latestAvailableRevision is the deploymentID of the most recent deployment
-	// +optional
-	LatestAvailableRevision int32 `json:"latestAvailableRevision,omitempty"`
 
 	// latestAvailableRevisionReason describe the detailed reason for the most recent deployment
 	// +optional

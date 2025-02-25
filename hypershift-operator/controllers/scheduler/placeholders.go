@@ -79,7 +79,7 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&schedulingv1alpha1.ClusterSizingConfiguration{}).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 1,
 		}).
 		Watches(&appsv1.Deployment{}, handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, d client.Object) []reconcile.Request {
@@ -125,7 +125,7 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 			return out
 		})).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).Named(placeholderControllerName + ".Updater").Complete(&placeholderUpdater{
 		client:            kubernetesClient,

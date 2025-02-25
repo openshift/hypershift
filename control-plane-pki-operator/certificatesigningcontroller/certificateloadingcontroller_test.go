@@ -13,11 +13,12 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/clock"
 )
 
 func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	key, crt := certificateAuthorityRaw(t)
-	syncCtx := factory.NewSyncContext("whatever", events.NewLoggingEventRecorder("test"))
+	syncCtx := factory.NewSyncContext("whatever", events.NewLoggingEventRecorder("test", clock.RealClock{}))
 
 	controller := CertificateLoadingController{
 		caValue:   atomic.Value{},

@@ -1053,11 +1053,11 @@ func (t *createTrackingClient) Create(ctx context.Context, o client.Object, opts
 
 type createTrackingWorkqueue struct {
 	items []reconcile.Request
-	workqueue.RateLimitingInterface
+	workqueue.TypedRateLimitingInterface[reconcile.Request]
 }
 
-func (c *createTrackingWorkqueue) Add(item interface{}) {
-	c.items = append(c.items, item.(reconcile.Request))
+func (c *createTrackingWorkqueue) Add(item reconcile.Request) {
+	c.items = append(c.items, item)
 }
 
 func TestReconcileRouter(t *testing.T) {

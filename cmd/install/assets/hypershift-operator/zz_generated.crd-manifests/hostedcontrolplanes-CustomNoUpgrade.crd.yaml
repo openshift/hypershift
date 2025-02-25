@@ -353,6 +353,7 @@ spec:
                                 items:
                                   type: string
                                 type: array
+                                x-kubernetes-list-type: atomic
                               minTLSVersion:
                                 description: |-
                                   minTLSVersion is used to specify the minimal version of the TLS protocol
@@ -898,6 +899,11 @@ spec:
                         description: |-
                           featureSet changes the list of features in the cluster.  The default is empty.  Be very careful adjusting this setting.
                           Turning on or off features may cause irreversible changes in your cluster which cannot be undone.
+                        enum:
+                        - CustomNoUpgrade
+                        - DevPreviewNoUpgrade
+                        - TechPreviewNoUpgrade
+                        - ""
                         type: string
                         x-kubernetes-validations:
                         - message: CustomNoUpgrade may not be changed
@@ -960,6 +966,7 @@ spec:
                               type: boolean
                           type: object
                         type: array
+                        x-kubernetes-list-type: atomic
                       externalRegistryHostnames:
                         description: |-
                           externalRegistryHostnames provides the hostnames for the default external image
@@ -969,6 +976,25 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
+                      imageStreamImportMode:
+                        description: |-
+                          imageStreamImportMode controls the import mode behaviour of imagestreams.
+                          It can be set to `Legacy` or `PreserveOriginal` or the empty string. If this value
+                          is specified, this setting is applied to all newly created imagestreams which do not have the
+                          value set. `Legacy` indicates that the legacy behaviour should be used.
+                          For manifest lists, the legacy behaviour will discard the manifest list and import a single
+                          sub-manifest. In this case, the platform is chosen in the following order of priority:
+                          1. tag annotations; 2. control plane arch/os; 3. linux/amd64; 4. the first manifest in the list.
+                          `PreserveOriginal` indicates that the original manifest will be preserved. For manifest lists,
+                          the manifest list and all its sub-manifests will be imported. When empty, the behaviour will be
+                          decided based on the payload type advertised by the ClusterVersion status, i.e single arch payload
+                          implies the import mode is Legacy and multi payload implies PreserveOriginal.
+                        enum:
+                        - ""
+                        - Legacy
+                        - PreserveOriginal
+                        type: string
                       registrySources:
                         description: |-
                           registrySources contains configuration that determines how the container runtime
@@ -984,6 +1010,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                           blockedRegistries:
                             description: |-
                               blockedRegistries cannot be used for image pull and push actions. All other registries are permitted.
@@ -992,6 +1019,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                           containerRuntimeSearchRegistries:
                             description: |-
                               containerRuntimeSearchRegistries are registries that will be searched when pulling images that do not have fully qualified
@@ -1010,6 +1038,7 @@ spec:
                             items:
                               type: string
                             type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                     type: object
                   ingress:
@@ -1525,11 +1554,11 @@ spec:
                         type: object
                       networkType:
                         description: |-
-                          NetworkType is the plugin that is to be deployed (e.g. OpenShiftSDN).
+                          NetworkType is the plugin that is to be deployed (e.g. OVNKubernetes).
                           This should match a value that the cluster-network-operator understands,
                           or else no networking will be installed.
                           Currently supported values are:
-                          - OpenShiftSDN
+                          - OVNKubernetes
                           This field is immutable after installation.
                         type: string
                       serviceNetwork:
@@ -5478,6 +5507,17 @@ spec:
                       description: Release represents an OpenShift release image and
                         associated metadata.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -5594,6 +5634,17 @@ spec:
                         release:
                           description: release is the target of the update.
                           properties:
+                            architecture:
+                              description: |-
+                                architecture is an optional field that indicates the
+                                value of the cluster architecture. In this context cluster
+                                architecture means either a single architecture or a multi
+                                architecture.
+                                Valid values are 'Multi' and empty.
+                              enum:
+                              - Multi
+                              - ""
+                              type: string
                             channels:
                               description: |-
                                 channels is the set of Cincinnati channels to which the release
@@ -5725,6 +5776,17 @@ spec:
                       If the cluster is not yet fully initialized desired will be set
                       with the information available, which may be an image or a tag.
                     properties:
+                      architecture:
+                        description: |-
+                          architecture is an optional field that indicates the
+                          value of the cluster architecture. In this context cluster
+                          architecture means either a single architecture or a multi
+                          architecture.
+                          Valid values are 'Multi' and empty.
+                        enum:
+                        - Multi
+                        - ""
+                        type: string
                       channels:
                         description: |-
                           channels is the set of Cincinnati channels to which the release
