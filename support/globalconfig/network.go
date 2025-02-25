@@ -32,7 +32,7 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
 		hostPrefix := uint32(entry.HostPrefix)
 		if hostPrefix == 0 {
-			ipv4, err := util.IsIPv4(entry.CIDR.String())
+			ipv4, err := util.IsIPv4CIDR(entry.CIDR.String())
 			if err != nil {
 				return fmt.Errorf("the CIDR %s included in the cluster network spec is not valid: %w", entry.CIDR.String(), err)
 			}
