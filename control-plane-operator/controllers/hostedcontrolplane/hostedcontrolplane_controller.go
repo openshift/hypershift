@@ -5083,7 +5083,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 		// Reconcile SecretProviderClasses
 		azureDiskSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureDiskCSISecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureDiskSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureDiskSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure Disk Secret Provider Class: %w", err)

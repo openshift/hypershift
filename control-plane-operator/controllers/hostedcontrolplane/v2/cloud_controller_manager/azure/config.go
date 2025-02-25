@@ -116,6 +116,7 @@ type AzureConfig struct {
 	// TODO HOSTEDCP-1542 - Bryan - drop client secret once we have WorkloadIdentity working
 	AADClientSecret              string `json:"aadClientSecret"`
 	AADClientCertPath            string `json:"aadClientCertPath"`
+	AADMSIDataPlaneIdentityPath  string `json:"aadMSIDataPlaneIdentityPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`
