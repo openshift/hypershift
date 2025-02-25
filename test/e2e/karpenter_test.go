@@ -96,5 +96,5 @@ func TestKarpenter(t *testing.T) {
 		// -- validate admin can't modify fields owned by the service, e.g. ami.
 		// - Karpenter functionality:
 		// -- Drift and Upgrades
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
 }

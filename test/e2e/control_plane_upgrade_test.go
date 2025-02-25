@@ -56,5 +56,5 @@ func TestUpgradeControlPlane(t *testing.T) {
 		e2eutil.EnsureMachineDeploymentGeneration(t, ctx, mgtClient, hostedCluster, 1)
 		// TODO (cewong): enable this test once the fix for KAS->Kubelet communication has merged
 		// e2eutil.EnsureNodeCommunication(t, ctx, client, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "control-plane-upgrade", globalOpts.ServiceAccountSigningKey)
 }
