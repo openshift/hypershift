@@ -2,12 +2,15 @@ package ingressoperator
 
 import (
 	"fmt"
+	"path"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -28,6 +31,9 @@ const (
 	konnectivityProxyContainerName = "konnectivity-proxy"
 	ingressOperatorMetricsPort     = 60000
 	konnectivityProxyPort          = 8090
+
+	managedTrustBundlePath = "managed-trust-bundle.crt"
+	certsTrustPath         = "/etc/pki/tls/certs"
 )
 
 type Params struct {
@@ -150,6 +156,20 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "managed-trust-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: manifests.TrustedCABundleConfigMap("").Name},
+					DefaultMode:          ptr.To[int32](0640),
+					Items: []corev1.KeyToPath{
+						{
+							Key:  certs.UserCABundleMapKey,
+							Path: managedTrustBundlePath,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {
@@ -225,6 +245,7 @@ func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *c
 			{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
 			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
 			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
+			{Name: "managed-trust-bundle", MountPath: path.Join(certsTrustPath, managedTrustBundlePath), SubPath: managedTrustBundlePath},
 		},
 	}
 	if proxyConfig != nil {

@@ -123,6 +123,9 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /etc/pki/tls/certs/managed-trust-bundle.crt
+          name: managed-trust-bundle
+          subPath: managed-trust-bundle.crt
       - args:
         - -c
         - "\nset -o errexit\nset -o nounset\nset -o pipefail\n\nfunction cleanup()
@@ -194,6 +197,13 @@ spec:
           defaultMode: 416
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - configMap:
+          defaultMode: 416
+          items:
+          - key: ca-bundle.crt
+            path: managed-trust-bundle.crt
+          name: trusted-ca-bundle-managed
+        name: managed-trust-bundle
       - name: oauth-audit-webhook
         secret:
           secretName: test-webhook-audit-secret
