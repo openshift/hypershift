@@ -114,7 +114,7 @@ func GetAdvertiseAddress(hcp *hyperv1.HostedControlPlane, ipv4DefaultAddress, ip
 	var err error
 
 	if len(hcp.Spec.Networking.ServiceNetwork) > 0 {
-		ipv4, err = IsIPv4(hcp.Spec.Networking.ServiceNetwork[0].CIDR.String())
+		ipv4, err = IsIPv4CIDR(hcp.Spec.Networking.ServiceNetwork[0].CIDR.String())
 	} else {
 		ipv4 = true
 	}

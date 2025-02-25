@@ -249,57 +249,6 @@ func testDecompressFuncErr(t *testing.T, payload []byte) {
 	g.Expect(out.String()).To(BeEmpty(), "should be an empty string")
 }
 
-func TestIsIPv4(t *testing.T) {
-	type args struct {
-		cidrs []string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    bool
-		wantErr bool
-	}{
-		{
-			name: "When an ipv4 CIDR is checked by isIPv4, it should return true",
-			args: args{
-				cidrs: []string{"192.168.1.35/24", "0.0.0.0/0", "127.0.0.1/24"},
-			},
-			want:    true,
-			wantErr: false,
-		},
-		{
-			name: "When an ipv6 CIDR is checked by isIPv4, it should return false",
-			args: args{
-				cidrs: []string{"2001::/17", "2001:db8::/62", "::/0", "2000::/3"},
-			},
-			want:    false,
-			wantErr: false,
-		},
-		{
-			name: "When a non valid CIDR is checked by isIPv4, it should return an error and false",
-			args: args{
-				cidrs: []string{"192.168.35/68"},
-			},
-			want:    false,
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			for _, cidr := range tt.args.cidrs {
-				got, err := IsIPv4(cidr)
-				if (err != nil) != tt.wantErr {
-					t.Errorf("isIPv4() error = %v, wantErr %v", err, tt.wantErr)
-					return
-				}
-				if got != tt.want {
-					t.Errorf("isIPv4() = %v, want %v", got, tt.want)
-				}
-			}
-		})
-	}
-}
-
 func TestFirstUsableIP(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -450,6 +399,86 @@ func TestSanitizeIgnitionPayload(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
+		})
+	}
+}
+
+func TestIsIPv4CIDR(t *testing.T) {
+	tests := []struct {
+		input       string
+		expected    bool
+		expectError bool
+	}{
+		// Valid IPv4 CIDRs
+		{"192.168.1.0/24", true, false},
+		{"10.0.0.0/8", true, false},
+
+		// Valid IPv6 CIDRs
+		{"2001:db8::/32", false, false},
+		{"fd00::/8", false, false},
+
+		// Invalid inputs
+		{"invalid", false, true},
+		{"192.168.1.1/33", false, true},  // Invalid CIDR prefix
+		{"", false, true},                // Empty input
+		{"1234::5678::/64", false, true}, // Malformed IP
+
+		// Edge cases
+		{"0.0.0.0/0", true, false},
+		{"255.255.255.255/32", true, false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := IsIPv4CIDR(test.input)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred(), "Expected an error for input '%s'", test.input)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "Did not expect an error for input '%s'", test.input)
+			}
+
+			g.Expect(result).To(Equal(test.expected), "Unexpected result for input '%s'", test.input)
+		})
+	}
+}
+
+func TestIsIPv4Address(t *testing.T) {
+	tests := []struct {
+		input       string
+		expected    bool
+		expectError bool
+	}{
+		// Valid IPv4 addresses
+		{"192.168.1.1", true, false},
+		{"10.0.0.1", true, false},
+
+		// Valid IPv6 addresses
+		{"2001:db8::1", false, false},
+		{"fd00::1", false, false},
+
+		// Invalid inputs
+		{"invalid", false, true},
+		{"192.168.1.256", false, true}, // Invalid IPv4 address
+		{"", false, true},              // Empty input
+		{"1234::5678::1", false, true}, // Malformed IP
+
+		// Edge cases
+		{"0.0.0.0", true, false},
+		{"255.255.255.255", true, false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := IsIPv4Address(test.input)
+			if test.expectError {
+				g.Expect(err).To(HaveOccurred(), "Expected an error for input '%s'", test.input)
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "Did not expect an error for input '%s'", test.input)
+			}
+
+			g.Expect(result).To(Equal(test.expected), "Unexpected result for input '%s'", test.input)
 		})
 	}
 }
