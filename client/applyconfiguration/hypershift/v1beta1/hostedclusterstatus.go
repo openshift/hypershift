@@ -35,6 +35,7 @@ type HostedClusterStatusApplyConfiguration struct {
 	Conditions               []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
 	PayloadArch              *hypershiftv1beta1.PayloadArchType      `json:"payloadArch,omitempty"`
 	Platform                 *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
+	OldestKubeletVersion     *string                                 `json:"oldestKubeletVersion,omitempty"`
 }
 
 // HostedClusterStatusApplyConfiguration constructs an declarative configuration of the HostedClusterStatus type for use with
@@ -117,5 +118,13 @@ func (b *HostedClusterStatusApplyConfiguration) WithPayloadArch(value hypershift
 // If called multiple times, the Platform field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithPlatform(value *PlatformStatusApplyConfiguration) *HostedClusterStatusApplyConfiguration {
 	b.Platform = value
+	return b
+}
+
+// WithOldestKubeletVersion sets the OldestKubeletVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OldestKubeletVersion field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithOldestKubeletVersion(value string) *HostedClusterStatusApplyConfiguration {
+	b.OldestKubeletVersion = &value
 	return b
 }
