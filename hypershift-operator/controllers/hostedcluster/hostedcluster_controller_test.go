@@ -2466,10 +2466,11 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 
 func TestIsProgressing(t *testing.T) {
 	tests := []struct {
-		name    string
-		hc      *hyperv1.HostedCluster
-		want    bool
-		wantErr bool
+		name       string
+		hc         *hyperv1.HostedCluster
+		withDigest string
+		want       bool
+		wantErr    bool
 	}{
 		{
 			name: "stable at relase",
@@ -2495,6 +2496,30 @@ func TestIsProgressing(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "stable at release with digest",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   "release-1.2@sha12345",
+							Version: "1.2.0",
+						},
+					},
+				},
+			},
+			withDigest: "release-1.2@sha12345",
+			want:       false,
+			wantErr:    false,
+		},
+		{
 			name: "cluster is rolling out",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
@@ -2508,6 +2533,30 @@ func TestIsProgressing(t *testing.T) {
 			},
 			want:    true,
 			wantErr: false,
+		},
+		{
+			name: "cluster is upgrading with digest",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   "release-1.2@sha12345",
+							Version: "1.2.0",
+						},
+					},
+				},
+			},
+			withDigest: "release-1.3@sha67890",
+			want:       true,
+			wantErr:    false,
 		},
 		{
 			name: "cluster is upgrading",
@@ -2660,7 +2709,9 @@ func TestIsProgressing(t *testing.T) {
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
-			got, err := isProgressing(tt.hc, releaseImage)
+			got, err := isProgressing(tt.hc, releaseImage, func() (string, error) {
+				return tt.withDigest, nil
+			})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
 				return
