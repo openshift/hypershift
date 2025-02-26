@@ -4252,7 +4252,7 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 	if hyperazureutil.IsAroHCP() {
 		imageRegistrySecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureImageRegistrySecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, imageRegistrySecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(imageRegistrySecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(imageRegistrySecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile image registry operator secret provider class: %w", err)
