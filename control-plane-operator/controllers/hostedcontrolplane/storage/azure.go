@@ -30,8 +30,7 @@ func initializeAzureCSIControllerConfig(hcp *hyperv1.HostedControlPlane, tenantI
 // ReconcileAzureDiskCSISecret reconciles the configuration for the secret as expected by azure-disk-csi-controller
 func ReconcileAzureDiskCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, tenantID string) error {
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
-	config.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ClientID
-	config.AADClientCertPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CertificateName)
+	config.AADMSIDataPlaneIdentityPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CredentialsSecretName)
 
 	serializedConfig, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

@@ -21,13 +21,12 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 	azureSpec := cpContext.HCP.Spec.Platform.Azure
 
 	azureConfig := azure.AzureConfig{
-		Cloud:             azureSpec.Cloud,
-		TenantID:          azureSpec.TenantID,
-		SubscriptionID:    azureSpec.SubscriptionID,
-		ResourceGroup:     azureSpec.ResourceGroupName,
-		Location:          azureSpec.Location,
-		AADClientID:       managedIdentity.ClientID,
-		AADClientCertPath: path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CertificateName),
+		Cloud:                       azureSpec.Cloud,
+		TenantID:                    azureSpec.TenantID,
+		SubscriptionID:              azureSpec.SubscriptionID,
+		ResourceGroup:               azureSpec.ResourceGroupName,
+		Location:                    azureSpec.Location,
+		AADMSIDataPlaneIdentityPath: path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CredentialsSecretName),
 	}
 
 	var getVnetNameAndResourceGroupErr error
@@ -53,7 +52,7 @@ func adaptAzureCSIDiskSecret(cpContext component.WorkloadContext, secret *corev1
 
 func adaptAzureCSIDiskSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
 	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk
-	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity, true)
 	return nil
 }
 
