@@ -53,7 +53,7 @@ type ControlPlaneContext struct {
 	SetDefaultSecurityContext bool
 	// EnableCIDebugOutput enable extra debug logs.
 	EnableCIDebugOutput bool
-	// MetricsSet  specifies which metrics to use in the service/pod-monitors.
+	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
