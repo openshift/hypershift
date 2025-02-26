@@ -408,6 +408,10 @@ fi
 				Name:  "QUOTA_BACKEND_BYTES",
 				Value: strconv.FormatInt(EtcdSTSQuotaBackendSize, 10),
 			},
+			{
+				Name:  "ETCD_ENABLE_PPROF",
+				Value: "true",
+			},
 		}
 		c.Ports = []corev1.ContainerPort{
 			{
