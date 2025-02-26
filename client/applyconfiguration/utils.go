@@ -20,9 +20,11 @@ package applyconfiguration
 import (
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	applyconfigurationkarpenterv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/karpenter/v1beta1"
 	applyconfigurationschedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -290,6 +292,26 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
+
+		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDevice"):
+		return &applyconfigurationkarpenterv1beta1.BlockDeviceApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDeviceMapping"):
+		return &applyconfigurationkarpenterv1beta1.BlockDeviceMappingApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClass"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassSpec"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassSpecApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassStatus"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassStatusApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroup"):
+		return &applyconfigurationkarpenterv1beta1.SecurityGroupApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroupSelectorTerm"):
+		return &applyconfigurationkarpenterv1beta1.SecurityGroupSelectorTermApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("Subnet"):
+		return &applyconfigurationkarpenterv1beta1.SubnetApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SubnetSelectorTerm"):
+		return &applyconfigurationkarpenterv1beta1.SubnetSelectorTermApplyConfiguration{}
 
 		// Group=scheduling.hypershift.openshift.io, Version=v1alpha1
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ClusterSizingConfiguration"):

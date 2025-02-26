@@ -23,6 +23,8 @@ import (
 	fakecertificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1/fake"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	fakehypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1/fake"
+	karpenterv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/karpenter/v1beta1"
+	fakekarpenterv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/karpenter/v1beta1/fake"
 	schedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1"
 	fakeschedulingv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/scheduling/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -90,6 +92,11 @@ func (c *Clientset) CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1al
 // HypershiftV1beta1 retrieves the HypershiftV1beta1Client
 func (c *Clientset) HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface {
 	return &fakehypershiftv1beta1.FakeHypershiftV1beta1{Fake: &c.Fake}
+}
+
+// KarpenterV1beta1 retrieves the KarpenterV1beta1Client
+func (c *Clientset) KarpenterV1beta1() karpenterv1beta1.KarpenterV1beta1Interface {
+	return &fakekarpenterv1beta1.FakeKarpenterV1beta1{Fake: &c.Fake}
 }
 
 // SchedulingV1alpha1 retrieves the SchedulingV1alpha1Client
