@@ -11,10 +11,10 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,17 +35,29 @@ type ControlPlaneComponent interface {
 type ControlPlaneContext struct {
 	context.Context
 
+	// CreateOrUpdateProviderV2 knows how to create/update manifest based resources.
 	upsert.CreateOrUpdateProviderV2
-	Client                   client.Client
-	HCP                      *hyperv1.HostedControlPlane
-	ReleaseImageProvider     imageprovider.ReleaseImageProvider
+	// Client knows how to perform CRUD operations on Kubernetes objects in the HCP namespace.
+	Client client.Client
+	// HCP is the HostedControlPlane object
+	HCP *hyperv1.HostedControlPlane
+	// ReleaseImageProvider contains the version and component images related to control-plane release image.
+	ReleaseImageProvider imageprovider.ReleaseImageProvider
+	// UserReleaseImageProvider contains the version and component images related to data-plane release image.
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
-	ImageMetadataProvider    util.ImageMetadataProvider
+	// ImageMetadataProvider returns metadata for a given release image using the given pull secret.
+	ImageMetadataProvider util.ImageMetadataProvider
+	// DigestLister function returns the digest for a given release image using the given pull secret.
+	DigestLister registryclient.DigestListerFN
 
-	InfraStatus               infra.InfrastructureStatus
+	// InfraStatus contains all the information about the Hosted cluster's infra services.
+	InfraStatus infra.InfrastructureStatus
+	// SetDefaultSecurityContext is used to configure Security Context for containers.
 	SetDefaultSecurityContext bool
-	EnableCIDebugOutput       bool
-	MetricsSet                metrics.MetricsSet
+	// EnableCIDebugOutput enable extra debug logs.
+	EnableCIDebugOutput bool
+	// MetricsSet  sepcifies which metrics to use in the service/pod-monitors.
+	MetricsSet metrics.MetricsSet
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
@@ -60,6 +72,7 @@ type WorkloadContext struct {
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 	ImageMetadataProvider    util.ImageMetadataProvider
+	DigestLister             registryclient.DigestListerFN
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
@@ -79,17 +92,11 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
+		DigestLister:              cp.DigestLister,
 	}
 }
 
-var _ ControlPlaneComponent = &controlPlaneWorkload{}
-
-type workloadType string
-
-const (
-	deploymentWorkloadType  workloadType = "Deployment"
-	statefulSetWorkloadType workloadType = "StatefulSet"
-)
+var _ ControlPlaneComponent = &controlPlaneWorkload[client.Object]{}
 
 type ComponentOptions interface {
 	IsRequestServing() bool
@@ -98,17 +105,17 @@ type ComponentOptions interface {
 }
 
 // TODO: add unit test
-type controlPlaneWorkload struct {
+type controlPlaneWorkload[T client.Object] struct {
 	ComponentOptions
 
-	name         string
-	workloadType workloadType
+	name             string
+	workloadProvider WorkloadProvider[T]
 
 	// list of component names that this component depends on.
 	// reconciliation will be blocked until all dependencies are available.
 	dependencies []string
 
-	adapt func(cpContext WorkloadContext, obj client.Object) error
+	adapt func(cpContext WorkloadContext, obj T) error
 
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
 	manifestsAdapters map[string]genericAdapter
@@ -128,12 +135,12 @@ type controlPlaneWorkload struct {
 }
 
 // Name implements ControlPlaneComponent.
-func (c *controlPlaneWorkload) Name() string {
+func (c *controlPlaneWorkload[T]) Name() string {
 	return c.name
 }
 
 // reconcile implements ControlPlaneComponent.
-func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
+func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error {
 	workloadContext := cpContext.workloadContext()
 
 	if !cpContext.SkipPredicate && c.predicate != nil {
@@ -171,23 +178,8 @@ func (c *controlPlaneWorkload) Reconcile(cpContext ControlPlaneContext) error {
 	return reconcilationError
 }
 
-func (c *controlPlaneWorkload) delete(cpContext ControlPlaneContext) error {
-	var workloadObj client.Object
-
-	switch c.workloadType {
-	case deploymentWorkloadType:
-		dep, err := assets.LoadDeploymentManifest(c.Name())
-		if err != nil {
-			return fmt.Errorf("failed loading deployment manifest: %v", err)
-		}
-		workloadObj = dep
-	case statefulSetWorkloadType:
-		sts, err := assets.LoadStatefulSetManifest(c.Name())
-		if err != nil {
-			return fmt.Errorf("failed loading statefulset manifest: %v", err)
-		}
-		workloadObj = sts
-	}
+func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
+	workloadObj := c.workloadProvider.NewObject()
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
 	workloadObj.SetNamespace(cpContext.HCP.Namespace)
@@ -222,7 +214,7 @@ func (c *controlPlaneWorkload) delete(cpContext ControlPlaneContext) error {
 }
 
 // reconcile implements ControlPlaneComponent.
-func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
+func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
@@ -262,8 +254,10 @@ func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 	if c.serviceAccountKubeConfigOpts != nil {
 		_, disablePKIReconciliationAnnotation := cpContext.HCP.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
 		if !disablePKIReconciliationAnnotation {
-			kubeconfigSecret := c.serviceAccountKubeconfigSecret(cpContext.workloadContext())
-			c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret)
+			kubeconfigSecret := c.serviceAccountKubeconfigSecret(cpContext.HCP.Namespace)
+			if err := c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret); err != nil {
+				return err
+			}
 			if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, kubeconfigSecret); err != nil {
 				return err
 			}
@@ -273,30 +267,16 @@ func (c *controlPlaneWorkload) update(cpContext ControlPlaneContext) error {
 	return c.reconcileWorkload(cpContext)
 }
 
-func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) error {
-	var workloadObj client.Object
-	var oldWorkloadObj client.Object
-
-	switch c.workloadType {
-	case deploymentWorkloadType:
-		dep, err := assets.LoadDeploymentManifest(c.Name())
-		if err != nil {
-			return fmt.Errorf("failed loading deployment manifest: %v", err)
-		}
-		workloadObj = dep
-		oldWorkloadObj = &appsv1.Deployment{}
-	case statefulSetWorkloadType:
-		sts, err := assets.LoadStatefulSetManifest(c.Name())
-		if err != nil {
-			return fmt.Errorf("failed loading statefulset manifest: %v", err)
-		}
-		workloadObj = sts
-		oldWorkloadObj = &appsv1.StatefulSet{}
+func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
+	workloadObj, err := c.workloadProvider.LoadManifest(c.Name())
+	if err != nil {
+		return fmt.Errorf("failed loading workload manifest: %v", err)
 	}
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
 	workloadObj.SetNamespace(cpContext.HCP.Namespace)
 
+	oldWorkloadObj := c.workloadProvider.NewObject()
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(workloadObj), oldWorkloadObj); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get old workload object: %v", err)
@@ -311,57 +291,14 @@ func (c *controlPlaneWorkload) reconcileWorkload(cpContext ControlPlaneContext) 
 		}
 	}
 
-	switch c.workloadType {
-	case deploymentWorkloadType:
-		if err := c.applyOptionsToDeployment(cpContext, workloadObj.(*appsv1.Deployment), oldWorkloadObj.(*appsv1.Deployment)); err != nil {
-			return err
-		}
-	case statefulSetWorkloadType:
-		if err := c.applyOptionsToStatefulSet(cpContext, workloadObj.(*appsv1.StatefulSet), oldWorkloadObj.(*appsv1.StatefulSet)); err != nil {
-			return err
-		}
+	deploymentConfig, err := c.defaultOptions(cpContext, c.workloadProvider.PodTemplateSpec(workloadObj), c.workloadProvider.Replicas(workloadObj))
+	if err != nil {
+		return err
 	}
+	c.workloadProvider.ApplyOptionsTo(cpContext, workloadObj, oldWorkloadObj, deploymentConfig)
 
 	if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, workloadObj); err != nil {
 		return err
 	}
-	return nil
-}
-
-func (c *controlPlaneWorkload) applyOptionsToDeployment(cpContext ControlPlaneContext, deployment *appsv1.Deployment, oldDeployment *appsv1.Deployment) error {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldDeployment.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-	// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
-	if oldDeployment.Spec.Selector != nil {
-		deployment.Spec.Selector = oldDeployment.Spec.Selector.DeepCopy()
-	}
-
-	deploymentConfig, err := c.defaultOptions(cpContext, &deployment.Spec.Template, deployment.Spec.Replicas, existingResources)
-	if err != nil {
-		return err
-	}
-	deploymentConfig.ApplyTo(deployment)
-	return nil
-}
-
-func (c *controlPlaneWorkload) applyOptionsToStatefulSet(cpContext ControlPlaneContext, statefulSet *appsv1.StatefulSet, oldStatefulSet *appsv1.StatefulSet) error {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldStatefulSet.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-	// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
-	if oldStatefulSet.Spec.Selector != nil {
-		statefulSet.Spec.Selector = oldStatefulSet.Spec.Selector.DeepCopy()
-	}
-
-	deploymentConfig, err := c.defaultOptions(cpContext, &statefulSet.Spec.Template, statefulSet.Spec.Replicas, existingResources)
-	if err != nil {
-		return err
-	}
-	deploymentConfig.ApplyToStatefulSet(statefulSet)
 	return nil
 }

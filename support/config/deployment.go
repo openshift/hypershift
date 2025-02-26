@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -173,6 +174,18 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
 	c.ResourceRequestOverrides.ApplyRequestsTo(sts.Name, &sts.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
+}
+
+func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
+	c.Scheduling.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.SecurityContexts.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.LivenessProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.ReadinessProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.Resources.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(cronJob.Name, &cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.AdditionalLabels.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta)
+	c.AdditionalAnnotations.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta)
 }
 
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {

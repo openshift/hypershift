@@ -4,19 +4,20 @@ import (
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type controlPlaneWorkloadBuilder[T client.Object] struct {
-	workload *controlPlaneWorkload
+	workload *controlPlaneWorkload[T]
 }
 
 func NewDeploymentComponent(name string, opts ComponentOptions) *controlPlaneWorkloadBuilder[*appsv1.Deployment] {
 	return &controlPlaneWorkloadBuilder[*appsv1.Deployment]{
-		workload: &controlPlaneWorkload{
+		workload: &controlPlaneWorkload[*appsv1.Deployment]{
 			name:             name,
-			workloadType:     deploymentWorkloadType,
+			workloadProvider: &deploymentProvider{},
 			ComponentOptions: opts,
 		},
 	}
@@ -24,18 +25,26 @@ func NewDeploymentComponent(name string, opts ComponentOptions) *controlPlaneWor
 
 func NewStatefulSetComponent(name string, opts ComponentOptions) *controlPlaneWorkloadBuilder[*appsv1.StatefulSet] {
 	return &controlPlaneWorkloadBuilder[*appsv1.StatefulSet]{
-		workload: &controlPlaneWorkload{
+		workload: &controlPlaneWorkload[*appsv1.StatefulSet]{
 			name:             name,
-			workloadType:     statefulSetWorkloadType,
+			workloadProvider: &statefulSetProvider{},
+			ComponentOptions: opts,
+		},
+	}
+}
+
+func NewCronJobComponent(name string, opts ComponentOptions) *controlPlaneWorkloadBuilder[*batchv1.CronJob] {
+	return &controlPlaneWorkloadBuilder[*batchv1.CronJob]{
+		workload: &controlPlaneWorkload[*batchv1.CronJob]{
+			name:             name,
+			workloadProvider: &cronJobProvider{},
 			ComponentOptions: opts,
 		},
 	}
 }
 
 func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
-	b.workload.adapt = func(cpContext WorkloadContext, obj client.Object) error {
-		return adapt(cpContext, obj.(T))
-	}
+	b.workload.adapt = adapt
 	return b
 }
 

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-operator
+spec:
+  strategy:
+    type: RollingUpdate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-operator
+  template:
+    metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
+      labels:
+        app: catalog-operator
+    spec:
+      containers:
+        - name: catalog-operator
+          volumeMounts:
+            - name: srv-cert
+              mountPath: "/srv-cert"
+              readOnly: true
+            - name: profile-collector
+              mountPath: "/client-ca"
+              readOnly: true
+            - mountPath: /etc/openshift/kubeconfig
+              name: kubeconfig
+              readOnly: true
+          command:
+            - /bin/catalog
+          args:
+            - --namespace
+            - openshift-marketplace
+            - --configmapServerImage=$(OPERATOR_REGISTRY_IMAGE)
+            - --opmImage=$(OPERATOR_REGISTRY_IMAGE)
+            - --util-image
+            - $(OLM_OPERATOR_IMAGE)
+            - --writeStatusName
+            - operator-lifecycle-manager-catalog
+            - --tls-cert
+            - /srv-cert/tls.crt
+            - --tls-key
+            - /srv-cert/tls.key
+            - --client-ca
+            - /client-ca/ca.crt
+            - --kubeconfig
+            - /etc/openshift/kubeconfig/kubeconfig
+          image: operator-lifecycle-manager
+          ports:
+            - containerPort: 8443
+              name: metrics
+          livenessProbe:
+            initialDelaySeconds: 60
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8443
+              scheme: HTTPS
+          terminationMessagePolicy: FallbackToLogsOnError
+          resources:
+            requests:
+              cpu: 10m
+              memory: 80Mi
+          env:
+            - name: RELEASE_VERSION
+              value: RELEASE_VERSION
+            - name: KUBECONFIG
+              value: /etc/openshift/kubeconfig/kubeconfig
+            - name: OLM_OPERATOR_IMAGE
+              value: OLM_OPERATOR_IMAGE
+            - name: OPERATOR_REGISTRY_IMAGE
+              value: OPERATOR_REGISTRY_IMAGE
+            - name: GRPC_PROXY
+              value: socks5://127.0.0.1:8090
+            - name: NO_PROXY
+              value: kube-apiserver,redhat-operators,certified-operators,community-operators,redhat-marketplace
+      volumes:
+        - name: srv-cert
+          secret:
+            defaultMode: 0640
+            secretName: catalog-operator-serving-cert
+        - name: profile-collector
+          secret:
+            defaultMode: 0640
+            secretName: metrics-client
+        - name: kubeconfig
+          secret:
+            defaultMode: 0640
+            secretName: service-network-admin-kubeconfig
