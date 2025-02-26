@@ -15,7 +15,7 @@ import (
 )
 
 type WorkloadProvider[T client.Object] interface {
-	// NewObject returns a new object of the generic type. This is useful when gettting/deleting the workload.
+	// NewObject returns a new object of the generic type. This is useful when getting/deleting the workload.
 	NewObject() T
 	// LoadManifest know how to load the correct workload manifest and return a workload object of the correct type.
 	LoadManifest(componentName string) (T, error)
@@ -24,7 +24,7 @@ type WorkloadProvider[T client.Object] interface {
 	PodTemplateSpec(object T) *corev1.PodTemplateSpec
 	// PodTemplateSpec knows how to extract replicas field from the given workload object.
 	Replicas(object T) *int32
-	// ApplyOptionsTo knows how to apply the gived deploymentConfig options to the given workload object.
+	// ApplyOptionsTo knows how to apply the given deploymentConfig options to the given workload object.
 	// TODO(Mulham): remove all usage of deploymentConfig in cpov2 and remove this function eventually.
 	ApplyOptionsTo(cpContext ControlPlaneContext, object T, oldObject T, deploymentConfig *config.DeploymentConfig)
 
