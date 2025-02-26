@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
@@ -86,6 +88,8 @@ func run(ctx context.Context) error {
 	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePool{})
 	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePoolList{})
 
+	hyperkarpenterv1.AddToScheme(scheme)
+
 	managementCluster, err := cluster.New(managementKubeconfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
@@ -124,6 +128,13 @@ func run(ctx context.Context) error {
 
 	mac := karpenter.MachineApproverController{}
 	if err := mac.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
+	encr := nodeclass.EC2NodeClassReconciler{
+		Namespace: namespace,
+	}
+	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 
