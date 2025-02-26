@@ -63,8 +63,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
-	flags.StringVar(&opts.KMSClientID, "kms-client-id", opts.KMSClientID, "The client ID of a managed identity used in KMS to authenticate to Azure.")
-	flags.StringVar(&opts.KMSCertName, "kms-cert-name", opts.KMSCertName, "The backing certificate name related to the managed identity used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KMSUserAssignedCredsFile, "kms-credentials-file", opts.KMSUserAssignedCredsFile, "Path to a file containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
@@ -89,8 +88,7 @@ type RawCreateOptions struct {
 	ResourceGroupTags                map[string]string
 	SubnetID                         string
 	RHCOSImage                       string
-	KMSClientID                      string
-	KMSCertName                      string
+	KMSUserAssignedCredsFile         string
 	TechPreviewEnabled               bool
 	DNSZoneRGName                    string
 	ManagedIdentitiesFile            string
@@ -127,14 +125,6 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
-	}
-
-	if o.KMSClientID != "" && o.KMSCertName == "" {
-		return nil, fmt.Errorf("flag --kms-cert-name is required when using --kms-client-id")
-	}
-
-	if o.KMSClientID == "" && o.KMSCertName != "" {
-		return nil, fmt.Errorf("flag --kms-client-id is required when using --kms-cert-name")
 	}
 
 	if o.ManagedIdentitiesFile == "" {
@@ -297,9 +287,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
-			ClientID:        o.KMSClientID,
-			CertificateName: o.KMSCertName,
-			ObjectEncoding:  ObjectEncoding,
+			CredentialsSecretName: o.KMSUserAssignedCredsFile,
+			ObjectEncoding:        ObjectEncoding,
 		}
 	}
 

@@ -94,7 +94,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
-	"github.com/openshift/hypershift/support/filewatcher"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
@@ -116,7 +115,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	azureutil "github.com/Azure/go-autorest/autorest/azure"
 	"github.com/Azure/msi-dataplane/pkg/dataplane"
@@ -3131,7 +3129,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 				// Reconcile the SecretProviderClass
 				kmsSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
 				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
-					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
+					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS, true)
 					return nil
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
@@ -5588,56 +5586,12 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	// Retrieve the KMS certificate
-	certPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CertificateName
-	certsContent, err := os.ReadFile(certPath)
-	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            "Failed to retrieve KMS authentication certificate",
-			Reason:             err.Error(),
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-
-	// Watch the KMS certificate for changes; if the certificate changes, the pod will be restarted
-	err = filewatcher.WatchFileForChanges(certPath)
-	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            "Failed to watch KMS authentication certificate for changes",
-			Reason:             err.Error(),
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-
-	// Authenticate to Azure with the certificate
-	parsedCertificate, key, err := azidentity.ParseCertificates(certsContent, nil)
-	if err != nil {
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAzureKMSConfig),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionFalse,
-			Message:            "Failed to parse KMS authentication certificate",
-			Reason:             err.Error(),
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		return
-	}
-
-	options := &azidentity.ClientCertificateCredentialOptions{
-		SendCertificateChain: true,
-	}
-	cred, err := azidentity.NewClientCertificateCredential(hcp.Spec.Platform.Azure.TenantID, hcp.Spec.SecretEncryption.KMS.Azure.KMS.ClientID, parsedCertificate, key, options)
+	// Retrieve the KMS UserAssignedCredentials path
+	credentialsPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-			fmt.Sprintf("failed to obtain azure client credential: %v", err))
+			fmt.Sprintf("failed to obtain azure client credentials: %v", err))
 		return
 	}
 
