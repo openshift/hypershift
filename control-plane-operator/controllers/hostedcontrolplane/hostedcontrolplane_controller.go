@@ -78,6 +78,7 @@ import (
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
+	pkioperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/pkioperator"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
@@ -231,6 +232,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 func (r *HostedControlPlaneReconciler) registerComponents() {
 	r.components = append(r.components,
+		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
@@ -1072,10 +1074,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			return fmt.Errorf("failed to reconcile PKI: %w", err)
 		}
 
-		r.Log.Info("Reconciling Control Plane PKI Operator")
-		if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
-			return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
+		if !r.IsCPOV2 {
+			r.Log.Info("Reconciling Control Plane PKI Operator")
+			if err := r.reconcileControlPlanePKIOperator(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, openShiftTrustedCABundleConfigMapForCPOExists, r.CertRotationScale); err != nil {
+				return fmt.Errorf("failed to reconcile control plane pki operator: %w", err)
+			}
 		}
+
 	}
 
 	// Reconcile etcd
