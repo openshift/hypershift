@@ -138,8 +138,12 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
 			}
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
 		}
-		platform = openstack.New(capiImageProvider, orcImage)
+		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
