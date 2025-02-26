@@ -22,6 +22,8 @@ import (
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -31,12 +33,14 @@ const (
 type OpenStack struct {
 	capiProviderImage string
 	orcImage          string
+	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string, orcImage string) *OpenStack {
+func New(capiProviderImage string, orcImage string, payloadVersion *semver.Version) *OpenStack {
 	return &OpenStack{
 		capiProviderImage: capiProviderImage,
 		orcImage:          orcImage,
+		payloadVersion:    payloadVersion,
 	}
 }
 
@@ -181,7 +185,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 	}
 	allowPrivilegeEscalation := false
 	defaultMode := int32(0640)
-	return &appsv1.DeploymentSpec{
+	deploymentSpec := appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
@@ -204,7 +208,9 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
-						"--v=2",
+						// We need to set the log level to 4 to get the logs from ORC.
+						// Once ORC follows logging guidelines, we should use V(2) again.
+						"--v=4",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
@@ -252,66 +258,77 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 							},
 						},
 					},
-				}, {
-					Name:            "orc-manager",
-					Image:           orcImage,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Command:         []string{"/manager"},
-					Args: []string{
-						"--namespace=$(MY_NAMESPACE)",
-						"--leader-elect",
-						"--health-probe-bind-address=:8081",
-					},
-					SecurityContext: &corev1.SecurityContext{
-						AllowPrivilegeEscalation: &allowPrivilegeEscalation,
-						Capabilities: &corev1.Capabilities{
-							Drop: []corev1.Capability{
-								"ALL",
-							},
-						},
-					},
-					LivenessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							HTTPGet: &corev1.HTTPGetAction{
-								Path: "/healthz",
-								Port: intstr.FromInt(8081),
-							},
-						},
-						InitialDelaySeconds: 15,
-						PeriodSeconds:       20,
-					},
-					ReadinessProbe: &corev1.Probe{
-						ProbeHandler: corev1.ProbeHandler{
-							HTTPGet: &corev1.HTTPGetAction{
-								Path: "/readyz",
-								Port: intstr.FromInt(8081),
-							},
-						},
-						InitialDelaySeconds: 5,
-						PeriodSeconds:       10,
-					},
-					Resources: corev1.ResourceRequirements{
-						Limits: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("500m"),
-							corev1.ResourceMemory: resource.MustParse("128Mi"),
-						},
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("64Mi"),
-						},
-					},
-					Env: []corev1.EnvVar{
-						{
-							Name: "MY_NAMESPACE",
-							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{
-									FieldPath: "metadata.namespace",
-								},
-							},
-						},
-					},
 				}},
-			}}}, nil
+			}},
+	}
+
+	// Add the ORC manager container if the payload version is 4.19 or later
+	// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
+	if a.payloadVersion != nil && a.payloadVersion.Major == 4 && a.payloadVersion.Minor >= 19 {
+		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
+			Name:            "orc-manager",
+			Image:           orcImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/manager"},
+			Args: []string{
+				"--namespace=$(MY_NAMESPACE)",
+				"--leader-elect",
+				"--health-probe-bind-address=:8081",
+				"--zap-log-level=4",
+			},
+			SecurityContext: &corev1.SecurityContext{
+				AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{
+						"ALL",
+					},
+				},
+			},
+			LivenessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/healthz",
+						Port: intstr.FromInt(8081),
+					},
+				},
+				InitialDelaySeconds: 15,
+				PeriodSeconds:       20,
+			},
+			ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/readyz",
+						Port: intstr.FromInt(8081),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       10,
+			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("128Mi"),
+				},
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "MY_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+			},
+		},
+		)
+	}
+
+	return &deploymentSpec, nil
 }
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
@@ -402,14 +419,14 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ipaddresses", "ipaddresses/status"},
 			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
+		// The following rule is required for CAPO to reconcile the Images resources created by ORC,
 		// which is a dependency since CAPO v0.11.0.
 		// This rule is also defined in the Hypershift Operator and the Hypershift CLI when creating
 		// the cluster.
 		{
 			APIGroups: []string{"openstack.k-orc.cloud"},
-			Resources: []string{"images"},
-			Verbs:     []string{"list", "watch"},
+			Resources: []string{"images", "images/status"},
+			Verbs:     []string{rbacv1.VerbAll},
 		},
 	}
 }

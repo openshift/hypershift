@@ -40,9 +40,9 @@ rules:
   - openstack.k-orc.cloud
   resources:
   - images
+  - images/status
   verbs:
-  - list
-  - watch
+  - '*'
 ---
 apiVersion: v1
 data:
