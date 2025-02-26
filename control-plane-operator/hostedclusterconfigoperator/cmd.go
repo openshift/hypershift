@@ -241,10 +241,21 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		kubevirtInfraConfig = cpConfig
 	}
 
-	var imageRegistryOverrides map[string][]string
+	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
 		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	}
+	if len(o.registryOverrides) > 0 {
+		if imageRegistryOverrides == nil {
+			imageRegistryOverrides = map[string][]string{}
+		}
+		for registry, override := range o.registryOverrides {
+			if _, exists := imageRegistryOverrides[registry]; !exists {
+				imageRegistryOverrides[registry] = []string{}
+			}
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+		}
 	}
 
 	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
@@ -304,7 +315,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthPort:             o.OAuthPort,
 		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		EnableCIDebugOutput:   o.enableCIDebugOutput,
-		ImageMetaDataProvider: *imageMetaDataProvider,
+		ImageMetaDataProvider: imageMetaDataProvider,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)
