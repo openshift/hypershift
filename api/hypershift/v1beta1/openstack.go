@@ -136,6 +136,12 @@ type OpenStackPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="floatingIP must be a valid IPv4 or IPv6 address"
 	// +optional
 	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
+
+	// KASPortID is the ID of a pre-existing port to use for the API server VIP.
+	//
+	// +kubebuilder:validation:Format:=uuid
+	// +optional
+	KASPortID string `json:"kasPortID,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure

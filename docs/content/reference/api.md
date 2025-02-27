@@ -9448,6 +9448,18 @@ balancer.
 This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>kasPortID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KASPortID is the ID of a pre-existing port to use for the API server VIP.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }

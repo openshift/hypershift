@@ -74,6 +74,13 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 		} else {
 			svc.Spec.Type = corev1.ServiceTypeClusterIP
 		}
+		if hcp.Spec.Platform.Type == hyperv1.OpenStackPlatform && hcp.Spec.Platform.OpenStack != nil && hcp.Spec.Platform.OpenStack.KASPortID != "" {
+			// https://github.com/kubernetes/cloud-provider-openstack/blob/master/docs/openstack-cloud-controller-manager/expose-applications-using-loadbalancer-type-service.md#service-annotations
+			svc.Annotations["loadbalancer.openstack.org/port-id"] = hcp.Spec.Platform.OpenStack.KASPortID
+			// the loadbalancer VIP won't be associated with a floating IP.
+			// This is a hack now for the PoC; we need to design it properly, because this is very opinionated.
+			svc.Annotations["service.beta.kubernetes.io/openstack-internal-load-balancer"] = "true"
+		}
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {

@@ -45,6 +45,12 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
 	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
+	flags.StringVar(&opts.OpenStackNetworkID, "openstack-network-id", opts.OpenStackNetworkID, "ID of a pre-existing OpenStack network to use for the cluster (optional)")
+	flags.StringSliceVar(&opts.OpenStackSubnetIDs, "openstack-subnet-ids", opts.OpenStackSubnetIDs, "List of pre-existing OpenStack subnets IDs to use for the cluster. All subnets must "+
+		"be in the network specified by --openstack-network-id. There can be zero, one, or two subnets. If this option is not used, all subnets in the network will be used. "+
+		"If 2 subnets are specified, one must be IPv4 and the other IPv6 (optional)")
+	flags.StringVar(&opts.OpenStackRouterID, "openstack-router-id", opts.OpenStackRouterID, "ID of a pre-existing OpenStack router to use for the cluster (optional)")
+	flags.StringVar(&opts.OpenStackKASPortID, "openstack-kas-port-id", opts.OpenStackKASPortID, "ID of a pre-existing OpenStack port to use for the Kubernetes API server (optional)")
 }
 
 type RawCreateOptions struct {
@@ -54,6 +60,10 @@ type RawCreateOptions struct {
 	OpenStackExternalNetworkID string
 	OpenStackIngressFloatingIP string
 	OpenStackDNSNameservers    []string
+	OpenStackNetworkID         string
+	OpenStackSubnetIDs         []string
+	OpenStackRouterID          string
+	OpenStackKASPortID         string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -134,6 +144,10 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
+	if err := validateNetworkingOpts(o); err != nil {
+		return nil, err
+	}
+
 	if opts.ExternalDNSDomain != "" {
 		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
 		opts.Log.Error(err, "Failed to create cluster")
@@ -192,6 +206,28 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 	// * To inform CCM the preferred subnet for kubelet's NodeIPs.
 	if len(cluster.Spec.Networking.MachineNetwork) == 0 {
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(config.DefaultMachineNetwork)}}
+	}
+
+	if o.OpenStackKASPortID != "" {
+		cluster.Spec.Platform.OpenStack.KASPortID = o.OpenStackKASPortID
+	}
+
+	// Bring Your Own Network (BYON) support
+	if o.OpenStackNetworkID != "" {
+		cluster.Spec.Platform.OpenStack.Network = &hyperv1.NetworkParam{
+			ID: &o.OpenStackNetworkID,
+		}
+	}
+	if len(o.OpenStackSubnetIDs) > 0 {
+		cluster.Spec.Platform.OpenStack.Subnets = make([]hyperv1.SubnetParam, len(o.OpenStackSubnetIDs))
+		for i, subnetID := range o.OpenStackSubnetIDs {
+			cluster.Spec.Platform.OpenStack.Subnets[i] = hyperv1.SubnetParam{ID: &subnetID}
+		}
+	}
+	if o.OpenStackRouterID != "" {
+		cluster.Spec.Platform.OpenStack.Router = &hyperv1.RouterParam{
+			ID: &o.OpenStackRouterID,
+		}
 	}
 
 	return nil
@@ -377,4 +413,17 @@ func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte,
 	}
 
 	return cloudsYAML, caCert, nil
+}
+
+func validateNetworkingOpts(opts *RawCreateOptions) error {
+	if len(opts.OpenStackSubnetIDs) > 2 {
+		return fmt.Errorf("only 0, 1 or 2 subnets can be specified")
+	}
+	if len(opts.OpenStackSubnetIDs) > 0 && opts.OpenStackNetworkID == "" {
+		return fmt.Errorf("network ID must be specified when specifying subnet IDs")
+	}
+	if opts.OpenStackRouterID != "" && opts.OpenStackNetworkID == "" {
+		return fmt.Errorf("network ID must be specified when specifying router ID")
+	}
+	return nil
 }
