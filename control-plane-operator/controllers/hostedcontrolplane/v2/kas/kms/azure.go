@@ -8,6 +8,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +18,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"k8s.io/utils/ptr"
+
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
 const (
@@ -241,4 +245,10 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 			},
 		},
 	}
+}
+
+func AdaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
+	managedIdentity := cpContext.HCP.Spec.SecretEncryption.KMS.Azure.KMS
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity, true)
+	return nil
 }
