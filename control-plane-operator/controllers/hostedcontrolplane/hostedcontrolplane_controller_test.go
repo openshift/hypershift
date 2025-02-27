@@ -68,7 +68,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
-	"github.com/opencontainers/go-digest"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -1676,9 +1675,6 @@ func TestControlPlaneComponents(t *testing.T) {
 				},
 			},
 			Manifest: fakeimagemetadataprovider.FakeManifest{},
-		},
-		DigestLister: func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error) {
-			return "", nil
 		},
 		HCP:           hcp,
 		SkipPredicate: true,

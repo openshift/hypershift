@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -56,11 +55,6 @@ func (c *catalogOptions) adaptCatalogDeployment(cpContext component.WorkloadCont
 	return nil
 }
 
-var (
-	olmCatalogImagesOnce sync.Once
-	catalogImages        map[string]string
-)
-
 func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityImageStream bool) (map[string]string, error) {
 	hcp := cpContext.HCP
 	catalogOverrides := map[string]string{
@@ -84,16 +78,12 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 		return nil, nil
 	}
 
-	isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(hcp.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
-
 	pullSecret := common.PullSecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	olmCatalogImagesOnce.Do(func() {
-		catalogImages, err = getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
-	})
+	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return nil, fmt.Errorf("failed to get catalog images: %w", err)
 	}
@@ -104,22 +94,11 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 			return nil, fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
 		}
 
-		if len(isImageRegistryOverrides) > 0 {
-			for registrySource, registryDest := range isImageRegistryOverrides {
-				if strings.Contains(imageRef.Exact(), registrySource) {
-					imageRef, err = reference.Parse(strings.Replace(imageRef.Exact(), registrySource, registryDest[0], 1))
-					if err != nil {
-						return nil, fmt.Errorf("failed to parse registry override image %s: %w", registryDest[0], err)
-					}
-				}
-			}
-		}
-
-		listDigest, err := cpContext.DigestLister(cpContext, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
+		digest, _, err := cpContext.ImageMetadataProvider.GetDigest(cpContext, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
 			return nil, fmt.Errorf("failed to get manifest for image %s: %v", imageRef.Exact(), err)
 		}
-		imageRef.ID = listDigest.String()
+		imageRef.ID = digest.String()
 
 		catalogOverrides[name] = imageRef.Exact()
 	}
@@ -128,6 +107,8 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 }
 
 func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte) (map[string]string, error) {
+	registryOverrides := util.ConvertImageRegistryOverrideStringToMap(cpContext.HCP.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
+
 	imageRef := cpContext.HCP.Spec.ReleaseImage
 	imageConfig, _, _, err := cpContext.ImageMetadataProvider.GetMetadata(cpContext, imageRef, pullSecret)
 	if err != nil {
@@ -139,17 +120,38 @@ func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte) (m
 		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
 	}
 
+	registries := []string{
+		"registry.redhat.io/redhat",
+	}
+	if len(registryOverrides) > 0 {
+		for registrySource, registryDest := range registryOverrides {
+			if registries[0] == registrySource {
+				registries = registryDest
+				break
+			}
+		}
+	}
+
 	//check catalogs of last 4 supported version in case new version is not available
 	supportedVersions := 4
+	imageRegistry := ""
 	for i := 0; i < supportedVersions; i++ {
-		_, err = cpContext.DigestLister(cpContext, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)
-		if err == nil {
-			break
+		for _, registry := range registries {
+			testImage := fmt.Sprintf("%s/certified-operator-index:v%d.%d", registry, version.Major, version.Minor)
+
+			_, dockerImage, err := cpContext.ImageMetadataProvider.GetDigest(cpContext, testImage, pullSecret)
+			if err == nil {
+				imageRegistry = fmt.Sprintf("%s/%s", dockerImage.Registry, dockerImage.Namespace)
+				break
+			}
+
+			// Manifest unknown error is expected if the image is not available.
+			if !strings.Contains(err.Error(), "manifest unknown") {
+				return nil, err // Return if it's an unexpected error
+			}
 		}
-		//manifest unknown error is expected if the image is not available.
-		//If the all supported versions are checked and the image is still not available, return the error
-		if !strings.Contains(err.Error(), "manifest unknown") {
-			return nil, err
+		if imageRegistry != "" {
+			break
 		}
 		if i == supportedVersions-1 {
 			return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
@@ -158,10 +160,10 @@ func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte) (m
 	}
 
 	operators := map[string]string{
-		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%d.%d", version.Major, version.Minor),
-		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%d.%d", version.Major, version.Minor),
-		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%d.%d", version.Major, version.Minor),
-		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor),
+		"certified-operators": fmt.Sprintf("%s/certified-operator-index:v%d.%d", imageRegistry, version.Major, version.Minor),
+		"community-operators": fmt.Sprintf("%s/community-operator-index:v%d.%d", imageRegistry, version.Major, version.Minor),
+		"redhat-marketplace":  fmt.Sprintf("%s/redhat-marketplace-index:v%d.%d", imageRegistry, version.Major, version.Minor),
+		"redhat-operators":    fmt.Sprintf("%s/redhat-operator-index:v%d.%d", imageRegistry, version.Major, version.Minor),
 	}
 
 	return operators, nil

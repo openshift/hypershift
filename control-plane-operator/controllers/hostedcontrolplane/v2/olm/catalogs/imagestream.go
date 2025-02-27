@@ -2,12 +2,10 @@ package catalogs
 
 import (
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	component "github.com/openshift/hypershift/support/controlplane-component"
-	"github.com/openshift/hypershift/support/util"
 
 	imagev1 "github.com/openshift/api/image/v1"
 
@@ -33,16 +31,12 @@ func adaptImageStream(cpContext component.WorkloadContext, imageStream *imagev1.
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	var err error
-	olmCatalogImagesOnce.Do(func() {
-		catalogImages, err = getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
-	})
+	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
 	if err != nil {
 		return fmt.Errorf("failed to get catalog images: %w", err)
 	}
 
-	isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(cpContext.HCP.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
-	for name, image := range getCatalogToImageWithISImageRegistryOverrides(catalogImages, isImageRegistryOverrides) {
+	for name, image := range catalogImages {
 		imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
 			Name: name,
 			From: &corev1.ObjectReference{
@@ -60,22 +54,4 @@ func adaptImageStream(cpContext component.WorkloadContext, imageStream *imagev1.
 	}
 
 	return nil
-}
-
-// getCatalogToImageWithISImageRegistryOverrides returns a map of
-// images to be used for the catalog registries where the image address got
-// amended according to OpenShiftImageRegistryOverrides as set on the HostedControlPlaneReconciler
-func getCatalogToImageWithISImageRegistryOverrides(catalogToImage map[string]string, isImageRegistryOverrides map[string][]string) map[string]string {
-	catalogWithOverride := make(map[string]string)
-	for name, image := range catalogToImage {
-		for registrySource, registryDest := range isImageRegistryOverrides {
-			if strings.Contains(image, registrySource) {
-				for _, registryReplacement := range registryDest {
-					image = strings.Replace(image, registrySource, registryReplacement, 1)
-				}
-			}
-		}
-		catalogWithOverride[name] = image
-	}
-	return catalogWithOverride
 }

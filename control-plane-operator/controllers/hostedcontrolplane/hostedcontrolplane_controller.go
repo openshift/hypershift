@@ -1019,7 +1019,6 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		ImageMetadataProvider:     r.ImageMetadataProvider,
-		DigestLister:              registryclient.GetListDigest,
 	}
 
 	var errs []error
