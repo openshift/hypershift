@@ -131,12 +131,6 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				InstanceStorePolicy: ptr.To(awskarpenterv1.InstanceStorePolicyRAID0),
 				DetailedMonitoring:  ptr.To(true),
-				MetadataOptions: &awskarpenterv1.MetadataOptions{
-					HTTPEndpoint:            ptr.To("disabled"),
-					HTTPProtocolIPv6:        ptr.To("disabled"),
-					HTTPTokens:              ptr.To("required"),
-					HTTPPutResponseHopLimit: ptr.To[int64](1),
-				},
 			},
 		},
 	}

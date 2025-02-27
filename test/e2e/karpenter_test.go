@@ -95,7 +95,7 @@ func TestKarpenter(t *testing.T) {
 		g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
 
 		ec2NodeClass := ec2NodeClassList.Items[0]
-		g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead"))
+		g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 
 		// TODO(alberto): increase coverage:
 		// - Karpenter operator plumbing, e.g:
