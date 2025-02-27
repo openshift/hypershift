@@ -33,7 +33,7 @@ places the CLI tool within the `/usr/local/bin` directory.
   
 ```shell
 podman run --rm --privileged -it -v \
-$PWD:/output docker.io/library/golang:1.22 /bin/bash -c \
+$PWD:/output docker.io/library/golang:1.23 /bin/bash -c \
 'git clone https://github.com/openshift/hypershift.git && \
 cd hypershift/ && \
 make hypershift product-cli && \
