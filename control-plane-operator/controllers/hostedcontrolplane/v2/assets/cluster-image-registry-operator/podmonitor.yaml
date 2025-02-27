@@ -1,0 +1,23 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cluster-image-registry-operator
+spec:
+  podMetricsEndpoints:
+  - bearerTokenSecret:
+      key: ""
+      name: ""
+    interval: 60s
+    path: /metrics
+    port: metrics
+    scheme: https
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert: {}
+      serverName: cluster-image-registry-operator
+  selector:
+    matchLabels:
+      name: cluster-image-registry-operator

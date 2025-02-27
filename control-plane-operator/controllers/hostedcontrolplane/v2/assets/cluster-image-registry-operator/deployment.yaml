@@ -1,0 +1,150 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-image-registry-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-image-registry-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        name: cluster-image-registry-operator
+    spec:
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+
+          while true; do
+             if [[ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
+                break
+             fi
+             echo "Waiting for client token"
+             sleep 2
+          done
+
+          echo "openshift-image-registry" > "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+          cp "/etc/certificate/ca/ca.crt" "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          export KUBERNETES_SERVICE_HOST=kube-apiserver
+          export KUBERNETES_SERVICE_PORT=$KUBE_APISERVER_SERVICE_PORT
+
+          while true; do
+            if curl --fail --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/apis/config.openshift.io/v1/featuregates" &> /dev/null; then
+              break
+            fi
+            echo "Waiting for access to featuregates resource"
+            sleep 2
+          done
+
+          exec /usr/bin/cluster-image-registry-operator \
+            --files="/etc/secrets/tls.crt" \
+            --files="/etc/secrets/tls.key"
+        command:
+        - /bin/bash
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: WATCH_NAMESPACE
+          value: openshift-image-registry
+        - name: OPERATOR_NAME
+          value: cluster-image-registry-operator
+        - name: OPERATOR_IMAGE
+          value: ""
+        - name: IMAGE
+          value: ""
+        - name: IMAGE_PRUNER
+          value: ""
+        - name: AZURE_ENVIRONMENT_FILEPATH
+          value: /tmp/azurestackcloud.json
+        - name: OPERATOR_IMAGE_VERSION
+          value: ""
+        image: cluster-image-registry-operator
+        name: cluster-image-registry-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: client-token
+        - mountPath: /etc/secrets
+          name: serving-cert
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: web-identity-token
+      - args:
+        - --service-account-namespace
+        - openshift-image-registry
+        - --service-account-name
+        - cluster-image-registry-operator
+        - --token-file
+        - /var/client-token/token
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        name: client-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /var/client-token
+          name: client-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
+      - args:
+        - --service-account-namespace
+        - openshift-image-registry
+        - --service-account-name
+        - cluster-image-registry-operator
+        - --token-file
+        - /var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        name: token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: web-identity-token
+      priorityClassName: hypershift-control-plane
+      volumes:
+      - emptyDir: {}
+        name: client-token
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: cluster-image-registry-operator
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: ca-bundle
+        secret:
+          defaultMode: 416
+          secretName: root-ca
+      - emptyDir: {}
+        name: web-identity-token
