@@ -1,0 +1,74 @@
+
+name: test
+on: [push]
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: setup go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: test
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # Needed for GitHub badge storer integration test
+        run: go test -race -count=1 -failfast -shuffle=on -coverprofile=cover.out -covermode=atomic -coverpkg=./... ./...
+
+      - name: upload cover profile artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cover.out
+          path: cover.out
+          if-no-files-found: error
+  
+  check-coverage:
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+
+      - name: download artifact (main.breakdown)
+        id: download-main-breakdown
+        uses: dawidd6/action-download-artifact@v8
+        with:
+          branch: main
+          workflow_conclusion: success
+          name: main.breakdown
+          if_no_artifact_found: fail
+
+      - name: check test coverage
+        id: coverage
+        uses: vladopajic/go-test-coverage@v2
+        continue-on-error: true # Should fail after coverage comment is posted
+        with:
+          config: .testcoverage.yml
+          git-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: upload artifact (main.breakdown)
+        uses: actions/upload-artifact@v4
+        with:
+          name: main.breakdown
+          path: main.breakdown
+          if-no-files-found: error
+      - name: post coverage report
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          comment-tag: coverage-report
+          message: |
+            go-test-coverage report:
+            ``` 
+            ${{ fromJSON(steps.coverage.outputs.report) }}```
+
+      - name: "finally check coverage"
+        if: steps.coverage.outcome == 'failure'
+        shell: bash
+        run: echo "coverage check failed" && exit 1
