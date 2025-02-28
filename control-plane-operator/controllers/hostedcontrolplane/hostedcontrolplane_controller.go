@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -98,7 +97,6 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -143,8 +141,7 @@ const (
 )
 
 var (
-	olmCatalogImagesOnce sync.Once
-	catalogImages        map[string]string
+	catalogImages map[string]string
 )
 
 type HostedControlPlaneReconciler struct {
@@ -3948,23 +3945,16 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 			}
 
-			var getCatalogImagesErr error
-			olmCatalogImagesOnce.Do(func() {
-				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest, r.ImageMetadataProvider)
-				if err != nil {
-					getCatalogImagesErr = err
-					return
-				}
-			})
-			if getCatalogImagesErr != nil {
-				return fmt.Errorf("failed to get catalog images: %w", getCatalogImagesErr)
+			catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
+			if err != nil {
+				return fmt.Errorf("failed to get catalog images: %w", err)
 			}
 
 			if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 				if !overrideImages {
 					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides, catalogImages)
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, catalogImages)
 					}); err != nil {
 						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 					}
@@ -3981,22 +3971,11 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 							return fmt.Errorf("failed to parse catalog image %s: %w", catalog, err)
 						}
 
-						if len(isImageRegistryOverrides) > 0 {
-							for registrySource, registryDest := range isImageRegistryOverrides {
-								if strings.Contains(imageRef.Exact(), registrySource) {
-									imageRef, err = reference.Parse(strings.Replace(imageRef.Exact(), registrySource, registryDest[0], 1))
-									if err != nil {
-										return fmt.Errorf("failed to parse registry override image %s: %w", registryDest[0], err)
-									}
-								}
-							}
-						}
-
-						listDigest, err := registryclient.GetListDigest(ctx, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
+						digest, _, err := r.ImageMetadataProvider.GetDigest(ctx, imageRef.Exact(), pullSecret.Data[corev1.DockerConfigJsonKey])
 						if err != nil {
 							return fmt.Errorf("failed to get manifest for image %s: %v", imageRef.Exact(), err)
 						}
-						imageRef.ID = listDigest.String()
+						imageRef.ID = digest.String()
 
 						catalogOverrides := map[string]*string{
 							"redhat-operators":    &p.RedHatOperatorsCatalogImageOverride,

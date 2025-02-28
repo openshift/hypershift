@@ -391,6 +391,18 @@ func NewStartCommand() *cobra.Command {
 			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 		}
 
+		if len(registryOverrides) > 0 {
+			if imageRegistryOverrides == nil {
+				imageRegistryOverrides = map[string][]string{}
+			}
+			for registry, override := range registryOverrides {
+				if _, exists := imageRegistryOverrides[registry]; !exists {
+					imageRegistryOverrides[registry] = []string{}
+				}
+				imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+			}
+		}
+
 		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},

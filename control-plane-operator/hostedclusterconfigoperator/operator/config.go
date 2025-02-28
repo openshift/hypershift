@@ -28,7 +28,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -73,8 +72,7 @@ type HostedClusterConfigOperatorConfig struct {
 	OAuthPort                    int32
 	OperateOnReleaseImage        string
 	EnableCIDebugOutput          bool
-	ListDigestsFN                registryclient.DigestListerFN
-	ImageMetaDataProvider        util.RegistryClientImageMetadataProvider
+	ImageMetaDataProvider        util.ImageMetadataProvider
 
 	kubeClient kubeclient.Interface
 }
