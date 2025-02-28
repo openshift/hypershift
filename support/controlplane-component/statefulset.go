@@ -6,7 +6,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -20,24 +19,14 @@ var _ WorkloadProvider[*appsv1.StatefulSet] = &statefulSetProvider{}
 type statefulSetProvider struct {
 }
 
-// ApplyOptionsTo implements WorkloadProvider.
-func (s *statefulSetProvider) ApplyOptionsTo(cpContext ControlPlaneContext, object *appsv1.StatefulSet, oldObject *appsv1.StatefulSet, deploymentConfig *config.DeploymentConfig) {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldObject.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-	// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
-	if oldObject.Spec.Selector != nil {
-		object.Spec.Selector = oldObject.Spec.Selector.DeepCopy()
-	}
-
-	deploymentConfig.Resources = existingResources
-	deploymentConfig.ApplyToStatefulSet(object)
-}
-
 func (s *statefulSetProvider) NewObject() *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{}
+}
+
+// SetReplicasAndStrategy implements WorkloadProvider.
+func (d *statefulSetProvider) SetReplicasAndStrategy(object *appsv1.StatefulSet, replicas int32, isRequestServing bool) {
+	object.Spec.Replicas = ptr.To(replicas)
+	// TODO: should we set any default strategy for statefulsets?
 }
 
 // LoadManifest implements WorkloadProvider.

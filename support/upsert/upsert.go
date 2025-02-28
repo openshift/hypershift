@@ -349,6 +349,11 @@ func defaultDeploymentSpec(original, mutated *appsv1.DeploymentSpec) {
 		mutated.RevisionHistoryLimit = original.RevisionHistoryLimit
 	}
 
+	// Selector field is immutable, always preserve original Selector to avoid hot error loops.
+	if original.Selector != nil {
+		mutated.Selector = original.Selector
+	}
+
 	defaultPodSpec(&original.Template.Spec, &mutated.Template.Spec)
 }
 

@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   creationTimestamp: null
   labels:
-    hypershift.openshift.io/managed-by: control-plane-operator
+    hypershift.openshift.io/managed-by: control-plane-operator-v2
   name: kube-scheduler
   namespace: hcp-namespace
   ownerReferences:
