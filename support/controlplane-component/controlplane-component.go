@@ -11,7 +11,6 @@ import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -47,8 +46,6 @@ type ControlPlaneContext struct {
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 	// ImageMetadataProvider returns metadata for a given release image using the given pull secret.
 	ImageMetadataProvider util.ImageMetadataProvider
-	// DigestLister function returns the digest for a given release image using the given pull secret.
-	DigestLister registryclient.DigestListerFN
 
 	// InfraStatus contains all the information about the Hosted cluster's infra services.
 	InfraStatus infra.InfrastructureStatus
@@ -56,7 +53,7 @@ type ControlPlaneContext struct {
 	SetDefaultSecurityContext bool
 	// EnableCIDebugOutput enable extra debug logs.
 	EnableCIDebugOutput bool
-	// MetricsSet  sepcifies which metrics to use in the service/pod-monitors.
+	// MetricsSet  specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
@@ -72,7 +69,6 @@ type WorkloadContext struct {
 	ReleaseImageProvider     imageprovider.ReleaseImageProvider
 	UserReleaseImageProvider imageprovider.ReleaseImageProvider
 	ImageMetadataProvider    util.ImageMetadataProvider
-	DigestLister             registryclient.DigestListerFN
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
@@ -92,7 +88,6 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
-		DigestLister:              cp.DigestLister,
 	}
 }
 

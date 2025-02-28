@@ -27,7 +27,6 @@ import (
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/registry/client/transport"
-	"github.com/opencontainers/go-digest"
 )
 
 const (
@@ -439,26 +438,3 @@ func GetCorrectArchImage(ctx context.Context, component string, imageRef string,
 
 	return imageRef, nil
 }
-
-func GetListDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, error) {
-	repo, dockerImageRef, err := GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to get repo setup: %v", err)
-	}
-
-	var srcDigest digest.Digest
-	if len(dockerImageRef.ID) > 0 {
-		srcDigest = digest.Digest(dockerImageRef.ID)
-	} else if len(dockerImageRef.Tag) > 0 {
-		desc, err := repo.Tags(ctx).Get(ctx, dockerImageRef.Tag)
-		if err != nil {
-			return "", err
-		}
-		srcDigest = desc.Digest
-	} else {
-		return "", fmt.Errorf("no tag or digest specified")
-	}
-	return srcDigest, nil
-}
-
-type DigestListerFN = func(ctx context.Context, image string, pullSecret []byte) (digest.Digest, error)
