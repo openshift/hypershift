@@ -865,6 +865,7 @@ github.com/openshift/hypershift/api/certificates
 github.com/openshift/hypershift/api/certificates/v1alpha1
 github.com/openshift/hypershift/api/hypershift/v1beta1
 github.com/openshift/hypershift/api/ibmcapi
+github.com/openshift/hypershift/api/karpenter/v1beta1
 github.com/openshift/hypershift/api/scheduling
 github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs

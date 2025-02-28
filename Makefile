@@ -107,7 +107,7 @@ karpenter-operator:
 
 .PHONY: karpenter-api
 karpenter-api:
-	./karpenter-operator/controllers/karpenter/assets/adjust-cel.sh
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
 
 .PHONY: control-plane-operator
 control-plane-operator:
@@ -128,7 +128,7 @@ product-cli:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack karpenter-api api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)

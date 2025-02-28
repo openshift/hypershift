@@ -9,6 +9,7 @@ import (
 	"os"
 	"testing"
 
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -88,6 +89,13 @@ func TestKarpenter(t *testing.T) {
 
 		t.Logf("Waiting for Karpenter Nodes to come up")
 		_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 3, nodeLabels)
+
+		ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+		g.Expect(guestClient.List(ctx, ec2NodeClassList)).To(Succeed())
+		g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
+
+		ec2NodeClass := ec2NodeClassList.Items[0]
+		g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 
 		// TODO(alberto): increase coverage:
 		// - Karpenter operator plumbing, e.g:
