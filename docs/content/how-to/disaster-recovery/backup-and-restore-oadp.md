@@ -180,27 +180,6 @@ Once you create any of these DPA objects, several pods will be instantiated in t
         The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
     
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
-    
-    ### Manual actions before backup
-    
-    Before deploying the `backup` manifest, several actions are required:
-    
-    - Scale down the NodePool to 0 replicas.
-    
-        ```bash
-        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> scale nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --replicas 0
-        ```
-        
-        This will make the HostedCluster nodes to come back to the Infraenv in the Bare Metal provider or the instance deletion in the other ones.
-        
-    - Pause the HostedCluster and NodePools.
-        
-        ```bash
-        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch hostedcluster -n <HOSTEDCLUSTER NAMESPACE> <HOSTEDCLUSTER NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
-        oc --kubeconfig <MGMT-CLUSTER-KUBECONFIG> patch nodepool -n <HOSTEDCLUSTER NAMESPACE> <NODEPOOL NAME> --type json -p '[{"op": "add", "path": "/spec/pausedUntil", "value": "true"}]'
-        ```
-        
-        This will allow the controller to halt modifications over the ETCD.
         
     ### Control Plane backup
         
@@ -367,23 +346,33 @@ Once you create any of these DPA objects, several pods will be instantiated in t
         - clusters-hosted
         ```
 
-    !!! hint
-        By default, the HostedControlPlane namespace is `clusters-<hosted cluster name>`.
-    
-    - The boot image of the KubeVirt VMs, that are used as the hosted cluster nodes, are stored in huge PVCs. We don't 
-      need these PVCs because the VMs are going to be recreated as new VMs. We want tilter these PVCs out of the backup 
-      to gain meaningful reduce in backup time and storage size. We'll filter these PVC using this label selector:
-   
-        ```yaml
-        labelSelector:
-          matchExpressions:
-          - key: 'hypershift.openshift.io/is-kubevirt-rhcos'
-            operator: 'DoesNotExist'
-        ```
-    
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
-    
-    The backup process is considered complete when the `status.phase` is `Completed`.
+  - The boot image of the KubeVirt VMs, that are used as the hosted cluster nodes, are stored in huge PVCs. We don't 
+    need these PVCs because the VMs are going to be recreated as new VMs. We want tilter these PVCs out of the backup 
+    to gain meaningful reduce in backup time and storage size. We'll filter these PVC using this label selector:
+ 
+      ```yaml
+      labelSelector:
+        matchExpressions:
+        - key: 'hypershift.openshift.io/is-kubevirt-rhcos'
+          operator: 'DoesNotExist'
+      ```
+  
+  Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+  
+  The backup process is considered complete when the `status.phase` is `Completed`.
+
+!!! hint
+    By default, the HostedControlPlane namespace is `clusters-<hosted cluster name>`.
+
+
+!!! hint
+
+    You can use the `schedule.velero.io` resource to create scheduled backups of hosted control planes. 
+    Refer to this page for more information regarding scheduled backups: [Official Red Hat documentation](https://docs.openshift.com/container-platform/4.16/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-scheduling-backups-doc.html)
+
+
+!!! important
+    If you're running Red Hat Advanced Cluster Manager on the hosting cluster and using RHACM backups, you will still need to configure backups for hosted control planes. RHACM backups will capture objects helpful for restoration such as InfraEnv and ManagedCluster.
 
 ## Restore
 
