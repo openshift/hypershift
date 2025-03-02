@@ -17,10 +17,8 @@ limitations under the License.
 package v1
 
 import (
-	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 
 	"github.com/mitchellh/hashstructure/v2"
@@ -139,11 +137,6 @@ const (
 	DisruptionReasonDrifted       DisruptionReason = "Drifted"
 )
 
-var (
-	// WellKnownDisruptionReasons is a list of all valid reasons for disruption budgets.
-	WellKnownDisruptionReasons = []DisruptionReason{DisruptionReasonUnderutilized, DisruptionReasonEmpty, DisruptionReasonDrifted}
-)
-
 type Limits v1.ResourceList
 
 func (l Limits) ExceededBy(resources v1.ResourceList) error {
@@ -187,6 +180,8 @@ type NodeClaimTemplateSpec struct {
 	// +required
 	Requirements []NodeSelectorRequirementWithMinValues `json:"requirements" hash:"ignore"`
 	// NodeClassRef is a reference to an object that defines provider specific configuration
+	// +kubebuilder:validation:XValidation:rule="self.group == oldSelf.group",message="nodeClassRef.group is immutable"
+	// +kubebuilder:validation:XValidation:rule="self.kind == oldSelf.kind",message="nodeClassRef.kind is immutable"
 	// +required
 	NodeClassRef *NodeClassReference `json:"nodeClassRef"`
 	// TerminationGracePeriod is the maximum duration the controller will wait before forcefully deleting the pods on a node, measured from when deletion is first initiated.
@@ -295,54 +290,31 @@ type NodePoolList struct {
 	Items           []NodePool `json:"items"`
 }
 
-// OrderByWeight orders the NodePools in the NodePoolList by their priority weight in-place.
-// This priority evaluates the following things in precedence order:
-//  1. NodePools that have a larger weight are ordered first
-//  2. If two NodePools have the same weight, then the NodePool with the name later in the alphabet will come first
-func (nl *NodePoolList) OrderByWeight() {
-	sort.Slice(nl.Items, func(a, b int) bool {
-		weightA := lo.FromPtr(nl.Items[a].Spec.Weight)
-		weightB := lo.FromPtr(nl.Items[b].Spec.Weight)
-
-		if weightA == weightB {
-			// Order NodePools by name for a consistent ordering when sorting equal weight
-			return nl.Items[a].Name > nl.Items[b].Name
-		}
-		return weightA > weightB
-	})
-}
-
 // MustGetAllowedDisruptions calls GetAllowedDisruptionsByReason if the error is not nil. This reduces the
 // amount of state that the disruption controller must reconcile, while allowing the GetAllowedDisruptionsByReason()
 // to bubble up any errors in validation.
-func (in *NodePool) MustGetAllowedDisruptions(ctx context.Context, c clock.Clock, numNodes int) map[DisruptionReason]int {
-	allowedDisruptions, err := in.GetAllowedDisruptionsByReason(ctx, c, numNodes)
+func (in *NodePool) MustGetAllowedDisruptions(c clock.Clock, numNodes int, reason DisruptionReason) int {
+	allowedDisruptions, err := in.GetAllowedDisruptionsByReason(c, numNodes, reason)
 	if err != nil {
-		return map[DisruptionReason]int{}
+		return 0
 	}
 	return allowedDisruptions
 }
 
 // GetAllowedDisruptionsByReason returns the minimum allowed disruptions across all disruption budgets, for all disruption methods for a given nodepool
-func (in *NodePool) GetAllowedDisruptionsByReason(ctx context.Context, c clock.Clock, numNodes int) (map[DisruptionReason]int, error) {
+func (in *NodePool) GetAllowedDisruptionsByReason(c clock.Clock, numNodes int, reason DisruptionReason) (int, error) {
+	allowedNodes := math.MaxInt32
 	var multiErr error
-	allowedDisruptions := map[DisruptionReason]int{}
-	for _, reason := range WellKnownDisruptionReasons {
-		allowedDisruptions[reason] = math.MaxInt32
-	}
-
 	for _, budget := range in.Spec.Disruption.Budgets {
 		val, err := budget.GetAllowedDisruptions(c, numNodes)
 		if err != nil {
 			multiErr = multierr.Append(multiErr, err)
 		}
-		// If reasons is nil, it applies to all well known disruption reasons
-		for _, reason := range lo.Ternary(budget.Reasons == nil, WellKnownDisruptionReasons, budget.Reasons) {
-			allowedDisruptions[reason] = lo.Min([]int{allowedDisruptions[reason], val})
+		if budget.Reasons == nil || lo.Contains(budget.Reasons, reason) {
+			allowedNodes = lo.Min([]int{allowedNodes, val})
 		}
 	}
-
-	return allowedDisruptions, multiErr
+	return allowedNodes, multiErr
 }
 
 // GetAllowedDisruptions returns an intstr.IntOrString that can be used a comparison
