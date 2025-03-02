@@ -1,4 +1,4 @@
-# github.com/aws/aws-sdk-go v1.55.5
+# github.com/aws/aws-sdk-go v1.55.6
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/awserr
@@ -141,7 +141,7 @@ github.com/munnerz/goautoneg
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20250124212313-a770960d61e0
+# github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
 ## explicit; go 1.23.0
 github.com/openshift/api/config/v1
 # github.com/pkg/errors v0.9.1
@@ -230,7 +230,7 @@ golang.org/x/time/rate
 # gomodules.xyz/jsonpatch/v2 v2.4.0
 ## explicit; go 1.20
 gomodules.xyz/jsonpatch/v2
-# google.golang.org/protobuf v1.36.1
+# google.golang.org/protobuf v1.36.3
 ## explicit; go 1.21
 google.golang.org/protobuf/encoding/protodelim
 google.golang.org/protobuf/encoding/prototext
@@ -689,7 +689,7 @@ k8s.io/kube-openapi/pkg/schemaconv
 k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/spec
-# k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+# k8s.io/utils v0.0.0-20241210054802-24370beab758
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock
