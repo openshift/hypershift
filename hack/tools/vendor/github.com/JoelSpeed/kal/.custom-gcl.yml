@@ -1,0 +1,6 @@
+version:  v1.62.0
+name: golangci-kal
+destination: ./bin
+plugins:
+- module: 'github.com/JoelSpeed/kal'
+  path: ./
