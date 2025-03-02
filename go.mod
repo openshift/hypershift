@@ -30,7 +30,7 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v0.0.0-20231117061959-7cc037d33fb5
-	github.com/evanphx/json-patch/v5 v5.9.0
+	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-jose/go-jose/v3 v3.0.3
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
@@ -99,7 +99,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
-	sigs.k8s.io/controller-runtime v0.19.5
+	sigs.k8s.io/controller-runtime v0.20.2
 	sigs.k8s.io/karpenter v1.0.5
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2
@@ -162,7 +162,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/btree v1.1.2 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
