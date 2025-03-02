@@ -102,7 +102,7 @@ require (
 	sigs.k8s.io/controller-runtime v0.19.5
 	sigs.k8s.io/karpenter v1.0.5
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
-	sigs.k8s.io/structured-merge-diff/v4 v4.4.2
+	sigs.k8s.io/structured-merge-diff/v4 v4.5.0
 	sigs.k8s.io/yaml v1.4.0
 )
 
