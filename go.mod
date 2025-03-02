@@ -48,7 +48,7 @@ require (
 	github.com/openshift/api v0.0.0-20250124212313-a770960d61e0
 	github.com/openshift/client-go v0.0.0-20250125113824-8e1f0b8fa9a7
 	github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250123060244-3b77fb55b835
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
