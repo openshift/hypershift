@@ -955,8 +955,8 @@ k8s.io/pod-security-admission v0.32.2 h1:zDfAb/t0LbNU3z0ZMHtCb1zp8x05gWCGhmBYpUp
 k8s.io/pod-security-admission v0.32.2/go.mod h1:yxMPB3i1pGMLfxbe4BiWMuowMD7cdHR32y4nCj4wH+s=
 k8s.io/utils v0.0.0-20210802155522-efc7438f0176/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20211116205334-6203023598ed/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 h1:M3sRQVHv7vB20Xc2ybTt7ODCeFj6JSWYFzOFnYeS6Ro=
-k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
+k8s.io/utils v0.0.0-20241210054802-24370beab758 h1:sdbE21q2nlQtFh65saZY+rRM6x6aJJI8IUa1AmH/qa0=
+k8s.io/utils v0.0.0-20241210054802-24370beab758/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd h1:KJXBX9dOmRTUWduHg1gnWtPGIEl+GMh8UHdrBEZgOXE=
 knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd/go.mod h1:36cYnaOVHkzmhgybmYX6zDaTl3PakFeJQJl7wi6/RLE=
 kubevirt.io/api v1.4.0 h1:dDLyQLSp9obzsDrv3cyL1olIc/66IWVaGiR3gfPfgT0=
