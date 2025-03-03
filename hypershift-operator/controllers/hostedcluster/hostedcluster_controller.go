@@ -368,6 +368,7 @@ func (r *HostedClusterReconciler) ReconcileMetadataProvidersImpl(ctx context.Con
 }
 
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
+	log.Info("HostedClusterReconciler reconcile()")
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
@@ -1761,6 +1762,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the control plane operator
+	log.Info("Calling reconcileCPO")
 	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale, releaseImageVersion, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
@@ -3032,7 +3034,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments", "replicasets", "statefulsets"},
+			Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
 			Verbs:     []string{"*"},
 		},
 		{
@@ -3124,6 +3126,17 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"get",
 				"create",
 				"delete",
+			},
+		},
+		{
+			APIGroups: []string{
+				"security.openshift.io",
+			},
+			Resources: []string{
+				"securitycontextconstraints",
+			},
+			Verbs: []string{
+				"use",
 			},
 		},
 	}
