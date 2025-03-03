@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -460,6 +461,14 @@ func NewStartCommand() *cobra.Command {
 			ImageMetadataProvider:                   imageMetaDataProvider,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+
+		if err := (&healthcheck.HealthCheckUpdater{
+			Client:             mgr.GetClient(),
+			HostedControlPlane: crclient.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Name},
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "health-check-updater")
 			os.Exit(1)
 		}
 
