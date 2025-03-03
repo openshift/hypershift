@@ -2543,6 +2543,24 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
 	}
 
+	// Reconcile operator cluster role
+	controlPlaneOperatorClusterRole := controlplaneoperator.OperatorClusterRole()
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRole, func() error {
+		return reconcileControlPlaneOperatorClusterRole(controlPlaneOperatorClusterRole)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator cluster role: %w", err)
+	}
+
+	// Reconcile operator cluster role binding
+	controlPlaneOperatorClusterRoleBinding := controlplaneoperator.OperatorClusterRoleBinding()
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorClusterRoleBinding, func() error {
+		return reconcileControlPlaneOperatorClusterRoleBinding(controlPlaneOperatorClusterRoleBinding, controlPlaneOperatorClusterRole, controlPlaneOperatorServiceAccount)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator cluster rolebinding: %w", err)
+	}
+
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) && releaseVersion.Major == 4 && releaseVersion.Minor <= 14 {
 		// Reconcile operator role - for ingress
@@ -3216,7 +3234,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments", "replicasets", "statefulsets"},
+			Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
 			Verbs:     []string{"*"},
 		},
 		{
@@ -3312,6 +3330,17 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"delete",
 			},
 		},
+		{
+			APIGroups: []string{
+				"security.openshift.io",
+			},
+			Resources: []string{
+				"securitycontextconstraints",
+			},
+			Verbs: []string{
+				"use",
+			},
+		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
 		role.Rules = append(role.Rules,
@@ -3353,6 +3382,41 @@ func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role 
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "Role",
 		Name:     role.Name,
+	}
+
+	binding.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRole(clusterRole *rbacv1.ClusterRole) error {
+	clusterRole.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{"metal3.io"},
+			Resources: []string{"provisionings", "provisionings/finalizers"},
+			Verbs:     []string{"create", "delete", "get", "list", "patch", "update", "watch"},
+		},
+		{
+			APIGroups: []string{"metal3.io"},
+			Resources: []string{"provisionings/status"},
+			Verbs:     []string{"get", "patch", "update"},
+		},
+	}
+
+	return nil
+}
+
+func reconcileControlPlaneOperatorClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, clusterRole *rbacv1.ClusterRole, sa *corev1.ServiceAccount) error {
+	binding.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "ClusterRole",
+		Name:     clusterRole.Name,
 	}
 
 	binding.Subjects = []rbacv1.Subject{

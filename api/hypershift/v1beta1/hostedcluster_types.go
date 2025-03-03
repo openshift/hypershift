@@ -369,10 +369,11 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry
+// +kubebuilder:validation:Enum=ImageRegistry;BaremetalCapability
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
+const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
 
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
@@ -702,7 +703,7 @@ type HostedClusterSpec struct {
 	// This field is optional and once set cannot be changed.
 	// +immutable
 	// +optional
-	// +kubebuilder:default={}
+	// +kubebuilder:default={{disabled: ["BaremetalCapability"]}}
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }

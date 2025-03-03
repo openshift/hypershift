@@ -9731,7 +9731,9 @@ ClusterVersionOperatorSpec
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<tbody><tr><td><p>&#34;baremetal&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ImageRegistry&#34;</p></td>
 <td></td>
 </tr></tbody>
 </table>

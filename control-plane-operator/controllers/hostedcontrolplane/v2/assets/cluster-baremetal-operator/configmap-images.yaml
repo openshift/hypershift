@@ -1,0 +1,24 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cluster-baremetal-operator-images
+  namespace: HCP_NAMESPACE
+  annotations:
+    capability.openshift.io/name: baremetal
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+data:
+  images.json: >
+    {
+      "clusterBaremetalOperator": "registry.ci.openshift.org/openshift:cluster-baremetal-operator",
+      "kubeRBACProxy": "registry.ci.openshift.org/openshift:kube-rbac-proxy",
+      "baremetalOperator": "registry.ci.openshift.org/openshift:baremetal-operator",
+      "baremetalIronic": "registry.ci.openshift.org/openshift:ironic",
+      "baremetalMachineOsDownloader": "registry.ci.openshift.org/openshift:ironic-machine-os-downloader",
+      "baremetalStaticIpManager": "registry.ci.openshift.org/openshift:ironic-static-ip-manager",
+      "baremetalIronicAgent": "registry.ci.openshift.org/openshift:ironic-agent",
+      "imageCustomizationController": "registry.ci.openshift.org/openshift:machine-image-customization-controller",
+      "machineOSImages": "registry.ci.openshift.org/openshift:machine-os-images"
+    }
+
