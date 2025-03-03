@@ -24,7 +24,7 @@ you should adjust to your own environment.
 2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
 3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`). 
 4. A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository. 
-5. An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with permissions to create infrastructure for the cluster. 
+5. An [AWS credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html) with [permissions](/reference/infrastructure/aws.md) to create infrastructure for the cluster. 
 6. A Route53 public zone for cluster DNS records. To create a public zone:
         ```shell linenums="1"
         BASE_DOMAIN=www.example.com
