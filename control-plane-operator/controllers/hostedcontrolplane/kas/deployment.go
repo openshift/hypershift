@@ -799,6 +799,12 @@ cp /tmp/manifests/* %[1]s
 
 func applyBootstrapManifestsScript(workDir string) string {
 	var script = `#!/bin/sh
+function cleanup() {
+	pkill -P $$$
+	wait
+	exit
+}
+trap cleanup SIGTERM
 while true; do
   if oc apply -f %[1]s; then
     echo "Bootstrap manifests applied successfully."
@@ -814,7 +820,8 @@ while true; do
   sleep 1
 done
 while true; do
-  sleep 1000
+  sleep 1000 &
+  wait $!
 done
 `
 	return fmt.Sprintf(script, workDir)
