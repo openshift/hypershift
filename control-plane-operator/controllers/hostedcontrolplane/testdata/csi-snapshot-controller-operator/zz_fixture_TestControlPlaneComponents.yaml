@@ -4,7 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     app: csi-snapshot-controller-operator
-    hypershift.openshift.io/managed-by: control-plane-operator
+    hypershift.openshift.io/managed-by: control-plane-operator-v2
   name: csi-snapshot-controller-operator
   namespace: hcp-namespace
   ownerReferences:

@@ -6,7 +6,7 @@ metadata:
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   creationTimestamp: null
   labels:
-    hypershift.openshift.io/managed-by: control-plane-operator
+    hypershift.openshift.io/managed-by: control-plane-operator-v2
   name: certified-operators-catalog
   namespace: hcp-namespace
   ownerReferences:
@@ -145,6 +145,8 @@ spec:
           name: utilities
         - mountPath: /extracted-catalog
           name: catalog-content
+      nodeSelector:
+        kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
