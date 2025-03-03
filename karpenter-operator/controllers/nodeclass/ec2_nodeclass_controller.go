@@ -41,6 +41,10 @@ const (
 	// userDataAMILabel is a label set in the userData secret generated for karpenter instances.
 	userDataAMILabel = "hypershift.openshift.io/ami"
 
+	// KarpenterCoreE2EOverrideAnnotation is an annotation that allows overriding the default behavior of the Karpenter Operator
+	// for upstream Karpenter core E2E testing purposes.
+	KarpenterCoreE2EOverrideAnnotation = "hypershift.openshift.io/karpenter-core-e2e-override"
+
 	finalizer = "hypershift.openshift.io/ec2-nodeclass-finalizer"
 )
 
@@ -155,17 +159,21 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
-	if _, err := r.CreateOrUpdate(ctx, r.guestClient, ec2NodeClass, func() error {
-		return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
-	}); err != nil {
-		return ctrl.Result{}, err
+	// Don't manage the EC2NodeClass during an upstream karpenter e2e test.
+	karpenterCoreE2E := openshiftEC2NodeClass.Annotations[KarpenterCoreE2EOverrideAnnotation] == "true"
+	if !karpenterCoreE2E {
+		if _, err := r.CreateOrUpdate(ctx, r.guestClient, ec2NodeClass, func() error {
+			return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
+		}); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	if err := r.reconcileStatus(ctx, ec2NodeClass, openshiftEC2NodeClass); err != nil {
 		return ctrl.Result{}, err
 	}
 
-	if err := r.reconcileVAP(ctx); err != nil {
+	if err := r.reconcileVAP(ctx, karpenterCoreE2E); err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -301,7 +309,7 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 	return nil
 }
 
-func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {
+func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context, karpenterCoreE2ETest bool) error {
 	vap := &admissionv1.ValidatingAdmissionPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "karpenter.ec2nodeclass.hypershift.io",
@@ -351,7 +359,11 @@ func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {
 	}
 	_, err := r.CreateOrUpdate(ctx, r.guestClient, vapBinding, func() error {
 		vapBinding.Spec.PolicyName = vap.Name
-		vapBinding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Deny}
+		if karpenterCoreE2ETest {
+			vapBinding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Audit}
+		} else {
+			vapBinding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Deny}
+		}
 		return nil
 	})
 
