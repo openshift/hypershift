@@ -54,6 +54,22 @@ func OperatorRoleBinding(controlPlaneOperatorNamespace string) *rbacv1.RoleBindi
 	}
 }
 
+func OperatorClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "control-plane-operator",
+		},
+	}
+}
+
+func OperatorClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "control-plane-operator",
+		},
+	}
+}
+
 func OperatorIngressRole(ingressNamespace string, controlPlaneOperatorNamespace string) *rbacv1.Role {
 	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{

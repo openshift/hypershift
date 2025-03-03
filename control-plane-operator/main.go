@@ -454,6 +454,8 @@ func NewStartCommand() *cobra.Command {
 
 		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
 
+		_, isCPOV2 := os.LookupEnv(hyperv1.ControlPlaneOperatorV2EnvVar)
+		setupLog.Info("control-plane-operator/main.go: ", "isCPOV2", isCPOV2)
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
 			ManagementClusterCapabilities:           mgmtClusterCaps,

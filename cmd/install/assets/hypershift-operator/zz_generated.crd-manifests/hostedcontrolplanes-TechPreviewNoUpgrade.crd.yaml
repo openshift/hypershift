@@ -187,6 +187,7 @@ spec:
                     items:
                       enum:
                       - ImageRegistry
+                      - BaremetalCapability
                       type: string
                     maxItems: 25
                     type: array

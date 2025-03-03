@@ -1123,7 +1123,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{
 				APIGroups: []string{"apps"},
-				Resources: []string{"deployments", "replicasets", "statefulsets"},
+				Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{
@@ -1252,6 +1252,16 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"signers"},
 				Verbs:     []string{"sign"},
 				// we can't specify a signer domain with ResourceNames (or even *): https://github.com/kubernetes/kubernetes/issues/122154
+			},
+			{
+				APIGroups: []string{"metal3.io"},
+				Resources: []string{"provisionings", "provisionings/finalizers"},
+				Verbs:     []string{"create", "delete", "get", "list", "patch", "update", "watch"},
+			},
+			{
+				APIGroups: []string{"metal3.io"},
+				Resources: []string{"provisionings/status"},
+				Verbs:     []string{"get", "patch", "update"},
 			},
 		},
 	}

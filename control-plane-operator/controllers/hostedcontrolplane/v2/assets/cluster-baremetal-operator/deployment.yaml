@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    capability.openshift.io/name: baremetal
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+  labels:
+    k8s-app: cluster-baremetal-operator
+  name: cluster-baremetal-operator
+  namespace: HCP_NAMESPACE
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: cluster-baremetal-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        capability.openshift.io/name: baremetal
+        include.release.openshift.io/self-managed-high-availability: "true"
+        include.release.openshift.io/single-node-developer: "true"
+        openshift.io/required-scc: anyuid
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        k8s-app: cluster-baremetal-operator
+    spec:
+      containers:
+      - args:
+        - --enable-leader-election
+        command:
+        - /usr/bin/cluster-baremetal-operator
+        env:
+        - name: RELEASE_VERSION
+          value: 0.0.1-snapshot
+        - name: COMPONENT_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: METRICS_PORT
+          value: "8080"
+        - name: HYPERSHIFT_ENABLED
+          value: "true"
+        image: quay.io/rh-ee-masghar/cbo@sha256:3dfafcd75a41aa009266166fa50922779f6e35a2d6f0b8aa3938cbaa2d3567c4 # change to cluster-baremetal-operator
+        name: cluster-baremetal-operator
+        ports:
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/cluster-baremetal-operator/tls
+          name: cert
+          readOnly: true
+        - mountPath: /etc/cluster-baremetal-operator/images
+          name: images
+          readOnly: true
+      - args:
+        - --secure-listen-address=0.0.0.0:8443
+        - --upstream=http://localhost:8080/
+        - --tls-cert-file=/etc/tls/private/tls.crt
+        - --tls-private-key-file=/etc/tls/private/tls.key
+        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - --config-file=/etc/baremetal-kube-rbac-proxy/config-file.yaml
+        - --logtostderr=true
+        - --v=10
+        image: kube-rbac-proxy
+        name: baremetal-kube-rbac-proxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/baremetal-kube-rbac-proxy
+          name: config
+        - mountPath: /etc/tls/private
+          name: cluster-baremetal-operator-tls
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+      serviceAccountName: cluster-baremetal-operator
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      volumes:
+      - name: cert
+        secret:
+          defaultMode: 420
+          secretName: cluster-baremetal-webhook-server-cert
+      - configMap:
+          defaultMode: 420
+          name: baremetal-kube-rbac-proxy
+        name: config
+      - name: cluster-baremetal-operator-tls
+        secret:
+          defaultMode: 420
+          secretName: cluster-baremetal-operator-tls
+      - configMap:
+          name: cluster-baremetal-operator-images
+        name: images
