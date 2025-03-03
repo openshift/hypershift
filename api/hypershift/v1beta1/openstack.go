@@ -136,6 +136,13 @@ type OpenStackPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="floatingIP must be a valid IPv4 or IPv6 address"
 	// +optional
 	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
+
+	// KubeAPIServerVirtualIP is an available floating IP in your OpenStack cluster that will
+	// be associated with the kubeapi-server load balancer port.
+	//
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="kubeAPIServerVirtualIP must be a valid IPv4 or IPv6 address"
+	// +optional
+	KubeAPIServerVirtualIP string `json:"kubeAPIServerVirtualIP,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure
