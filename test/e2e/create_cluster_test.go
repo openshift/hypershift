@@ -5,19 +5,23 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -51,6 +55,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					// {
+					// 	name: "when disabledCapabilities is set to ImageRegistry it should pass",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Capabilities = &hyperv1.Capabilities{
+					// 			DisabledCapabilities: []hyperv1.OptionalCapability{
+					// 				hyperv1.ImageRegistryCapability,
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "",
+					// },
+					// {
+					// 	name: "when disabledCapabilities is set to an unsupported capability it should fail",
+					// 	mutateInput: func(hc *hyperv1.HostedCluster) {
+					// 		hc.Spec.Capabilities = &hyperv1.Capabilities{
+					// 			DisabledCapabilities: []hyperv1.OptionalCapability{
+					// 				hyperv1.OptionalCapability("AnInvalidCapability"),
+					// 			},
+					// 		}
+					// 	},
+					// 	expectedErrorSubstring: "TODO: invalid value",
+					// },
 					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -876,7 +902,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -1291,7 +1316,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1340,7 +1364,6 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1394,6 +1417,69 @@ func TestCreateClusterPrivate(t *testing.T) {
 
 func TestCreateClusterPrivateWithRouteKAS(t *testing.T) {
 	testCreateClusterPrivate(t, true)
+}
+
+// TestCreateClusterWithDisabledCapabilities implements a test that creates a cluster
+// with the ImageRegistry capability disabled, then attempts to enable it.
+func TestCreateClusterWithDisabledCapabilities(t *testing.T) {
+	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
+	}
+
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	g := NewWithT(t)
+
+	// hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", "hostedcluster-base.yaml"))
+	// hostedCluster.Spec.Capabilities = &hyperv1.Capabilities{
+	// 	DisabledCapabilities: []hyperv1.OptionalCapability{
+	// 		hyperv1.ImageRegistryCapability,
+	// 	},
+	// }
+
+	// client, err := e2eutil.GetClient()
+	// g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+	// // defer client.Delete(ctx, hostedCluster)
+
+	// err = client.Create(ctx, hostedCluster)
+	// g.Expect(err).ToNot(HaveOccurred())
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch obj := o.(type) {
+		case *hyperv1.HostedCluster:
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				DisabledCapabilities: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
+		}
+	}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// TODO: check that image registry component's resources are not installed in the
+		// control plane and hosted cluster
+		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		// we know we're the only real clients for these test servers, so turn off client-side throttling
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClient, err := configv1client.NewForConfig(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+		_, err = guestClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("\"image-registry\" not found"))
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-with-capabilities", globalOpts.ServiceAccountSigningKey)
+
+	g.Expect(errors.New("this will fail")).ToNot(HaveOccurred())
 }
 
 // testCreateClusterPrivate implements a smoke test that creates a private cluster.
@@ -1452,5 +1538,4 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
-
 }
