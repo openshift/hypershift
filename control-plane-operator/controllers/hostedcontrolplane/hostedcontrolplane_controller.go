@@ -61,6 +61,7 @@ import (
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
+	clusterbaremetaloperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cluster_baremetal_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
@@ -226,7 +227,9 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = GetEC2Client()
 
+	r.Log.Info("hostedcontrolplane_controller.go:SetupWithManager IsCPOV2: ", r.IsCPOV2)
 	if r.IsCPOV2 {
+		r.Log.Info("hostedcontrolplane_controller.go calling registerComponents")
 		r.registerComponents()
 	}
 
@@ -266,10 +269,16 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
 		konnectivityv2.NewComponent(),
+		clusterbaremetaloperatorv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
+
+	r.Log.Info("Register components: ")
+	for _, comp := range r.components {
+		r.Log.Info(comp.Name())
+	}
 }
 
 func GetEC2Client() (ec2iface.EC2API, *session.Session) {

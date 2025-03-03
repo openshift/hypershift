@@ -3120,7 +3120,7 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 		},
 		{
 			APIGroups: []string{"apps"},
-			Resources: []string{"deployments", "replicasets", "statefulsets"},
+			Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
 			Verbs:     []string{"*"},
 		},
 		{
@@ -3212,6 +3212,17 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 				"get",
 				"create",
 				"delete",
+			},
+		},
+		{
+			APIGroups: []string{
+				"security.openshift.io",
+			},
+			Resources: []string{
+				"securitycontextconstraints",
+			},
+			Verbs: []string{
+				"use",
 			},
 		},
 	}
