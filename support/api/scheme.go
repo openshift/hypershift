@@ -44,6 +44,7 @@ import (
 
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	clusterbaremetaloperaor "github.com/openshift/cluster-baremetal-operator/api/v1alpha1"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -114,4 +115,5 @@ func init() {
 	_ = secretsstorev1.AddToScheme(Scheme)
 	_ = kcpv1.AddToScheme(Scheme)
 	_ = orcv1alpha1.AddToScheme(Scheme)
+	_ = clusterbaremetaloperaor.AddToScheme(Scheme)
 }

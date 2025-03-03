@@ -1,0 +1,17 @@
+apiVersion: v1
+data:
+  config-file.yaml: |+
+    authorization:
+      resourceAttributes:
+        apiVersion: v1
+        resource: namespace
+        subresource: metrics
+        namespace: HCP_NAMESPACE
+
+kind: ConfigMap
+metadata:
+  annotations:
+    capability.openshift.io/name: baremetal
+    include.release.openshift.io/self-managed-high-availability: "true"
+  name: baremetal-kube-rbac-proxy
+  namespace: HCP_NAMESPACE
