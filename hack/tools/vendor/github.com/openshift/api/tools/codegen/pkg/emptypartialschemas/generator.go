@@ -2,12 +2,13 @@ package emptypartialschemas
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/openshift/api/tools/codegen/pkg/generation"
 	"github.com/openshift/api/tools/codegen/pkg/utils"
 	"k8s.io/gengo/args"
 	"k8s.io/klog/v2"
-	"os"
-	"path/filepath"
 )
 
 // Options contains the configuration required for the compatibility generator.
@@ -68,10 +69,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the empty-partial-schemas generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping %q generation for %s", g.Name(), groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	for _, version := range groupCtx.Versions {
@@ -83,11 +84,11 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 		klog.Infof("%s %q functions for for %s/%s", action, g.Name(), groupCtx.Name, version.Name)
 
 		if err := g.generatePartialSchemaFiles(version.Path, version.PackagePath, g.verify); err != nil {
-			return fmt.Errorf("could not generate %v functions for %s/%s: %w", g.Name(), groupCtx.Name, version.Name, err)
+			return nil, fmt.Errorf("could not generate %v functions for %s/%s: %w", g.Name(), groupCtx.Name, version.Name, err)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // generatePartialSchemaFiles generates the DeepCopy functions for the given API package paths.

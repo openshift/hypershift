@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/openshift/crd-schema-checker/pkg/resourceread"
@@ -248,6 +249,14 @@ func (tc *ComparatorTest) Test(t *testing.T, actualResults []ComparisonResults, 
 		if err != nil {
 			t.Error(err)
 		}
+
+		sort.Strings(expected.Errors)
+		sort.Strings(actual.Errors)
+		sort.Strings(expected.Warnings)
+		sort.Strings(actual.Warnings)
+		sort.Strings(expected.Infos)
+		sort.Strings(actual.Infos)
+
 		noErrorsAsExpected := len(expected.Errors) == 0 && len(actual.Errors) == 0
 		if !noErrorsAsExpected && !reflect.DeepEqual(expected.Errors, actual.Errors) {
 			t.Errorf("mismatched errors for expectedResults[%v]: expected\n%v\n, got\n%v\n", expected.Name, string(expectedBytes), string(actualBytes))

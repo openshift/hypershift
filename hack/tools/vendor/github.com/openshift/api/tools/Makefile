@@ -35,7 +35,9 @@ publish-kubebuilder-tools:
 	@# Make sure to update the `-version` to the full semver (x.y.z) of the Kube version that the release is based on (check o/k).
 	@# The payload should be any CI build (not nightly/EC) published in the CI registry that matches the defined version.
 	@# Pull secret should be the standard pull secret used for spinning up OpenShift clusters, if you do not have one, follow https://docs.google.com/document/d/1ez2jrjiIQJChobfSu2ISJ5uM_-3HGouamL_xIa2_1W4/edit#heading=h.me93l6citmsq
-	go run ./publish-kubebuilder-tools/main.go -version v1.31.1 -output-dir /tmp/kubebuilder-tools -payload=registry.ci.openshift.org/ocp/release:4.18.0-0.ci-2024-10-03-015546 -pull-secret $(PULL_SECRET) -index-file ../envtest-releases.yaml
+	@# This also expects you to be already authenticated with the OpenShift GCE devel project on Google Cloud, if you are not,
+	@# follow the 'Create the Service Account and grant permissions' and 'Generate an access key' @# steps at https://docs.google.com/document/d/1qm37EKkjgoPtjW4909UClzvsjQO5VSpPUvFO_hW_PEg
+	go run ./publish-kubebuilder-tools/main.go -version v1.32.1 -output-dir /tmp/kubebuilder-tools -payload=registry.ci.openshift.org/ocp/release:4.19.0-0.ci-2025-01-30-154351 -pull-secret $(PULL_SECRET) -index-file ../envtest-releases.yaml
 
 #############################################
 #
@@ -46,9 +48,6 @@ publish-kubebuilder-tools:
 .PHONY:codegen
 codegen: $(OUTPUT_DIR)/codegen
 
-.PHONY:prerelease-lifecycle-gen
-prerelease-lifecycle-gen: $(OUTPUT_DIR)/prerelease-lifecycle-gen
-
 .PHONY:controller-gen
 controller-gen: $(OUTPUT_DIR)/controller-gen
 
@@ -58,8 +57,17 @@ deepcopy-gen: $(OUTPUT_DIR)/deepcopy-gen
 .PHONY:go-to-protobuf
 go-to-protobuf: $(OUTPUT_DIR)/go-to-protobuf
 
+.PHONY:golangci-kal
+golangci-kal: $(OUTPUT_DIR)/golangci-kal
+
+.PHONY:kal
+kal: $(OUTPUT_DIR)/kal
+
 .PHONY:openapi-gen
 openapi-gen: $(OUTPUT_DIR)/openapi-gen
+
+.PHONY:prerelease-lifecycle-gen
+prerelease-lifecycle-gen: $(OUTPUT_DIR)/prerelease-lifecycle-gen
 
 .PHONY:protoc-gen-gogo
 protoc-gen-gogo: $(OUTPUT_DIR)/protoc-gen-gogo
@@ -98,6 +106,18 @@ $(OUTPUT_DIR)/deepcopy-gen: $(OUTPUT_DIR)/vendor-version
 
 $(OUTPUT_DIR)/go-to-protobuf: $(OUTPUT_DIR)/vendor-version
 	go build -mod=vendor -o $(OUTPUT_DIR)/go-to-protobuf ./vendor/k8s.io/code-generator/cmd/go-to-protobuf
+
+$(OUTPUT_DIR)/golangci-lint: $(OUTPUT_DIR)/vendor-version
+	go build -mod=vendor -o $(OUTPUT_DIR)/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+
+# The golangci-lint custom command relies on finding a module, this uses a workaround to init the go.mod in the kal directory.
+$(OUTPUT_DIR)/golangci-kal: $(OUTPUT_DIR)/vendor-version $(OUTPUT_DIR)/golangci-lint
+	GOFLAGS=-mod=readonly $(OUTPUT_DIR)/golangci-lint custom
+	@ mv bin/golangci-kal $(OUTPUT_DIR)/golangci-kal
+	@ rmdir bin
+
+$(OUTPUT_DIR)/kal: $(OUTPUT_DIR)/vendor-version
+	go build -mod=vendor -o $(OUTPUT_DIR)/kal ./vendor/github.com/JoelSpeed/kal/cmd/kal
 
 $(OUTPUT_DIR)/openapi-gen: $(OUTPUT_DIR)/vendor-version
 	go build -mod=vendor -o $(OUTPUT_DIR)/openapi-gen ./vendor/k8s.io/code-generator/cmd/openapi-gen
