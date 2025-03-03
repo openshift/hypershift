@@ -33,10 +33,10 @@ linters:
     - gci
     - unused
     - ineffassign
-  disable:
-    - errcheck
     - gosimple
     - govet
+  disable:
+    - errcheck
     - staticcheck
 linters-settings:
   gci:
