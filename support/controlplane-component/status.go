@@ -13,6 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -22,6 +23,9 @@ const (
 )
 
 func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
+	log := ctrl.LoggerFrom(cpContext)
+	log.Info("checkDependencies() ")
+
 	unavailableDependencies := sets.New(c.dependencies...)
 	// always add kube-apiserver as a dependency, except for etcd.
 	if c.Name() != etcdComponentName {
@@ -39,9 +43,11 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 	if len(unavailableDependencies) == 0 {
 		return nil, nil
 	}
+	log.Info("checkDependencies() unavailableDependencies: ", "unavailableDependencies", unavailableDependencies)
 
 	componentsList := &hyperv1.ControlPlaneComponentList{}
 	if err := cpContext.Client.List(cpContext, componentsList, client.InNamespace(cpContext.HCP.Namespace)); err != nil {
+		log.Info("~~~The error is here: ", "err", err)
 		return nil, err
 	}
 
@@ -57,6 +63,7 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 		}
 	}
 
+	log.Info("checkDependencies() returning: ", "unavailableDependencies", unavailableDependencies)
 	return sets.List(unavailableDependencies), nil
 }
 
