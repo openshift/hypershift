@@ -17,4 +17,4 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6.5.0
         with:
-          args: --timeout=15m --config=.golangci.yml --issues-exit-code=0
+          args: --timeout=15m --config=.golangci.yml
