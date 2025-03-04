@@ -79,6 +79,7 @@ import (
 	ocmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ocm"
 	olmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/olm"
 	pkioperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/pkioperator"
+	registryoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/registryoperator"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
@@ -257,6 +258,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		machineapproverv2.NewComponent(),
 		ingressoperatorv2.NewComponent(),
 		snapshotcontrollerv2.NewComponent(),
+		registryoperatorv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
@@ -1335,13 +1337,13 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	// Reconcile image registry operator
-	r.Log.Info("Reconciling Image Registry Operator")
-	if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile image registry operator: %w", err)
-	}
-
 	if !r.IsCPOV2 {
+		// Reconcile image registry operator
+		r.Log.Info("Reconciling Image Registry Operator")
+		if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+		}
+
 		if IsStorageAndCSIManaged(hostedControlPlane) {
 			// Reconcile cluster storage operator
 			r.Log.Info("Reconciling cluster storage operator")
