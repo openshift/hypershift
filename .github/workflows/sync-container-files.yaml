@@ -1,10 +1,10 @@
-name: make-verify
+name: sync cpo container files
 on:
   pull_request:
     branches:
       - main
 jobs:
-  make-verify:
+  sync-container-files:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -14,5 +14,5 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
-      - name: Run make verify
-        run: make verify
+      - name: Ensure container files in sync
+        run: ./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh ./Containerfile.control-plane ./Dockerfile.control-plane

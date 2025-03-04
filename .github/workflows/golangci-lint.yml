@@ -13,6 +13,7 @@ jobs:
         uses: actions/setup-go@v5.3.0
         with:
           go-version-file: go.mod
+          cache: false
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v6.5.0
         with:
