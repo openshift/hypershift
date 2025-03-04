@@ -853,7 +853,7 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 	case ciro:
 		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	case nodePoolMgmt:
-		scopes = append(scopes, vnetRG)
+		scopes = append(scopes, nsgRG, vnetRG)
 		if assignCustomHCPRoles {
 			role = "Azure Red Hat OpenShift NodePool Management Role"
 		}
