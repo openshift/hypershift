@@ -4841,7 +4841,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		// Reconcile SecretProviderClass
 		azureCloudProviderSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureCloudProviderSecretProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureCloudProviderSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureCloudProviderSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile azure cloud provider secret provider class: %w", err)

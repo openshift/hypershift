@@ -43,8 +43,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 		return err
 	}
 
-	cfg.AADClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID
-	cfg.AADClientCertPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CertificateName
+	cfg.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CredentialsSecretName
 	cfg.UseManagedIdentityExtension = false
 	cfg.UseInstanceMetadata = false
 
