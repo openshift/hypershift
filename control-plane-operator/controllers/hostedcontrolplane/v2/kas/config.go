@@ -227,6 +227,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("service-account-signing-key-file", cpath(serviceAccountKeyVolumeName, pki.ServiceSignerPrivateKey))
 	args.Set("service-node-port-range", p.NodePortRange)
 	args.Set("shutdown-delay-duration", "70s")
+	args.Set("shutdown-watch-termination-grace-period", "25s")
 	args.Set("shutdown-send-retry-after", "true")
 	args.Set("storage-backend", "etcd3")
 	args.Set("storage-media-type", "application/vnd.kubernetes.protobuf")
