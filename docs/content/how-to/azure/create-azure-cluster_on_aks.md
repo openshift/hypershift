@@ -126,22 +126,121 @@ nodePoolManagement=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create
 ```
 
 ### 6. Save Service Principal and Key Vault Details
+#### Set Names
 
+```sh
+CERT_NAMES=(
+    "${AZURE_DISK_SP_NAME}"
+    "${AZURE_FILE_SP_NAME}"
+    "${IMAGE_REGISTRY_SP_NAME}"
+    "${CLOUD_PROVIDER_SP_NAME}"
+    "${CNCC_NAME}"
+    "${CONTROL_PLANE_SP_NAME}"
+    "${INGRESS_SP_NAME}"
+    "${NODEPOOL_MGMT}"
+)
+```
+
+#### Create Secret JSON Files
+
+```sh
+for CERT_NAME in "${CERT_NAMES[@]}"; do
+    echo "Processing certificate: $CERT_NAME"
+    
+    CERT_DETAILS=$(az keyvault secret show --vault-name $KV_NAME --name $CERT_NAME --query "{value: value, notBefore: attributes.notBefore, expires: attributes.expires}" -o json)
+    CLIENT_SECRET=$(echo $CERT_DETAILS | jq -r '.value')
+    NOT_BEFORE=$(echo $CERT_DETAILS | jq -r '.notBefore')
+    NOT_AFTER=$(echo $CERT_DETAILS | jq -r '.expires')
+    SP_DETAILS=$(az ad sp list --display-name $CERT_NAME --query "[0].{client_id: appId, tenant_id: appOwnerOrganizationId}" -o json)
+    CLIENT_ID=$(echo $SP_DETAILS | jq -r '.client_id')
+    TENANT_ID=$(echo $SP_DETAILS | jq -r '.tenant_id')
+
+    if [[ -z "$CLIENT_ID" || -z "$TENANT_ID" ]]; then
+        echo "Error: Could not retrieve client ID or tenant ID for certificate: $CERT_NAME"
+        continue
+    fi
+
+    JSON_FILE="${CERT_NAME}.json"
+    echo "{
+        \"authentication_endpoint\": \"https://login.microsoftonline.com/\",
+        \"client_id\": \"$CLIENT_ID\",
+        \"client_secret\": \"$CLIENT_SECRET\",
+        \"tenant_id\": \"$TENANT_ID\",
+        \"not_before\": \"$NOT_BEFORE\",
+        \"not_after\": \"$NOT_AFTER\"
+    }" > $JSON_FILE
+
+    echo "Created JSON file: $JSON_FILE"
+done
+```
+
+#### Add Secrets to Key Vault
+
+```sh
+for CERT_NAME in "${CERT_NAMES[@]}"; do
+    echo "Processing certificate: $CERT_NAME"
+    JSON_FILE="${CERT_NAME}.json"
+
+    az keyvault secret set --name "${CERT_NAME}-json" --vault-name $KV_NAME --file $JSON_FILE
+done
+```
+
+#### Create CP Output JSON File
 ```sh
 cat <<EOF > "${CP_OUTPUT_FILE}"
 {
-    "cloudProvider": ${cloudProvider},
-    "controlPlaneOperator": ${controlPlaneOperator},
-    "disk": ${disk},
-    "file": ${file},
-    "imageRegistry": ${imageRegistry},
-    "ingress": ${ingress},
+    "cloudProvider": {
+        "certificateName": "${CLOUD_PROVIDER_SP_NAME}",
+        "clientID": "$(echo "$cloudProvider" | jq -r '.clientID')",
+        "credentialsSecretName": "${CLOUD_PROVIDER_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "controlPlaneOperator": {
+        "certificateName": "${CONTROL_PLANE_SP_NAME}",
+        "clientID": "$(echo "$controlPlaneOperator" | jq -r '.clientID')",
+        "credentialsSecretName": "${CONTROL_PLANE_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "disk": {
+        "certificateName": "${AZURE_DISK_SP_NAME}",
+        "clientID": "$(echo "$disk" | jq -r '.clientID')",
+        "credentialsSecretName": "${AZURE_DISK_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "file": {
+        "certificateName": "${AZURE_FILE_SP_NAME}",
+        "clientID": "$(echo "$file" | jq -r '.clientID')",
+        "credentialsSecretName": "${AZURE_FILE_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "imageRegistry": {
+        "certificateName": "${IMAGE_REGISTRY_SP_NAME}",
+        "clientID": "$(echo "$imageRegistry" | jq -r '.clientID')",
+        "credentialsSecretName": "${IMAGE_REGISTRY_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "ingress": {
+        "certificateName": "${INGRESS_SP_NAME}",
+        "clientID": "$(echo "$ingress" | jq -r '.clientID')",
+        "credentialsSecretName": "${INGRESS_SP_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
     "managedIdentitiesKeyVault": {
         "name": "${KV_NAME}",
         "tenantID": "$(az account show --query tenantId -o tsv)"
     },
-    "network": ${network},
-    "nodePoolManagement": ${nodePoolManagement}
+    "network": {
+        "certificateName": "${CNCC_NAME}",
+        "clientID": "$(echo "$network" | jq -r '.clientID')",
+        "credentialsSecretName": "${CNCC_NAME}-json",
+        "objectEncoding": "utf-8"
+    },
+    "nodePoolManagement": {
+        "certificateName": "${NODEPOOL_MGMT}",
+        "clientID": "$(echo "$nodePoolManagement" | jq -r '.clientID')",
+        "credentialsSecretName": "${NODEPOOL_MGMT}-json",
+        "objectEncoding": "utf-8"
+    }
 }
 EOF
 ```
