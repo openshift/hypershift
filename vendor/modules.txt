@@ -175,8 +175,8 @@ github.com/IBM-Cloud/power-go-client/power/client/storage_types
 github.com/IBM-Cloud/power-go-client/power/client/swagger_spec
 github.com/IBM-Cloud/power-go-client/power/client/workspaces
 github.com/IBM-Cloud/power-go-client/power/models
-# github.com/IBM/go-sdk-core/v5 v5.17.4
-## explicit; go 1.20
+# github.com/IBM/go-sdk-core/v5 v5.18.5
+## explicit; go 1.21
 github.com/IBM/go-sdk-core/v5/core
 # github.com/IBM/ibm-cos-sdk-go v1.10.3
 ## explicit; go 1.19
@@ -227,8 +227,8 @@ github.com/IBM/networking-go-sdk/common
 github.com/IBM/networking-go-sdk/dnsrecordsv1
 github.com/IBM/networking-go-sdk/transitgatewayapisv1
 github.com/IBM/networking-go-sdk/zonesv1
-# github.com/IBM/platform-services-go-sdk v0.64.4
-## explicit; go 1.20
+# github.com/IBM/platform-services-go-sdk v0.73.0
+## explicit; go 1.21
 github.com/IBM/platform-services-go-sdk/common
 github.com/IBM/platform-services-go-sdk/globalcatalogv1
 github.com/IBM/platform-services-go-sdk/globaltaggingv1
@@ -255,7 +255,7 @@ github.com/armon/go-socks5
 # github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.55.5
+# github.com/aws/aws-sdk-go v1.55.6
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -477,8 +477,8 @@ github.com/go-openapi/analysis/internal/flatten/operations
 github.com/go-openapi/analysis/internal/flatten/replace
 github.com/go-openapi/analysis/internal/flatten/schutils
 github.com/go-openapi/analysis/internal/flatten/sortref
-# github.com/go-openapi/errors v0.21.0
-## explicit; go 1.19
+# github.com/go-openapi/errors v0.22.0
+## explicit; go 1.20
 github.com/go-openapi/errors
 # github.com/go-openapi/jsonpointer v0.21.0
 ## explicit; go 1.20
@@ -504,8 +504,8 @@ github.com/go-openapi/runtime/yamlpc
 # github.com/go-openapi/spec v0.20.12
 ## explicit; go 1.19
 github.com/go-openapi/spec
-# github.com/go-openapi/strfmt v0.22.1
-## explicit; go 1.19
+# github.com/go-openapi/strfmt v0.23.0
+## explicit; go 1.20
 github.com/go-openapi/strfmt
 # github.com/go-openapi/swag v0.23.0
 ## explicit; go 1.20
@@ -538,8 +538,8 @@ github.com/golang-jwt/jwt/v4
 # github.com/golang-jwt/jwt/v5 v5.2.1
 ## explicit; go 1.18
 github.com/golang-jwt/jwt/v5
-# github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
-## explicit
+# github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
+## explicit; go 1.20
 github.com/golang/groupcache/lru
 # github.com/golang/protobuf v1.5.4
 ## explicit; go 1.17
@@ -749,7 +749,7 @@ github.com/opencontainers/runc/libcontainer/user
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20250124212313-a770960d61e0
+# github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
 ## explicit; go 1.23.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -822,7 +822,7 @@ github.com/openshift/api/template
 github.com/openshift/api/template/v1
 github.com/openshift/api/user
 github.com/openshift/api/user/v1
-# github.com/openshift/client-go v0.0.0-20250125113824-8e1f0b8fa9a7
+# github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
 ## explicit; go 1.23.0
 github.com/openshift/client-go/config/applyconfigurations/config/v1
 github.com/openshift/client-go/config/applyconfigurations/internal
@@ -839,17 +839,17 @@ github.com/openshift/client-go/user/applyconfigurations/internal
 github.com/openshift/client-go/user/applyconfigurations/user/v1
 github.com/openshift/client-go/user/clientset/versioned/scheme
 github.com/openshift/client-go/user/clientset/versioned/typed/user/v1
-# github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
-## explicit; go 1.22.0
+# github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
+## explicit; go 1.23.0
 github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
-## explicit; go 1.17
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96
+## explicit; go 1.21
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
-# github.com/openshift/cluster-node-tuning-operator v0.0.0-20250123060244-3b77fb55b835
+# github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 ## explicit; go 1.22.0
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v1
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v2
@@ -1129,13 +1129,14 @@ go.mongodb.org/mongo-driver/x/bsonx/bsoncore
 ## explicit; go 1.22.0
 go.opentelemetry.io/auto/sdk
 go.opentelemetry.io/auto/sdk/internal/telemetry
-# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.53.0
+# go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0
 ## explicit; go 1.21
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc/internal
-# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.53.0
+# go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0
 ## explicit; go 1.21
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/request
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconv
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp/internal/semconvutil
 # go.opentelemetry.io/otel v1.33.0
@@ -1155,7 +1156,6 @@ go.opentelemetry.io/otel/semconv/v1.12.0
 go.opentelemetry.io/otel/semconv/v1.17.0
 go.opentelemetry.io/otel/semconv/v1.17.0/httpconv
 go.opentelemetry.io/otel/semconv/v1.20.0
-go.opentelemetry.io/otel/semconv/v1.24.0
 go.opentelemetry.io/otel/semconv/v1.26.0
 go.opentelemetry.io/otel/semconv/v1.4.0
 # go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.33.0
@@ -1309,17 +1309,17 @@ golang.org/x/time/rate
 # gomodules.xyz/jsonpatch/v2 v2.4.0
 ## explicit; go 1.20
 gomodules.xyz/jsonpatch/v2
-# google.golang.org/genproto v0.0.0-20240311173647-c811ad7063a7
-## explicit; go 1.19
+# google.golang.org/genproto v0.0.0-20250115164207-1a7da9e5054f
+## explicit; go 1.22
 google.golang.org/genproto/protobuf/field_mask
-# google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576
-## explicit; go 1.21
+# google.golang.org/genproto/googleapis/api v0.0.0-20250106144421-5f5ef82da422
+## explicit; go 1.22
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/api/expr/v1alpha1
 google.golang.org/genproto/googleapis/api/httpbody
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20241209162323-e6fa225c2576
-## explicit; go 1.21
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20250106144421-5f5ef82da422
+## explicit; go 1.22
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
 # google.golang.org/grpc v1.70.0
@@ -1387,7 +1387,7 @@ google.golang.org/grpc/serviceconfig
 google.golang.org/grpc/stats
 google.golang.org/grpc/status
 google.golang.org/grpc/tap
-# google.golang.org/protobuf v1.36.1
+# google.golang.org/protobuf v1.36.3
 ## explicit; go 1.21
 google.golang.org/protobuf/encoding/protodelim
 google.golang.org/protobuf/encoding/protojson
@@ -2210,7 +2210,7 @@ k8s.io/kubelet/config/v1beta1
 k8s.io/pod-security-admission/admission/api
 k8s.io/pod-security-admission/admission/api/v1beta1
 k8s.io/pod-security-admission/api
-# k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+# k8s.io/utils v0.0.0-20241210054802-24370beab758
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock

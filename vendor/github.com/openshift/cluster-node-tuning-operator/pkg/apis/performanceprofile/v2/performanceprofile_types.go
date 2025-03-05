@@ -143,8 +143,12 @@ type KernelPageSize string
 
 // HugePageSize defines size of huge pages
 // The allowed values for this depend on CPU architecture
-// For x86/amd64, the valid values are 2M and 1G
-// For aarch64, the valid values are 2M, 32M, and 512M
+// For x86/amd64, the valid values are 2M and 1G.
+// For aarch64, the valid huge page sizes depend on the kernel page size:
+// - With a 4k kernel page size: 64k, 2M, 32M, 1G
+// - With a 64k kernel page size: 2M, 512M, 16G
+//
+// Reference: https://docs.kernel.org/mm/vmemmap_dedup.html
 type HugePageSize string
 
 // HugePages defines a set of huge pages that we want to allocate at boot.

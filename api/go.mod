@@ -4,13 +4,13 @@ go 1.23.0
 
 require (
 	github.com/aws/karpenter-provider-aws v1.0.8
-	github.com/openshift/api v0.0.0-20250124212313-a770960d61e0
+	github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
 	k8s.io/api v0.32.2
 	k8s.io/apimachinery v0.32.2
 )
 
 require (
-	github.com/aws/aws-sdk-go v1.55.5 // indirect
+	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20240805231134-67d0acfb6306 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -63,7 +63,7 @@ require (
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/protobuf v1.36.1 // indirect
+	google.golang.org/protobuf v1.36.3 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
@@ -72,7 +72,7 @@ require (
 	k8s.io/component-base v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
+	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
 	knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd // indirect
 	sigs.k8s.io/controller-runtime v0.19.5 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
