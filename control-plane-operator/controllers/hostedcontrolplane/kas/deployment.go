@@ -443,6 +443,7 @@ func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp 
 			"kube-apiserver",
 			fmt.Sprintf("--openshift-config=%s", path.Join(volumeMounts.Path(c.Name, kasVolumeConfig().Name), KubeAPIServerConfigKey)),
 			fmt.Sprintf("--v=%d", kasVerbosityLevel),
+			"--shutdown-watch-termination-grace-period=25s",
 		}
 
 		c.Env = []corev1.EnvVar{{
