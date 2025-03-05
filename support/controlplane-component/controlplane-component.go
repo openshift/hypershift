@@ -299,11 +299,16 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		}
 	}
 
-	deploymentConfig, err := c.defaultOptions(cpContext, c.workloadProvider.PodTemplateSpec(workloadObj), c.workloadProvider.Replicas(workloadObj))
-	if err != nil {
+	// preserve existing resource requirements.
+	oldPodTemplateSpec := c.workloadProvider.PodTemplateSpec(oldWorkloadObj)
+	existingResources := make(map[string]corev1.ResourceRequirements)
+	for _, container := range oldPodTemplateSpec.Spec.Containers {
+		existingResources[container.Name] = container.Resources
+	}
+
+	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources); err != nil {
 		return err
 	}
-	c.workloadProvider.ApplyOptionsTo(cpContext, workloadObj, oldWorkloadObj, deploymentConfig)
 
 	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj); err != nil {
 		return err
