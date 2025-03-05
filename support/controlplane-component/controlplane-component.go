@@ -124,6 +124,8 @@ type controlPlaneWorkload[T client.Object] struct {
 	konnectivityContainerOpts *KonnectivityContainerOptions
 	// if provided, availabilityProber container and required volumes will be injected into the deployment/statefulset.
 	availabilityProberOpts *util.AvailabilityProberOpts
+	// if provided, token-minter container and required volumes will be injected into the deployment/statefulset.
+	tokenMinterContainerOpts *TokenMinterContainerOptions
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
