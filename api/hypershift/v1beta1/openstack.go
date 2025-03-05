@@ -136,6 +136,15 @@ type OpenStackPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="floatingIP must be a valid IPv4 or IPv6 address"
 	// +optional
 	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
+
+	// APIServerSubnetID is the ID of the subnet where the API server VIP will be created.
+	// It results as an annotation on the API server service which is used by the cloud provider to
+	// allocate a port on the subnet.
+	// If not specified, the cloud provider will allocate a port on the default external network.
+	//
+	// +kubebuilder:validation:Format:=uuid
+	// +optional
+	APIServerSubnetID string `json:"apiServerSubnetID,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure

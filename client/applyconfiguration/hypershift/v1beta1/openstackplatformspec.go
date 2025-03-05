@@ -30,6 +30,7 @@ type OpenStackPlatformSpecApplyConfiguration struct {
 	DisableExternalNetwork *bool                                         `json:"disableExternalNetwork,omitempty"`
 	Tags                   []string                                      `json:"tags,omitempty"`
 	IngressFloatingIP      *string                                       `json:"ingressFloatingIP,omitempty"`
+	APIServerSubnetID      *string                                       `json:"apiServerSubnetID,omitempty"`
 }
 
 // OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
@@ -127,5 +128,13 @@ func (b *OpenStackPlatformSpecApplyConfiguration) WithTags(values ...string) *Op
 // If called multiple times, the IngressFloatingIP field is set to the value of the last call.
 func (b *OpenStackPlatformSpecApplyConfiguration) WithIngressFloatingIP(value string) *OpenStackPlatformSpecApplyConfiguration {
 	b.IngressFloatingIP = &value
+	return b
+}
+
+// WithAPIServerSubnetID sets the APIServerSubnetID field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the APIServerSubnetID field is set to the value of the last call.
+func (b *OpenStackPlatformSpecApplyConfiguration) WithAPIServerSubnetID(value string) *OpenStackPlatformSpecApplyConfiguration {
+	b.APIServerSubnetID = &value
 	return b
 }
