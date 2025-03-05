@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -109,29 +110,6 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "missing image name",
-			nodePool: hyperv1.NodePoolSpec{
-				ClusterName: "",
-				Replicas:    nil,
-				Config:      nil,
-				Management:  hyperv1.NodePoolManagement{},
-				AutoScaling: nil,
-				Platform: hyperv1.NodePoolPlatform{
-					Type: hyperv1.OpenStackPlatform,
-					OpenStack: &hyperv1.OpenStackNodePoolPlatform{
-						Flavor: flavor,
-					},
-				},
-				Release: hyperv1.Release{},
-			},
-
-			checkError: func(t *testing.T, err error) {
-				if err == nil {
-					t.Errorf("image name is required")
-				}
-			},
-		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,7 +135,7 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 						Name: "tests",
 					},
 					Spec: tc.nodePool,
-				})
+				}, &releaseinfo.ReleaseImage{})
 			if tc.checkError != nil {
 				tc.checkError(t, err)
 			} else {

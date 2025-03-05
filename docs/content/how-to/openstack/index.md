@@ -14,6 +14,7 @@ and Nodepools can be deployed on the [OpenStack](https://www.openstack.org) plat
 !!! note
     When you create a HostedCluster with the OpenStack platform, HyperShift will install the [CAPI Provider for OpenStack (CAPO)](https://github.com/kubernetes-sigs/cluster-api-provider-openstack).
     in the Hosted Control Plane (HCP) namespace.
+    It will also install [OpenStack Resource Controller (ORC)](https://github.com/k-orc/openstack-resource-controller) in the HCP namespace to manage the OpenStack resources such as the Image.
     Upon scaling up a NodePool, a Machine will be created, and the CAPI provider will create the necessary resources in OpenStack.
     CAPO created OpenStack resources by leveraging [Gophercloud](https://github.com/gophercloud/gophercloud), the OpenStack SDK for Go.
 
