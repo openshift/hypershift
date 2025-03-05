@@ -116,9 +116,6 @@ type controlPlaneWorkload[T client.Object] struct {
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
-	// These secrets/configMaps will cause the Deployment/statefulset to rollout when changed.
-	rolloutSecretsNames    []string
-	rolloutConfigMapsNames []string
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
@@ -250,6 +247,11 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		_, disablePKIReconciliationAnnotation := cpContext.HCP.Annotations[hyperv1.DisablePKIReconciliationAnnotation]
 		if !disablePKIReconciliationAnnotation {
 			kubeconfigSecret := c.serviceAccountKubeconfigSecret(cpContext.HCP.Namespace)
+			if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+			}
 			if err := c.adaptServiceAccountKubeconfigSecret(cpContext.workloadContext(), kubeconfigSecret); err != nil {
 				return err
 			}
