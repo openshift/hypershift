@@ -193,6 +193,9 @@ cluster-api-provider-agent: $(CONTROLLER_GEN)
 cluster-api-provider-azure: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api-provider-azure/*.yaml
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-azure/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-azure
+# remove CAPZ managed CRDS
+	rm -rf cmd/install/assets/cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremanagedcluster*.yaml
+	rm -rf cmd/install/assets/cluster-api-provider-azure/infrastructure.cluster.x-k8s.io_azuremanagedmachinepool*.yaml
 
 .PHONY: cluster-api-provider-openstack
 cluster-api-provider-openstack: $(CONTROLLER_GEN)
