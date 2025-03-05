@@ -129,8 +129,8 @@ spec:
       - args:
         - -c
         - "\nset -o errexit\nset -o nounset\nset -o pipefail\n\nfunction cleanup()
-          {\n\tkill -- -$$\n\twait\n}\ntrap cleanup SIGTERM\n\n/usr/bin/tail -c+1
-          -F /var/run/kubernetes/audit.log &\nwait $!\n"
+          {\n\tpkill -P $$$\n\twait\n\texit\n}\ntrap cleanup SIGTERM\n\n/usr/bin/tail
+          -c+1 -F /var/run/kubernetes/audit.log &\nwait $!\n"
         command:
         - /bin/bash
         image: oauthImage
