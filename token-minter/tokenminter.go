@@ -25,7 +25,7 @@ import (
 type options struct {
 	serviceAccountNamespace   string
 	serviceAccountName        string
-	tokenAudience             string
+	tokenAudience             []string
 	tokenFile                 string
 	kubeconfigPath            string
 	kubeconfigSecretName      string
@@ -56,7 +56,7 @@ refresh the token as it expires.`,
 
 	cmd.Flags().StringVar(&opts.serviceAccountNamespace, "service-account-namespace", "kube-system", "namespace of the service account for which to mint a token")
 	cmd.Flags().StringVar(&opts.serviceAccountName, "service-account-name", "", "name of the service account for which to mint a token")
-	cmd.Flags().StringVar(&opts.tokenAudience, "token-audience", "openshift", "audience for the token")
+	cmd.Flags().StringSliceVar(&opts.tokenAudience, "token-audience", []string{"openshift"}, "audience for the token")
 	cmd.Flags().StringVar(&opts.tokenFile, "token-file", "/var/run/secrets/openshift/serviceaccount/token", "path to the file where the token will be written")
 	cmd.Flags().StringVar(&opts.kubeconfigPath, "kubeconfig", "/etc/kubernetes/kubeconfig", "path to the kubeconfig file")
 	cmd.Flags().StringVar(&opts.kubeconfigSecretName, "kubeconfig-secret-name", "", "name of a secret containing a kubeconfig key")
@@ -194,7 +194,7 @@ func mintToken(ctx context.Context, opts options) (metav1.Time, error) {
 
 	treq := &authenticationv1.TokenRequest{
 		Spec: authenticationv1.TokenRequestSpec{
-			Audiences: []string{opts.tokenAudience},
+			Audiences: opts.tokenAudience,
 		},
 	}
 

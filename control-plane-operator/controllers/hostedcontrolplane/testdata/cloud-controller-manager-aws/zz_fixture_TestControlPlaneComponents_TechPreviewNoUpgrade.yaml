@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: serviceaccount-token
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -99,11 +99,11 @@ spec:
         - mountPath: /etc/kubernetes/secrets/cloud-provider
           name: cloud-creds
         - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
+          name: serviceaccount-token
       - args:
+        - --token-audience=openshift
         - --service-account-namespace=kube-system
         - --service-account-name=kube-controller-manager
-        - --token-audience=openshift
         - --token-file=/var/run/secrets/openshift/serviceaccount/token
         - --kubeconfig=/etc/kubernetes/kubeconfig
         command:
@@ -117,10 +117,10 @@ spec:
             cpu: 10m
             memory: 10Mi
         volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: serviceaccount-token
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -150,5 +150,5 @@ spec:
           secretName: cloud-controller-creds
       - emptyDir:
           medium: Memory
-        name: cloud-token
+        name: serviceaccount-token
 status: {}

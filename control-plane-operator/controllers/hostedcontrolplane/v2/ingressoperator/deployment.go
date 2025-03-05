@@ -1,7 +1,6 @@
 package ingressoperator
 
 import (
-	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -41,10 +40,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			)
 		}
 	})
-
-	if cpContext.HCP.Spec.Platform.Type != v1beta1.AWSPlatform {
-		util.RemoveContainer("token-minter", &deployment.Spec.Template.Spec)
-	}
 
 	return nil
 }
