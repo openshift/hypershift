@@ -134,13 +134,17 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
-			orcImage, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
-			}
 			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+			// Get the ORC image only if the payload version is 4.19 or later.
+			// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
+			if payloadVersion != nil && payloadVersion.Major == 4 && payloadVersion.Minor > 18 {
+				orcImage, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
+				if err != nil {
+					return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
+				}
 			}
 		}
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
