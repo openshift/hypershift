@@ -161,9 +161,7 @@ const (
 	hcpNotReadyRequeueInterval = 15 * time.Second
 )
 
-var (
-	catalogImages map[string]string
-)
+var catalogImages map[string]string
 
 type HostedControlPlaneReconciler struct {
 	client.Client
@@ -916,11 +914,9 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
 	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
-
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
-
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
 	r.Log.Info("Reconciling infrastructure services")
@@ -1331,11 +1327,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	if !r.IsCPOV2 {
 		// Reconcile image registry operator
-		r.Log.Info("Reconciling Image Registry Operator")
-		if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
-			return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+		if capabilities.IsImageRegistryCapabilityEnabled(hostedControlPlane.Spec.Capabilities) {
+			r.Log.Info("Reconciling Image Registry Operator")
+			if err := r.reconcileImageRegistryOperator(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, createOrUpdate); err != nil {
+				return fmt.Errorf("failed to reconcile image registry operator: %w", err)
+			}
 		}
-
 		if IsStorageAndCSIManaged(hostedControlPlane) {
 			// Reconcile cluster storage operator
 			r.Log.Info("Reconciling cluster storage operator")
@@ -2544,12 +2541,14 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile olm operator serving cert: %w", err)
 	}
 
-	// Image Registry Operator Serving Cert
-	imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
-		return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Image Registry Operator Serving Cert
+		imageRegistryOperatorServingCert := manifests.ImageRegistryOperatorServingCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, imageRegistryOperatorServingCert, func() error {
+			return pki.ReconcileRegistryOperatorServingCert(imageRegistryOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image registry operator serving cert: %w", err)
+		}
 	}
 
 	kcmServerSecret := manifests.KCMServerCertSecret(hcp.Namespace)
@@ -3345,11 +3344,20 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, deployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	observedConfig *globalconfig.ObservedConfig,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	createOrUpdate upsert.CreateOrUpdateFN,
+	deployment *appsv1.Deployment,
+) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
-		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project)
+		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL,
+			p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project,
+			hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
@@ -3533,11 +3541,20 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	observedConfig *globalconfig.ObservedConfig,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	createOrUpdate upsert.CreateOrUpdateFN,
+) error {
 	p := ocm.NewOpenShiftControllerManagerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, config, func() error {
-		return ocm.ReconcileOpenShiftControllerManagerConfig(config, p.OwnerRef, p.DeployerImage, p.DockerBuilderImage, p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build, p.Network)
+		return ocm.ReconcileOpenShiftControllerManagerConfig(config,
+			p.OwnerRef, p.DeployerImage, p.DockerBuilderImage,
+			p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Build,
+			p.Network, hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift controller manager config: %w", err)
 	}
@@ -3694,7 +3711,22 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet)
+		return cvo.ReconcileDeployment(
+			deployment,
+			p.OwnerRef,
+			p.DeploymentConfig,
+			controlPlaneReleaseImage,
+			dataPlaneReleaseImage,
+			p.CLIImage,
+			p.AvailabilityProberImage,
+			p.ClusterID,
+			hcp.Spec.UpdateService,
+			p.PlatformType,
+			util.HCPOAuthEnabled(hcp),
+			r.EnableCVOManagementClusterMetricsAccess,
+			p.FeatureSet,
+			hcp.Spec.Capabilities,
+		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
@@ -4797,7 +4829,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Reason:  hyperv1.EtcdWaitingForQuorumReason,
 		Message: message,
 	}, nil
-
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -4894,10 +4925,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		r.Log.Info("creating kubevirt cloud-config ConfigMap")
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
-
 			r.Log.Info("reconciling kubevirt CCM ConfigMap")
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
-
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud config: %w", hcp.Spec.Platform.Type, err)
 		}
@@ -4957,7 +4986,6 @@ func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlan
 }
 
 func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Removing cloud resources")
 
