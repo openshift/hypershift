@@ -30,6 +30,9 @@ status:
     name: kas-authentication-token-webhook-config
   - group: ""
     kind: Secret
+    name: aws-pod-identity-webhook-kubeconfig
+  - group: ""
+    kind: Secret
     name: bootstrap-kubeconfig
   - group: ""
     kind: Secret
