@@ -145,6 +145,8 @@ spec:
           name: utilities
         - mountPath: /extracted-catalog
           name: catalog-content
+      nodeSelector:
+        kubernetes.io/os: linux
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
