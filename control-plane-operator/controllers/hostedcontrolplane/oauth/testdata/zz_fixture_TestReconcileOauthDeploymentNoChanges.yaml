@@ -203,6 +203,7 @@ spec:
           - key: ca-bundle.crt
             path: managed-trust-bundle.crt
           name: trusted-ca-bundle-managed
+          optional: true
         name: managed-trust-bundle
       - name: oauth-audit-webhook
         secret:
