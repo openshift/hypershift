@@ -436,16 +436,14 @@ func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, 
 			Port:     "metrics",
 			Path:     "/metrics",
 			Scheme:   "https",
-			TLSConfig: &prometheusoperatorv1.PodMetricsEndpointTLSConfig{
-				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: metricsHostname,
-					CA: prometheusoperatorv1.SecretOrConfigMap{
-						ConfigMap: &corev1.ConfigMapKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.RootCAConfigMap(pm.Namespace).Name,
-							},
-							Key: certs.CASignerCertMapKey,
+			TLSConfig: &prometheusoperatorv1.SafeTLSConfig{
+				ServerName: ptr.To(metricsHostname),
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: manifests.RootCAConfigMap(pm.Namespace).Name,
 						},
+						Key: certs.CASignerCertMapKey,
 					},
 				},
 			},
