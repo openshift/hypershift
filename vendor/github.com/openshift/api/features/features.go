@@ -65,7 +65,7 @@ var (
 				contactPerson("miciah").
 				productScope(ocpSpecific).
 				enhancementPR(legacyFeatureGateWithoutEnhancement).
-				enableIn(configv1.DevPreviewNoUpgrade).
+				enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 				mustRegister()
 
 	FeatureGateSetEIPForNLBIngressController = newFeatureGate("SetEIPForNLBIngressController").
@@ -171,6 +171,14 @@ var (
 						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
+	FeatureGateSigstoreImageVerificationPKI = newFeatureGate("SigstoreImageVerificationPKI").
+						reportProblemsToJiraComponent("node").
+						contactPerson("QiWang").
+						productScope(ocpSpecific).
+						enhancementPR("https://github.com/openshift/enhancements/pull/1658").
+						enableIn(configv1.DevPreviewNoUpgrade).
+						mustRegister()
+
 	FeatureGateGCPLabelsTags = newFeatureGate("GCPLabelsTags").
 					reportProblemsToJiraComponent("Installer").
 					contactPerson("bhb").
@@ -255,8 +263,8 @@ var (
 					reportProblemsToJiraComponent("Networking/ovn-kubernetes").
 					contactPerson("tssurya").
 					productScope(ocpSpecific).
-					enhancementPR(legacyFeatureGateWithoutEnhancement).
-					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+					enhancementPR("https://github.com/openshift/enhancements/pull/1623").
+					enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 
 	FeatureGateAdditionalRoutingCapabilities = newFeatureGate("AdditionalRoutingCapabilities").
@@ -522,6 +530,14 @@ var (
 				enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade, configv1.Default).
 				mustRegister()
 
+	FeatureGateNewOLMCatalogdAPIV1Metas = newFeatureGate("NewOLMCatalogdAPIV1Metas").
+						reportProblemsToJiraComponent("olm").
+						contactPerson("jordank").
+						productScope(ocpSpecific).
+						enhancementPR("https://github.com/openshift/enhancements/pull/1749").
+						enableForClusterProfile(SelfManaged, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						mustRegister()
+
 	FeatureGateInsightsOnDemandDataGather = newFeatureGate("InsightsOnDemandDataGather").
 						reportProblemsToJiraComponent("insights").
 						contactPerson("tremes").
@@ -720,7 +736,7 @@ var (
 						mustRegister()
 
 	FeatureGateHighlyAvailableArbiter = newFeatureGate("HighlyAvailableArbiter").
-						reportProblemsToJiraComponent("TwoNode / Arbiter").
+						reportProblemsToJiraComponent("Two Node with Arbiter").
 						contactPerson("eggfoobar").
 						productScope(ocpSpecific).
 						enhancementPR("https://github.com/openshift/enhancements/pull/1674").
@@ -733,5 +749,13 @@ var (
 					productScope(ocpSpecific).
 					enhancementPR("https://github.com/openshift/enhancements/pull/1492").
 					enableIn(configv1.DevPreviewNoUpgrade).
+					mustRegister()
+
+	FeatureGateGCPCustomAPIEndpoints = newFeatureGate("GCPCustomAPIEndpoints").
+					reportProblemsToJiraComponent("Installer").
+					contactPerson("barbacbd").
+					productScope(ocpSpecific).
+					enhancementPR("https://github.com/openshift/enhancements/pull/1492").
+					enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 					mustRegister()
 )
