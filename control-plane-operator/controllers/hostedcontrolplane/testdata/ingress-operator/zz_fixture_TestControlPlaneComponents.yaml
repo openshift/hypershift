@@ -25,7 +25,6 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: serviceaccount-token
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
@@ -99,8 +98,6 @@ spec:
             memory: 80Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: serviceaccount-token
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
       - args:
@@ -155,8 +152,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
-      - emptyDir: {}
-        name: serviceaccount-token
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416

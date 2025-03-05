@@ -78,62 +78,10 @@ spec:
         volumeMounts:
         - mountPath: /etc/certificate/ca
           name: ca-bundle
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: client-token
         - mountPath: /etc/secrets
           name: serving-cert
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: web-identity-token
-      - args:
-        - --service-account-namespace
-        - openshift-image-registry
-        - --service-account-name
-        - cluster-image-registry-operator
-        - --token-file
-        - /var/client-token/token
-        - --kubeconfig
-        - /etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/control-plane-operator
-        - token-minter
-        image: token-minter
-        name: client-token-minter
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        volumeMounts:
-        - mountPath: /var/client-token
-          name: client-token
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
-      - args:
-        - --service-account-namespace
-        - openshift-image-registry
-        - --service-account-name
-        - cluster-image-registry-operator
-        - --token-file
-        - /var/run/secrets/openshift/serviceaccount/token
-        - --kubeconfig
-        - /etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/control-plane-operator
-        - token-minter
-        image: token-minter
-        name: token-minter
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: web-identity-token
       priorityClassName: hypershift-control-plane
       volumes:
-      - emptyDir: {}
-        name: client-token
       - name: serving-cert
         secret:
           defaultMode: 416
@@ -146,5 +94,3 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
-      - emptyDir: {}
-        name: web-identity-token

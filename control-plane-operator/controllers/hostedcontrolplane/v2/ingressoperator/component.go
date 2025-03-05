@@ -66,6 +66,11 @@ func NewComponent() component.ControlPlaneComponent {
 			MountPath:     "/etc/kubernetes",
 			ContainerName: ComponentName,
 		}).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			ServiceAccountName:      "ingress-operator",
+			ServiceAccountNameSpace: "openshift-ingress-operator",
+			KubeconfingVolumeName:   "admin-kubeconfig",
+		}).
 		Build()
 }
 
