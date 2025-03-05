@@ -114,10 +114,13 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 	}); err != nil {
 		return err
 	}
-	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+	err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 

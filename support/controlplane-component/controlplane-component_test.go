@@ -73,8 +73,8 @@ func TestReconcile(t *testing.T) {
 
 	scheme := runtime.NewScheme()
 	_ = hyperv1.AddToScheme(scheme)
-	corev1.AddToScheme(scheme)
-	appsv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
@@ -110,7 +110,8 @@ func TestReconcile(t *testing.T) {
 					Namespace: testComponentNamespace,
 				},
 			}
-			cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(got), got)
+
+			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(got), got)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// builtin reconciliation must pass the following validations:
