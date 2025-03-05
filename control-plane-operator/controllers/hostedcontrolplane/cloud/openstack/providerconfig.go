@@ -28,8 +28,17 @@ func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, sec
 	}
 	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
+		secret.Data[CASecretKey] = caCertData
+		// TODO(stephenfin): Both csi-operator (for Manila and Cinder CSI) and
+		// cluster-storage-operator now uses the certs from 'cacert', meaning
+		// this is no longer necessary. It is only kept here temporarily to
+		// ease upgrades. Remove in 4.20+
 		secret.Data[CABundleKey] = caCertData
 	}
+	// TODO(stephenfin): Neither cinder nor manila CSI drivers (as deployed by
+	// csi-operator) consume configuration from this secret: cinder sources it
+	// from the config map, and manila does its own special thing. Remove in
+	// 4.20+
 	secret.Data[CloudConfigKey] = []byte(config)
 
 	return nil
