@@ -319,8 +319,14 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 
-	// Wait for the rollout to be complete
-	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster)
+	// TestNTOPerformanceProfile fails on 4.16 and older if we don't wait for the rollout here with
+	// ValidationFailed(ConfigMap "pp-test" not found)
+	// This root cause of this failure is unknown but doesn't seem worth the time to figure out since
+	// the NTO performance profile code was heavily refactored in 4.17.
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		// Wait for the rollout to be complete
+		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster)
+	}
 
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
