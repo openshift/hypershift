@@ -162,10 +162,35 @@ version   4.14.0        True        False         5m39s   Cluster version is 4.1
 ## Influencing VM Scheduling
 
 By default, KubeVirt VMs created by a NodePool are scheduled to any available
-node with the appropriate capacity to run the VM. There are affinity rules
-that attempt to spread VMs for a NodePool out across multiple underlying
+node with the appropriate capacity to run the VM. A topologySpreadConstraint
+is used to try to spread VMs for a NodePool out across multiple underlying
 nodes, but in general it is possible for the VMs to be scheduled to any node
 that meets the requirements for running KubeVirt VMs.
+For availability reasons, the topologySpreadConstraint is only a soft constraint
+(`whenUnsatisfiable: ScheduleAnyway` policy) so, under certain circumstances,
+VMs for a single nodepool can “clump” together on a single node due to live migration
+to available nodes.
+The De-Scheduler can optionally be used to continuously redistribute VMs so that
+they again satisfy the topologySpreadConstraint as soon as possible.
+To achieve that behavior, the cluster-kube-descheduler-operator should be installed
+and configured with something like:
+```yaml
+apiVersion: operator.openshift.io/v1
+kind: KubeDescheduler
+metadata:
+  name: cluster
+  namespace: openshift-kube-descheduler-operator
+spec:
+  mode: Automatic
+  managementState: Managed
+  deschedulingIntervalSeconds: 60
+  profiles:
+  - SoftTopologyAndDuplicates
+  - EvictPodsWithPVC
+  - EvictPodsWithLocalStorage
+  profileCustomizations:
+    devEnableEvictionsInBackground: true
+```
 
 It is possible to influence where the KubeVirt VMs within a NodePool are
 scheduled through the use of NodeSelectors. Below is an example of using a
