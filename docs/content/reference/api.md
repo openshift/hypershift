@@ -492,6 +492,20 @@ configuration API.</p>
 </tr>
 <tr>
 <td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>auditWebhook</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
@@ -3895,6 +3909,41 @@ how the APIServer is exposed inside a hosted cluster node.</p>
 </tr>
 </tbody>
 </table>
+###ClusterVersionOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>operatorLogLevel</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.LogLevel">
+LogLevel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
+but it is a simple way to manage coarse grained logging choices that operators have to interpret for themselves.</p>
+<p>Valid values are: &ldquo;Normal&rdquo;, &ldquo;Debug&rdquo;, &ldquo;Trace&rdquo;, &ldquo;TraceAll&rdquo;.
+Defaults to &ldquo;Normal&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1beta1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
@@ -5313,6 +5362,20 @@ configuration API.</p>
 </tr>
 <tr>
 <td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>auditWebhook</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
@@ -5941,6 +6004,20 @@ ClusterConfiguration
 <td>
 <p>Configuration embeds resources that correspond to the openshift configuration API:
 <a href="https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html">https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -7844,6 +7921,13 @@ If omitted, the value will be inferred from the corev1.Service Load balancer typ
 </tr>
 </tbody>
 </table>
+###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>)
+</p>
+<p>
+</p>
 ###MachineNetworkEntry { #hypershift.openshift.io/v1beta1.MachineNetworkEntry }
 <p>
 (<em>Appears on:</em>
@@ -9360,6 +9444,39 @@ specified value is not a floating IP or is already claimed, the
 OpenStack cloud provider won&rsquo;t be able to provision the load
 balancer.
 This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>OperatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clusterVersionOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">
+ClusterVersionOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.</p>
 </td>
 </tr>
 </tbody>
