@@ -355,13 +355,6 @@ az identity federated-credential create --name "${IMAGE_REGISTRY_MI_NAME}"-fed-i
 --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
 --resource-group "${PERSISTENT_RG_NAME}" \
 --issuer "${OIDC_ISSUER_URL}" \
---subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
---audience openshift
-
-az identity federated-credential create --name "${IMAGE_REGISTRY_MI_NAME}"-fed-id \
---identity-name "${IMAGE_REGISTRY_MI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
---issuer "${OIDC_ISSUER_URL}" \
 --subject system:serviceaccount:openshift-image-registry:registry \
 --audience openshift
 ```
