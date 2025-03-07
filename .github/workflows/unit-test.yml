@@ -21,9 +21,9 @@ jobs:
           cache: false
       - name: Run unit tests
         run: go test -race -parallel=$(nproc) -count=1 -timeout=15m -coverprofile cover.out -covermode=atomic -coverpkg=./... ./...
-      - name: Check test coverage
-        uses: vladopajic/go-test-coverage@v2.12.0
-        continue-on-error: true
+      - name: Codecov
+        uses: codecov/codecov-action@v5.4.0
         with:
-          profile: cover.out
-          config: .testcoverage.yml
+          files: ./cover.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+          
