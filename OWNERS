@@ -1,16 +1,83 @@
-approvers:
-- enxebre
-- csrwng
-- sjenning
-- davidvossel
-- muraee
-- bryan-cox
-- jparrill
-options: {}
-reviewers:
-- enxebre
-- csrwng
-- sjenning
-- hasueki
-- rtheis
+filters:
+  ".*":
+    approvers:
+    - core-approvers
+    reviewers:
+    - core-reviewers
+    emeritus_approvers:
+    - davidvossel
+  # Konflux
+  "^\\.tekton/.*":
+    approvers:
+    - konflux-approvers
+  # KubeVirt specific OWNERS
+  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*kubevirt.*/.*":
+    approvers:
+    - kubevirt-approvers
+    reviewers:
+    - kubevirt-reviewers
+  "^test/integration/.*":
+    approvers:
+    - tech-leads
+    reviewers:
+    - core-reviewers
+  # Labels for areas sorted alphabetically by directory.
+  # Note: control-plane-pki-operator also has approvers defined.
+  "^api/.*":
+    labels:
+    - area/api
+  "^availability-prober/.*":
+    labels:
+    - area/control-plane-operator
+  "^cmd/.*":
+    labels:
+    - area/cli
+  "^control-plane-operator/.*":
+    labels:
+    - area/control-plane-operator
+  "^control-plane-pki-operator/.*":
+    labels:
+    - area/control-plane-pki-operator
+    approvers:
+    - tech-leads
+  "^dnsresolver/.*":
+    labels:
+    - area/control-plane-operator
+  "^docs/.*":
+    labels:
+    - area/documentation
+  "^etcd-backup/.*":
+    labels:
+    - area/control-plane-operator
+  "^etcd-recovery/.*":
+    labels:
+    - area/hypershift-operator
+  "^hack/.*":
+    labels:
+    - area/ci-tooling
+  "^hypershift-operator/.*":
+    labels:
+    - area/hypershift-operator
+  "^ignition-server/.*":
+    labels:
+    - area/control-plane-operator
+  "^kas-bootstrap/.*":
+    labels:
+    - area/control-plane-operator
+  "^konnectivity-socks5-proxy/.*":
+    labels:
+    - area/control-plane-operator
+  "^kubernetes-default-proxy/.*":
+    labels:
+    - area/control-plane-operator
+  "^support/.*":
+    labels:
+    - area/control-plane-operator
+    - area/hypershift-operator
+  "^test/.*":
+    labels:
+    - area/testing
+  "^token-minter/.*":
+    labels:
+    - area/control-plane-operator
 component: hypershift
