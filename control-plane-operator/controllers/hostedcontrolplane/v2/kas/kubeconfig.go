@@ -143,7 +143,10 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadCont
 		return fmt.Errorf("failed to get root ca cert configMap: %w", err)
 	}
 
-	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
+	if !cpContext.SkipCertificateSigning {
+		return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
+	}
+	return nil
 }
 
 func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
