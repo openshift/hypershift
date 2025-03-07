@@ -279,4 +279,21 @@ func NewComponent() component.ControlPlaneComponent {
 }
 ```
 
+### Tokens
+
+If your component requires access to the cloud or kube-apiserver. It requires a serviceAccount token in the guest cluster. This can be provided by the token-minter sidecar container which you can automatically inject into your deployment as follows:
+
+```go hl_lines="5 9"
+// control-plane-operator/controllers/hostedcontrolplane/v2/mycomponent/component.go
+
+func NewComponent() component.ControlPlaneComponent {
+	return component.NewDeploymentComponent(ComponentName, &MyComponent{}).
+        InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.Cloud, // mint token for cloud access, possible values: Cloud, KubeAPIServerToken or CloudAndAPIServerToken.
+			ServiceAccountName:      "my-serivceaccount",
+			ServiceAccountNameSpace: "my-serivceaccount-namespace",
+		}).
+		Build()
+}
+
 See [controlPlaneWorkloadBuilder](/support/controlplane-component/builder.go) for all available options

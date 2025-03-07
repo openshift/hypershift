@@ -1642,7 +1642,8 @@ func TestControlPlaneComponents(t *testing.T) {
 				ManagementType: hyperv1.Managed,
 			},
 			Platform: hyperv1.PlatformSpec{
-				AWS: &hyperv1.AWSPlatformSpec{},
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
 				Azure: &hyperv1.AzurePlatformSpec{
 					SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
 					SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",

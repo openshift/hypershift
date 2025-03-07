@@ -61,6 +61,10 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 		c.konnectivityContainerOpts.injectKonnectivityContainer(cpContext, &podTemplateSpec.Spec)
 	}
 
+	if c.tokenMinterContainerOpts != nil {
+		c.tokenMinterContainerOpts.injectTokenMinterContainer(cpContext, &podTemplateSpec.Spec)
+	}
+
 	if c.availabilityProberOpts != nil {
 		availabilityProberImage := cpContext.ReleaseImageProvider.GetImage(util.AvailabilityProberImageName)
 		util.AvailabilityProber(

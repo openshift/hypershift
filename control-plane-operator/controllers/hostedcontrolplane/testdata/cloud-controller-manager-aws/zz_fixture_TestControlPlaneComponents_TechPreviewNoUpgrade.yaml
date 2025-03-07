@@ -101,9 +101,9 @@ spec:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
       - args:
+        - --token-audience=openshift
         - --service-account-namespace=kube-system
         - --service-account-name=kube-controller-manager
-        - --token-audience=openshift
         - --token-file=/var/run/secrets/openshift/serviceaccount/token
         - --kubeconfig=/etc/kubernetes/kubeconfig
         command:
@@ -111,16 +111,16 @@ spec:
         - token-minter
         image: token-minter
         imagePullPolicy: IfNotPresent
-        name: token-minter
+        name: cloud-token-minter
         resources:
           requests:
             cpu: 10m
             memory: 10Mi
         volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

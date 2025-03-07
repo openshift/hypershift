@@ -12,6 +12,9 @@ import (
 
 const (
 	ComponentName = "ingress-operator"
+
+	serviceAccountName      = "ingress-operator"
+	serviceAccountNamespace = "openshift-ingress-operator"
 )
 
 var _ component.ComponentOptions = &ingressOperator{}
@@ -61,10 +64,16 @@ func NewComponent() component.ControlPlaneComponent {
 			},
 		}).
 		InjectServiceAccountKubeConfig(component.ServiceAccountKubeConfigOpts{
-			Name:          "ingress-operator",
-			Namespace:     "openshift-ingress-operator",
+			Name:          serviceAccountName,
+			Namespace:     serviceAccountNamespace,
 			MountPath:     "/etc/kubernetes",
 			ContainerName: ComponentName,
+		}).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      serviceAccountName,
+			ServiceAccountNameSpace: serviceAccountNamespace,
+			KubeconfingVolumeName:   "admin-kubeconfig",
 		}).
 		Build()
 }

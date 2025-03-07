@@ -307,6 +307,29 @@ spec:
         volumeMounts:
         - mountPath: /var/log/kube-apiserver
           name: logs
+      - command:
+        - /usr/bin/aws-pod-identity-webhook
+        - --annotation-prefix=eks.amazonaws.com
+        - --in-cluster=false
+        - --kubeconfig=/var/run/app/kubeconfig/kubeconfig
+        - --logtostderr
+        - --port=4443
+        - --aws-default-region=
+        - --tls-cert=/var/run/app/certs/tls.crt
+        - --tls-key=/var/run/app/certs/tls.key
+        - --token-audience=openshift
+        image: aws-pod-identity-webhook
+        imagePullPolicy: IfNotPresent
+        name: aws-pod-identity-webhook
+        resources:
+          requests:
+            cpu: 10m
+            memory: 25Mi
+        volumeMounts:
+        - mountPath: /var/run/app/certs
+          name: aws-pod-identity-webhook-serving-certs
+        - mountPath: /var/run/app/kubeconfig
+          name: aws-pod-identity-webhook-kubeconfig
       initContainers:
       - args:
         - -c
@@ -490,4 +513,12 @@ spec:
         secret:
           defaultMode: 416
           secretName: konnectivity-cluster
+      - name: aws-pod-identity-webhook-serving-certs
+        secret:
+          defaultMode: 416
+          secretName: aws-pod-identity-webhook-serving-cert
+      - name: aws-pod-identity-webhook-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: aws-pod-identity-webhook-kubeconfig
 status: {}

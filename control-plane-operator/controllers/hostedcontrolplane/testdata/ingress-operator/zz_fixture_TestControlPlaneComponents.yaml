@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: serviceaccount-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
@@ -99,10 +99,10 @@ spec:
             memory: 80Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: serviceaccount-token
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
       - args:
         - run
         - --connect-directly-to-cloud-apis=true
@@ -125,6 +125,27 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-ingress-operator
+        - --service-account-name=ingress-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: admin-kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -155,8 +176,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
-      - emptyDir: {}
-        name: serviceaccount-token
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416
@@ -168,4 +187,7 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
 status: {}

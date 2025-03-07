@@ -55,37 +55,8 @@ spec:
             cpu: 10m
             memory: 80Mi
         terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: serviceaccount-token
-      - args:
-        - --service-account-namespace=openshift-ingress-operator
-        - --service-account-name=ingress-operator
-        - --token-file=/var/run/secrets/openshift/serviceaccount/token
-        - --kubeconfig=/etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/control-plane-operator
-        - token-minter
-        image: token-minter
-        imagePullPolicy: IfNotPresent
-        name: token-minter
-        ports:
-        - containerPort: 60000
-          name: metrics
-          protocol: TCP
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: serviceaccount-token
-        - mountPath: /etc/kubernetes
-          name: admin-kubeconfig
       volumes:
       - name: admin-kubeconfig
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
-      - emptyDir: {}
-        name: serviceaccount-token
