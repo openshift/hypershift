@@ -19,7 +19,7 @@ import (
 const ControllerName = "featuregate"
 
 func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig) error {
-	if !featuregate.Gates.Enabled(featuregate.MinimumKubeletVersion) {
+	if !featuregate.MutableGates.Enabled(featuregate.MinimumKubeletVersion) {
 		return nil
 	}
 

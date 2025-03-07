@@ -23,7 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/featuregate"
+	featuregatecontroller "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/featuregate"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
@@ -60,15 +61,15 @@ func NewCommand() *cobra.Command {
 }
 
 var controllerFuncs = map[string]operator.ControllerSetupFunc{
-	"controller-manager-ca":    cmca.Setup,
-	resources.ControllerName:   resources.Setup,
-	"inplaceupgrader":          inplaceupgrader.Setup,
-	"node":                     node.Setup,
-	nodecount.ControllerName:   nodecount.Setup,
-	featuregate.ControllerName: featuregate.Setup,
-	"machine":                  machine.Setup,
-	"drainer":                  drainer.Setup,
-	hcpstatus.ControllerName:   hcpstatus.Setup,
+	"controller-manager-ca":              cmca.Setup,
+	resources.ControllerName:             resources.Setup,
+	"inplaceupgrader":                    inplaceupgrader.Setup,
+	"node":                               node.Setup,
+	nodecount.ControllerName:             nodecount.Setup,
+	featuregatecontroller.ControllerName: featuregatecontroller.Setup,
+	"machine":                            machine.Setup,
+	"drainer":                            drainer.Setup,
+	hcpstatus.ControllerName:             hcpstatus.Setup,
 }
 
 type HostedClusterConfigOperator struct {
@@ -153,6 +154,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringVar(&cpo.OAuthAddress, "oauth-address", cpo.KonnectivityAddress, "Address of external oauth endpoint")
 	flags.Int32Var(&cpo.OAuthPort, "oauth-port", cpo.KonnectivityPort, "Port of external oauth endpoint")
 	flags.StringToStringVar(&cpo.registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	featuregate.MutableGates.AddFlag(flags)
 	return cmd
 }
 

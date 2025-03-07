@@ -95,6 +95,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
@@ -205,6 +206,8 @@ type HostedClusterReconciler struct {
 	EnableCVOManagementClusterMetricsAccess bool
 
 	EnableEtcdRecovery bool
+
+	FeatureGates map[featuregate.Feature]featuregate.FeatureSpec
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
