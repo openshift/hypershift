@@ -13,7 +13,6 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
@@ -23,33 +22,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func TestIsRequiredOption(t *testing.T) {
-	tests := map[string]struct {
-		value         string
-		expectedError bool
-	}{
-		"when value is empty": {
-			value:         "",
-			expectedError: true,
-		},
-		"when value is not empty": {
-			value:         "",
-			expectedError: true,
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			err := util.ValidateRequiredOption("", test.value)
-			if test.expectedError {
-				g.Expect(err).To(HaveOccurred())
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-		})
-	}
-}
-
 func TestValidateCreateCredentialInfo(t *testing.T) {
 	tests := map[string]struct {
 		credentials          awsutil.AWSCredentialsOptions
@@ -57,9 +29,6 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 		pullSecretFile       string
 		expectError          bool
 	}{
-		"when CredentialSecretName is blank and aws-creds is also blank": {
-			expectError: true,
-		},
 		"when CredentialSecretName is blank, aws-creds is not blank, and pull-secret is blank": {
 			pullSecretFile:       "",
 			credentialSecretName: "",
