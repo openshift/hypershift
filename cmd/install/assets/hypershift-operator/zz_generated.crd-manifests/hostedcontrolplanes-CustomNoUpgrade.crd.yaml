@@ -3532,8 +3532,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3595,8 +3593,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               disk:
@@ -3657,8 +3653,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               file:
@@ -3719,8 +3713,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               imageRegistry:
@@ -3781,8 +3773,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               ingress:
@@ -3843,8 +3833,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3927,8 +3915,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -3990,8 +3976,6 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
-                                - certificateName
-                                - clientID
                                 - objectEncoding
                                 type: object
                             required:
@@ -5234,8 +5218,6 @@ spec:
                                   See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                 type: string
                             required:
-                            - certificateName
-                            - clientID
                             - objectEncoding
                             type: object
                         required:
