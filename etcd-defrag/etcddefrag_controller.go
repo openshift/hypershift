@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/pkg/etcdcli"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/library-go/pkg/operator/events"
+	"k8s.io/utils/clock"
 )
 
 const (
@@ -79,7 +80,7 @@ func (r *DefragController) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 	endpointsFunc := func() ([]string, error) {
 		return r.etcdEndpoints(ctx)
 	}
-	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName))
+	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName, clock.RealClock{}))
 
 	// Set this so that it will immediately requeue itself.
 	r.defragWaitDuration = minDefragWaitDuration
