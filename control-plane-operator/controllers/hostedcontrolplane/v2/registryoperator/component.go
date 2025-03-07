@@ -43,6 +43,11 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithPredicate(isAroHCP),
 		).
 		WithDependencies(oapiv2.ComponentName).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudAndAPIServerToken,
+			ServiceAccountName:      "cluster-image-registry-operator",
+			ServiceAccountNameSpace: "openshift-image-registry",
+		}).
 		Build()
 }
 

@@ -36,6 +36,11 @@ func NewComponent() component.ControlPlaneComponent {
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
 		).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountNameSpace: "kube-system",
+			ServiceAccountName:      "kube-controller-manager",
+		}).
 		Build()
 }
 

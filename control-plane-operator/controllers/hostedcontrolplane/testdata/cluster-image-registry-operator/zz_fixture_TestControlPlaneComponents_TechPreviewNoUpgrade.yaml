@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: client-token,web-identity-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -123,38 +123,54 @@ spec:
         volumeMounts:
         - mountPath: /etc/certificate/ca
           name: ca-bundle
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: client-token
         - mountPath: /etc/secrets
           name: serving-cert
         - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: web-identity-token
+          name: cloud-token
+        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+          name: apiserver-token
       - args:
-        - --service-account-namespace
-        - openshift-image-registry
-        - --service-account-name
-        - cluster-image-registry-operator
-        - --token-file
-        - /var/client-token/token
-        - --kubeconfig
-        - /etc/kubernetes/kubeconfig
-        - --token-audience
-        - ""
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-image-registry
+        - --service-account-name=cluster-image-registry-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
         command:
         - /usr/bin/control-plane-operator
         - token-minter
         image: token-minter
         imagePullPolicy: IfNotPresent
-        name: client-token-minter
+        name: cloud-token-minter
         resources:
           requests:
             cpu: 10m
             memory: 10Mi
         volumeMounts:
-        - mountPath: /var/client-token
-          name: client-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+      - args:
+        - --token-audience=
+        - --service-account-namespace=openshift-image-registry
+        - --service-account-name=cluster-image-registry-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: apiserver-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: apiserver-token
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -166,8 +182,6 @@ spec:
         operator: Equal
         value: hcp-namespace
       volumes:
-      - emptyDir: {}
-        name: client-token
       - name: serving-cert
         secret:
           defaultMode: 416
@@ -180,6 +194,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
-      - emptyDir: {}
-        name: web-identity-token
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
+      - emptyDir:
+          medium: Memory
+        name: apiserver-token
 status: {}

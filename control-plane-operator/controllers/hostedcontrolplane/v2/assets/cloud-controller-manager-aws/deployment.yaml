@@ -54,29 +54,6 @@ spec:
           name: kubeconfig
         - mountPath: /etc/kubernetes/secrets/cloud-provider
           name: cloud-creds
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
-      - args:
-        - --service-account-namespace=kube-system
-        - --service-account-name=kube-controller-manager
-        - --token-audience=openshift
-        - --token-file=/var/run/secrets/openshift/serviceaccount/token
-        - --kubeconfig=/etc/kubernetes/kubeconfig
-        command:
-        - /usr/bin/control-plane-operator
-        - token-minter
-        image: token-minter
-        imagePullPolicy: IfNotPresent
-        name: token-minter
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        volumeMounts:
-        - mountPath: /var/run/secrets/openshift/serviceaccount
-          name: cloud-token
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
       volumes:
       - name: kubeconfig
         secret:
@@ -94,6 +71,3 @@ spec:
         secret:
           defaultMode: 420
           secretName: cloud-controller-creds
-      - emptyDir:
-          medium: Memory
-        name: cloud-token

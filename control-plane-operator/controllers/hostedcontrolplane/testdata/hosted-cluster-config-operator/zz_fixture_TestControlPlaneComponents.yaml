@@ -69,7 +69,7 @@ spec:
         - --namespace
         - $(POD_NAMESPACE)
         - --platform-type
-        - ""
+        - AWS
         - --enable-ci-debug-output=false
         - --hosted-control-plane=hcp
         - --konnectivity-address=
