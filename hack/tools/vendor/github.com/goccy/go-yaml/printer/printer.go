@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/token"
 )
@@ -29,6 +30,7 @@ type Printer struct {
 	Bool             PrintFunc
 	String           PrintFunc
 	Number           PrintFunc
+	Comment          PrintFunc
 }
 
 func defaultLineNumberFormat(num int) string {
@@ -80,6 +82,11 @@ func (p *Printer) property(tk *token.Token) *Property {
 	case token.IntegerType, token.FloatType:
 		if p.Number != nil {
 			return p.Number()
+		}
+		return prop
+	case token.CommentType:
+		if p.Comment != nil {
+			return p.Comment()
 		}
 		return prop
 	default:
