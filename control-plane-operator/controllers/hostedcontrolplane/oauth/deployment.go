@@ -469,7 +469,9 @@ func oauthVolumeProxyManagedTrustBundle() *corev1.Volume {
 }
 
 func buildOAuthVolumeProxyManagedTrustBundle(v *corev1.Volume) {
-	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		Optional: ptr.To(true),
+	}
 	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
 	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
 	v.ConfigMap.Items = []corev1.KeyToPath{
