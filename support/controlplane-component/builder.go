@@ -91,6 +91,13 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectAvailabilityProberContainer(opts 
 	return b
 }
 
+// InjectTokenMinterContainer will injecta sidecar container which mints ServiceAccount tokens in the tenant cluster for the given named service account,
+// and then make it available for the main container with a volume mount.
+func (b *controlPlaneWorkloadBuilder[T]) InjectTokenMinterContainer(opts TokenMinterContainerOptions) *controlPlaneWorkloadBuilder[T] {
+	b.workload.tokenMinterContainerOpts = &opts
+	return b
+}
+
 // InjectServiceAccountKubeConfig will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 // and the volume mounts for that secret within the given mountPath.
 func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts ServiceAccountKubeConfigOpts) *controlPlaneWorkloadBuilder[T] {
