@@ -48,6 +48,7 @@ spec:
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
         - --audit-webhook-config-file=/etc/kubernetes/auditwebhook/webhook-kubeconfig
         - --audit-webhook-mode=batch
+        - --audit-webhook-initial-backoff=5s
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8092
