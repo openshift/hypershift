@@ -168,9 +168,9 @@ const (
 	azureCredentials = "AzureCredentials"
 )
 
-var (
-	catalogImages map[string]string
-)
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
+var catalogImages map[string]string
 
 type HostedControlPlaneReconciler struct {
 	client.Client
@@ -1049,7 +1049,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
-	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hcp.Namespace); err != nil {
+	if err := r.reconcileSREMetricsConfig(ctx, hcp.Namespace); err != nil {
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
@@ -1142,6 +1142,8 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 	return true
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus) error {
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
@@ -1194,7 +1196,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
-	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hostedControlPlane.Namespace); err != nil {
+	if err := r.reconcileSREMetricsConfig(ctx, hostedControlPlane.Namespace); err != nil {
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
@@ -1504,6 +1506,8 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batchv1.CronJob, configMap *corev1.ConfigMap, serviceAccount *corev1.ServiceAccount, hcp *hyperv1.HostedControlPlane, cpoImage, etcdImage string) error {
 	clusterID, ok := hcp.Labels["api.openshift.com/id"]
 	if !ok {
@@ -2799,6 +2803,8 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
 	// Most csi drivers should be laid down by the Cluster Storage Operator (CSO) instead of
@@ -2813,6 +2819,8 @@ func (r *HostedControlPlaneReconciler) reconcileCSIDriver(ctx context.Context, h
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -2867,6 +2875,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, statefulSet *appsv1.StatefulSet) error {
 	p, err := etcd.NewEtcdParams(hcp, releaseImageProvider)
 	if err != nil {
@@ -3016,6 +3026,8 @@ func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ct
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
 
@@ -3336,6 +3348,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -3410,6 +3424,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment) error {
 	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -3451,6 +3467,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Contex
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, deployment *appsv1.Deployment) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
@@ -3513,6 +3531,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
@@ -3540,6 +3560,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, oauthHost string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := oauth.NewOAuthServerParams(hcp, releaseImageProvider, oauthHost, oauthPort, r.SetDefaultSecurityContext)
 
@@ -3639,6 +3661,8 @@ func (r *HostedControlPlaneReconciler) reconcileValidIDPConfigurationCondition(c
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ocm.NewOpenShiftControllerManagerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	config := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
@@ -3676,6 +3700,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftControllerManager(ctx c
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := routecm.NewOpenShiftRouteControllerManagerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 	config := manifests.OpenShiftRouteControllerManagerConfig(hcp.Namespace)
@@ -3714,6 +3740,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -3733,6 +3761,8 @@ func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx cont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cvo.NewCVOParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext, r.EnableCVOManagementClusterMetricsAccess)
 
@@ -3810,6 +3840,8 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
@@ -3893,6 +3925,8 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := nto.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -3942,6 +3976,9 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 
 // reconcileDNSOperator ensures that the management cluster has the expected DNS
 // operator deployment and kubeconfig secret for the hosted cluster.
+//
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := dnsoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -3974,6 +4011,8 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
@@ -4028,6 +4067,8 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -4058,6 +4099,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx cont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 	if (hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OperatorHub != nil &&
@@ -4304,6 +4347,8 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func checkCatalogImageOverides(images ...string) (bool, error) {
 	override := false
 	for _, image := range images {
@@ -4324,6 +4369,8 @@ func checkCatalogImageOverides(images ...string) (bool, error) {
 	return override, nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -4662,6 +4709,8 @@ func removeServiceCASecret(ctx context.Context, c client.Client, secret *corev1.
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool, certRotationScale time.Duration) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 
@@ -4696,6 +4745,8 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	versions, err := releaseImageProvider.ComponentVersions()
 	if err != nil {
@@ -4909,6 +4960,8 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -5045,12 +5098,17 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 }
 
 // reconcileAutoscaler orchestrates reconciliation of autoscaler components using
+//
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileAutoscaler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	autoscalerImage := releaseImageProvider.GetImage(ImageStreamAutoscalerImage)
 	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
 	return autoscaler.ReconcileAutoscaler(ctx, r.Client, hcp, autoscalerImage, availabilityProberImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileMachineApprover(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	machineApproverImage := releaseImageProvider.GetImage(ImageStreamClusterMachineApproverImage)
 	availabilityProberImage := releaseImageProvider.GetImage(util.AvailabilityProberImageName)
@@ -5129,6 +5187,8 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	return false, nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := snapshotcontroller.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -5165,6 +5225,8 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 	return nil
 }
 
+//nolint:all
+//lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
@@ -5669,7 +5731,7 @@ func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context
 
 // reconcileSREMetricsConfig ensures that if using the SRE metrics set that the loaded configuration
 // is the latest from the ConfigMap.
-func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, cpNamespace string) error {
+func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Context, cpNamespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	if r.MetricsSet != metrics.MetricsSetSRE {
 		return nil
