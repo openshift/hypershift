@@ -942,9 +942,7 @@ spec:
       type: Route
   - service: OVNSbDb
     servicePublishingStrategy:
-      type: Route
-  sshKey:
-    name: ssh-key`
+      type: Route`
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := yaml.Unmarshal([]byte(rawHCP), hcp); err != nil {
 		t.Fatal(err)
@@ -1019,6 +1017,7 @@ func TestEventHandling(t *testing.T) {
 		ec2Client: &fakeEC2Client{},
 	}
 	r.setup(controllerutil.CreateOrUpdate)
+
 	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)}); err != nil {
