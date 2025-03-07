@@ -3,14 +3,6 @@ on:
   pull_request:
     branches:
       - main
-  push:
-    branches:
-      - main
-
-
-
-
-      
 jobs:
   unit-test:
     runs-on: ubuntu-latest
@@ -26,9 +18,8 @@ jobs:
           cache: false
       - name: Run unit tests
         run: go test -race -parallel=$(nproc) -count=1 -timeout=15m -coverprofile cover.out -covermode=atomic -coverpkg=./... ./...
-      - name: Upload cover.out
-        uses: actions/upload-artifact@v4.6.1
-        with:  
-          name: cover.out
-          path: cover.out
-          if-no-files-found: error
+      - name: Codecov
+        uses: codecov/codecov-action@v5.4.0
+        with:
+          files: ./cover.out
+          token: ${{ secrets.CODECOV_TOKEN }}
