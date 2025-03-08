@@ -75,39 +75,23 @@ spec:
       managedIdentities:
         controlPlane:
           cloudProvider:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           controlPlaneOperator:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           disk:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           file:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           imageRegistry:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           ingress:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           managedIdentitiesKeyVault:
             name: ""
             tenantID: ""
           network:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
           nodePoolManagement:
-            certificateName: ""
-            clientID: ""
             objectEncoding: utf-8
         dataPlane:
           diskMSIClientID: ""
