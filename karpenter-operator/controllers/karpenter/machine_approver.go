@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -17,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	certificatesv1client "k8s.io/client-go/kubernetes/typed/certificates/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -30,6 +32,7 @@ import (
 
 const (
 	nodeBootstrapperUsername = "system:serviceaccount:openshift-machine-config-operator:node-bootstrapper"
+	nodeGroup                = "system:nodes"
 )
 
 type MachineApproverController struct {
@@ -51,18 +54,26 @@ func (r *MachineApproverController) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	csrFilterFn := func(csr *certificatesv1.CertificateSigningRequest) bool {
-		if csr.Spec.SignerName != certificatesv1.KubeAPIServerClientKubeletSignerName {
-			return false
-		}
 		// only reconcile pending CSRs (not approved and not denied).
 		if !certificates.IsCertificateRequestPending(csr) {
 			return false
 		}
-		// only reconcile kubernetes.io/kube-apiserver-client-kubelet when it is created by the node bootstrapper
-		if csr.Spec.Username != nodeBootstrapperUsername {
-			mgr.GetLogger().Info("Ignoring csr because it is not from the node bootstrapper", "csr", csr.Name)
-			return false
+
+		switch csr.Spec.SignerName {
+		case certificatesv1.KubeAPIServerClientKubeletSignerName:
+			// only reconcile kubernetes.io/kube-apiserver-client-kubelet when it is created by the node bootstrapper
+			if csr.Spec.Username != nodeBootstrapperUsername {
+				mgr.GetLogger().Info("Ignoring csr because it is not from the node bootstrapper", "csr", csr.Name)
+				return false
+			}
+		case certificatesv1.KubeletServingSignerName:
+			groupSet := sets.NewString(csr.Spec.Groups...)
+			if !groupSet.Has(nodeGroup) {
+				mgr.GetLogger().Info("Ignoring csr because it does not have the system:nodes group", "csr", csr.Name)
+				return false
+			}
 		}
+
 		return true
 	}
 
@@ -99,7 +110,7 @@ func (r *MachineApproverController) Reconcile(ctx context.Context, req ctrl.Requ
 	// but before we reconcile it, trying to approve it will result in an error and cause a loop.
 	// Return early if the CSR has been approved/denied externally.
 	if !certificates.IsCertificateRequestPending(csr) {
-		log.Info("CSR is already processed ", "csr", csr.Name)
+		log.Info("CSR is already processed", "csr", csr.Name)
 		return ctrl.Result{}, nil
 	}
 
@@ -125,6 +136,17 @@ func (r *MachineApproverController) Reconcile(ctx context.Context, req ctrl.Requ
 
 // TODO: include a creation time window for the nodeclaim, the instance and csr triplets and also ratelimit and short circuit approval based on the number of pending CSRs
 func (r *MachineApproverController) authorize(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
+	switch csr.Spec.SignerName {
+	case certificatesv1.KubeAPIServerClientKubeletSignerName:
+		return r.authorizeClientCSR(ctx, csr, ec2Client)
+	case certificatesv1.KubeletServingSignerName:
+		return r.authorizeServingCSR(ctx, csr, ec2Client)
+	}
+
+	return false, fmt.Errorf("unrecognized signerName %s", csr.Spec.SignerName)
+}
+
+func (r *MachineApproverController) authorizeClientCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
 	x509cr, err := certificates.ParseCSR(csr.Spec.Request)
 	if err != nil {
 		return false, err
@@ -140,15 +162,41 @@ func (r *MachineApproverController) authorize(ctx context.Context, csr *certific
 		return false, err
 	}
 
-	dnsNames, err := getEC2InstancesDNSNames(ctx, nodeClaims, ec2Client)
+	filteredNodeClaims := slices.DeleteFunc(nodeClaims, func(claim karpenterv1.NodeClaim) bool {
+		// skip if a node is already created for this nodeClaim.
+		return claim.Status.NodeName != ""
+	})
+
+	dnsNames, err := getEC2InstancesDNSNames(ctx, filteredNodeClaims, ec2Client)
 	if err != nil {
 		return false, err
 	}
 
-	for _, dnsName := range dnsNames {
-		if nodeName == dnsName {
-			return true, nil // approve node client cert
-		}
+	if slices.Contains(dnsNames, nodeName) {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
+	nodeName := strings.TrimPrefix(csr.Spec.Username, "system:node:")
+	if len(nodeName) == 0 {
+		return false, fmt.Errorf("csr username does not have a valid node name")
+	}
+
+	nodeClaim, err := FindTargetNodeClaim(ctx, r.client, nodeName)
+	if err != nil || nodeClaim == nil {
+		return false, err
+	}
+
+	dnsNames, err := getEC2InstancesDNSNames(ctx, []karpenterv1.NodeClaim{*nodeClaim}, ec2Client)
+	if err != nil {
+		return false, err
+	}
+
+	if slices.Contains(dnsNames, nodeName) {
+		return true, nil
 	}
 
 	return false, nil
@@ -157,10 +205,6 @@ func (r *MachineApproverController) authorize(ctx context.Context, csr *certific
 func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeClaim, ec2Client ec2iface.EC2API) ([]string, error) {
 	ec2InstanceIDs := []string{}
 	for _, claim := range nodeClaims {
-		if claim.Status.NodeName != "" {
-			// skip if a node is already created for this nodeClaim.
-			continue
-		}
 		providerID := claim.Status.ProviderID
 		instanceID := providerID[strings.LastIndex(providerID, "/")+1:]
 
@@ -223,4 +267,19 @@ func listNodeClaims(ctx context.Context, client client.Client) ([]karpenterv1.No
 	}
 
 	return nodeClaimList.Items, nil
+}
+
+func FindTargetNodeClaim(ctx context.Context, client client.Client, nodeName string) (*karpenterv1.NodeClaim, error) {
+	nodeClaimList, err := listNodeClaims(ctx, client)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, nodeClaim := range nodeClaimList {
+		if nodeClaim.Status.NodeName == nodeName {
+			return &nodeClaim, nil
+		}
+	}
+	// don't return error, this CSR could belong to a Hypershift NodePool node.
+	return nil, nil
 }
