@@ -404,7 +404,7 @@ spec:
             - name: name
               value: deprecated-image-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:2ca2cb88240ae105c4404e01ba8b38cff35c0e7a83fb54c180e9fa0d222b1d49
+              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:6fb3cec45655c4bfc44c857769aa543e5d2b546d22ee23959c70134f1c2ba5f3
             - name: kind
               value: task
           resolver: bundles
@@ -426,7 +426,7 @@ spec:
             - name: name
               value: clair-scan
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:2b4000d80bf5ef8d21c708ebf2cb3182f1b91be8c463f895b13368f568383d52
+              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:bbf512e27a8e505c01f2a3bd9067167ece1cf147024c1116d6839ff0701429be
             - name: kind
               value: task
           resolver: bundles
@@ -443,7 +443,7 @@ spec:
             - name: name
               value: sast-snyk-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.3@sha256:3f2fd6bb53eb6e562ce1ee794beb081535935aa54b3c56d3ae3707ce65420923
+              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.3@sha256:a752b35502c7615045d8affba5731074724364528d0dcfcb2d74b8e300b0e3f8
             - name: kind
               value: task
           resolver: bundles
@@ -473,7 +473,7 @@ spec:
             - name: name
               value: clamav-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:7595ba07e6bf3737a7ce51e0d75e43bd2658a9b9c5b59e161c005029ac758b3d
+              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:48c1dae0d14e8ef45af9cbd566b8341d91618a9154fa24f28f5e5beb0e2a7419
             - name: kind
               value: task
           resolver: bundles
@@ -495,7 +495,7 @@ spec:
             - name: name
               value: rpms-signature-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:5bc61290c6d56cb3d61409efdf522574e7d08a497f362d7456ed33d56189c4f9
+              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:b9cb1e126d186010e0a5281501b475177d55b4eb2829c5e7d7614c173a8c929c
             - name: kind
               value: task
           resolver: bundles
