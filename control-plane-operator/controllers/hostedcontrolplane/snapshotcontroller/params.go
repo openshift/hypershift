@@ -12,7 +12,6 @@ import (
 const (
 	snapshotControllerOperatorImageName = "cluster-csi-snapshot-controller-operator"
 	snapshotControllerImageName         = "csi-snapshot-controller"
-	snapshotWebhookImageName            = "csi-snapshot-validation-webhook"
 )
 
 type Params struct {
@@ -35,7 +34,6 @@ func NewParams(
 		OwnerRef:                        config.OwnerRefFrom(hcp),
 		SnapshotControllerOperatorImage: releaseImageProvider.GetImage(snapshotControllerOperatorImageName),
 		SnapshotControllerImage:         releaseImageProvider.GetImage(snapshotControllerImageName),
-		SnapshotWebhookImage:            releaseImageProvider.GetImage(snapshotWebhookImageName),
 		AvailabilityProberImage:         releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Version:                         version,
 	}
