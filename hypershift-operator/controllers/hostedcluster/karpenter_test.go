@@ -14,11 +14,13 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/support/api"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +28,8 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/golang/mock/gomock"
 )
 
 func TestReconcileKarpenterUserDataSecret(t *testing.T) {
@@ -110,18 +114,75 @@ func TestReconcileKarpenterUserDataSecret(t *testing.T) {
 			},
 		},
 	}
-	releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
-		ImageVersion: map[string]string{
-			"release-4.18": "4.18.0",
+
+	mockCtrl := gomock.NewController(t)
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initReleaseImage("4.15.0"), nil).AnyTimes()
+	releaseImage := &releaseinfo.ReleaseImage{
+		ImageStream: &imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					{
+						Name: "cluster-autoscaler",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-machine-approver",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "aws-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-capi-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: util.AvailabilityProberImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: haproxy.HAProxyRouterImageName,
+						From: &corev1.ObjectReference{Name: "test-image"},
+					},
+				},
+			},
 		},
-		Version: "4.18.0",
-		Components: map[string]string{
-			haproxy.HAProxyRouterImageName: "test-image",
+		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				"x86_64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-x86_64-release",
+									Image:   "us-east-1-x86_64-image",
+								},
+							},
+						},
+					},
+				},
+				"aarch64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-aarch64-release",
+									Image:   "us-east-1-aarch64-image",
+								},
+								"us-west-1": {
+									Release: "us-west-1-aarch64-release",
+									Image:   "",
+								},
+							},
+						},
+					},
+				},
+			},
 		},
 	}
-
-	releaseImage, err := releaseProvider.Lookup(context.Background(), "release-4.18", nil)
-	g.Expect(err).ToNot(HaveOccurred())
 
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -132,7 +193,7 @@ func TestReconcileKarpenterUserDataSecret(t *testing.T) {
 		},
 	}
 
-	err = r.reconcileKarpenterUserDataSecret(context.Background(), hostedCluster, releaseImage, nodePool, releaseProvider, imageMetadataProvider)
+	err := r.reconcileKarpenterUserDataSecret(context.Background(), hostedCluster, releaseImage, nodePool, mockedReleaseProvider, imageMetadataProvider)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	userData, err := getUserDataSecret(context.Background(), fakeClient, nodePool, controlplaneNamespace)

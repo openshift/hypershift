@@ -10,12 +10,14 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+	"github.com/openshift/hypershift/support/util"
+
+	"github.com/openshift/api/image/docker10"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -25,6 +27,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/golang/mock/gomock"
 )
 
 const (
@@ -62,6 +66,7 @@ func NewComponent() ControlPlaneComponent {
 }
 
 func TestReconcile(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	tests := []struct {
 		name string
 	}{
@@ -78,6 +83,19 @@ func TestReconcile(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			mockedReleaseImageProvider := imageprovider.NewMockReleaseImageProvider(mockCtrl)
+			mockedReleaseImageProvider.EXPECT().
+				Version().Return("4.18.0").Times(2)
+			mockedReleaseImageProvider.EXPECT().
+				ImageExist(gomock.Any()).AnyTimes()
+
+			mockedImageDataProvider := util.NewMockImageMetadataProvider(mockCtrl)
+			mockedImageDataProvider.EXPECT().
+				ImageMetadata(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&dockerv1client.DockerImageConfig{
+					ContainerConfig: docker10.DockerConfig{
+						Labels: map[string]string{},
+					}}, nil).AnyTimes()
 
 			fakeObjects, err := componentsFakeObjects()
 			g.Expect(err).ToNot(HaveOccurred())
@@ -85,12 +103,9 @@ func TestReconcile(t *testing.T) {
 			cpContext := ControlPlaneContext{
 				Context:                  context.Background(),
 				CreateOrUpdateProviderV2: upsert.NewV2(false),
-				ReleaseImageProvider:     testutil.FakeImageProvider(),
-				UserReleaseImageProvider: testutil.FakeImageProvider(),
-				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					Result:   &dockerv1client.DockerImageConfig{},
-					Manifest: fakeimagemetadataprovider.FakeManifest{},
-				},
+				ReleaseImageProvider:     mockedReleaseImageProvider,
+				UserReleaseImageProvider: imageprovider.NewMockReleaseImageProvider(mockCtrl),
+				ImageMetadataProvider:    mockedImageDataProvider,
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testComponentNamespace,
@@ -244,7 +259,7 @@ func componentsFakeObjects() ([]client.Object, error) {
 			Namespace: testComponentNamespace,
 		},
 		Status: hyperv1.ControlPlaneComponentStatus{
-			Version: testutil.FakeImageProvider().Version(),
+			Version: "4.18.0",
 			Conditions: []metav1.Condition{
 				{
 					Type:   string(hyperv1.ControlPlaneComponentAvailable),

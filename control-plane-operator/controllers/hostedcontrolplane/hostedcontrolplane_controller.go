@@ -1048,7 +1048,7 @@ func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool
 	return true
 }
 
-func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus) error {
+func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, infraStatus infra.InfrastructureStatus) error {
 	// Reconcile default service account
 	r.Log.Info("Reconciling default service account")
 	if err := r.reconcileDefaultServiceAccount(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -2931,7 +2931,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -3701,7 +3701,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := cno.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, r.DefaultIngressDomain)
 
 	// Create SecretProviderClass when deploying on ARO HCP
@@ -3784,7 +3784,7 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := nto.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	metricsService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
@@ -3833,7 +3833,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNodeTuningOperator(ctx co
 
 // reconcileDNSOperator ensures that the management cluster has the expected DNS
 // operator deployment and kubeconfig secret for the hosted cluster.
-func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := dnsoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
@@ -3865,7 +3865,7 @@ func (r *HostedControlPlaneReconciler) reconcileDNSOperator(ctx context.Context,
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := ingressoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext, hcp.Spec.Platform.Type)
 
 	// Create SecretProviderClass when deploying on managed Azure
@@ -3919,7 +3919,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := cco.NewParams(hcp, releaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -3949,7 +3949,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudCredentialOperator(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := olm.NewOperatorLifecycleManagerParams(hcp, releaseImageProvider, userReleaseImageProvider.Version(), r.SetDefaultSecurityContext)
 	if (hcp.Spec.Configuration != nil && hcp.Spec.Configuration.OperatorHub != nil &&
 		hcp.Spec.Configuration.OperatorHub.DisableAllDefaultSources) ||
@@ -4215,7 +4215,7 @@ func checkCatalogImageOverides(images ...string) (bool, error) {
 	return override, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := registryoperator.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	// Create SecretProviderClass when deploying on managed Azure
@@ -4587,7 +4587,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	versions, err := releaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
@@ -5020,7 +5020,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	return false, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := snapshotcontroller.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	deployment := manifests.CSISnapshotControllerOperatorDeployment(hcp.Namespace)
@@ -5056,7 +5056,7 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	if hyperazureutil.IsAroHCP() {

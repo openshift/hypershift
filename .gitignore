@@ -38,3 +38,6 @@ vendor/**/.dockerignore
 
 # SNYK CLI cache data
 .dccache
+
+# Mocked interface generate through mockgen
+*_mock.go

@@ -30,6 +30,7 @@ var (
 	digestCache        = lru.New(1000)
 )
 
+//go:generate mockgen -source=imagemetadata.go -package=util -destination=imagedataprovider_mock.go
 type ImageMetadataProvider interface {
 	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
 	GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error)
