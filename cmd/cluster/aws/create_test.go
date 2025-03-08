@@ -180,6 +180,7 @@ func TestCreateCluster(t *testing.T) {
 				"--role-arn=fakeRoleARN",
 				"--pull-secret=" + pullSecretFile,
 				"--render-sensitive",
+				"--name=example",
 			},
 		},
 		{
