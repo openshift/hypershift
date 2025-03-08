@@ -118,7 +118,7 @@ type HostedControlPlaneSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	// +kubebuilder:validation:MaxItems=6
-	// +kubebuilder:validation:MinItems=4
+	// +kubebuilder:validation:self.platform == "IBM" ? size(self.services) >= 3 : size(self.services) >= 4
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// AuditWebhook contains metadata for configuring an audit webhook
