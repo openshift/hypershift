@@ -28,7 +28,6 @@ import (
 
 func NewStartCommand() *cobra.Command {
 	zLogger := zap.New(
-		zap.UseDevMode(true),
 		zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 			o.EncodeTime = zapcore.RFC3339TimeEncoder
 		}),

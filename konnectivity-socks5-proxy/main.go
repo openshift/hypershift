@@ -19,7 +19,7 @@ import (
 
 func NewStartCommand() *cobra.Command {
 	l := log.Log.WithName("konnectivity-socks5-proxy")
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	log.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 	cmd := &cobra.Command{

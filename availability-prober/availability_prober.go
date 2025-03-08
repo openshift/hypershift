@@ -57,7 +57,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.waitForLabeledPodsGone, "wait-for-labeled-pods-gone", "", "Waits until pods with the specified label is gone from the namespace. Must be in format: namespace/label=selector")
 	cmd.Flags().StringVar(&opts.waitForClusterRolebinding, "wait-for-cluster-rolebinding", "", "Waits until a concrete ClusterRoleBinding is present.")
 
-	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	log := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 
