@@ -5,6 +5,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-var Log = zap.New(zap.UseDevMode(true), func(o *zap.Options) {
+var Log = zap.New(func(o *zap.Options) {
 	o.TimeEncoder = zapcore.RFC3339TimeEncoder
 })

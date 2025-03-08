@@ -209,7 +209,7 @@ func (o *HostedClusterConfigOperator) Complete() error {
 }
 
 func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 	versions := map[string]string{

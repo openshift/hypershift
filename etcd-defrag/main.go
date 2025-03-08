@@ -54,7 +54,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts Options) error {
-	logger := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	logger := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 	ctrl.SetLogger(logger)
