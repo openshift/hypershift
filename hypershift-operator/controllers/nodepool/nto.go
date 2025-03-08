@@ -263,8 +263,8 @@ func (r *NodePoolReconciler) getTuningConfig(ctx context.Context,
 
 func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 	scheme := runtime.NewScheme()
-	tunedv1.AddToScheme(scheme)
-	performanceprofilev2.AddToScheme(scheme)
+	_ = tunedv1.AddToScheme(scheme)
+	_ = performanceprofilev2.AddToScheme(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,

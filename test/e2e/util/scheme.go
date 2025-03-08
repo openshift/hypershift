@@ -24,9 +24,9 @@ var (
 )
 
 func init() {
-	operatorsv1.AddToScheme(scheme)
-	operatorsv1alpha1.AddToScheme(scheme)
-	capikubevirt.AddToScheme(scheme)
+	_ = operatorsv1.AddToScheme(scheme)
+	_ = operatorsv1alpha1.AddToScheme(scheme)
+	_ = capikubevirt.AddToScheme(scheme)
 
 	awsKarpanterGroupVersion := schema.GroupVersion{Group: awskarpenterapis.Group, Version: "v1"}
 	metav1.AddToGroupVersion(scheme, awsKarpanterGroupVersion)

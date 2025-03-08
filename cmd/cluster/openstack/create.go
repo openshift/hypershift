@@ -274,7 +274,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	openstackOpts := DefaultOptions()
 	BindOptions(openstackOpts, cmd.Flags())
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

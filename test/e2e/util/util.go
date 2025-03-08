@@ -161,7 +161,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 					Namespace: hostedCluster.Namespace,
 					Name:      ptr.Deref(hostedCluster.Status.KubeConfig, corev1.LocalObjectReference{}).Name,
 				}
-				return hostedCluster.Status.KubeConfig != nil, fmt.Sprintf("expected a kubeconfig reference in status"), nil
+				return hostedCluster.Status.KubeConfig != nil, "expected a kubeconfig reference in status", nil
 			},
 		},
 	)

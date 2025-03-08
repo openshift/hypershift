@@ -40,7 +40,10 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 	}
 
 	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
-	enforceImagePullPolicy(podTemplateSpec.Spec.Containers)
+	err := enforceImagePullPolicy(podTemplateSpec.Spec.Containers)
+	if err != nil {
+		return nil, err
+	}
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, cpContext.HCP, podTemplateSpec.Spec.Containers); err != nil {
 		return nil, err

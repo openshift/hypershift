@@ -617,7 +617,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
-	capiaws.AddToScheme(api.Scheme)
+	_ = capiaws.AddToScheme(api.Scheme)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
@@ -1046,7 +1046,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 				capiClusterName: "cluster",
 			}
 			mhc := &capiv1.MachineHealthCheck{}
-			capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			err := capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}

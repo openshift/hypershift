@@ -46,14 +46,14 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "The region to use for creating the bastion")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 
-	cmd.MarkFlagRequired("aws-creds")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 		if err := opts.Run(cmd.Context(), logger); err != nil {
