@@ -9446,6 +9446,19 @@ balancer.
 This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>kubeAPIServerVirtualIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>KubeAPIServerVirtualIP is an available floating IP in your OpenStack cluster that will
+be associated with the kubeapi-server load balancer port.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
