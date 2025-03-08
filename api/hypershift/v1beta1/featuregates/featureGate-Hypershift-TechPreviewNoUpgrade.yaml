@@ -36,6 +36,9 @@
                     },
                     {
                         "name": "ClusterVersionOperatorConfiguration"
+                    },
+                    {
+                        "name": "MinimumKubeletVersion"
                     }
                 ],
                 "version": ""

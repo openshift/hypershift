@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/dnsresolver"
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
@@ -185,6 +186,7 @@ func NewStartCommand() *cobra.Command {
 			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
 			"\"imageX\" is container image name (e.g. \"quay.io/foo/my-network-operator:latest\"). The container image name is still subject of registry name "+
 			"replacement when --registry-overrides is used.")
+	featuregate.MutableGates.AddFlag(cmd.Flags())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		setupLog.Info("Starting hypershift-controlplane-manager", "version", version.String())
@@ -457,6 +459,7 @@ func NewStartCommand() *cobra.Command {
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 			IsCPOV2:                                 isCPOV2,
 			ImageMetadataProvider:                   imageMetaDataProvider,
+			FeatureGates:                            featuregate.MutableGates.GetAll(),
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
