@@ -8,6 +8,7 @@ type ReleaseImageProvider interface {
 	ImageExist(key string) (string, bool)
 	Version() string
 	ComponentVersions() (map[string]string, error)
+	ComponentImages() map[string]string
 }
 
 var _ ReleaseImageProvider = &SimpleReleaseImageProvider{}
