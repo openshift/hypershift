@@ -9446,6 +9446,21 @@ balancer.
 This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>apiServerSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>APIServerSubnetID is the ID of the subnet where the API server VIP will be created.
+It results as an annotation on the API server service which is used by the cloud provider to
+allocate a port on the subnet.
+If not specified, the cloud provider will allocate a port on the default external network.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
