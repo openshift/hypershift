@@ -2,11 +2,41 @@ package lo
 
 // Keys creates an array of the map keys.
 // Play: https://go.dev/play/p/Uu11fHASqrU
-func Keys[K comparable, V any](in map[K]V) []K {
-	result := make([]K, 0, len(in))
+func Keys[K comparable, V any](in ...map[K]V) []K {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+	result := make([]K, 0, size)
 
-	for k := range in {
-		result = append(result, k)
+	for i := range in {
+		for k := range in[i] {
+			result = append(result, k)
+		}
+	}
+
+	return result
+}
+
+// UniqKeys creates an array of unique keys in the map.
+// Play: https://go.dev/play/p/TPKAb6ILdHk
+func UniqKeys[K comparable, V any](in ...map[K]V) []K {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+
+	seen := make(map[K]struct{}, size)
+	result := make([]K, 0)
+
+	for i := range in {
+		for k := range in[i] {
+			if _, exists := seen[k]; exists {
+				continue
+			}
+			seen[k] = struct{}{}
+			result = append(result, k)
+		}
 	}
 
 	return result
@@ -21,11 +51,42 @@ func HasKey[K comparable, V any](in map[K]V, key K) bool {
 
 // Values creates an array of the map values.
 // Play: https://go.dev/play/p/nnRTQkzQfF6
-func Values[K comparable, V any](in map[K]V) []V {
-	result := make([]V, 0, len(in))
+func Values[K comparable, V any](in ...map[K]V) []V {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+	result := make([]V, 0, size)
 
-	for k := range in {
-		result = append(result, in[k])
+	for i := range in {
+		for k := range in[i] {
+			result = append(result, in[i][k])
+		}
+	}
+
+	return result
+}
+
+// UniqValues creates an array of unique values in the map.
+// Play: https://go.dev/play/p/nf6bXMh7rM3
+func UniqValues[K comparable, V comparable](in ...map[K]V) []V {
+	size := 0
+	for i := range in {
+		size += len(in[i])
+	}
+
+	seen := make(map[V]struct{}, size)
+	result := make([]V, 0)
+
+	for i := range in {
+		for k := range in[i] {
+			val := in[i][k]
+			if _, exists := seen[val]; exists {
+				continue
+			}
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
 	}
 
 	return result
@@ -184,6 +245,36 @@ func Assign[K comparable, V any, Map ~map[K]V](maps ...Map) Map {
 	}
 
 	return out
+}
+
+// ChunkEntries splits a map into an array of elements in groups of a length equal to its size. If the map cannot be split evenly,
+// the final chunk will contain the remaining elements.
+func ChunkEntries[K comparable, V any](m map[K]V, size int) []map[K]V {
+	if size <= 0 {
+		panic("The chunk size must be greater than 0")
+	}
+
+	count := len(m)
+	if count == 0 {
+		return []map[K]V{}
+	}
+
+	chunksNum := count / size
+	if count%size != 0 {
+		chunksNum += 1
+	}
+
+	result := make([]map[K]V, 0, chunksNum)
+
+	for k, v := range m {
+		if len(result) == 0 || len(result[len(result)-1]) == size {
+			result = append(result, make(map[K]V, size))
+		}
+
+		result[len(result)-1][k] = v
+	}
+
+	return result
 }
 
 // MapKeys manipulates a map keys and transforms it to a map of another type.
