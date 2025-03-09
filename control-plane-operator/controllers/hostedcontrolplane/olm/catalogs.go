@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -184,6 +185,23 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 }
 
 func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, catalogImages map[string]string) error {
+	// If any of the ImageStream tags fail to import on the current generation, retry the import by annotating the imagestream
+	retryImport := false
+	for _, tag := range imageStream.Status.Tags {
+		for _, condition := range tag.Conditions {
+			if condition.Type == imagev1.ImportSuccess && condition.Status == corev1.ConditionFalse && condition.Generation == imageStream.Generation {
+				retryImport = true
+				break
+			}
+		}
+	}
+	if retryImport {
+		if imageStream.Annotations == nil {
+			imageStream.Annotations = map[string]string{}
+		}
+		imageStream.Annotations["catalog.openshift.io/retry-import"] = time.Now().Format(time.RFC3339)
+	}
+
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
