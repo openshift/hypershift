@@ -63,7 +63,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
-	flags.StringVar(&opts.KMSUserAssignedCredsFile, "kms-credentials-file", opts.KMSUserAssignedCredsFile, "Path to a file containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
@@ -88,7 +88,7 @@ type RawCreateOptions struct {
 	ResourceGroupTags                map[string]string
 	SubnetID                         string
 	RHCOSImage                       string
-	KMSUserAssignedCredsFile         string
+	KMSUserAssignedCredsSecretName   string
 	TechPreviewEnabled               bool
 	DNSZoneRGName                    string
 	ManagedIdentitiesFile            string
@@ -287,7 +287,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
-			CredentialsSecretName: o.KMSUserAssignedCredsFile,
+			CredentialsSecretName: o.KMSUserAssignedCredsSecretName,
 			ObjectEncoding:        ObjectEncoding,
 		}
 	}
