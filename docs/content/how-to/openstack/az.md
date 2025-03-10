@@ -6,7 +6,6 @@ Availability Zones do not necessarily correspond to fault domains and do not inh
 ```shell
 export NODEPOOL_NAME=$CLUSTER_NAME-az1
 export WORKER_COUNT="2"
-export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge"
 export AZ="az1"
 
@@ -14,7 +13,6 @@ hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $WORKER_COUNT \
-  --openstack-node-image-name $IMAGE_NAME \
   --openstack-node-flavor $FLAVOR \
   --openstack-node-availability-zone $AZ \
 ```

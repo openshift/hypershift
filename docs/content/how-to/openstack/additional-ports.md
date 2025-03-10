@@ -33,14 +33,12 @@ The following example demonstrates how to create a HostedCluster with additional
 ```shell
 export NODEPOOL_NAME=$CLUSTER_NAME-ports
 export WORKER_COUNT="2"
-export IMAGE_NAME="rhcos"
 export FLAVOR="m1.xlarge"
 
 hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
   --node-count $WORKER_COUNT \
-  --openstack-node-image-name $IMAGE_NAME \
   --openstack-node-flavor $FLAVOR \
   --openstack-node-additional-port "network-id=<SRIOV_NET_ID>,vnic-type=direct,disable-port-security=true" \
   --openstack-node-additional-port "network-id=<LB_NET_ID>,address-pairs:192.168.0.1-192.168.0.2"

@@ -41,8 +41,7 @@ rules:
   resources:
   - images
   verbs:
-  - list
-  - watch
+  - '*'
 ---
 apiVersion: v1
 data:
