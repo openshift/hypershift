@@ -167,6 +167,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 							Path: managedTrustBundlePath,
 						},
 					},
+					Optional: ptr.To(true),
 				},
 			},
 		},
