@@ -5,6 +5,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// KarpenterCoreE2EOverrideAnnotation is an annotation to be applied to a HostedCluster that allows
+	// overriding the default behavior of the Karpenter Operator for upstream Karpenter core E2E testing purposes.
+	KarpenterCoreE2EOverrideAnnotation = "hypershift.openshift.io/karpenter-core-e2e-override"
+)
+
 // Subnet contains resolved Subnet selector values utilized for node launch
 type Subnet struct {
 	// ID of the subnet
