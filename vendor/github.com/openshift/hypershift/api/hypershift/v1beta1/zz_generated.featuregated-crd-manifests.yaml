@@ -101,6 +101,7 @@ hostedclusters.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - MinimumKubeletVersion
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
@@ -156,6 +157,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - MinimumKubeletVersion
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""

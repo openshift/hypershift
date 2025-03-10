@@ -343,6 +343,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		CertRotationScale:                       certRotationScale,
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		EnableEtcdRecovery:                      enableEtcdRecovery,
+		FeatureGates:                            featuregate.MutableGates.GetAll(),
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

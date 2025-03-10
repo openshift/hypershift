@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"sort"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -21,6 +23,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	featuregate "k8s.io/component-base/featuregate"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -270,7 +273,7 @@ var (
 	}
 )
 
-func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane, openShiftTrustedCABundleConfigMapForCPOExists bool, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShiftVersion, kubeVersion string, ownerRef config.OwnerRef, deploymentConfig *config.DeploymentConfig, availabilityProberImage string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, additionalTrustBundle *corev1.LocalObjectReference, hcp *hyperv1.HostedControlPlane, openShiftTrustedCABundleConfigMapForCPOExists bool, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string, featureGates map[featuregate.Feature]featuregate.FeatureSpec) error {
 	// Before this change we did
 	// 		Selector: &metav1.LabelSelector{
 	//			MatchLabels: hccLabels,
@@ -312,7 +315,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, image, hcpName, openShif
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
-					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort, oauthAddress, oauthPort, releaseImage, registryOverrides, openShiftImageRegistryOverrides)),
+					util.BuildContainer(hccContainerMain(), buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion, enableCIDebugOutput, platformType, konnectivityAddress, konnectivityPort, oauthAddress, oauthPort, releaseImage, registryOverrides, openShiftImageRegistryOverrides, featureGates)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(hccVolumeKubeconfig(), buildHCCVolumeKubeconfig),
@@ -383,7 +386,7 @@ func hccVolumeClusterSignerCA() *corev1.Volume {
 	}
 }
 
-func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string) func(c *corev1.Container) {
+func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string, enableCIDebugOutput bool, platformType hyperv1.PlatformType, konnectivityAddress string, konnectivityPort int32, oauthAddress string, oauthPort int32, releaseImage string, registryOverrides map[string]string, openShiftImageRegistryOverrides map[string][]string, featureGates map[featuregate.Feature]featuregate.FeatureSpec) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -405,6 +408,10 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 		}
 		if platformType == hyperv1.IBMCloudPlatform {
 			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,inplaceupgrader,drainer,hcpstatus")
+		}
+
+		if len(featureGates) != 0 {
+			c.Command = append(c.Command, fmt.Sprintf("--feature-gates=%s", featureGateString(featureGates)))
 		}
 		c.Ports = []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}
 		c.Env = []corev1.EnvVar{
@@ -452,6 +459,17 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
+}
+
+// String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
+func featureGateString(featureGates map[featuregate.Feature]featuregate.FeatureSpec) string {
+	fgSlice := []string{}
+	for feature := range featureGates {
+		fgSlice = append(fgSlice, fmt.Sprintf("%s=true", feature))
+	}
+
+	sort.Strings(fgSlice)
+	return strings.Join(fgSlice, ",")
 }
 
 func buildHCCVolumeKubeconfig(v *corev1.Volume) {
