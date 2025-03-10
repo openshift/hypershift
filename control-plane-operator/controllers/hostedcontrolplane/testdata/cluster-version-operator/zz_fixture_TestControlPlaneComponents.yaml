@@ -303,31 +303,28 @@ spec:
         - |
           #!/bin/bash
           set -euo pipefail
-          cat > /tmp/clusterversion.yaml <<EOF
-          apiVersion: config.openshift.io/v1
-          kind: ClusterVersion
-          metadata:
-            name: version
-          spec:
-            clusterID: ${CLUSTER_ID}
+          cat > /tmp/clusterversion.json <<EOF
+          ${CLUSTER_VERSION_JSON}
           EOF
           oc get ns openshift-config &> /dev/null || oc create ns openshift-config
           oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
+          oc apply -f /var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*
+          oc apply -f /tmp/clusterversion.json
           while true; do
-            echo "Applying CVO bootstrap manifests"
+            echo "Applying CVO bootstrap manifests..."
             if oc apply -f /var/payload/manifests; then
               echo "Bootstrap manifests applied successfully."
               break
             fi
             sleep 1
           done
-          oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.yaml
         command:
         - /bin/bash
         env:
         - name: KUBECONFIG
           value: /etc/kubernetes/kubeconfig
-        - name: CLUSTER_ID
+        - name: CLUSTER_VERSION_JSON
+          value: '{"kind":"ClusterVersion","apiVersion":"config.openshift.io/v1","metadata":{"name":"version","creationTimestamp":null},"spec":{"clusterID":"","signatureStores":null},"status":{"desired":{"version":"","image":""},"observedGeneration":0,"versionHash":"","capabilities":{},"availableUpdates":null}}'
         image: cli
         imagePullPolicy: IfNotPresent
         name: bootstrap

@@ -363,7 +363,6 @@ const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.C
 
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)", message="disabledCapabilities is required once set"
 type Capabilities struct {
 	// disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
 	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
@@ -375,7 +374,6 @@ type Capabilities struct {
 	// Once set, this field cannot be changed.
 	//
 	// +listType=atomic
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="disabledCapabilities is immutable"
 	// +optional
 	DisabledCapabilities []OptionalCapability `json:"disabledCapabilities,omitempty"`
 }
@@ -388,7 +386,6 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
-
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -671,6 +668,7 @@ type HostedClusterSpec struct {
 	// This field is optional and once set cannot be changed.
 	// +optional
 	// +openshift:enable:FeatureGate=DisableClusterCapabilities
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 

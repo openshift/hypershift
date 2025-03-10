@@ -1,0 +1,81 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    apiVersion: openshiftcontrolplane.config.openshift.io/v1
+    build:
+      additionalTrustedCA: ""
+      buildDefaults:
+        env:
+        - name: TEST_VAR
+          value: TEST_VALUE
+        resources: {}
+      buildOverrides: null
+      imageTemplateFormat:
+        format: quay.io/test/docker-builder
+        latest: false
+    controllers:
+    - '*'
+    - -openshift.io/serviceaccount-pull-secrets
+    deployer:
+      imageTemplateFormat:
+        format: quay.io/test/deployer
+        latest: false
+    dockerPullSecret:
+      internalRegistryHostname: ""
+      registryURLs: null
+    featureGates: null
+    imageImport:
+      disableScheduledImport: false
+      maxScheduledImageImportsPerMinute: 0
+      scheduledImageImportMinimumIntervalSeconds: 0
+    ingress:
+      ingressIPNetworkCIDR: 99.1.0.0/24
+    kind: OpenShiftControllerManagerConfig
+    kubeClientConfig:
+      connectionOverrides:
+        acceptContentTypes: ""
+        burst: 0
+        contentType: ""
+        qps: 0
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+    leaderElection:
+      leaseDuration: 0s
+      renewDeadline: 0s
+      retryPeriod: 0s
+    network:
+      clusterNetworks: null
+      networkPluginName: ""
+      serviceNetworkCIDR: ""
+      vxlanPort: 0
+    resourceQuota:
+      concurrentSyncs: 0
+      minResyncPeriod: 0s
+      syncPeriod: 0s
+    securityAllocator:
+      mcsAllocatorRange: ""
+      mcsLabelsPerProject: 0
+      uidAllocatorRange: ""
+    serviceAccount:
+      managedNames: null
+    serviceServingCert:
+      signer: null
+    servingInfo:
+      bindAddress: 0.0.0.0:8443
+      bindNetwork: ""
+      certFile: /etc/kubernetes/certs/tls.crt
+      cipherSuites:
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      clientCA: /etc/kubernetes/client-ca/ca.crt
+      keyFile: /etc/kubernetes/certs/tls.key
+      maxRequestsInFlight: 0
+      minTLSVersion: VersionTLS12
+      requestTimeoutSeconds: 0
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: openshift-controller-manager-config
