@@ -27,6 +27,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -87,6 +88,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
 	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
+	flags.StringVar(&opts.EtcdStorageSize, "etcd-storage-size", opts.EtcdStorageSize, "The storage size for etcd data volume. Example: 8Gi")
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
@@ -124,6 +126,7 @@ type RawCreateOptions struct {
 	ControlPlaneAvailabilityPolicy   string
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
+	EtcdStorageSize                  string
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
@@ -328,6 +331,14 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 
 	if opts.EtcdStorageClass != "" {
 		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)
+	}
+
+	if opts.EtcdStorageSize != "" {
+		etcdStorageSize, err := resource.ParseQuantity(opts.EtcdStorageSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed parse ectd storage size: %w", err)
+		}
+		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
 	}
 
 	sshKey, sshPrivateKey := opts.PublicKey, opts.PrivateKey
