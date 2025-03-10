@@ -9,6 +9,7 @@ import (
 
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -44,6 +45,7 @@ import (
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
+	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -239,6 +241,18 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create hcp client")
+			os.Exit(1)
+		}
+		hcpList, err := hcpClient.HypershiftV1beta1().HostedControlPlanes(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil || len(hcpList.Items) == 0 {
+			setupLog.Error(err, "failed to get hostedcontrolplane for the cluster")
+			os.Exit(1)
+		}
+		hcp := &hcpList.Items[0]
+
 		// The HyperShift operator is generally able to specify with precision the images
 		// that we need to use here. In order to be backwards-compatible, though, we need
 		// to do so with environment variables. While it's possible that a more vigorous
@@ -426,6 +440,14 @@ func NewStartCommand() *cobra.Command {
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
+			os.Exit(1)
+		}
+
+		if err := (&healthcheck.HealthCheckUpdater{
+			Client:             mgr.GetClient(),
+			HostedControlPlane: crclient.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Name},
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "health-check-updater")
 			os.Exit(1)
 		}
 
