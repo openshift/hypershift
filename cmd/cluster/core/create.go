@@ -104,7 +104,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
-
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported value is ImageRegistry.")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -163,6 +163,7 @@ type RawCreateOptions struct {
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
 	FeatureSet                       string
+	DisableClusterCapabilities       []string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -324,6 +325,16 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 			InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 			Configuration:                    &hyperv1.ClusterConfiguration{},
 		},
+	}
+
+	if len(opts.DisableClusterCapabilities) > 0 {
+		caps := make([]hyperv1.OptionalCapability, len(opts.DisableClusterCapabilities))
+		for i, c := range opts.DisableClusterCapabilities {
+			caps[i] = hyperv1.OptionalCapability(c)
+		}
+		prototype.Cluster.Spec.Capabilities = &hyperv1.Capabilities{
+			DisabledCapabilities: caps,
+		}
 	}
 
 	if opts.EtcdStorageClass != "" {
