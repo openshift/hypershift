@@ -8142,6 +8142,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>clientID is the client ID of a managed identity.
 Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
 removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
@@ -8155,6 +8156,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>certificateName is the name of the certificate backing the managed identity. This certificate is expected to
 reside in an Azure Key Vault on the management cluster.
 Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
