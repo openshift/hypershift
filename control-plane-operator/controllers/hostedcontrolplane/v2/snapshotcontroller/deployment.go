@@ -18,8 +18,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				c.Env[i].Value = cpContext.UserReleaseImageProvider.Version()
 			case "OPERAND_IMAGE":
 				c.Env[i].Value = cpContext.ReleaseImageProvider.GetImage("csi-snapshot-controller")
-			case "WEBHOOK_IMAGE":
-				c.Env[i].Value = cpContext.ReleaseImageProvider.GetImage("csi-snapshot-validation-webhook")
 			}
 		}
 		// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller and csi-snapshot-webhook pods as.
