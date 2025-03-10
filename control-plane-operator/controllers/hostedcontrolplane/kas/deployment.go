@@ -310,6 +310,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	if auditWebhookRef != nil {
 		applyKASAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, auditWebhookRef)
+		deployment.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To[int64](130)
 	}
 
 	if secretEncryptionData != nil {
