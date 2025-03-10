@@ -7,18 +7,24 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -51,6 +57,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					{
+						name: "when disabledCapabilities is set to ImageRegistry it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								DisabledCapabilities: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when disabledCapabilities is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								DisabledCapabilities: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "TODO: invalid value",
+					},
 					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -876,7 +904,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -1279,6 +1306,11 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			hc.Spec.Capabilities = &hyperv1.Capabilities{
+				DisabledCapabilities: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
 		}
 	}
 
@@ -1291,7 +1323,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1299,6 +1330,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
+
+		// ensure image registry component is disabled
+		testCreateClusterWithDisabledCapabilities(ctx, t, g, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -1340,7 +1374,6 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1394,6 +1427,79 @@ func TestCreateClusterPrivate(t *testing.T) {
 
 func TestCreateClusterPrivateWithRouteKAS(t *testing.T) {
 	testCreateClusterPrivate(t, true)
+}
+
+// testCreateClusterWithDisabledCapabilities implements a test that creates a cluster
+// with the ImageRegistry capability disabled, then attempts to enable it.
+func testCreateClusterWithDisabledCapabilities(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
+	}
+
+	e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+
+	guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+
+	guestClient, err := configv1client.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	_, err = guestClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"image-registry\" not found"))
+
+	client, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	// ensure existing service accounts don't have pull-secrets.
+	e2eutil.EventuallyObject(t, ctx, "Waiting for service account default/default to be provisioned...",
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := client.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]e2eutil.Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, fmt.Sprintf("expected default/default service account to exist, got nil"), nil
+			},
+		},
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err := client.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// create a namespace and ensure no pull-secrets are provisioned to
+	// the newly auto-created service accounts.
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"}}
+	ns, err = client.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't create test namespace")
+
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("Waiting for service account default/%s to be provisioned...", ns.Name),
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := client.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]e2eutil.Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, fmt.Sprintf("expected default/default service account to exist, got nil"), nil
+			},
+		},
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err = client.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// ensure image-registry resources are not present
+	_, err = client.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 }
 
 // testCreateClusterPrivate implements a smoke test that creates a private cluster.
@@ -1452,5 +1558,4 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
-
 }
