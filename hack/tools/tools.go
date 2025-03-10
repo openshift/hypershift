@@ -17,4 +17,5 @@ import (
 	_ "gotest.tools/gotestsum"
 	_ "honnef.co/go/tools/cmd/staticcheck"
 	_ "k8s.io/code-generator"
+	_ "go.uber.org/mock/mockgen"
 )
