@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -224,27 +223,6 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 
 	resources = append(resources, credentialsSecret)
 
-	resources = append(resources, &rbacv1.Role{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Role",
-			APIVersion: rbacv1.SchemeGroupVersion.String(),
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: o.namespace,
-			Name:      "capi-provider-role",
-		},
-		// The following rule is required for CAPO to watch for the Images resources created by ORC,
-		// which is a dependency since CAPO v0.11.0.
-		// This rule is also defined in the Hypershift HostedCluster controller and the Hypershift Operator when creating
-		// the cluster.
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images"},
-				Verbs:     []string{"list", "watch"},
-			},
-		},
-	})
 	return resources, nil
 }
 
