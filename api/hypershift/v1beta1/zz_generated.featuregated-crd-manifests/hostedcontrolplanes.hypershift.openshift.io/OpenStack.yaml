@@ -4961,7 +4961,6 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 maxItems: 6
-                minItems: 4
                 type: array
               sshKey:
                 description: |-
