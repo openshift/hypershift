@@ -373,11 +373,11 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		return service
 	}
 
-	capiv1.AddToScheme(scheme.Scheme)
-	hyperv1.AddToScheme(scheme.Scheme)
-	kubevirtv1.AddToScheme(scheme.Scheme)
-	discoveryv1.AddToScheme(scheme.Scheme)
-	corev1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
+	_ = hyperv1.AddToScheme(scheme.Scheme)
+	_ = kubevirtv1.AddToScheme(scheme.Scheme)
+	_ = discoveryv1.AddToScheme(scheme.Scheme)
+	_ = corev1.AddToScheme(scheme.Scheme)
 	testCases := []struct {
 		name                          string
 		machines                      []capiv1.Machine
@@ -500,12 +500,14 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			}
 			obtainedEndpointSliceList := discoveryv1.EndpointSliceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedEndpointSliceList)).To(Succeed())
-			yaml.Marshal(obtainedEndpointSliceList)
+			_, err := yaml.Marshal(obtainedEndpointSliceList)
+			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedEndpointSliceList.Items).To(WithTransform(resetResourceVersionFromEndpointSlices, ConsistOf(tc.expectedIngressEndpointSlices)))
 
 			obtainedServicesList := corev1.ServiceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedServicesList)).To(Succeed())
-			yaml.Marshal(obtainedServicesList)
+			_, err = yaml.Marshal(obtainedServicesList)
+			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedServicesList.Items).To(WithTransform(resetResourceVersionFromServices, ConsistOf(tc.expectedServices)))
 
 		})
