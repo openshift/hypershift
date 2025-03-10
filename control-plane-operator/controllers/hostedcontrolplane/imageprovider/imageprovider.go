@@ -3,11 +3,13 @@ package imageprovider
 import "github.com/openshift/hypershift/support/releaseinfo"
 
 // ReleaseImageProvider provides the functionality to retrieve OpenShift components' container image from a release image.
+//go:generate mockgen -source=imageprovider.go -package=imageprovider -destination=releaseimageprovider_mock.go
 type ReleaseImageProvider interface {
 	GetImage(key string) string
 	ImageExist(key string) (string, bool)
 	Version() string
 	ComponentVersions() (map[string]string, error)
+	ComponentImages() map[string]string
 }
 
 var _ ReleaseImageProvider = &SimpleReleaseImageProvider{}

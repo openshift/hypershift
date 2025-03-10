@@ -21,13 +21,13 @@ import (
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -68,6 +68,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
+	"github.com/golang/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -948,6 +949,74 @@ spec:
 	return hcp
 }
 
+func initReleaseImage(version string) *releaseinfo.ReleaseImage {
+	return &releaseinfo.ReleaseImage{
+		ImageStream: &imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: version},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					{
+						Name: "cluster-autoscaler",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-machine-approver",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "aws-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-capi-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: util.AvailabilityProberImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: haproxy.HAProxyRouterImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+				},
+			},
+		},
+		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				"x86_64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-x86_64-release",
+									Image:   "us-east-1-x86_64-image",
+								},
+							},
+						},
+					},
+				},
+				"aarch64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-aarch64-release",
+									Image:   "us-east-1-aarch64-image",
+								},
+								"us-west-1": {
+									Release: "us-west-1-aarch64-release",
+									Image:   "",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func TestEventHandling(t *testing.T) {
 	t.Parallel()
 
@@ -997,12 +1066,17 @@ func TestEventHandling(t *testing.T) {
 	if !readyInfraStatus.IsReady() {
 		t.Fatal("readyInfraStatus fixture is not actually ready")
 	}
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initReleaseImage("4.15.0"), nil).AnyTimes()
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initReleaseImage("4.15.0"), nil).AnyTimes()
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
-		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		UserReleaseProvider:           mockedReleaseProvider,
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
@@ -1349,14 +1423,18 @@ func TestReconcileRouter(t *testing.T) {
 }
 
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initReleaseImage("4.15.0"), nil).AnyTimes()
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
-		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		UserReleaseProvider:           mockedReleaseProvider,
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return infra.InfrastructureStatus{}, nil
 		},
@@ -1613,8 +1691,13 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 // TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initReleaseImage("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
 	reconciler := &HostedControlPlaneReconciler{
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 	}
 	reconciler.registerComponents()
@@ -1662,11 +1745,21 @@ func TestControlPlaneComponents(t *testing.T) {
 		},
 	}
 
+	mockedReleaseImageProvider := imageprovider.NewMockReleaseImageProvider(mockCtrl)
+	mockedReleaseImageProvider.EXPECT().ImageExist(gomock.Any()).DoAndReturn(func(key string) (string, bool) { return key, true }).AnyTimes()
+	mockedReleaseImageProvider.EXPECT().Version().Return("4.18.0").AnyTimes()
+	mockedReleaseImageProvider.EXPECT().GetImage(gomock.Any()).DoAndReturn(func(image string) string { return image }).AnyTimes()
+	mockedReleaseImageProvider.EXPECT().ComponentVersions().Return(map[string]string{"kubernetes": "1.30.1"}, nil).AnyTimes()
+
+	mockedUserReleaseImageProvider := imageprovider.NewMockReleaseImageProvider(mockCtrl)
+	mockedUserReleaseImageProvider.EXPECT().Version().Return("4.18.0").AnyTimes()
+	mockedUserReleaseImageProvider.EXPECT().GetImage(gomock.Any()).DoAndReturn(func(image string) string { return image }).AnyTimes()
+	mockedUserReleaseImageProvider.EXPECT().ImageExist(gomock.Any()).DoAndReturn(func(key string) (string, bool) { return key, true }).AnyTimes()
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
 		CreateOrUpdateProviderV2: upsert.NewV2(false),
-		ReleaseImageProvider:     testutil.FakeImageProvider(),
-		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		ReleaseImageProvider:     mockedReleaseImageProvider,
+		UserReleaseImageProvider: mockedUserReleaseImageProvider,
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 			Result: &dockerv1client.DockerImageConfig{
 				Config: &docker10.DockerConfig{
@@ -1837,7 +1930,7 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 			Namespace: namespace,
 		},
 		Status: hyperv1.ControlPlaneComponentStatus{
-			Version: testutil.FakeImageProvider().Version(),
+			Version: "4.18.0",
 			Conditions: []metav1.Condition{
 				{
 					Type:   string(hyperv1.ControlPlaneComponentAvailable),

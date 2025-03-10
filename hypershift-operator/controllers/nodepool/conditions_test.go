@@ -11,9 +11,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/openshift/api/image/docker10"
 
@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/blang/semver"
+	"github.com/golang/mock/gomock"
 )
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {
@@ -103,6 +104,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 
 func TestUpdatingConfigCondition(t *testing.T) {
 	g := NewGomegaWithT(t)
+	mockCtrl := gomock.NewController(t)
 
 	tests := []struct {
 		name                  string
@@ -220,16 +222,18 @@ func TestUpdatingConfigCondition(t *testing.T) {
 				ignitionConfig3,
 			).Build()
 
+			mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initVersionedReleaseImage("4.18.0"), nil).AnyTimes()
+			mockedImageDataProvider := util.NewMockImageMetadataProvider(mockCtrl)
+			mockedImageDataProvider.EXPECT().ImageMetadata(gomock.Any(), gomock.Any(), gomock.Any()).Return(&dockerv1client.DockerImageConfig{
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{},
+				}}, nil).AnyTimes()
+
 			r := &NodePoolReconciler{
-				Client:          client,
-				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
-				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					Result: &dockerv1client.DockerImageConfig{
-						Config: &docker10.DockerConfig{
-							Labels: map[string]string{},
-						},
-					},
-				},
+				Client:                client,
+				ReleaseProvider:       mockedReleaseProvider,
+				ImageMetadataProvider: mockedImageDataProvider,
 			}
 
 			if tc.machineSetExists {
@@ -257,6 +261,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 
 func TestUpdatingVersionCondition(t *testing.T) {
 	g := NewGomegaWithT(t)
+	mockCtrl := gomock.NewController(t)
 
 	tests := []struct {
 		name                  string
@@ -369,17 +374,18 @@ func TestUpdatingVersionCondition(t *testing.T) {
 				ignitionConfig2,
 				ignitionConfig3,
 			).Build()
+			mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initVersionedReleaseImage("4.18.0"), nil).AnyTimes()
+			mockedImageDataProvider := util.NewMockImageMetadataProvider(mockCtrl)
+			mockedImageDataProvider.EXPECT().ImageMetadata(gomock.Any(), gomock.Any(), gomock.Any()).Return(&dockerv1client.DockerImageConfig{
+				ContainerConfig: docker10.DockerConfig{
+					Labels: map[string]string{},
+				}}, nil).AnyTimes()
 
 			r := &NodePoolReconciler{
-				Client:          client,
-				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
-				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					Result: &dockerv1client.DockerImageConfig{
-						Config: &docker10.DockerConfig{
-							Labels: map[string]string{},
-						},
-					},
-				},
+				Client:                client,
+				ReleaseProvider:       mockedReleaseProvider, //&fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+				ImageMetadataProvider: mockedImageDataProvider,
 			}
 
 			if tc.machineSetExists {

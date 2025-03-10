@@ -15,12 +15,15 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/support/globalconfig"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 	supportutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,6 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/golang/mock/gomock"
 )
 
 type testClient struct {
@@ -133,6 +138,76 @@ var cpObjects = []client.Object{
 // for the initial objects.
 func TestReconcileErrorHandling(t *testing.T) {
 	// get initial number of creates with no get errors
+	mockCtrl := gomock.NewController(t)
+	mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+		return &releaseinfo.ReleaseImage{
+			ImageStream: &imagev1.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: "4.15.0"},
+				Spec: imagev1.ImageStreamSpec{
+					Tags: []imagev1.TagReference{
+						{
+							Name: "cluster-autoscaler",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "cluster-machine-approver",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "aws-cluster-api-controllers",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "cluster-capi-controllers",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: util.AvailabilityProberImageName,
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: haproxy.HAProxyRouterImageName,
+							From: &corev1.ObjectReference{Name: ""},
+						},
+					},
+				},
+			},
+			StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+				Architectures: map[string]releaseinfo.CoreOSArchitecture{
+					"x86_64": {
+						Images: releaseinfo.CoreOSImages{
+							AWS: releaseinfo.CoreOSAWSImages{
+								Regions: map[string]releaseinfo.CoreOSAWSImage{
+									"us-east-1": {
+										Release: "us-east-1-x86_64-release",
+										Image:   "us-east-1-x86_64-image",
+									},
+								},
+							},
+						},
+					},
+					"aarch64": {
+						Images: releaseinfo.CoreOSImages{
+							AWS: releaseinfo.CoreOSAWSImages{
+								Regions: map[string]releaseinfo.CoreOSAWSImage{
+									"us-east-1": {
+										Release: "us-east-1-aarch64-release",
+										Image:   "us-east-1-aarch64-image",
+									},
+									"us-west-1": {
+										Release: "us-west-1-aarch64-release",
+										Image:   "",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	}).AnyTimes()
+
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
 
 	var totalCreates int
@@ -151,7 +226,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			releaseProvider:        mockedReleaseProvider,
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
@@ -175,7 +250,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			releaseProvider:        mockedReleaseProvider,
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
 		r.Reconcile(context.Background(), controllerruntime.Request{})

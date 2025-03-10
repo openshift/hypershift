@@ -9,13 +9,15 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,13 +31,85 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/go-logr/zapr"
+	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"go.uber.org/zap/zaptest"
 )
 
+func initMockedLookupVersionedImageStream(version string) func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	return func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+		return &releaseinfo.ReleaseImage{
+			ImageStream: &imagev1.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{Name: version},
+				Spec: imagev1.ImageStreamSpec{
+					Tags: []imagev1.TagReference{
+						{
+							Name: "cluster-autoscaler",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "cluster-machine-approver",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "aws-cluster-api-controllers",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: "cluster-capi-controllers",
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: hyperutil.AvailabilityProberImageName,
+							From: &corev1.ObjectReference{Name: ""},
+						},
+						{
+							Name: haproxy.HAProxyRouterImageName,
+							From: &corev1.ObjectReference{Name: ""},
+						},
+					},
+				},
+			},
+			StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+				Architectures: map[string]releaseinfo.CoreOSArchitecture{
+					"x86_64": {
+						Images: releaseinfo.CoreOSImages{
+							AWS: releaseinfo.CoreOSAWSImages{
+								Regions: map[string]releaseinfo.CoreOSAWSImage{
+									"us-east-1": {
+										Release: "us-east-1-x86_64-release",
+										Image:   "us-east-1-x86_64-image",
+									},
+								},
+							},
+						},
+					},
+					"aarch64": {
+						Images: releaseinfo.CoreOSImages{
+							AWS: releaseinfo.CoreOSAWSImages{
+								Regions: map[string]releaseinfo.CoreOSAWSImage{
+									"us-east-1": {
+										Release: "us-east-1-aarch64-release",
+										Image:   "us-east-1-aarch64-image",
+									},
+									"us-west-1": {
+										Release: "us-west-1-aarch64-release",
+										Image:   "",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}, nil
+	}
+}
+
 func TestSecretJanitor_Reconcile(t *testing.T) {
 	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	mockCtrl := gomock.NewController(t)
 
 	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
 	if err != nil {
@@ -155,12 +229,15 @@ spec:
 		ignitionConfig3,
 		ignitionServerCACert,
 	).Build()
+	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
+	//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
+	// this protects us from possibly hiding other factors that might be causing the token to be updated
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(initVersionedReleaseImage("4.18.0"), nil).AnyTimes()
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
-			Client: c,
-			//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
-			// this protects us from possibly hiding other factors that might be causing the token to be updated
-			ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.18.0").String()},
+			Client:          c,
+			ReleaseProvider: mockedReleaseProvider,
 			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{Config: &docker10.DockerConfig{
 				Labels: map[string]string{},
 			}}},
@@ -295,6 +372,7 @@ spec:
 }
 
 func TestShouldKeepOldUserData(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	pullSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test"},
 		Data: map[string][]byte{
@@ -303,10 +381,11 @@ func TestShouldKeepOldUserData(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		hc              *hyperv1.HostedCluster
-		releaseProvider releaseinfo.Provider
-		expected        bool
+		name                 string
+		hc                   *hyperv1.HostedCluster
+		releaseProvider      *releaseinfo.MockProviderWithRegistryOverrides
+		releaseMockedVersion string
+		expected             bool
 	}{
 		{
 			name: "when hosted cluster is not aws it should NOT keep old user data",
@@ -328,7 +407,8 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			expected: false,
+			releaseProvider: releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			expected:        false,
 		},
 		{
 			name: "when hosted cluster is less than 4.16 it should keep user data",
@@ -350,8 +430,9 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.15.0").String()},
-			expected:        true,
+			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseMockedVersion: "4.15.0",
+			expected:             true,
 		},
 		{
 			name: "when hosted cluster is equal or greater than 4.16 it should NOT keep user data",
@@ -372,8 +453,9 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					},
 				},
 			},
-			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.16.0").String()},
-			expected:        false,
+			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseMockedVersion: "4.16.0",
+			expected:             false,
 		},
 	}
 
@@ -387,6 +469,10 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			r := &NodePoolReconciler{
 				Client:          c,
 				ReleaseProvider: tc.releaseProvider,
+			}
+			if len(tc.releaseMockedVersion) > 0 {
+				releaseImage := initVersionedReleaseImage(tc.releaseMockedVersion)
+				tc.releaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(releaseImage, nil).AnyTimes()
 			}
 
 			shouldKeepOldUserData, err := r.shouldKeepOldUserData(context.Background(), tc.hc)

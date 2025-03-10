@@ -11,14 +11,15 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -514,6 +516,77 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 	}
 }
 
+func initVersionedReleaseImage(version string) *releaseinfo.ReleaseImage {
+	return &releaseinfo.ReleaseImage{
+		ImageStream: &imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: version},
+			Spec: imagev1.ImageStreamSpec{
+				Tags: []imagev1.TagReference{
+					{
+						Name: "cluster-autoscaler",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-machine-approver",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "aws-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "cluster-capi-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: util.AvailabilityProberImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: haproxy.HAProxyRouterImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+				},
+			},
+		},
+		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				"x86_64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-x86_64-release",
+									Image:   "us-east-1-x86_64-image",
+								},
+							},
+						},
+					},
+				},
+				"aarch64": {
+					Images: releaseinfo.CoreOSImages{
+						AWS: releaseinfo.CoreOSAWSImages{
+							Regions: map[string]releaseinfo.CoreOSAWSImage{
+								"us-east-1": {
+									Release: "us-east-1-aarch64-release",
+									Image:   "us-east-1-aarch64-image",
+								},
+								"us-west-1": {
+									Release: "us-west-1-aarch64-release",
+									Image:   "",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func initReleaseImage() *releaseinfo.ReleaseImage {
+	return initVersionedReleaseImage("4.15.0")
+}
 func TestDefaultNodePoolAMI(t *testing.T) {
 	testCases := []struct {
 		name          string
@@ -571,31 +644,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			other := []client.Object{
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
-					Data: map[string][]byte{
-						corev1.DockerConfigJsonKey: nil,
-					},
-				},
-			}
-
-			client := fake.NewClientBuilder().WithObjects(other...).Build()
-			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{}
-			hc := &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					PullSecret: corev1.LocalObjectReference{
-						Name: "pull-secret",
-					},
-					Release: hyperv1.Release{
-						Image: "image-4.12.0",
-					},
-				},
-			}
-
-			ctx := context.Background()
-			tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
+			tc.releaseImage = initReleaseImage()
 
 			tc.image, tc.err = defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.releaseImage)
 			if strings.Contains(tc.name, "successfully") {
@@ -675,12 +724,11 @@ func TestGetHostedClusterVersion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-
-			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
-				Version: tc.releaseImageVersion,
-			}
+			mockCtrl := gomock.NewController(t)
+			mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
+			mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(initVersionedReleaseImage("4.15.0"), nil).AnyTimes()
 			r := NodePoolReconciler{
-				ReleaseProvider: releaseProvider,
+				ReleaseProvider: mockedReleaseProvider,
 			}
 			hc := &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{

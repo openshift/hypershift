@@ -91,9 +91,14 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
+.PHONY: mockgen
+mockgen:
+	go install github.com/golang/mock/mockgen@v1.6.0
+	go generate ./...
+
 # Compile all tests
 .PHONY: tests
-tests:
+tests: mockgen
 	$(GO) test -o /dev/null -c ./...
 
 # Build hypershift-operator binary
