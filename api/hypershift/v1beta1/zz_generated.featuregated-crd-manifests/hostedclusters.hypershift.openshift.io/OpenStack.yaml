@@ -3897,6 +3897,14 @@ spec:
                     description: OpenStack specifies configuration for clusters running
                       on OpenStack.
                     properties:
+                      apiServerSubnetID:
+                        description: |-
+                          APIServerSubnetID is the ID of the subnet where the API server VIP will be created.
+                          It results as an annotation on the API server service which is used by the cloud provider to
+                          allocate a port on the subnet.
+                          If not specified, the cloud provider will allocate a port on the default external network.
+                        format: uuid
+                        type: string
                       disableExternalNetwork:
                         description: |-
                           DisableExternalNetwork specifies whether or not to attempt to connect the cluster
