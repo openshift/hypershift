@@ -506,7 +506,7 @@ type HostedClusterSpec struct {
 	// Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.
 	//
 	// +kubebuilder:validation:MaxItems=6
-	// +kubebuilder:validation:XValidation:rule:self.platform == "IBMCloud" ? size(self.services) >= 3 : size(self.services) >= 4
+	// +kubebuilder:validation:XValidation:rule:self.platform == "IBMCloud" ? MinItems == 3 : MinItems == 4
 	// +kubebuilder:validation:ListType=atomic
 	// -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
 	// -kubebuilder:validation:XValidation:rule="self.platform.type == "IBMCloud" ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' service types" : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
