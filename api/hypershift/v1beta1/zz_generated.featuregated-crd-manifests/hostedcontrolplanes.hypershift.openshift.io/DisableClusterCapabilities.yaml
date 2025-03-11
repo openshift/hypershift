@@ -4501,8 +4501,12 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 maxItems: 6
-                minItems: 4
                 type: array
+                x-kubernetes-validations:
+                - message: spec.services in body should have at least 4 items or 3
+                    for IBMCloud
+                  rule: 'self.platform.type == ''IBMCloud'' ? size(self.services)
+                    >= 3 : size(self.services) >= 4'
               sshKey:
                 description: |-
                   LocalObjectReference contains enough information to let you locate the
