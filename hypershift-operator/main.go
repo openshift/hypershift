@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -216,6 +217,21 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	kubeDiscoveryClient, err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 	if err != nil {
 		return fmt.Errorf("unable to create discovery client: %w", err)
+	}
+
+	// this codifies our skew policy so that we don't accidentally take action on kubernetes clusters that are incompatible
+	// In general, a new release of multicluster engine Operator runs on the following versions of OpenShift Container Platform:
+	//    The latest General Availability version of OpenShift Container Platform
+	//    Two versions before the latest General Availability version of OpenShift Container Platform
+	// from https://docs.openshift.com/container-platform/4.17/hosted_control_planes/index.html#hcp-versioning-mgmt_hcp-overview
+	if kubeVersion, err := kubeDiscoveryClient.ServerVersion(); err == nil { // fail open
+		if kubeVersion.Major == "1" { // fail open
+			if minorVersion, err := strconv.Atoi(kubeVersion.Minor); err == nil { // fail open
+				if minorVersion < 30 {
+					return fmt.Errorf("hypershift requires at least kubernetes 1.30 to function")
+				}
+			}
+		}
 	}
 
 	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(kubeDiscoveryClient)
