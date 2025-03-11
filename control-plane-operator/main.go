@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -329,7 +330,7 @@ func NewStartCommand() *cobra.Command {
 			return "", fmt.Errorf("couldn't locate operator container on deployment")
 		}
 
-		if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+		if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 			hostedClusterConfigOperatorImage, err = lookupOperatorImage(hostedClusterConfigOperatorImage)
 			if err != nil {
 				return false, err

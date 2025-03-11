@@ -71,7 +71,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 }
 
 func (o *DestroyIAMOptions) Run(ctx context.Context) error {
-	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	return wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := o.DestroyIAM(ctx)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
@@ -81,7 +81,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context) error {
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 }
 
 func (o *DestroyIAMOptions) DestroyIAM(ctx context.Context) error {

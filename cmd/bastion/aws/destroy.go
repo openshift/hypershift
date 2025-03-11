@@ -115,7 +115,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 	awsConfig := awsutil.NewConfig()
 	ec2Client := ec2.New(awsSession, awsConfig)
 
-	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	return wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := destroyBastion(ctx, logger, ec2Client, infraID)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
@@ -125,7 +125,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 }
 
 func destroyBastion(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {

@@ -3,7 +3,7 @@ package etcdcli
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/url"
 	"os"
 	"strings"
@@ -57,14 +57,13 @@ func NewEtcdClient(endpointsFunc func() ([]string, error), eventRecorder events.
 // newEtcdClientWithClientOpts allows customization of the etcd client using ClientOptions. All clients must be manually
 // closed by the caller with Close().
 func newEtcdClientWithClientOpts(endpoints []string, skipConnectionTest bool, opts ...ClientOption) (*clientv3.Client, error) {
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, ioutil.Discard, os.Stderr))
+	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, os.Stderr))
 	clientOpts, err := newClientOpts(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("error during clientOpts: %w", err)
 	}
 
 	dialOptions := []grpc.DialOption{
-		grpc.WithBlock(), // block until the underlying connection is up
 		grpc.WithChainUnaryInterceptor(grpcprom.UnaryClientInterceptor),
 		grpc.WithChainStreamInterceptor(grpcprom.StreamClientInterceptor),
 	}
