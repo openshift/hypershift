@@ -390,7 +390,7 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 
 	deployment := getOperatorDeployment(opts)
 	fmt.Printf("Waiting for deployment %q in namespace %q rollout for operator...\n", deployment.Name, deployment.Namespace)
-	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
+	err = wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			return false, err
 		}
@@ -425,7 +425,7 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 	if opts.Development {
 		return deployment, nil
 	}
-	err = wait.PollImmediateUntilWithContext(waitCtx, 2*time.Second, func(ctx context.Context) (bool, error) {
+	err = wait.PollUntilContextCancel(waitCtx, 2*time.Second, true, func(ctx context.Context) (bool, error) {
 		endpoints := operatorEndpoints(opts)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(endpoints), endpoints); err != nil {
 			if apierrors.IsNotFound(err) {
