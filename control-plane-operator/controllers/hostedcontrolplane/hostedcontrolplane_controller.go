@@ -4742,7 +4742,7 @@ func (r *HostedControlPlaneReconciler) reconcileControlPlanePKIOperator(ctx cont
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.SimpleReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
+func (r *HostedControlPlaneReconciler) reconcileHostedClusterConfigOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN, openShiftTrustedCABundleConfigMapForCPOExists bool) error {
 	versions, err := releaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
@@ -5175,7 +5175,7 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 	return false, nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := snapshotcontroller.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, r.SetDefaultSecurityContext)
 
 	deployment := manifests.CSISnapshotControllerOperatorDeployment(hcp.Namespace)
@@ -5211,7 +5211,7 @@ func (r *HostedControlPlaneReconciler) reconcileCSISnapshotControllerOperator(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	params := storage.NewParams(hcp, userReleaseImageProvider.Version(), releaseImageProvider, userReleaseImageProvider, r.SetDefaultSecurityContext)
 
 	if hyperazureutil.IsAroHCP() {
