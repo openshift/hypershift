@@ -7919,6 +7919,20 @@ string
 If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>annotations</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>annotations is a map of key-value pairs that will be added to the LoadBalancer service.
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;annotation key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;annotation value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
