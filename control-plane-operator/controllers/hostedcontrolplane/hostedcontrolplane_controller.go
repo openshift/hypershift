@@ -203,12 +203,12 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
-	r.ec2Client, r.awsSession = getEC2Client()
+	r.ec2Client, r.awsSession = GetEC2Client()
 
 	return nil
 }
 
-func getEC2Client() (ec2iface.EC2API, *session.Session) {
+func GetEC2Client() (ec2iface.EC2API, *session.Session) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
@@ -304,14 +304,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	originalHostedControlPlane := hostedControlPlane.DeepCopy()
-	// This is the best effort ping to the identity provider
-	// that enables access from the operator to the cloud provider resources.
-	healthCheckIdentityProvider(ctx, hostedControlPlane)
-	// We want to ensure the healthCheckIdentityProvider condition is in status before we go through the deletion timestamp path.
-	if err := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-	}
-	originalHostedControlPlane = hostedControlPlane.DeepCopy()
 
 	// Return early if deleted
 	if !hostedControlPlane.DeletionTimestamp.IsZero() {
@@ -4708,70 +4700,6 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 	// TODO: create custom kubeconfig to the guest cluster + RBAC
 
 	return nil
-}
-
-func healthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
-	if hcp.Spec.Platform.AWS == nil {
-		return
-	}
-
-	log := ctrl.LoggerFrom(ctx)
-
-	ec2Client, _ := getEC2Client()
-	if ec2Client == nil {
-		return
-	}
-
-	// We try to interact with cloud provider to see validate is operational.
-	if _, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{}); err != nil {
-		if awsErr, ok := err.(awserr.Error); ok {
-			// When awsErr.Code() is WebIdentityErr it's likely to be an external issue, e.g. the idp resource was deleted.
-			// We don't set awsErr.Message() in the condition as it might contain aws requests IDs that would make the condition be updated in loop.
-			if awsErr.Code() == "WebIdentityErr" {
-				condition := metav1.Condition{
-					Type:               string(hyperv1.ValidAWSIdentityProvider),
-					ObservedGeneration: hcp.Generation,
-					Status:             metav1.ConditionFalse,
-					Message:            awsErr.Code(),
-					Reason:             hyperv1.InvalidIdentityProvider,
-				}
-				meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-				log.Info("Error health checking AWS identity provider", awsErr.Code(), awsErr.Message())
-				return
-			}
-
-			condition := metav1.Condition{
-				Type:               string(hyperv1.ValidAWSIdentityProvider),
-				ObservedGeneration: hcp.Generation,
-				Status:             metav1.ConditionUnknown,
-				Message:            awsErr.Code(),
-				Reason:             hyperv1.AWSErrorReason,
-			}
-			meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-			log.Info("Error health checking AWS identity provider", awsErr.Code(), awsErr.Message())
-			return
-		}
-
-		condition := metav1.Condition{
-			Type:               string(hyperv1.ValidAWSIdentityProvider),
-			ObservedGeneration: hcp.Generation,
-			Status:             metav1.ConditionUnknown,
-			Message:            err.Error(),
-			Reason:             hyperv1.StatusUnknownReason,
-		}
-		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
-		log.Info("Error health checking AWS identity provider", "error", err)
-		return
-	}
-
-	condition := metav1.Condition{
-		Type:               string(hyperv1.ValidAWSIdentityProvider),
-		ObservedGeneration: hcp.Generation,
-		Status:             metav1.ConditionTrue,
-		Message:            hyperv1.AllIsWellMessage,
-		Reason:             hyperv1.AsExpectedReason,
-	}
-	meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 }
 
 func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
