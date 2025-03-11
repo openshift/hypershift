@@ -26,6 +26,9 @@ issues:
         - staticcheck
       text: "SA1019: in.Status.DNSName is deprecated"
     - linters:
+        - staticcheck
+      text: "SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead"
+    - linters:
         - unused
       text: "const `tuningConfigKey` is unused"
 linters:
@@ -36,7 +39,6 @@ linters:
     - gosimple
     - errcheck
     - govet
-  disable:
     - staticcheck
 linters-settings:
   gci:
