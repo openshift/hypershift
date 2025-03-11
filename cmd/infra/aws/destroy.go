@@ -181,7 +181,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 		infraCtx = ctx
 	}
 
-	return wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	return wait.PollUntilContextCancel(infraCtx, 5*time.Second, true, func(context.Context) (bool, error) {
 		err := o.DestroyInfra(infraCtx)
 		if err != nil {
 			if !awsutil.IsErrorRetryable(err) {
@@ -191,7 +191,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 			return false, nil
 		}
 		return true, nil
-	}, infraCtx.Done())
+	})
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
