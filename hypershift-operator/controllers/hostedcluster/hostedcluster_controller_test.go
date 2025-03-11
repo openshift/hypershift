@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,8 +27,8 @@ import (
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -62,6 +63,7 @@ import (
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -78,6 +80,7 @@ const (
 )
 
 func TestHasBeenAvailable(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	now := time.Now().Truncate(time.Second)
 	reconcilerNow := metav1.Time{Time: now.Add(time.Second)}
 
@@ -165,6 +168,7 @@ func TestHasBeenAvailable(t *testing.T) {
 
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp).WithStatusSubresource(hcluster).Build()
 			clock := clocktesting.NewFakeClock(tc.timestamp)
+			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			r := &HostedClusterReconciler{
 				Client:                        client,
 				Clock:                         clock,
@@ -172,7 +176,7 @@ func TestHasBeenAvailable(t *testing.T) {
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					return mockedProviderWithOpenShiftImageRegistryOverrides, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result:   &dockerv1client.DockerImageConfig{},
 						Manifest: fakeimagemetadataprovider.FakeManifest{},
 					}, nil
@@ -1206,6 +1210,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	manifests := []manifestlist.ManifestDescriptor{
 		{
@@ -1409,6 +1414,16 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, cluster)
 	}
 
+	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().
+		Return(nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().
+		Return(nil).AnyTimes()
 	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 	r := &HostedClusterReconciler{
 		Client:            client,
@@ -1421,7 +1436,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		),
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-			return &fakereleaseprovider.FakeReleaseProvider{},
+			return mockedProviderWithOpenShiftImageRegistryOverrides,
 				&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 					MediaType: ManifestListMediaType,
 					Result:    &dockerv1client.DockerImageConfig{},
@@ -1895,10 +1910,12 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 }
 
 func TestValidateReleaseImage(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	testCases := []struct {
 		name                  string
 		other                 []crclient.Object
 		hostedCluster         *hyperv1.HostedCluster
+		releaseImageLoookup   func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error)
 		expectedResult        error
 		expectedNotFoundError bool
 	}{
@@ -1913,6 +1930,9 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			expectedResult:        errors.New("failed to get pull secret: secrets \"pull-secret\" not found"),
 			expectedNotFoundError: true,
@@ -1934,6 +1954,9 @@ func TestValidateReleaseImage(t *testing.T) {
 						Name: "pull-secret",
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			expectedResult: errors.New("expected .dockerconfigjson key in pull secret"),
 		},
@@ -1960,6 +1983,9 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return nil, errors.New("unable to lookup release image")
+			},
 			expectedResult: errors.New("failed to lookup release image: unable to lookup release image"),
 		},
 		{
@@ -1984,6 +2010,9 @@ func TestValidateReleaseImage(t *testing.T) {
 						Image: "image-4.7.0",
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.7.0"), nil
 			},
 			expectedResult: errors.New(`releases before 4.8 are not supported. Attempting to use: "4.7.0"`),
 		},
@@ -2017,6 +2046,9 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie(strings.ReplaceAll(image, "image-", "")), nil
+			},
 			expectedResult: errors.New(`y-stream downgrade from "4.16.0" to "4.15.0" is not supported`),
 		},
 		{
@@ -2048,6 +2080,9 @@ func TestValidateReleaseImage(t *testing.T) {
 						},
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie(strings.ReplaceAll(image, "image-", "")), nil
 			},
 			expectedResult: errors.New(`y-stream upgrade from "4.12.0" to "4.15.0" is not for OpenShiftSDN`),
 		},
@@ -2081,6 +2116,9 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 			expectedResult: nil,
 		},
 		{
@@ -2105,6 +2143,9 @@ func TestValidateReleaseImage(t *testing.T) {
 						Image: "image-4.15.0",
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			expectedResult: nil,
 		},
@@ -2139,6 +2180,9 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 			},
 			expectedResult: nil,
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 		},
 		{
 			name: "z-stream upgrade, success",
@@ -2171,6 +2215,9 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 			},
 			expectedResult: nil,
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 		},
 		{
 			name: "y-stream upgrade, success",
@@ -2202,6 +2249,9 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 			expectedResult: nil,
 		},
 		{
@@ -2232,32 +2282,23 @@ func TestValidateReleaseImage(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: nil,
+			releaseImageLoookup: nil, //won't be called
+			expectedResult:      nil,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+				DoAndReturn(tc.releaseImageLoookup).AnyTimes()
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
 				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{
-							ImageVersion: map[string]string{
-								"image-4.7.0":  "4.7.0",
-								"image-4.10.0": "4.10.0",
-								"image-4.11.0": "4.11.0",
-								"image-4.12.0": "4.12.0",
-								"image-4.12.1": "4.12.1",
-								"image-4.13.0": "4.13.0",
-								"image-4.14.0": "4.14.0",
-								"image-4.15.0": "4.15.0",
-								"image-4.16.0": "4.16.0",
-								"image-4.17.0": "4.17.0",
-								"image-4.18.0": "4.18.0",
-							},
-						},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
+					hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
 						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 							Result: &dockerv1client.DockerImageConfig{},
 						},
@@ -2409,14 +2450,15 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 }
 
 func TestIsUpgradeable(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	releaseImageFrom := "image-4.13"
-	releaseImageToZstream := "image-4.13.1"
 	releaseImageTo := "image-4.14"
 	tests := []struct {
-		name      string
-		hc        *hyperv1.HostedCluster
-		upgrading bool
-		err       bool
+		name                string
+		hc                  *hyperv1.HostedCluster
+		releaseImageLoookup func(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error)
+		upgrading           bool
+		err                 bool
 	}{
 		{
 			name: "version not reported yet",
@@ -2432,6 +2474,9 @@ func TestIsUpgradeable(t *testing.T) {
 				Status: hyperv1.HostedClusterStatus{
 					Version: nil,
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			upgrading: false,
 			err:       false,
@@ -2455,6 +2500,9 @@ func TestIsUpgradeable(t *testing.T) {
 						},
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			upgrading: false,
 			err:       false,
@@ -2484,6 +2532,9 @@ func TestIsUpgradeable(t *testing.T) {
 						},
 					},
 				},
+			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
 			},
 			upgrading: true,
 			err:       true,
@@ -2519,6 +2570,9 @@ func TestIsUpgradeable(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 			upgrading: true,
 			err:       true,
 		},
@@ -2548,6 +2602,9 @@ func TestIsUpgradeable(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				return testutils.InitReleaseImageOrDie("4.15.0"), nil
+			},
 			upgrading: true,
 			err:       false,
 		},
@@ -2556,7 +2613,7 @@ func TestIsUpgradeable(t *testing.T) {
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
-						Image: releaseImageToZstream,
+						Image: "image-4.13.1",
 					},
 					PullSecret: corev1.LocalObjectReference{
 						Name: "pull-secret",
@@ -2577,11 +2634,19 @@ func TestIsUpgradeable(t *testing.T) {
 					},
 				},
 			},
+			releaseImageLoookup: func(ctx context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+				releaseImage := testutils.InitReleaseImageOrDie("4.15.0")
+				releaseImage.ObjectMeta.Name = "4.13.1" // patch with z-stream
+				return releaseImage, nil
+			},
 			upgrading: true,
 			err:       false,
 		},
 	}
 	for _, test := range tests {
+		mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+		mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(test.releaseImageLoookup).AnyTimes()
+
 		objs := []crclient.Object{
 			&corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"},
@@ -2594,13 +2659,7 @@ func TestIsUpgradeable(t *testing.T) {
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
 			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-				return &fakereleaseprovider.FakeReleaseProvider{
-						ImageVersion: map[string]string{
-							"image-4.13":   "4.13.0",
-							"image-4.13.1": "4.13.1",
-							"image-4.14":   "4.15.0",
-						},
-					},
+				return mockedProviderWithOpenShiftImageRegistryOverrides,
 					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
@@ -2779,6 +2838,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 }
 
 func TestIsProgressing(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	tests := []struct {
 		name       string
 		hc         *hyperv1.HostedCluster
@@ -2997,16 +3057,13 @@ func TestIsProgressing(t *testing.T) {
 				},
 			},
 		}
+		mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+		mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
 			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-				return &fakereleaseprovider.FakeReleaseProvider{
-						ImageVersion: map[string]string{
-							"release-1.2": "1.2.0",
-							"release-1.3": "1.3.0",
-						},
-					},
+				return mockedProviderWithOpenShiftImageRegistryOverrides,
 					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
@@ -3906,6 +3963,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
+			mockCtrl := gomock.NewController(t)
 			testCase.objects = append(testCase.objects, testCase.hc)
 			infra := &configv1.Infrastructure{
 				ObjectMeta: metav1.ObjectMeta{
@@ -3923,7 +3981,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				WithObjects(testCase.objects...).
 				WithStatusSubresource(&hyperv1.HostedCluster{}).
 				Build()}
-
+			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			r := &HostedClusterReconciler{
 				Client:            client,
 				Clock:             clock.RealClock{},
@@ -3935,7 +3993,8 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
 				},
 				now: metav1.Now,
 			}
