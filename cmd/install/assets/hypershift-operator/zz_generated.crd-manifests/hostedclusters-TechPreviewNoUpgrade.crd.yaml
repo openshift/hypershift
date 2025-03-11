@@ -5486,7 +5486,7 @@ spec:
                   Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.
 
                   -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
-                  -kubebuilder:validation:XValidation:rule="['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
+                  -kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' service types" : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
                   -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
                   -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list."
                 items:
@@ -5610,7 +5610,6 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 maxItems: 6
-                minItems: 4
                 type: array
               sshKey:
                 description: |-
@@ -5689,6 +5688,10 @@ spec:
             - services
             type: object
             x-kubernetes-validations:
+            - message: spec.services in body should have at least 4 items or 3 for
+                IBMCloud
+              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
+                : size(self.services) >= 4'
             - message: Services is immutable. Changes might result in unpredictable
                 and disruptive behavior.
               rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services

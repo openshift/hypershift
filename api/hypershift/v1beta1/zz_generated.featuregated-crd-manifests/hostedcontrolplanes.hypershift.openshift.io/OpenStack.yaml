@@ -4974,7 +4974,6 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 maxItems: 6
-                minItems: 4
                 type: array
               sshKey:
                 description: |-
@@ -5048,6 +5047,11 @@ spec:
             - services
             - sshKey
             type: object
+            x-kubernetes-validations:
+            - message: spec.services in body should have at least 4 items or 3 for
+                IBMCloud
+              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
+                : size(self.services) >= 4'
           status:
             description: HostedControlPlaneStatus defines the observed state of HostedControlPlane
             properties:

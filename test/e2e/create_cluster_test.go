@@ -616,7 +616,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "3: spec.services in body should have at least 4 items",
+						expectedErrorSubstring: "spec.services in body should have at least 4 items or 3 for IBMCloud",
 					},
 					// {
 					// 	name: "when any of the required services is missing it should fail",
