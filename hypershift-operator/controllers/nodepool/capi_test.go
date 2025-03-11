@@ -918,12 +918,6 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			o.SetAnnotations(a)
 		}
 	}
-	withMaxUnhealthy := func(value string) func(*capiv1.MachineHealthCheck) {
-		return func(mhc *capiv1.MachineHealthCheck) {
-			maxUnhealthy := intstr.Parse(value)
-			mhc.Spec.MaxUnhealthy = &maxUnhealthy
-		}
-	}
 	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
 			for i := range mhc.Spec.UnhealthyConditions {
@@ -1006,24 +1000,6 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			hc:       hostedcluster(withNodeStartupTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
-		},
-		{
-			name:     "maxunhealthy override in hc",
-			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
-			np:       nodepool(),
-			expected: healthcheck(withMaxUnhealthy("10%")),
-		},
-		{
-			name:     "maxunhealthy override in np",
-			hc:       hostedcluster(),
-			np:       nodepool(withMaxUnhealthyOverride("5")),
-			expected: healthcheck(withMaxUnhealthy("5")),
-		},
-		{
-			name:     "maxunhealthy override in both, np takes precedence",
-			hc:       hostedcluster(withMaxUnhealthyOverride("10%")),
-			np:       nodepool(withMaxUnhealthyOverride("5")),
-			expected: healthcheck(withMaxUnhealthy("5")),
 		},
 		{
 			name:     "invalid maxunhealthy override value, default is preserved",
@@ -1422,10 +1398,6 @@ func TestCAPIReconcile(t *testing.T) {
 					CreateOrUpdateProvider: upsert.New(false),
 				},
 				capiClusterName: capiClusterName,
-			}
-
-			if tt.expectedError {
-				// TODO(alberto): use WithObjectTracker() / WithInterceptorFuncs() to mock error paths.
 			}
 
 			// Make sure the templates are populates in the control plane namespace

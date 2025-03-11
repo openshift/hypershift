@@ -379,7 +379,7 @@ func isTemporaryHTTPError(err error) (time.Duration, bool) {
 	}
 	switch t := err.(type) {
 	case net.Error:
-		return time.Second, t.Temporary() || t.Timeout()
+		return time.Second, t.Timeout()
 	case errcode.ErrorCoder:
 		// note: we explicitly do not check errcode.ErrorCodeUnknown because that is used in
 		// a wide range of scenarios to convey "generic error", not "retryable error"
