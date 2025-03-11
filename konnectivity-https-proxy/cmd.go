@@ -1,12 +1,14 @@
 package konnectivityhttpsproxy
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
@@ -66,6 +68,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ConnectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, bypass konnectivity to connect to cloud APIs while still honoring management proxy config")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
+		ctx := cmd.Context()
 		l.Info("Starting proxy", "version", version.String())
 		c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 		if err != nil {
@@ -148,10 +151,10 @@ func NewStartCommand() *cobra.Command {
 				l.V(4).Info("Should proxy", "url", u)
 				return u, nil
 			},
-			Dial: konnectivityDialer.Dial,
+			DialContext: konnectivityDialer.DialContext,
 		}
 		if httpsProxyURL != "" {
-			httpProxy.ConnectDialWithReq = connectDialFunc(l, httpProxy, httpsProxyURL, opts.ConnectDirectlyToCloudAPIs, konnectivityDialer.IsCloudAPI, userProxyFunc)
+			httpProxy.ConnectDialWithReq = connectDialFunc(ctx, l, httpProxy, httpsProxyURL, opts.ConnectDirectlyToCloudAPIs, konnectivityDialer.IsCloudAPI, userProxyFunc)
 		} else {
 			httpProxy.ConnectDial = nil
 			httpProxy.ConnectDialWithReq = nil
@@ -166,7 +169,7 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyURL string, connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(req *http.Request, network, addr string) (net.Conn, error) {
+func connectDialFunc(ctx context.Context, log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyURL string, connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(req *http.Request, network, addr string) (net.Conn, error) {
 	defaultDial := httpProxy.NewConnectDialToProxy(proxyURL)
 	return func(req *http.Request, network, addr string) (net.Conn, error) {
 		log.V(4).Info("Connect dial called", "network", network, "address", addr, "URL", req.URL)
@@ -186,8 +189,10 @@ func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyU
 		// If the URL is a cloud API or it should not be proxied, then
 		// send it through the dialer directly.
 		if (connectDirectlyToCloudAPIs && isCloudAPI(host)) || proxyURL == nil {
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
 			log.V(4).Info("Host is cloud API or should not use a proxy with it, dialing directly through konnectivity")
-			return httpProxy.Tr.Dial(network, addr)
+			return httpProxy.Tr.DialContext(timeoutCtx, network, addr)
 		}
 		log.V(4).Info("Using proxy to dial", "proxy", proxyURL)
 		return defaultDial(network, addr)
