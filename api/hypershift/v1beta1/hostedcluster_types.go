@@ -364,8 +364,8 @@ const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.C
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
 type Capabilities struct {
-	// disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+	// disabled when specified, sets the cluster version baselineCapabilitySet to None
+	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
 	// This effectively disables that capability on the hosted cluster.
 	//
 	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
@@ -375,7 +375,7 @@ type Capabilities struct {
 	//
 	// +listType=atomic
 	// +optional
-	DisabledCapabilities []OptionalCapability `json:"disabledCapabilities,omitempty"`
+	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
