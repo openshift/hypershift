@@ -3,6 +3,7 @@ package registryoperator
 import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 )
 
@@ -33,6 +34,7 @@ func (r *imageRegistryOperator) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &imageRegistryOperator{}).
 		WithAdaptFunction(adaptDeployment).
+		WithPredicate(isImageRegistryCapabilityEnabled).
 		WithManifestAdapter(
 			"podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
@@ -49,6 +51,12 @@ func NewComponent() component.ControlPlaneComponent {
 			ServiceAccountNameSpace: "openshift-image-registry",
 		}).
 		Build()
+}
+
+func isImageRegistryCapabilityEnabled(cpContext component.WorkloadContext) (bool, error) {
+	return capabilities.IsImageRegistryCapabilityEnabled(
+		cpContext.HCP.Spec.Capabilities,
+	), nil
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {

@@ -1,6 +1,7 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -8,6 +9,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -51,10 +53,36 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		}
 		c.Image = controlPlaneReleaseImage
 	})
+
+	// the ClusterVersion resource is created by the CVO bootstrap container.
+	// we marshal it to json as a means to validate its formatting, which protects
+	// us against easily preventable mistakes, such as typos.
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
+		},
+	}
+	if !capabilities.IsImageRegistryCapabilityEnabled(cpContext.HCP.Spec.Capabilities) {
+		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
+		}
+	}
+	clusterVersionJSON, err := json.Marshal(cv)
+	if err != nil {
+		return err
+	}
 	util.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env, corev1.EnvVar{
-			Name:  "CLUSTER_ID",
-			Value: cpContext.HCP.Spec.ClusterID,
+			Name:  "CLUSTER_VERSION_JSON",
+			Value: string(clusterVersionJSON),
 		})
 	})
 
