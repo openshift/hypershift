@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -57,30 +58,6 @@ type AWSEndpointServiceReconciler struct {
 	upsert.CreateOrUpdateProvider
 	ec2Client   ec2iface.EC2API
 	elbv2Client elbv2iface.ELBV2API
-}
-
-func mapNodePoolToAWSEndpointServicesFunc(c client.Client) handler.MapFunc {
-	return func(ctx context.Context, obj client.Object) []reconcile.Request {
-		nodePool, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return []reconcile.Request{}
-		}
-
-		hcpNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, nodePool.Spec.ClusterName)
-		return awsEndpointServicesByName(hcpNamespace)
-	}
-}
-
-func mapHostedClusterToAWSEndpointServicesFunc(c client.Client) handler.MapFunc {
-	return func(ctx context.Context, obj client.Object) []reconcile.Request {
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return []reconcile.Request{}
-		}
-
-		hcpNamespace := fmt.Sprintf("%s-%s", hc.Namespace, hc.Name)
-		return awsEndpointServicesByName(hcpNamespace)
-	}
 }
 
 func awsEndpointServicesByName(ns string) []reconcile.Request {
@@ -114,8 +91,12 @@ func awsEndpointServicesByName(ns string) []reconcile.Request {
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
-		Watches(&hyperv1.NodePool{}, handler.EnqueueRequestsFromMapFunc(mapNodePoolToAWSEndpointServicesFunc(r))).
-		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(mapHostedClusterToAWSEndpointServicesFunc(r))).
+		Watches(&hyperv1.NodePool{}, handler.Funcs{
+			CreateFunc: r.enqueueOnNodePoolCreate(mgr),
+			UpdateFunc: r.enqueueOnNodePoolChange(mgr),
+			DeleteFunc: r.enqueueOnNodePoolDelete(mgr),
+		}).
+		Watches(&hyperv1.HostedCluster{}, handler.Funcs{UpdateFunc: r.enqueueOnHostedClusterChange(mgr)}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
@@ -132,6 +113,81 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	r.elbv2Client = elbv2.New(awsSession, awsConfig)
 
 	return nil
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnNodePoolCreate(mgr ctrl.Manager) func(context.Context, event.CreateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.CreateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		np, isOk := e.Object.(*hyperv1.NodePool)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnNodePoolCreate: resource is not of type NodePool")
+			return
+		}
+		for _, req := range awsEndpointServicesByName(fmt.Sprintf("%s-%s", np.Namespace, np.Spec.ClusterName)) {
+			q.Add(req)
+		}
+	}
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnNodePoolChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		newNP, isOk := e.ObjectNew.(*hyperv1.NodePool)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnNodePoolChange: new resource is not of type NodePool")
+			return
+		}
+		oldNP, isOk := e.ObjectOld.(*hyperv1.NodePool)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnNodePoolChange: old resource is not of type NodePool")
+			return
+		}
+		// Only enqueue awsendpointservices when there is a change in the subnet IDs, otherwise ignore changes
+		if newNP.Spec.Platform.AWS != nil && oldNP.Spec.Platform.AWS != nil &&
+			newNP.Spec.Platform.AWS.Subnet.ID != nil && oldNP.Spec.Platform.AWS.Subnet.ID != nil &&
+			!equality.Semantic.DeepEqual(newNP.Spec.Platform.AWS.Subnet.ID, oldNP.Spec.Platform.AWS.Subnet.ID) {
+			for _, req := range awsEndpointServicesByName(fmt.Sprintf("%s-%s", newNP.Namespace, newNP.Spec.ClusterName)) {
+				q.Add(req)
+			}
+		}
+	}
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnNodePoolDelete(mgr ctrl.Manager) func(context.Context, event.DeleteEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.DeleteEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		np, isOk := e.Object.(*hyperv1.NodePool)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnNodePoolDelete: resource is not of type NodePool")
+			return
+		}
+		for _, req := range awsEndpointServicesByName(fmt.Sprintf("%s-%s", np.Namespace, np.Spec.ClusterName)) {
+			q.Add(req)
+		}
+	}
+}
+
+func (r *AWSEndpointServiceReconciler) enqueueOnHostedClusterChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		newHC, isOk := e.ObjectNew.(*hyperv1.HostedCluster)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnHostedClusterChange: new resource is not of type HostedCluster")
+			return
+		}
+		oldHC, isOk := e.ObjectOld.(*hyperv1.HostedCluster)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnHostedClusterChange: old resource is not of type HostedCluster")
+			return
+		}
+		// Only enqueue awsendpointservices when there is a change in the AdditionalAllowedPrincipals, otherwise ignore changes
+		if newHC.Spec.Platform.AWS != nil && oldHC.Spec.Platform.AWS != nil &&
+			!equality.Semantic.DeepEqual(newHC.Spec.Platform.AWS.AdditionalAllowedPrincipals, oldHC.Spec.Platform.AWS.AdditionalAllowedPrincipals) {
+			for _, req := range awsEndpointServicesByName(fmt.Sprintf("%s-%s", newHC.Namespace, newHC.Name)) {
+				q.Add(req)
+			}
+		}
+	}
 }
 
 func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
