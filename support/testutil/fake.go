@@ -30,3 +30,8 @@ func (f *fakeImageProvider) GetImage(key string) string {
 func (f *fakeImageProvider) ImageExist(key string) (string, bool) {
 	return key, true
 }
+
+// ComponentImages implements imageprovider.ReleaseImageProvider.
+func (f *fakeImageProvider) ComponentImages() map[string]string {
+	return nil
+}
