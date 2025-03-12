@@ -69,6 +69,12 @@ spec:
         - -c
         - |
           #!/bin/sh
+          function cleanup() {
+            pkill -P $$$
+            wait
+            exit
+          }
+          trap cleanup SIGTERM
           while true; do
             if oc apply -f /work; then
               echo "Bootstrap manifests applied successfully."
@@ -84,7 +90,8 @@ spec:
             sleep 1
           done
           while true; do
-            sleep 1000
+            sleep 1000 &
+            wait $!
           done
         command:
         - /bin/bash
