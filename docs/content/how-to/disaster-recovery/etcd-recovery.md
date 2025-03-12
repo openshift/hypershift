@@ -237,5 +237,5 @@ oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd -w
 9. Remove hosted cluster pause:
 
 ```
-oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":""}}' --type=merge
+oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":null}}' --type=merge
 ```
