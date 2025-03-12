@@ -102,6 +102,10 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] == "true" {
+		return ctrl.Result{}, nil
+	}
+
 	if err := r.reconcileCRDs(ctx, false); err != nil {
 		return ctrl.Result{}, err
 	}
