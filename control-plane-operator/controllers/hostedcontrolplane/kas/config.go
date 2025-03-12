@@ -186,7 +186,10 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		args.Set("profiling", "false")
 	}
 	args.Set("egress-selector-config-file", cpath(kasVolumeEgressSelectorConfig().Name, EgressSelectorConfigMapKey))
-	args.Set("enable-admission-plugins", admissionPlugins()...)
+	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p.Authentication)...)
+	if disabledPlugins := disabledAdmissionPlugins(p.Authentication); len(disabledPlugins) > 0 {
+		args.Set("disable-admission-plugins", disabledPlugins...)
+	}
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(kasVolumeAuthTokenWebhookConfig().Name, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
@@ -299,8 +302,8 @@ func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) (runt
 	return cfg, nil
 }
 
-func admissionPlugins() []string {
-	return []string{
+func enabledAdmissionPlugins(authn *configv1.AuthenticationSpec) []string {
+	enabled := []string{
 		"CertificateApproval",
 		"CertificateSigning",
 		"CertificateSubjectRestriction",
@@ -323,8 +326,6 @@ func admissionPlugins() []string {
 		"TaintNodesByCondition",
 		"ValidatingAdmissionPolicy",
 		"ValidatingAdmissionWebhook",
-		"authorization.openshift.io/RestrictSubjectBindings",
-		"authorization.openshift.io/ValidateRoleBindingRestriction",
 		"config.openshift.io/DenyDeleteClusterConfiguration",
 		"config.openshift.io/ValidateAPIServer",
 		"config.openshift.io/ValidateAuthentication",
@@ -347,6 +348,34 @@ func admissionPlugins() []string {
 		"security.openshift.io/ValidateSecurityContextConstraints",
 		"storage.openshift.io/CSIInlineVolumeSecurity",
 	}
+
+	// If the built in OAuth server is not enabled, the RestrictSubjectBindings
+	// and ValidateRoleBindingRestriction admission plugins will be disabled
+	// and thus should not show up in the set of enabled admission plugins
+	if util.ConfigOAuthEnabled(authn) {
+		enabled = append(enabled,
+			"authorization.openshift.io/RestrictSubjectBindings",
+			"authorization.openshift.io/ValidateRoleBindingRestriction",
+		)
+	}
+
+	return enabled
+}
+
+func disabledAdmissionPlugins(authn *configv1.AuthenticationSpec) []string {
+	disabled := []string{}
+
+	// If the built in OAuth server is not enabled, the RestrictSubjectBindings
+	// and ValidateRoleBindingRestriction admission plugins will be disabled
+	// and thus should not show up in the set of enabled admission plugins
+	if !util.ConfigOAuthEnabled(authn) {
+		disabled = append(disabled,
+			"authorization.openshift.io/RestrictSubjectBindings",
+			"authorization.openshift.io/ValidateRoleBindingRestriction",
+		)
+	}
+
+	return disabled
 }
 
 func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {

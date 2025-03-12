@@ -181,6 +181,18 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 	featureGateYaml := featureGateBuffer.String()
 
+	// Depending on whether or not the OpenShift OAuth server is enabled
+	// we may need to perform some additional bootstrapping logic to ensure the
+	// RoleBindingRestriction resource exists prior to starting up the KAS.
+	initContainers := []corev1.Container{
+		util.BuildContainer(kasContainerBootstrapRender(), buildKASContainerBootstrapRender(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
+	}
+	if util.HCPOAuthEnabled(hcp) {
+		initContainers = append(initContainers,
+			util.BuildContainer(kasContainerAuthBootstrap(), buildKASContainerAuthBootstrap(images.ClusterAuthenticationOperator, payloadVersion, featureGateYaml)),
+		)
+	}
+
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
@@ -200,10 +212,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			TerminationGracePeriodSeconds: ptr.To[int64](135),
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  ptr.To(false),
-			InitContainers: []corev1.Container{
-				util.BuildContainer(kasContainerBootstrapRender(), buildKASContainerBootstrapRender(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
-				util.BuildContainer(kasContainerAuthBootstrap(), buildKASContainerAuthBootstrap(images.ClusterAuthenticationOperator, payloadVersion, featureGateYaml)),
-			},
+			InitContainers:                initContainers,
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerBootstrap(), buildKASContainerNewBootstrap(images.KASBootstrap)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
