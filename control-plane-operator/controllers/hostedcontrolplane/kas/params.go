@@ -22,17 +22,18 @@ import (
 )
 
 type KubeAPIServerImages struct {
-	ClusterConfigOperator      string `json:"clusterConfigOperator"`
-	CLI                        string `json:"cli"`
-	HyperKube                  string `json:"hyperKube"`
-	IBMCloudKMS                string `json:"ibmcloudKMS"`
-	AWSKMS                     string `json:"awsKMS"`
-	AzureKMS                   string `json:"azureKMS"`
-	Portieris                  string `json:"portieris"`
-	TokenMinterImage           string
-	AWSPodIdentityWebhookImage string
-	KonnectivityServer         string
-	KASBootstrap               string
+	ClusterConfigOperator         string `json:"clusterConfigOperator"`
+	CLI                           string `json:"cli"`
+	HyperKube                     string `json:"hyperKube"`
+	IBMCloudKMS                   string `json:"ibmcloudKMS"`
+	AWSKMS                        string `json:"awsKMS"`
+	AzureKMS                      string `json:"azureKMS"`
+	Portieris                     string `json:"portieris"`
+	TokenMinterImage              string
+	AWSPodIdentityWebhookImage    string
+	KonnectivityServer            string
+	KASBootstrap                  string
+	ClusterAuthenticationOperator string `json:"clusterAuthenticationOperator"`
 }
 
 type KubeAPIServerParams struct {
@@ -115,15 +116,16 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		DisableProfiling:     util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
 
 		Images: KubeAPIServerImages{
-			HyperKube:                  releaseImageProvider.GetImage("hyperkube"),
-			CLI:                        releaseImageProvider.GetImage("cli"),
-			ClusterConfigOperator:      releaseImageProvider.GetImage("cluster-config-api"),
-			TokenMinterImage:           releaseImageProvider.GetImage("token-minter"),
-			AWSKMS:                     releaseImageProvider.GetImage("aws-kms-encryption-provider"),
-			AzureKMS:                   releaseImageProvider.GetImage("azure-kms-encryption-provider"),
-			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
-			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
-			KASBootstrap:               releaseImageProvider.GetImage(util.CPOImageName),
+			HyperKube:                     releaseImageProvider.GetImage("hyperkube"),
+			CLI:                           releaseImageProvider.GetImage("cli"),
+			ClusterConfigOperator:         releaseImageProvider.GetImage("cluster-config-api"),
+			TokenMinterImage:              releaseImageProvider.GetImage("token-minter"),
+			AWSKMS:                        releaseImageProvider.GetImage("aws-kms-encryption-provider"),
+			AzureKMS:                      releaseImageProvider.GetImage("azure-kms-encryption-provider"),
+			AWSPodIdentityWebhookImage:    releaseImageProvider.GetImage("aws-pod-identity-webhook"),
+			KonnectivityServer:            releaseImageProvider.GetImage("apiserver-network-proxy"),
+			KASBootstrap:                  releaseImageProvider.GetImage(util.CPOImageName),
+			ClusterAuthenticationOperator: releaseImageProvider.GetImage("cluster-authentication-operator"),
 		},
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
