@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -1435,10 +1434,6 @@ func TestCreateClusterPrivateWithRouteKAS(t *testing.T) {
 // testCreateClusterWithDisabledCapabilities implements a test that creates a cluster
 // with the ImageRegistry capability disabled, then attempts to enable it.
 func testCreateClusterWithDisabledCapabilities(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
-		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
-	}
-
 	e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 
 	guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)

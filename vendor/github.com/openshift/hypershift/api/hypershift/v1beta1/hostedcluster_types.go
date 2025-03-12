@@ -667,7 +667,6 @@ type HostedClusterSpec struct {
 	// capabilities allows for disabling optional components at cluster install time.
 	// This field is optional and once set cannot be changed.
 	// +optional
-	// +openshift:enable:FeatureGate=DisableClusterCapabilities
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
