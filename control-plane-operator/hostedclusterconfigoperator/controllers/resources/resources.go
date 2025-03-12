@@ -1569,9 +1569,9 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
 		errs = append(errs,
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
-			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 		)
 	case hyperv1.PowerVSPlatform:
 		createPowerVSSecret := func(srcSecret, destSecret *corev1.Secret) error {
@@ -1649,7 +1649,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 	return errs
 }
 
-// reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secrets.
+// reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack credentials secrets.
 func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, platformSpec *hyperv1.OpenStackPlatformSpec, namespace, name string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
