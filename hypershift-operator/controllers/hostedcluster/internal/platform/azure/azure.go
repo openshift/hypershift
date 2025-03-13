@@ -4,14 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
-	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -24,15 +22,24 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 type Azure struct {
 	capiProviderImage string
+	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string) *Azure {
+func New(capiProviderImage string, payloadVersion *semver.Version) *Azure {
+	if payloadVersion != nil {
+		payloadVersion.Pre = nil
+		payloadVersion.Build = nil
+	}
+
 	return &Azure{
 		capiProviderImage: capiProviderImage,
+		payloadVersion:    payloadVersion,
 	}
 }
 
@@ -59,7 +66,7 @@ func (a Azure) ReconcileCAPIInfraCR(
 	}
 
 	if _, err := createOrUpdate(ctx, c, azureClusterIdentity, func() error {
-		return reconcileAzureClusterIdentity(hcluster, azureClusterIdentity, controlPlaneNamespace)
+		return reconcileAzureClusterIdentity(hcluster, azureClusterIdentity, controlPlaneNamespace, a.payloadVersion)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile Azure cluster identity: %w", err)
 	}
@@ -68,19 +75,6 @@ func (a Azure) ReconcileCAPIInfraCR(
 		return reconcileAzureCluster(azureCluster, hcluster, apiEndpoint, azureClusterIdentity, controlPlaneNamespace)
 	}); err != nil {
 		return nil, fmt.Errorf("failed to reconcile Azure CAPI cluster: %w", err)
-	}
-
-	// Reconcile the SecretProviderClass
-	nodepoolMgmtSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, controlPlaneNamespace)
-	if _, err := createOrUpdate(ctx, c, nodepoolMgmtSecretProviderClass, func() error {
-		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hcluster.Name)
-		if err := c.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-			return err
-		}
-		secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement)
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
 	}
 
 	return azureCluster, nil
@@ -248,17 +242,59 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 	return nil
 }
 
-func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
-	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-		ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
-		TenantID: hc.Spec.Platform.Azure.TenantID,
-		CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
-		Type:     capiazure.ServicePrincipalCertificate,
-		AllowedNamespaces: &capiazure.AllowedNamespaces{
-			NamespaceList: []string{
-				controlPlaneNamespace,
+// reconcileAzureClusterIdentity creates a CAPZ AzureClusterIdentity custom resource using UserAssignedIdentityCredentials
+// as the Azure authentication method. More information on this custom resource type can be found here: https://capz.sigs.k8s.io/topics/identities
+func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
+	if payloadVersion.GE(config.Version419) {
+		// Translate the HyperShift cloud value to a valid CAPZ cloud value
+		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
+		if err != nil {
+			return err
+		}
+
+		// Create a AzureClusterIdentity with the Azure authentication type UserAssignedIdentityCredentials
+		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+			TenantID:                                 hc.Spec.Platform.Azure.TenantID,
+			UserAssignedIdentityCredentialsCloudType: azureCloudType,
+			UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
+			Type:                                     capiazure.UserAssignedIdentityCredential,
+			AllowedNamespaces: &capiazure.AllowedNamespaces{
+				NamespaceList: []string{
+					controlPlaneNamespace,
+				},
 			},
-		},
+		}
+	} else {
+		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
+		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+			ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
+			TenantID: hc.Spec.Platform.Azure.TenantID,
+			CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
+			Type:     capiazure.ServicePrincipalCertificate,
+			AllowedNamespaces: &capiazure.AllowedNamespaces{
+				NamespaceList: []string{
+					controlPlaneNamespace,
+				},
+			},
+		}
 	}
 	return nil
+}
+
+// parseCloudType translates the HyperShift APIs valid cloud values to valid CAPZ cloud values
+//
+// NOTE - HyperShift accepts the values AzureGermanCloud;AzureStackCloud but those are not accepted in CAPZ; an error
+// message is returned if those values are used.
+func parseCloudType(cloudType string) (string, error) {
+	cloudType = strings.ToLower(strings.TrimSpace(cloudType))
+	switch cloudType {
+	case "azurepubliccloud":
+		return "public", nil
+	case "azureusgovernmentcloud":
+		return "usgovernment", nil
+	case "azurechinacloud":
+		return "china", nil
+	default:
+		return "", fmt.Errorf("unsupported cloud type: %s", cloudType)
+	}
 }
