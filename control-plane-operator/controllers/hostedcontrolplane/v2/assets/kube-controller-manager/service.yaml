@@ -6,8 +6,6 @@ metadata:
   name: kube-controller-manager
 spec:
   internalTrafficPolicy: Cluster
-  ipFamilies:
-  - IPv4
   ipFamilyPolicy: PreferDualStack
   ports:
   - name: client
