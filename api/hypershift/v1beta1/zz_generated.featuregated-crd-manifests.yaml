@@ -99,6 +99,7 @@ hostedclusters.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - HCPPodsLabels
+  - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
@@ -151,6 +152,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - AROHCPManagedIdentities
   - DynamicResourceAllocation
   - ExternalOIDC
+  - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
