@@ -570,7 +570,7 @@ type UserAssignedIdentity struct {
 }
 
 // IdentityType represents different types of identities.
-// +kubebuilder:validation:Enum=ServicePrincipal;UserAssignedMSI;ManualServicePrincipal;ServicePrincipalCertificate;WorkloadIdentity
+// +kubebuilder:validation:Enum=ServicePrincipal;UserAssignedMSI;ManualServicePrincipal;ServicePrincipalCertificate;WorkloadIdentity;UserAssignedIdentityCredential
 type IdentityType string
 
 const (
@@ -588,6 +588,9 @@ const (
 
 	// WorkloadIdentity represents a WorkloadIdentity.
 	WorkloadIdentity IdentityType = "WorkloadIdentity"
+
+	// UserAssignedIdentityCredential represents a UserAssignedIdentityCredential.
+	UserAssignedIdentityCredential IdentityType = "UserAssignedIdentityCredential"
 )
 
 // OSDisk defines the operating system disk for a VM.
