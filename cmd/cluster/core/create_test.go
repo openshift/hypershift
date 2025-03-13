@@ -155,3 +155,22 @@ func TestAsObjects(t *testing.T) {
 		})
 	}
 }
+
+func TestPrototypeResources(t *testing.T) {
+	g := NewWithT(t)
+	opts := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: &ValidatedCreateOptions{
+				validatedCreateOptions: &validatedCreateOptions{
+					RawCreateOptions: &RawCreateOptions{
+						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+					},
+				},
+			},
+		},
+	}
+	resources, err := prototypeResources(opts)
+	g.Expect(err).To(BeNil())
+	g.Expect(resources.Cluster.Spec.Capabilities.DisabledCapabilities).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+}
