@@ -1031,6 +1031,18 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
 	})
+
+	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
+		g := NewWithT(t)
+
+		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				DisabledCapabilities: []hyperv1.OptionalCapability{},
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
+	})
 }
 
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
