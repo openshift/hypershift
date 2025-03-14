@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/ExternalOIDC: "true"
+    feature-gate.release.openshift.io/MinimumKubeletVersion: "true"
   name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -584,243 +584,6 @@ spec:
                         required:
                         - name
                         type: object
-                      oidcProviders:
-                        description: |-
-                          oidcProviders are OIDC identity providers that can issue tokens
-                          for this cluster
-                          Can only be set if "Type" is set to "OIDC".
-
-                          At most one provider can be configured.
-                        items:
-                          properties:
-                            claimMappings:
-                              description: |-
-                                claimMappings describes rules on how to transform information from an
-                                ID token into a cluster identity
-                              properties:
-                                groups:
-                                  description: |-
-                                    groups is a name of the claim that should be used to construct
-                                    groups for the cluster identity.
-                                    The referenced claim must use array of strings values.
-                                  properties:
-                                    claim:
-                                      description: claim is a JWT token claim to be
-                                        used in the mapping
-                                      type: string
-                                    prefix:
-                                      description: |-
-                                        prefix is a string to prefix the value from the token in the result of the
-                                        claim mapping.
-
-                                        By default, no prefixing occurs.
-
-                                        Example: if `prefix` is set to "myoidc:"" and the `claim` in JWT contains
-                                        an array of strings "a", "b" and  "c", the mapping will result in an
-                                        array of string "myoidc:a", "myoidc:b" and "myoidc:c".
-                                      type: string
-                                  required:
-                                  - claim
-                                  type: object
-                                username:
-                                  description: |-
-                                    username is a name of the claim that should be used to construct
-                                    usernames for the cluster identity.
-
-                                    Default value: "sub"
-                                  properties:
-                                    claim:
-                                      description: claim is a JWT token claim to be
-                                        used in the mapping
-                                      type: string
-                                    prefix:
-                                      properties:
-                                        prefixString:
-                                          minLength: 1
-                                          type: string
-                                      required:
-                                      - prefixString
-                                      type: object
-                                    prefixPolicy:
-                                      description: |-
-                                        prefixPolicy specifies how a prefix should apply.
-
-                                        By default, claims other than `email` will be prefixed with the issuer URL to
-                                        prevent naming clashes with other plugins.
-
-                                        Set to "NoPrefix" to disable prefixing.
-
-                                        Example:
-                                            (1) `prefix` is set to "myoidc:" and `claim` is set to "username".
-                                                If the JWT claim `username` contains value `userA`, the resulting
-                                                mapped value will be "myoidc:userA".
-                                            (2) `prefix` is set to "myoidc:" and `claim` is set to "email". If the
-                                                JWT `email` claim contains value "userA@myoidc.tld", the resulting
-                                                mapped value will be "myoidc:userA@myoidc.tld".
-                                            (3) `prefix` is unset, `issuerURL` is set to `https://myoidc.tld`,
-                                                the JWT claims include "username":"userA" and "email":"userA@myoidc.tld",
-                                                and `claim` is set to:
-                                                (a) "username": the mapped value will be "https://myoidc.tld#userA"
-                                                (b) "email": the mapped value will be "userA@myoidc.tld"
-                                      enum:
-                                      - ""
-                                      - NoPrefix
-                                      - Prefix
-                                      type: string
-                                  required:
-                                  - claim
-                                  type: object
-                                  x-kubernetes-validations:
-                                  - message: prefix must be set if prefixPolicy is
-                                      'Prefix', but must remain unset otherwise
-                                    rule: 'has(self.prefixPolicy) && self.prefixPolicy
-                                      == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
-                                      > 0) : !has(self.prefix)'
-                              type: object
-                            claimValidationRules:
-                              description: claimValidationRules are rules that are
-                                applied to validate token claims to authenticate users.
-                              items:
-                                properties:
-                                  requiredClaim:
-                                    description: |-
-                                      requiredClaim allows configuring a required claim name and its expected
-                                      value
-                                    properties:
-                                      claim:
-                                        description: |-
-                                          claim is a name of a required claim. Only claims with string values are
-                                          supported.
-                                        minLength: 1
-                                        type: string
-                                      requiredValue:
-                                        description: requiredValue is the required
-                                          value for the claim.
-                                        minLength: 1
-                                        type: string
-                                    required:
-                                    - claim
-                                    - requiredValue
-                                    type: object
-                                  type:
-                                    default: RequiredClaim
-                                    description: type sets the type of the validation
-                                      rule
-                                    enum:
-                                    - RequiredClaim
-                                    type: string
-                                type: object
-                              type: array
-                              x-kubernetes-list-type: atomic
-                            issuer:
-                              description: issuer describes atributes of the OIDC
-                                token issuer
-                              properties:
-                                audiences:
-                                  description: |-
-                                    audiences is an array of audiences that the token was issued for.
-                                    Valid tokens must include at least one of these values in their
-                                    "aud" claim.
-                                    Must be set to exactly one value.
-                                  items:
-                                    minLength: 1
-                                    type: string
-                                  maxItems: 10
-                                  minItems: 1
-                                  type: array
-                                  x-kubernetes-list-type: set
-                                issuerCertificateAuthority:
-                                  description: |-
-                                    CertificateAuthority is a reference to a config map in the
-                                    configuration namespace. The .data of the configMap must contain
-                                    the "ca-bundle.crt" key.
-                                    If unset, system trust is used instead.
-                                  properties:
-                                    name:
-                                      description: name is the metadata.name of the
-                                        referenced config map
-                                      type: string
-                                  required:
-                                  - name
-                                  type: object
-                                issuerURL:
-                                  description: |-
-                                    URL is the serving URL of the token issuer.
-                                    Must use the https:// scheme.
-                                  pattern: ^https:\/\/[^\s]
-                                  type: string
-                              required:
-                              - audiences
-                              - issuerURL
-                              type: object
-                            name:
-                              description: name of the OIDC provider
-                              minLength: 1
-                              type: string
-                            oidcClients:
-                              description: |-
-                                oidcClients contains configuration for the platform's clients that
-                                need to request tokens from the issuer
-                              items:
-                                properties:
-                                  clientID:
-                                    description: clientID is the identifier of the
-                                      OIDC client from the OIDC provider
-                                    minLength: 1
-                                    type: string
-                                  clientSecret:
-                                    description: |-
-                                      clientSecret refers to a secret in the `openshift-config` namespace that
-                                      contains the client secret in the `clientSecret` key of the `.data` field
-                                    properties:
-                                      name:
-                                        description: name is the metadata.name of
-                                          the referenced secret
-                                        type: string
-                                    required:
-                                    - name
-                                    type: object
-                                  componentName:
-                                    description: |-
-                                      componentName is the name of the component that is supposed to consume this
-                                      client configuration
-                                    maxLength: 256
-                                    minLength: 1
-                                    type: string
-                                  componentNamespace:
-                                    description: |-
-                                      componentNamespace is the namespace of the component that is supposed to consume this
-                                      client configuration
-                                    maxLength: 63
-                                    minLength: 1
-                                    type: string
-                                  extraScopes:
-                                    description: extraScopes is an optional set of
-                                      scopes to request tokens with.
-                                    items:
-                                      type: string
-                                    type: array
-                                    x-kubernetes-list-type: set
-                                required:
-                                - clientID
-                                - componentName
-                                - componentNamespace
-                                type: object
-                              maxItems: 20
-                              type: array
-                              x-kubernetes-list-map-keys:
-                              - componentNamespace
-                              - componentName
-                              x-kubernetes-list-type: map
-                          required:
-                          - issuer
-                          - name
-                          type: object
-                        maxItems: 1
-                        type: array
-                        x-kubernetes-list-map-keys:
-                        - name
-                        x-kubernetes-list-type: map
                       serviceAccountIssuer:
                         description: |-
                           serviceAccountIssuer is the identifier of the bound service account token
@@ -837,11 +600,6 @@ spec:
                           type identifies the cluster managed, user facing authentication mode in use.
                           Specifically, it manages the component that responds to login attempts.
                           The default is IntegratedOAuth.
-                        enum:
-                        - ""
-                        - None
-                        - IntegratedOAuth
-                        - OIDC
                         type: string
                       webhookTokenAuthenticator:
                         description: |-
@@ -1469,6 +1227,27 @@ spec:
                         - v2
                         - ""
                         type: string
+                      minimumKubeletVersion:
+                        description: |-
+                          minimumKubeletVersion is the lowest version of a kubelet that can join the cluster.
+                          Specifically, the apiserver will deny most authorization requests of kubelets that are older
+                          than the specified version, only allowing the kubelet to get and update its node object, and perform
+                          subjectaccessreviews.
+                          This means any kubelet that attempts to join the cluster will not be able to run any assigned workloads,
+                          and will eventually be marked as not ready.
+                          Its max length is 8, so maximum version allowed is either "9.999.99" or "99.99.99".
+                          Since the kubelet reports the version of the kubernetes release, not Openshift, this field references
+                          the underlying kubernetes version this version of Openshift is based off of.
+                          In other words: if an admin wishes to ensure no nodes run an older version than Openshift 4.17, then
+                          they should set the minimumKubeletVersion to 1.30.0.
+                          When comparing versions, the kubelet's version is stripped of any contents outside of major.minor.patch version.
+                          Thus, a kubelet with version "1.0.0-ec.0" will be compatible with minimumKubeletVersion "1.0.0" or earlier.
+                        maxLength: 8
+                        type: string
+                        x-kubernetes-validations:
+                        - message: minmumKubeletVersion must be in a semver compatible
+                            format of x.y.z, or empty
+                          rule: self == "" || self.matches('^[0-9]*.[0-9]*.[0-9]*$')
                       workerLatencyProfile:
                         description: |-
                           workerLatencyProfile determins the how fast the kubelet is updating
@@ -3377,6 +3156,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3438,6 +3219,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               disk:
@@ -3498,6 +3281,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               file:
@@ -3558,6 +3343,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               imageRegistry:
@@ -3618,6 +3405,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               ingress:
@@ -3678,6 +3467,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3760,6 +3551,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -3821,6 +3614,8 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - certificateName
+                                - clientID
                                 - objectEncoding
                                 type: object
                             required:
@@ -4599,6 +4394,8 @@ spec:
                                   See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                 type: string
                             required:
+                            - certificateName
+                            - clientID
                             - objectEncoding
                             type: object
                         required:
@@ -5097,6 +4894,10 @@ spec:
                   for identity providers. The [identity-provider-name] placeholder must be replaced
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
+                type: string
+              oldestKubeletVersion:
+                description: OldestKubeletVersion tracks the oldest kubelet version
+                  in a hosted cluster
                 type: string
               payloadArch:
                 description: |-

@@ -1501,6 +1501,10 @@ type HostedClusterStatus struct {
 	// Platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster
+	// +openshift:enable:FeatureGate=MinimumKubeletVersion
+	OldestKubeletVersion *string `json:"oldestKubeletVersion,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status
@@ -1631,6 +1635,10 @@ type ClusterConfiguration struct {
 	// +rollout
 	// +optional
 	Proxy *configv1.ProxySpec `json:"proxy,omitempty"`
+
+	// NodeSpec holds cluster-wide details for the node configuration object.
+	// +optional
+	Node *configv1.NodeSpec `json:"node,omitempty"`
 }
 
 // OperatorConfiguration specifies configuration for individual OCP operators in the cluster.

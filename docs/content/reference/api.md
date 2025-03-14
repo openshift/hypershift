@@ -3756,6 +3756,20 @@ github.com/openshift/api/config/v1.ProxySpec
 <em>(Optional)</em>
 </td>
 </tr>
+<tr>
+<td>
+<code>node</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.NodeSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>NodeSpec holds cluster-wide details for the node configuration object.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterNetworkEntry { #hypershift.openshift.io/v1beta1.ClusterNetworkEntry }
@@ -5702,6 +5716,17 @@ PlatformStatus
 <p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>oldestKubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -6389,6 +6414,17 @@ int
 </td>
 <td>
 <p>NodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>oldestKubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>OldestKubeletVersion tracks the oldest kubelet version in a hosted cluster</p>
 </td>
 </tr>
 </tbody>
