@@ -876,7 +876,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -1291,7 +1290,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1340,7 +1338,6 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1452,5 +1449,64 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
+}
+
+func TestCreateClusterExternalOIDC(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+	e2eutil.AtLeast(t, e2eutil.Version419)
+
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch obj := o.(type) {
+		case *hyperv1.HostedCluster:
+			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				Authentication: &configv1.AuthenticationSpec{
+					Type: configv1.AuthenticationTypeOIDC,
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "test.com",
+								CertificateAuthority: configv1.ConfigMapNameReference{
+									Name: "test-provider-ca",
+								},
+								Audiences: []configv1.TokenAudience{
+									"three",
+								},
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.Prefix,
+									Prefix: &configv1.UsernamePrefix{
+										PrefixString: "oidc-user:",
+									},
+								},
+								Groups: configv1.PrefixedClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "groups",
+									},
+									Prefix: "oidc-group:",
+								},
+							},
+						},
+                    },
+				},
+			}
+		}
+	}
+
+    e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+        e2eutil.WaitForExternalOIDCAuthConfig(t, ctx, mgtClient, hostedCluster)
+    }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "oidc", globalOpts.ServiceAccountSigningKey)
 
 }
