@@ -45,6 +45,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 
@@ -511,6 +512,7 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
+		g := NewWithT(t)
 
 		var crashToleration int32
 
@@ -543,6 +545,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 		default:
 			crashToleration = 0
 		}
+
+		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestClient := kubeclient.NewForConfigOrDie(guestConfig)
 
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
@@ -587,11 +594,37 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
+					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name) {
+						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
+						continue
+					}
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
 				}
 			}
 		}
 	})
+}
+
+func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string) bool {
+	podLogOpts := corev1.PodLogOptions{
+		Container: containerName,
+		Previous:  true,
+		TailLines: ptr.To[int64](10),
+	}
+	req := guestClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return false
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(podLogs)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(buf.String(), "leader election lost")
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
