@@ -88,15 +88,19 @@ func TestRestConfigToKubeconfig(t *testing.T) {
 				originalTempDir := os.TempDir()
 
 				// Set temp dir to our read-only directory to force an error
-				os.Setenv("TMPDIR", readOnlyDir)
+				err = os.Setenv("TMPDIR", readOnlyDir)
+				g.Expect(err).NotTo(HaveOccurred())
 
 				// Return cleanup function
 				return func() {
 					// Reset temp dir
-					os.Setenv("TMPDIR", originalTempDir)
+					err := os.Setenv("TMPDIR", originalTempDir)
+					g.Expect(err).NotTo(HaveOccurred())
 					// Make the directory writable again so we can remove it
-					os.Chmod(readOnlyDir, 0755)
-					os.RemoveAll(tempDir)
+					err = os.Chmod(readOnlyDir, 0755)
+					g.Expect(err).NotTo(HaveOccurred())
+					err = os.RemoveAll(tempDir)
+					g.Expect(err).NotTo(HaveOccurred())
 				}
 			},
 		},

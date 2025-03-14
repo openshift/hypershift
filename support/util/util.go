@@ -658,9 +658,5 @@ func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedC
 
 // EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined
 func EnableIfCustomKubeconfig(hcp *hyperv1.HostedControlPlane) bool {
-	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
-		return true
-	}
-
-	return false
+	return len(hcp.Spec.KubeAPIServerDNSName) > 0
 }
