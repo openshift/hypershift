@@ -1,4 +1,3 @@
-mkdocs==1.6.1
-mkdocs-material==9.6.6
-mkdocs-mermaid2-plugin==1.2.1
-mkdocs-glightbox==0.4.0
+mkdocs-material===9.6.8
+mkdocs-mermaid2-plugin===1.2.1
+mkdocs-glightbox===0.4.0
