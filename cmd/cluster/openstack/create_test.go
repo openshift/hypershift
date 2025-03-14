@@ -86,6 +86,7 @@ func TestCreateCluster(t *testing.T) {
 				"--openstack-node-image-name=rhcos",
 				"--pull-secret=" + pullSecretFile,
 				"--render-sensitive",
+				"--name=example",
 			},
 		},
 		{
