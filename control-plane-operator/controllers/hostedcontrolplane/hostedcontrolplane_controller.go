@@ -60,6 +60,7 @@ import (
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
+	clusterbaremetaloperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cluster_baremetal_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
@@ -198,7 +199,9 @@ type HostedControlPlaneReconciler struct {
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
+	r.Log.Info("hostedcontrolplane_controller.go:SetupWithManager")
 	r.setup(createOrUpdate)
+	r.Log.Info("hostedcontrolplane_controller.go:SetupWithManager, after r.setup()")
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
 		WithOptions(controller.Options{
@@ -220,7 +223,9 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = GetEC2Client()
 
+	r.Log.Info("hostedcontrolplane_controller.go:SetupWithManager IsCPOV2: ", r.IsCPOV2)
 	if r.IsCPOV2 {
+		r.Log.Info("hostedcontrolplane_controller.go calling registerComponents")
 		r.registerComponents()
 	}
 
@@ -228,6 +233,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 }
 
 func (r *HostedControlPlaneReconciler) registerComponents() {
+	r.Log.Info("hostedcontrolplane_controller.go registerComponents()")
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
@@ -259,10 +265,16 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ingressoperatorv2.NewComponent(),
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
+		clusterbaremetaloperatorv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
+
+	r.Log.Info("Register components: ")
+	for _, comp := range r.components {
+		r.Log.Info(comp.Name())
+	}
 }
 
 func GetEC2Client() (ec2iface.EC2API, *session.Session) {
@@ -348,7 +360,7 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
-	r.Log.Info("Reconciling")
+	r.Log.Info("~~~Reconciling")
 
 	// Fetch the hostedControlPlane instance
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
@@ -1015,7 +1027,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	var errs []error
 	for _, c := range r.components {
-		r.Log.Info("Reconciling component", "component_name", c.Name())
+		r.Log.Info("~~~Reconciling component", "component_name", c.Name())
 		if err := c.Reconcile(cpContext); err != nil {
 			errs = append(errs, err)
 		}

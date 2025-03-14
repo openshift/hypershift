@@ -21,6 +21,8 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 type NamedComponent interface {
@@ -138,6 +140,9 @@ func (c *controlPlaneWorkload[T]) Name() string {
 
 // reconcile implements ControlPlaneComponent.
 func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error {
+
+	log := ctrl.LoggerFrom(cpContext)
+	log.Info("controlPlaneWorkload Reconcile()")
 	workloadContext := cpContext.workloadContext()
 
 	if !cpContext.SkipPredicate && c.predicate != nil {
@@ -150,16 +155,21 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 		}
 	}
 
+	log.Info("controlPlaneWorkload Reconcile() checking dependencies")
 	unavailableDependencies, err := c.checkDependencies(cpContext)
 	if err != nil {
-		return fmt.Errorf("failed checking for dependencies availability: %v", err)
+		return fmt.Errorf("~~~failed checking for dependencies availability: %v", err)
 	}
+	log.Info("controlPlaneWorkload done with checking dependencies")
+
 	var reconcilationError error
 	if len(unavailableDependencies) == 0 {
 		// reconcile only when all dependencies are available, and don't return error immediately so it can be included in the status condition first.
+		log.Info("controlPlaneWorkload updating control plane context")
 		reconcilationError = c.update(cpContext)
 	}
 
+	log.Info("controlPlaneWorkload creating ControlPlaneComponent struct")
 	component := &hyperv1.ControlPlaneComponent{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      c.Name(),
@@ -167,11 +177,14 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 		},
 	}
 
+	log.Info("controlPlaneWorkload calling controllerutil.CreateOrPatch")
 	if _, err := controllerutil.CreateOrPatch(cpContext, cpContext.Client, component, func() error {
 		return c.reconcileComponentStatus(cpContext, component, unavailableDependencies, reconcilationError)
 	}); err != nil {
+		log.Info("controlPlaneWorkload called controllerutil.CreateOrPatch and returned err: ", "err", err)
 		return err
 	}
+	log.Info("controlPlaneWorkload Reconcile() retunring reconciliationError: ", "reconciliationError", reconcilationError)
 	return reconcilationError
 }
 
@@ -212,6 +225,8 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 
 // reconcile implements ControlPlaneComponent.
 func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
+	log := ctrl.LoggerFrom(cpContext)
+	log.Info("controlPlaneWorkload update()")
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
@@ -223,6 +238,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 
 		obj, _, err := assets.LoadManifest(c.name, manifestName)
 		if err != nil {
+			log.Info("error loading manifest: ", "err", err)
 			return err
 		}
 		obj.SetNamespace(hcp.Namespace)
@@ -240,11 +256,14 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		}
 
 		if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, obj); err != nil {
+			log.Info("eror in CreateOrUpdateV2: ", "err", err)
 			return err
 		}
 
+		log.Info("update() is now returning")
 		return nil
 	}); err != nil {
+		log.Info("error in update(): ", "err", err)
 		return err
 	}
 
@@ -261,6 +280,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 		}
 	}
 
+	log.Info("update() is now calling reconcileWorkload()")
 	return c.reconcileWorkload(cpContext)
 }
 
