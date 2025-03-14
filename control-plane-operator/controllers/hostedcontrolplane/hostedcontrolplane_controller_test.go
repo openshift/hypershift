@@ -2,7 +2,6 @@ package hostedcontrolplane
 
 import (
 	"context"
-	"crypto/x509/pkix"
 	"fmt"
 	"testing"
 	"time"
@@ -1680,8 +1679,9 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			Manifest: fakeimagemetadataprovider.FakeManifest{},
 		},
-		HCP:           hcp,
-		SkipPredicate: true,
+		HCP:                    hcp,
+		SkipPredicate:          true,
+		SkipCertificateSigning: true,
 	}
 	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
@@ -1810,15 +1810,10 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		},
 	}
 
-	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
-	key, cert, err := certs.GenerateSelfSignedCertificate(&caCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate self signed CA: %v", err)
-	}
 	csrSigner := manifests.CSRSignerCASecret(namespace)
 	csrSigner.Data = map[string][]byte{
-		certs.CASignerCertMapKey: certs.CertToPem(cert),
-		certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(key),
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
 
 	return []client.Object{

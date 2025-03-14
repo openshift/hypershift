@@ -67,7 +67,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptErrorTemplateSecret),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		RolloutOnConfigMapChange("oauth-openshift").
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.Dual,
 			Socks5Options: component.Socks5Options{

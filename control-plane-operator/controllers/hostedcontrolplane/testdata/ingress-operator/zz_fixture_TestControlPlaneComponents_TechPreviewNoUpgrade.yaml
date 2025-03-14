@@ -26,6 +26,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null

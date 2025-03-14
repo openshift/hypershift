@@ -138,19 +138,27 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadCont
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
 		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
 	}
-	rootCA := manifests.RootCAConfigMap(cpContext.HCP.Namespace)
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca cert configMap: %w", err)
 	}
+	rootCACM := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(rootCA.Data[certs.CASignerCertMapKey]),
+		},
+	}
 
-	return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCA, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
+	if !cpContext.SkipCertificateSigning {
+		return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCACM, cpContext.HCP, "openshift-authentication", "aws-pod-identity-webhook")
+	}
+	return nil
 }
 
 func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
 		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)
 	}
-	rootCA := manifests.RootCAConfigMap(cpContext.HCP.Namespace)
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return nil, fmt.Errorf("failed to get root ca cert configMap: %w", err)
 	}
