@@ -1665,7 +1665,7 @@ func TestIncludeServingCertificates(t *testing.T) {
 
 			fakeClient := fake.NewClientBuilder().WithObjects(rootCA).Build()
 			for _, secret := range tc.servingSecrets {
-				fakeClient.Create(ctx, secret)
+				_ = fakeClient.Create(ctx, secret)
 			}
 
 			newRootCA, err := includeServingCertificates(ctx, fakeClient, hcp, rootCA)

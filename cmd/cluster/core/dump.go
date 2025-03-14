@@ -12,11 +12,6 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
-	imagev1 "github.com/openshift/api/image/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	securityv1 "github.com/openshift/api/security/v1"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -27,6 +22,12 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	securityv1 "github.com/openshift/api/security/v1"
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
