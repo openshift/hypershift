@@ -133,9 +133,6 @@ type controlPlaneWorkload[T client.Object] struct {
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
-
-	// configMapsExcludedFromConfigHash contains a list of ConfigMap names to exclude when calculating the config hash for the component
-	configMapsExcludedFromConfigHash []string
 }
 
 // Name implements ControlPlaneComponent.

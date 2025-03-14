@@ -108,9 +108,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),
 		).
-		ExcludeConfigMapsFromConfigHash(
-			"client-ca",
-		).
 		Build()
 }
 

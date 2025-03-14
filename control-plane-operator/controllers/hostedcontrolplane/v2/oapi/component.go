@@ -53,6 +53,5 @@ func NewComponent() component.ControlPlaneComponent {
 			Mode: component.HTTPS,
 		}).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
-		ExcludeConfigMapsFromConfigHash("client-ca").
 		Build()
 }

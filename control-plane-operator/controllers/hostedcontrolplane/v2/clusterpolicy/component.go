@@ -38,6 +38,5 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
-		ExcludeConfigMapsFromConfigHash("client-ca").
 		Build()
 }

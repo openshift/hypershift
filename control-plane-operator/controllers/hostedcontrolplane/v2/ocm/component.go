@@ -46,6 +46,5 @@ func NewComponent() component.ControlPlaneComponent {
 			component.DisableIfAnnotationExist(hyperv1.DisableMonitoringServices),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		ExcludeConfigMapsFromConfigHash("client-ca").
 		Build()
 }

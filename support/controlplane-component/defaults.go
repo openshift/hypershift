@@ -29,6 +29,10 @@ var (
 		"router",
 		"packageserver",
 	)
+
+	configMapsToExcludeFromHash = []string{
+		"client-ca",
+	}
 )
 
 func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32) (*config.DeploymentConfig, error) {
@@ -158,7 +162,7 @@ func fetchResource[T client.Object](ctx context.Context, obj T, namespace string
 func (c *controlPlaneWorkload[T]) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
 	// remove duplicate entries if any.
 	secretNames := podSecretNames(&podTemplate.Spec)
-	configMapNames := podConfigMapNames(&podTemplate.Spec, c.configMapsExcludedFromConfigHash)
+	configMapNames := podConfigMapNames(&podTemplate.Spec, configMapsToExcludeFromHash)
 
 	hashString, err := computeResourceHash(secretNames, configMapNames,
 		fetchResource(cpContext, &corev1.Secret{}, cpContext.HCP.Namespace, cpContext.Client),

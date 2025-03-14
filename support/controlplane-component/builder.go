@@ -95,11 +95,6 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) ExcludeConfigMapsFromConfigHash(names ...string) *controlPlaneWorkloadBuilder[T] {
-	b.workload.configMapsExcludedFromConfigHash = append(b.workload.configMapsExcludedFromConfigHash, names...)
-	return b
-}
-
 type ServiceAccountKubeConfigOpts struct {
 	Name, Namespace, MountPath, ContainerName string
 }
