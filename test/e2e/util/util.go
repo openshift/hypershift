@@ -52,6 +52,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -1461,7 +1462,9 @@ func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient
 	hc := entryHostedCluster.DeepCopy()
 	hc.Spec.KubeAPIServerDNSName = customApiServerHost
 	t.Log("Updating hosted cluster with KubeAPIDNSName")
-	err = mgmtClient.Update(ctx, hc)
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		return mgmtClient.Update(ctx, hc)
+	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster")
 
 	customApiServerURL := fmt.Sprintf("https://%s:%s", customApiServerHost, forwardedLocalPort)
@@ -1542,7 +1545,9 @@ func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient
 
 	// removing KubeAPIDNSName from HC
 	hc.Spec.KubeAPIServerDNSName = ""
-	err = mgmtClient.Update(ctx, hc)
+	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		return mgmtClient.Update(ctx, hc)
+	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update hosted control plane")
 
 	EventuallyObject(t, ctx, "the KAS custom kubeconfig secret to be deleted",

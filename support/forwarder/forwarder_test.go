@@ -5,13 +5,14 @@ import (
 	"strings"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestGetRunningKubeAPIServerPod(t *testing.T) {
