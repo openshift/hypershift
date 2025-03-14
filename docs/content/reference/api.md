@@ -275,6 +275,25 @@ and is used to configure platform specific behavior.</p>
 </tr>
 <tr>
 <td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>controllerAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -5145,6 +5164,25 @@ and is used to configure platform specific behavior.</p>
 </tr>
 <tr>
 <td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>controllerAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -5603,6 +5641,21 @@ for the cluster.</p>
 </tr>
 <tr>
 <td>
+<code>customKubeconfig</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the <code>HostedCluster</code> namespace.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>kubeadminPassword</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
@@ -5943,6 +5996,24 @@ KubeconfigSecretRef
 <td>
 <em>(Optional)</em>
 <p>KubeConfig specifies the name and key for the kubeconfig secret</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.</p>
 </td>
 </tr>
 <tr>
@@ -6334,6 +6405,25 @@ KubeconfigSecretRef
 <td>
 <p>KubeConfig is a reference to the secret containing the default kubeconfig
 for this control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customKubeconfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeconfigSecretRef">
+KubeconfigSecretRef
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>customKubeconfig references an external custom kubeconfig secret.
+This field is populated in the status when a custom kubeconfig secret has been generated
+for the hosted cluster. It contains the name and key of the secret located in the
+hostedCluster namespace. This field is only populated when kubeApiExternalName is set.
+If this field is removed during a day 2 operation, the referenced secret will be deleted
+and this field will be removed from the hostedCluster status.</p>
 </td>
 </tr>
 <tr>
