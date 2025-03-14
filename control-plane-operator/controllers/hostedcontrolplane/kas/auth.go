@@ -72,6 +72,7 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, 
 		}
 		jwt.Issuer.Audiences = audience
 		jwt.Issuer.AudienceMatchPolicy = AudienceMatchPolicyMatchAny
+
 		jwt.ClaimMappings.Username.Claim = provider.ClaimMappings.Username.Claim
 		if provider.ClaimMappings.Username.PrefixPolicy == configv1.Prefix {
 			jwt.ClaimMappings.Username.Prefix = &provider.ClaimMappings.Username.Prefix.PrefixString
@@ -79,8 +80,28 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, 
 			noPrefix := ""
 			jwt.ClaimMappings.Username.Prefix = &noPrefix
 		}
+
 		jwt.ClaimMappings.Groups.Claim = provider.ClaimMappings.Groups.Claim
 		jwt.ClaimMappings.Groups.Prefix = &provider.ClaimMappings.Groups.Prefix
+
+        if provider.ClaimMappings.UID.Claim != "" {
+            jwt.ClaimMappings.UID.Claim = provider.ClaimMappings.UID.Claim
+        } else if provider.ClaimMappings.UID.Expression != "" {
+            jwt.ClaimMappings.UID.Expression = provider.ClaimMappings.UID.Expression
+        } else {
+            // default to a claim of "sub"
+            jwt.ClaimMappings.UID.Claim = "sub"
+        }
+
+        if len(provider.ClaimMappings.Extra) > 0 {
+            for _, extra := range provider.ClaimMappings.Extra {
+                jwt.ClaimMappings.Extra = append(jwt.ClaimMappings.Extra, ExtraMapping{
+                    Key: extra.Key,
+                    ValueExpression: extra.ValueExpression,
+                })
+            }
+        }
+
 		for _, rule := range provider.ClaimValidationRules {
 			switch rule.Type {
 			case configv1.TokenValidationRuleTypeRequiredClaim:
