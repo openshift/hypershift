@@ -20,7 +20,7 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 		return true
 	}
 	enabled := true
-	for _, disabledCap := range capabilities.DisabledCapabilities {
+	for _, disabledCap := range capabilities.Disabled {
 		if disabledCap == hyperv1.ImageRegistryCapability {
 			enabled = false
 		}
@@ -35,9 +35,9 @@ func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	enabledCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
 
-	if capabilities != nil && len(capabilities.DisabledCapabilities) > 0 {
-		disabledCaps := make([]configv1.ClusterVersionCapability, len(capabilities.DisabledCapabilities))
-		for i, dc := range capabilities.DisabledCapabilities {
+	if capabilities != nil && len(capabilities.Disabled) > 0 {
+		disabledCaps := make([]configv1.ClusterVersionCapability, len(capabilities.Disabled))
+		for i, dc := range capabilities.Disabled {
 			disabledCaps[i] = configv1.ClusterVersionCapability(dc)
 		}
 		enabledCaps = enabledCaps.Delete(disabledCaps...)

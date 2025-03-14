@@ -218,7 +218,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 			}, nil, WithTimeout(10*time.Minute),
 		)
-
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
@@ -322,7 +321,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionTrue,
 			}),
 		},
-		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		// TODO:https://issues.redhat.com/browse/OCPBUGS-43824
 		WithTimeout(1*time.Minute),
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
@@ -511,7 +510,6 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
-
 		var crashToleration int32
 
 		switch hostedCluster.Spec.Platform.Type {
@@ -692,7 +690,6 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 0)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to run command in pod: %v", err)
 	})
-
 }
 
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1031,6 +1028,18 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
 	})
+
+	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
+		g := NewWithT(t)
+
+		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{},
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
+	})
 }
 
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
@@ -1115,7 +1124,6 @@ func NewLogr(t *testing.T) logr.Logger {
 }
 
 func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName string) {
-
 	for _, c := range ds.Spec.Template.Spec.Containers {
 		if c.Name == ds.Name {
 			c.Name = dsName
@@ -1135,7 +1143,6 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	// Set NodeSelector for the DS
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
-
 }
 
 func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
@@ -1312,11 +1319,9 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 			return false, nil
 		})
-
 		if err != nil {
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
-
 	})
 }
 
@@ -1367,7 +1372,6 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
-
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -1658,7 +1662,6 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
 	}
-
 }
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {

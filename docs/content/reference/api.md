@@ -3466,7 +3466,7 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
-<code>disabledCapabilities</code></br>
+<code>disabled</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
 []OptionalCapability
@@ -3475,8 +3475,8 @@ Once set, it cannot be changed.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
+and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
 This effectively disables that capability on the hosted cluster.</p>
 <p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
 OpenShift version.</p>
