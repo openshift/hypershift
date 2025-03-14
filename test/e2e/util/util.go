@@ -218,7 +218,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 			}, nil, WithTimeout(10*time.Minute),
 		)
-
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
@@ -322,7 +321,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionTrue,
 			}),
 		},
-		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		// TODO:https://issues.redhat.com/browse/OCPBUGS-43824
 		WithTimeout(1*time.Minute),
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
@@ -511,7 +510,6 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
-
 		var crashToleration int32
 
 		switch hostedCluster.Spec.Platform.Type {
@@ -692,7 +690,6 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 0)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to run command in pod: %v", err)
 	})
-
 }
 
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1115,7 +1112,6 @@ func NewLogr(t *testing.T) logr.Logger {
 }
 
 func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName string) {
-
 	for _, c := range ds.Spec.Template.Spec.Containers {
 		if c.Name == ds.Name {
 			c.Name = dsName
@@ -1135,7 +1131,6 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	// Set NodeSelector for the DS
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
-
 }
 
 func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
@@ -1312,11 +1307,9 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 			return false, nil
 		})
-
 		if err != nil {
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
-
 	})
 }
 
@@ -1367,7 +1360,6 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
-
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -1609,6 +1601,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
+	EnsureOIDCProvider(t, ctx, client, hostedCluster)
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -1658,7 +1651,6 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
 	}
-
 }
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
@@ -2039,4 +2031,52 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
 		}
 	})
+}
+
+func EnsureOIDCProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	if hostedCluster.Spec.Configuration.Authentication.Type != configv1.AuthenticationTypeOIDC {
+		return
+	}
+
+	t.Run("EnsureOIDCProvider", func(t *testing.T) {
+		AtLeast(t, Version419)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-provider-ca",
+				Namespace: hcpNamespace,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": "ca-bundle contents",
+			},
+		}
+
+		err := client.Create(ctx, cm)
+		if err != nil {
+			t.Fatalf("unable to create OIDC provider CA configmap: %v", err)
+		}
+	})
+}
+
+func WaitForExternalOIDCAuthConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	EventuallyObject(t, ctx, "ExternalOIDCAuthConfig", func(ctx context.Context) (*corev1.ConfigMap, error) {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "auth-config",
+				Namespace: hostedCluster.Namespace,
+			},
+		}
+		err := client.Get(ctx, crclient.ObjectKeyFromObject(cm), cm)
+		return cm, err
+	}, []Predicate[*corev1.ConfigMap]{
+		func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+            if cm.Name == "auth-config" {
+                if _, ok := cm.Data["auth.json"]; ok {
+                        return true, "exists", nil
+                }
+            }
+            return false, "notexists", nil
+		},
+	}, WithTimeout(time.Minute * 30), WithInterval(time.Minute * 1))
 }
