@@ -129,6 +129,7 @@ type ConfigurableClusterOptions struct {
 	OpenStackNodeFlavor                   string
 	OpenStackNodeImageName                string
 	OpenStackDNSNameservers               stringSliceVar
+	OpenStackImageRetentionPolicy         hyperv1.RetentionPolicy
 	PowerVSCloudConnection                string
 	PowerVSCloudInstanceID                string
 	PowerVSMemory                         int
@@ -219,6 +220,14 @@ func (o *Options) DefaultNoneOptions() none.RawCreateOptions {
 }
 
 func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions {
+	var e2eOpenStackImageRetentionPolicy hyperv1.RetentionPolicy
+	if p.ConfigurableClusterOptions.OpenStackImageRetentionPolicy == "" {
+		// Default to orphaning images for e2e tests so they can be reused
+		// across multiple tests.
+		e2eOpenStackImageRetentionPolicy = hyperv1.OrphanRetentionPolicy
+	} else {
+		e2eOpenStackImageRetentionPolicy = p.ConfigurableClusterOptions.OpenStackImageRetentionPolicy
+	}
 	opts := hypershiftopenstack.RawCreateOptions{
 		OpenStackCredentialsFile:   p.ConfigurableClusterOptions.OpenStackCredentialsFile,
 		OpenStackCACertFile:        p.ConfigurableClusterOptions.OpenStackCACertFile,
@@ -226,11 +235,11 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
 				Flavor:         p.ConfigurableClusterOptions.OpenStackNodeFlavor,
-				ImageName:      p.ConfigurableClusterOptions.OpenStackNodeImageName,
 				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
-		OpenStackDNSNameservers: p.ConfigurableClusterOptions.OpenStackDNSNameservers,
+		OpenStackDNSNameservers:       p.ConfigurableClusterOptions.OpenStackDNSNameservers,
+		OpenStackImageRetentionPolicy: e2eOpenStackImageRetentionPolicy,
 	}
 
 	return opts

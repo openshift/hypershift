@@ -9448,6 +9448,29 @@ balancer.
 This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>imageRetentionPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.RetentionPolicy">
+RetentionPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRetentionPolicy defines the policy for handling resources associated with the image
+when the cluster is deleted.
+The default (set by the Nodepool controller) matches OpenStack Resource Controller (ORC)
+behavior where the OpenStack Glance Image is pruned when the Image object is deleted during the
+HostedCluster deletion.
+It is defined at the HostedCluster level and will be used for all nodepools images
+so there is no conflict between different ORC objects.
+On day 2 operations, if this field is changed, the corresponding ORC object will be updated
+to reflect the chosen retention policy (prune or orphan) which is translated into ORC format
+(either &lsquo;delete&rsquo; or &lsquo;detach&rsquo; in ORC terminology).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
@@ -10627,6 +10650,35 @@ creating new nodes and deleting the old ones.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###RetentionPolicy { #hypershift.openshift.io/v1beta1.RetentionPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
+</p>
+<p>
+<p>RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Prune&#34;</p></td>
+<td><p>PruneRetentionPolicy is the default policy for handling OpenStack Glance Images
+when the HostedCluster is deleted.</p>
+</td>
+</tr><tr><td><p>&#34;Orphan&#34;</p></td>
+<td><p>OrphanRetentionPolicy will keep the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr><tr><td><p>&#34;Prune&#34;</p></td>
+<td><p>PruneRetentionPolicy will delete the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr></tbody>
 </table>
 ###RollingUpdate { #hypershift.openshift.io/v1beta1.RollingUpdate }
 <p>

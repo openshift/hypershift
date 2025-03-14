@@ -4,18 +4,19 @@ Once all the [prerequisites](prerequisites.md) are met, it is now possible to cr
 
 Here are the available options specific to the OpenStack platform:
 
-| Option                           | Description                                                                                  | Required | Default       |
-|----------------------------------|----------------------------------------------------------------------------------------------|----------|---------------|
-| `--openstack-ca-cert-file`       | Path to the OpenStack CA certificate file                                                    | No       |               |
-| `--openstack-cloud`              | Name of the cloud in `clouds.yaml`                                                           | No       | `'openstack'` |
-| `--openstack-credentials-file`   | Path to the OpenStack credentials file                                                       | No       |               |
-| `--openstack-external-network-id`| ID of the OpenStack external network                                                         | No       |               |
-| `--openstack-ingress-floating-ip`| A floating IP for OpenShift ingress                                                          | No       |               |
-| `--openstack-node-additional-port`| Attach additional ports to nodes. Params: `network-id`, `vnic-type`, `disable-port-security`, `address-pairs`. | No       |               |
-| `--openstack-node-availability-zone`| Availability zone for the nodepool                                                        | No       |               |
-| `--openstack-node-flavor`        | Flavor for the nodepool                                                                      | Yes      |               |
-| `--openstack-node-image-name`    | Image name for the nodepool                                                                  | Yes      |               |
-| `--openstack-dns-nameservers`    | List of DNS server addresses that will be provided when creating the subnet                  | No       |               |
+| Option                                  | Description                                                                                  | Required | Default       |
+|-----------------------------------------|----------------------------------------------------------------------------------------------|----------|---------------|
+| `--openstack-ca-cert-file`              | Path to the OpenStack CA certificate file                                                    | No       |               |
+| `--openstack-cloud`                     | Name of the cloud in `clouds.yaml`                                                           | No       | `'openstack'` |
+| `--openstack-credentials-file`          | Path to the OpenStack credentials file                                                       | No       |               |
+| `--openstack-external-network-id`       | ID of the OpenStack external network                                                         | No       |               |
+| `--openstack-ingress-floating-ip`       | A floating IP for OpenShift ingress                                                          | No       |               |
+| `--openstack-node-additional-port`      | Attach additional ports to nodes. Params: `network-id`, `vnic-type`, `disable-port-security`, `address-pairs`. | No       |               |
+| `--openstack-node-availability-zone`    | Availability zone for the nodepool                                                           | No       |               |
+| `--openstack-node-flavor`               | Flavor for the nodepool                                                                      | Yes      |               |
+| `--openstack-image-retention-policy`    | OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'.              | No       | `Prune`       |
+| `--openstack-node-image-name`           | Image name for the nodepool                                                                  | No       |               |
+| `--openstack-dns-nameservers`           | List of DNS server addresses that will be provided when creating the subnet                  | No       |               |
 
 Below is an example of how to create a cluster using environment variables and the `hcp` cli tool.
 
@@ -32,9 +33,6 @@ export WORKER_COUNT="2"
 # OpenStack resources for the HostedCluster will be created
 # in that project.
 export OS_CLOUD="openstack"
-
-# Image name is the name of the image in OpenStack that was pushed in the previous step.
-export IMAGE_NAME="rhcos"
 
 # Flavor for the nodepool
 export FLAVOR="m1.large"
@@ -68,7 +66,6 @@ hcp create cluster openstack \
 --openstack-credentials-file $CLOUDS_YAML \
 --openstack-ca-cert-file $CA_CERT_PATH \
 --openstack-external-network-id $EXTERNAL_NETWORK_ID \
---openstack-node-image-name $IMAGE_NAME \
 --openstack-node-flavor $FLAVOR \
 --openstack-ingress-floating-ip $INGRESS_FLOATING_IP \
 --openstack-dns-nameservers $DNS_NAMESERVERS
@@ -88,6 +85,13 @@ hcp create cluster openstack \
     `PreferredDuringSchedulingIgnoredDuringExecution` mode for `PodAntiAffinity`.
     If your management cluster doesn't have enough workers (less than 3), which is not recommended nor supported,
     you'll need to specify the `--control-plane-availability-policy` flag to `SingleReplica`.
+
+!!! note
+
+    When not providing the `--openstack-node-image-name` flag, the latest RHCOS image will be used.
+    ORC will handle the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when it's no longer needed.
+    If you want ORC to not delete the image, you can create the HostedCluster with the following option: `--openstack-image-retention-policy=Orphan`.
+    This will prevent ORC from deleting the image resource.
 
 After a few moments we should see our hosted control plane pods up and running:
 

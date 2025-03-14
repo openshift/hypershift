@@ -4400,6 +4400,22 @@ spec:
                         - cloudName
                         - name
                         type: object
+                      imageRetentionPolicy:
+                        description: |-
+                          imageRetentionPolicy defines the policy for handling resources associated with the image
+                          when the cluster is deleted.
+                          The default (set by the Nodepool controller) matches OpenStack Resource Controller (ORC)
+                          behavior where the OpenStack Glance Image is pruned when the Image object is deleted during the
+                          HostedCluster deletion.
+                          It is defined at the HostedCluster level and will be used for all nodepools images
+                          so there is no conflict between different ORC objects.
+                          On day 2 operations, if this field is changed, the corresponding ORC object will be updated
+                          to reflect the chosen retention policy (prune or orphan) which is translated into ORC format
+                          (either 'delete' or 'detach' in ORC terminology).
+                        enum:
+                        - Orphan
+                        - Prune
+                        type: string
                       ingressFloatingIP:
                         description: |-
                           IngressFloatingIP is an available floating IP in your OpenStack cluster that will

@@ -105,6 +105,24 @@ func (o OpenStackAdvancedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			},
 		},
 	)
+	if globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName != "" {
+		e2eutil.EventuallyObject(t, o.ctx, "NodePool to have image configured",
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				err := o.managementClient.Get(ctx, util.ObjectKey(&nodePool), np)
+				return np, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+					want, got := hyperv1.OpenStackPlatform, nodePool.Spec.Platform.Type
+					return want == got, fmt.Sprintf("expected NodePool to have platform %s, got %s", want, got), nil
+				},
+				func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+					diff := cmp.Diff(globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName, ptr.Deref(np.Spec.Platform.OpenStack, hyperv1.OpenStackNodePoolPlatform{}).ImageName)
+					return diff == "", fmt.Sprintf("incorrect image name: %v", diff), nil
+				},
+			},
+		)
+	}
 
 	e2eutil.EventuallyObjects(t, o.ctx, "OpenStackServers to be created with the correct number of ports",
 		func(ctx context.Context) ([]*capiopenstackv1beta1.OpenStackMachine, error) {
@@ -158,6 +176,37 @@ func (o OpenStackAdvancedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 			},
 		},
 	)
+	if globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName != "" {
+		e2eutil.EventuallyObjects(t, o.ctx, "OpenStackServers to be created with the correct image",
+			func(ctx context.Context) ([]*capiopenstackv1beta1.OpenStackMachine, error) {
+				list := &capiopenstackv1beta1.OpenStackMachineList{}
+				err := o.managementClient.List(ctx, list, crclient.InNamespace(o.hostedControlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+				oms := make([]*capiopenstackv1beta1.OpenStackMachine, len(list.Items))
+				for i := range list.Items {
+					oms[i] = &list.Items[i]
+				}
+				return oms, err
+			},
+			[]e2eutil.Predicate[[]*capiopenstackv1beta1.OpenStackMachine]{
+				func(machines []*capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+					return len(machines) == int(*nodePool.Spec.Replicas), fmt.Sprintf("expected %d OpenStackMachines, got %d", *nodePool.Spec.Replicas, len(machines)), nil
+				},
+			},
+			[]e2eutil.Predicate[*capiopenstackv1beta1.OpenStackMachine]{
+				func(machine *capiopenstackv1beta1.OpenStackMachine) (done bool, reasons string, err error) {
+					server := &capiopenstackv1alpha1.OpenStackServer{}
+					err = o.managementClient.Get(o.ctx, crclient.ObjectKey{Name: machine.Name, Namespace: o.hostedControlPlaneNamespace}, server)
+					if err != nil {
+						return false, "", err
+					}
+					if server.Spec.Image.Filter != nil && *server.Spec.Image.Filter.Name != globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName {
+						return false, fmt.Sprintf("expected image name %s, got %s", globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName, *server.Spec.Image.Filter.Name), nil
+					}
+					return true, "", nil
+				},
+			},
+		)
+	}
 }
 
 func (o OpenStackAdvancedTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -179,6 +228,9 @@ func (o OpenStackAdvancedTest) BuildNodePoolManifest(defaultNodepool hyperv1.Nod
 				},
 			},
 		},
+	}
+	if globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName != "" {
+		nodePool.Spec.Platform.OpenStack.ImageName = globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName
 	}
 
 	return nodePool, nil
