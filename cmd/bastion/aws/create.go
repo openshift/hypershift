@@ -518,7 +518,7 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 
 	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	err := wait.PollImmediateUntil(5*time.Second, func() (bool, error) {
+	err := wait.PollUntilContextCancel(waitCtx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := ec2Client.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
 			InstanceIds: []*string{aws.String(instanceID)},
 		})
@@ -531,7 +531,7 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 			return false, fmt.Errorf("error waiting for instance running: %w", err)
 		}
 		return true, nil
-	}, waitCtx.Done())
+	})
 	if err != nil {
 		return "", err
 	}
