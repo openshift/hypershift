@@ -2,9 +2,9 @@ package controlplanecomponent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"slices"
-	"strings"
+	"sort"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -174,32 +174,120 @@ func (c *controlPlaneWorkload[T]) applyWatchedResourcesAnnotation(cpContext Cont
 	return nil
 }
 
+type ValueHash struct {
+	Key       string `json:"k,omitempty"`
+	ValueHash string `json:"h,omitempty"`
+}
+
+type ValueHashes []ValueHash
+
+func (vh ValueHashes) Len() int {
+	return len(vh)
+}
+
+func (vh ValueHashes) Swap(i, j int) {
+	tmp := vh[i]
+	vh[i] = vh[j]
+	vh[j] = tmp
+}
+
+func (vh ValueHashes) Less(i, j int) bool {
+	return vh[i].Key < vh[j].Key
+}
+
+type ResourceHashType int
+
+var (
+	SecretType    ResourceHashType = 0
+	ConfigMapType ResourceHashType = 1
+)
+
+type ResourceHash struct {
+	Type   ResourceHashType `json:"t,omitempty"`
+	Name   string           `json:"n,omitempty"`
+	Values ValueHashes      `json:"v,omitempty"`
+}
+
+func (rh *ResourceHash) SortValues() {
+	sort.Sort(rh.Values)
+}
+
+type ResourceHashes []ResourceHash
+
+func (rhs ResourceHashes) Len() int {
+	return len(rhs)
+}
+
+func (rhs ResourceHashes) Swap(i, j int) {
+	tmp := rhs[i]
+	rhs[i] = rhs[j]
+	rhs[j] = tmp
+}
+
+func (rhs ResourceHashes) Less(i, j int) bool {
+	if rhs[i].Type == rhs[j].Type {
+		return rhs[i].Name < rhs[j].Name
+	}
+	return rhs[i].Type < rhs[j].Type
+}
+
+func (rhs ResourceHashes) SortValues() {
+	for i := range rhs {
+		rhs[i].SortValues()
+	}
+}
+
+func (rhs ResourceHashes) String() (string, error) {
+	rhs.SortValues()
+	sort.Sort(rhs)
+	result, err := json.Marshal(rhs)
+	if err != nil {
+		return "", err
+	}
+	return string(result), nil
+}
+
 func computeResourceHash(secretNames, configMapNames []string,
 	fetchSecret func(string) (*corev1.Secret, error),
 	fetchConfigMap func(string) (*corev1.ConfigMap, error),
 ) (string, error) {
-	var hashes []string
+	hashes := ResourceHashes{}
 	for _, name := range secretNames {
+		rHash := ResourceHash{
+			Type: SecretType,
+			Name: name,
+		}
 		secret, err := fetchSecret(name)
 		if err != nil {
 			return "", err
 		}
-		for _, value := range secret.Data {
-			hashes = append(hashes, util.HashSimple(value))
+		for key, value := range secret.Data {
+			rHash.Values = append(rHash.Values, ValueHash{
+				Key:       key,
+				ValueHash: util.HashSimple(value),
+			})
 		}
+		hashes = append(hashes, rHash)
 	}
 
 	for _, name := range configMapNames {
+		rHash := ResourceHash{
+			Type: ConfigMapType,
+			Name: name,
+		}
 		configMap, err := fetchConfigMap(name)
 		if err != nil {
 			return "", err
 		}
-		for _, value := range configMap.Data {
-			hashes = append(hashes, util.HashSimple(value))
+		for key, value := range configMap.Data {
+			rHash.Values = append(rHash.Values, ValueHash{
+				Key:       key,
+				ValueHash: util.HashSimple(value),
+			})
 		}
+		hashes = append(hashes, rHash)
 	}
-	slices.Sort(hashes)
-	return strings.Join(hashes, ""), nil
+	return hashes.String()
 }
 
 func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
