@@ -2750,13 +2750,13 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 			return fmt.Errorf("failed to reconcile aws provider config: %w", err)
 		}
 	case hyperv1.AzurePlatform:
-		// We need different configs for KAS/KCM and Kubelet in Nodes
-		cfg := manifests.AzureProviderConfig(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r, cfg, func() error {
-			return azure.ReconcileCloudConfig(cfg, hcp)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
-		}
+		//// We need different configs for KAS/KCM and Kubelet in Nodes
+		//cfg := manifests.AzureProviderConfig(hcp.Namespace)
+		//if _, err := createOrUpdate(ctx, r, cfg, func() error {
+		//	return azure.ReconcileCloudConfig(cfg, hcp)
+		//}); err != nil {
+		//	return fmt.Errorf("failed to reconcile Azure cloud config: %w", err)
+		//}
 
 		// Reconcile the Cloud Provider configuration secret
 		withSecrets := manifests.AzureProviderConfigWithCredentials(hcp.Namespace)

@@ -304,9 +304,9 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		cloudConfigMap := &corev1.ConfigMap{}
 		switch p.CloudProvider {
 		case hyperv1.AzurePlatform:
-			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
-				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
-			}
+			//if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.AzureProviderConfig("").Name}, cloudConfigMap); err != nil {
+			//	return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
+			//}
 		case hyperv1.OpenStackPlatform:
 			if err := p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: manifests.OpenStackProviderConfig("").Name}, cloudConfigMap); err != nil {
 				return nil, fmt.Errorf("failed to get cloud provider configmap: %w", err)
