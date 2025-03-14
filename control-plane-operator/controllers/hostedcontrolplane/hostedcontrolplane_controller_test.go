@@ -299,6 +299,12 @@ func TestReconcileAPIServerService(t *testing.T) {
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 	}
+
+	withcustomAnnotation := func(svc *corev1.Service) {
+		svc.Annotations["foo"] = "bar"
+		svc.Annotations["baz"] = "qux"
+	}
+
 	kasExternalPublicRoute := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: targetNamespace,
@@ -385,6 +391,24 @@ func TestReconcileAPIServerService(t *testing.T) {
 
 			expectedServices: []corev1.Service{
 				kasPublicService(),
+			},
+		},
+		{
+			name:           "LB strategy, public. With annotations",
+			endpointAccess: hyperv1.Public,
+			apiPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+				LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+					Hostname: hostname,
+					Annotations: map[string]string{
+						"foo": "bar",
+						"baz": "qux",
+					},
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				kasPublicService(withcustomAnnotation),
 			},
 		},
 		{
