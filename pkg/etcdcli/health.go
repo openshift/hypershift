@@ -153,10 +153,8 @@ func (h memberHealth) Status() string {
 			switch {
 			case !HasStarted(etcd.Member):
 				status = append(status, fmt.Sprintf("%s has not started", GetMemberNameOrHost(etcd.Member)))
-				break
 			case !etcd.Healthy:
 				status = append(status, fmt.Sprintf("%s is unhealthy", etcd.Member.Name))
-				break
 			}
 		}
 	}
@@ -231,10 +229,7 @@ func GetUnstartedMemberNames(memberHealth []healthCheck) []string {
 
 // HasStarted return true if etcd member has started.
 func HasStarted(member *etcdserverpb.Member) bool {
-	if len(member.ClientURLs) == 0 {
-		return false
-	}
-	return true
+	return len(member.ClientURLs) != 0
 }
 
 // IsQuorumFaultTolerant checks the current etcd cluster and returns true if the cluster can tolerate the
@@ -277,10 +272,7 @@ func IsQuorumFaultTolerantErr(memberHealth []healthCheck) error {
 
 func IsClusterHealthy(memberHealth memberHealth) bool {
 	unhealthyMembers := memberHealth.GetUnhealthyMembers()
-	if len(unhealthyMembers) > 0 {
-		return false
-	}
-	return true
+	return len(unhealthyMembers) == 0
 }
 
 // raftTermsCollector is a Prometheus collector to re-expose raft terms as a counter.

@@ -204,7 +204,12 @@ func run(ctx context.Context, opts Options) error {
 	if err := mgr.Add(certWatcher); err != nil {
 		return fmt.Errorf("failed to add certWatcher to manager: %w", err)
 	}
-	go mgr.Start(ctx)
+	go func() {
+		err := mgr.Start(ctx)
+		if err != nil {
+			logger.Error(err, "failed to start manager")
+		}
+	}()
 
 	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
 	eventRecorder := mgr.GetEventRecorderFor("ignition-server")
@@ -262,7 +267,7 @@ func run(ctx context.Context, opts Options) error {
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write(value.Payload)
+		_, _ = w.Write(value.Payload)
 
 		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
 		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()

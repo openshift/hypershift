@@ -277,6 +277,6 @@ func createCSR(commonName string) []byte {
 	csrOut := new(bytes.Buffer)
 
 	csrBytes, _ := x509.CreateCertificateRequest(rand.Reader, &template, keyBytes)
-	pem.Encode(csrOut, &pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrBytes})
+	_ = pem.Encode(csrOut, &pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrBytes})
 	return csrOut.Bytes()
 }

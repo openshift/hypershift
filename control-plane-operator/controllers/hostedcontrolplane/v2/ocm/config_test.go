@@ -63,10 +63,13 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 			}
 
 			configMap := &corev1.ConfigMap{}
-			controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
+			_, _, err := controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
+			if err != nil {
+				t.Fatalf("%s", err.Error())
+			}
 
 			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			err := util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
+			err = util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
 			if err != nil {
 				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 			}

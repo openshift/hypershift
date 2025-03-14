@@ -53,6 +53,11 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
+		if funcDecl.Body == nil {
+			// skip functions without body
+			return
+		}
+
 		if funcDecl.Type.Results == nil {
 			// skip functions without return values
 			return
@@ -133,7 +138,7 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 						typ := pass.TypesInfo.TypeOf(res)
 						switch typ := typ.(type) {
 						case *types.Tuple:
-							for i := 0; i < typ.Len(); i++ {
+							for i := range typ.Len() {
 								v := typ.At(i)
 								vTyp := v.Type()
 								retStmtTypes[i][vTyp] = struct{}{}
@@ -269,12 +274,28 @@ func (r *runner) run(pass *analysis.Pass) (interface{}, error) {
 				stmtTypName = removePkgPrefix(stmtTypName)
 			}
 
-			pass.Reportf(result.Pos(),
-				"%s function return %s interface at the %s result, abstract a single concrete implementation of %s",
+			msg := fmt.Sprintf("%s function return %s interface at the %s result, abstract a single concrete implementation of %s",
 				funcDecl.Name.Name,
 				retTypeName,
 				positionStr(currentIdx),
 				stmtTypName)
+
+			pass.Report(analysis.Diagnostic{
+				Pos:     result.Pos(),
+				Message: msg,
+				SuggestedFixes: []analysis.SuggestedFix{
+					{
+						Message: "Replace the interface return type with the concrete type",
+						TextEdits: []analysis.TextEdit{
+							{
+								Pos:     result.Pos(),
+								End:     result.End(),
+								NewText: []byte(stmtTypName),
+							},
+						},
+					},
+				},
+			})
 		}
 	})
 

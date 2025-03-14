@@ -64,8 +64,8 @@ func TestLoadOverrides(t *testing.T) {
 func fakeOverrides() *CPOOverrides {
 	result := &CPOOverrides{
 		Testing: CPOOverrideTestReleases{
-			Latest:   fmt.Sprintf("quay.io/openshift-release-dev/ocp-release:4.17.9-x86_64"),
-			Previous: fmt.Sprintf("quay.io/openshift-release-dev/ocp-release:4.17.8-x86_64"),
+			Latest:   "quay.io/openshift-release-dev/ocp-release:4.17.9-x86_64",
+			Previous: "quay.io/openshift-release-dev/ocp-release:4.17.8-x86_64",
 		},
 	}
 	for _, minor := range []int{15, 16, 17} {

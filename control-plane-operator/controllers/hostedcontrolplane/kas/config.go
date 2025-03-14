@@ -43,7 +43,10 @@ func ReconcileConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p Ku
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(p)
+	kasConfig, err := generateConfig(p)
+	if err != nil {
+		return err
+	}
 
 	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
 		kasConfig.ImagePolicyConfig.InternalRegistryHostname = ""
@@ -65,7 +68,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, error) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -77,6 +80,14 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 			KeyFile:  cpath(kasVolumeServerPrivateCert().Name, corev1.TLSPrivateKeyKey),
 		},
 	})
+	externalIPConfig, err := externalIPRangerConfig(p.ExternalIPConfig)
+	if err != nil {
+		return nil, err
+	}
+	restrictedEndPointAdmissionConfig, err := restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork)
+	if err != nil {
+		return nil, err
+	}
 	config := &kcpv1.KubeAPIServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeAPIServerConfig",
@@ -88,13 +99,13 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 					"network.openshift.io/ExternalIPRanger": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: externalIPRangerConfig(p.ExternalIPConfig),
+							Object: externalIPConfig,
 						},
 					},
 					"network.openshift.io/RestrictedEndpointsAdmission": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork),
+							Object: restrictedEndPointAdmissionConfig,
 						},
 					},
 					"PodSecurity": {
@@ -238,7 +249,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("tls-cert-file", cpath(kasVolumeServerCert().Name, corev1.TLSCertKey))
 	args.Set("tls-private-key-file", cpath(kasVolumeServerCert().Name, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
-	return config
+	return config, nil
 }
 
 func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
@@ -249,7 +260,7 @@ func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
 	return ""
 }
 
-func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime.Object {
+func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) (runtime.Object, error) {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("ExternalIPRangerAdmissionConfig")
@@ -260,21 +271,30 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 		}
 		conf = append(conf, externalIPConfig.Policy.AllowedCIDRs...)
 	}
-	unstructured.SetNestedStringSlice(cfg.Object, conf, "externalIPNetworkCIDRs")
+	err := unstructured.SetNestedStringSlice(cfg.Object, conf, "externalIPNetworkCIDRs")
+	if err != nil {
+		return nil, err
+	}
 	allowIngressIP := externalIPConfig != nil && len(externalIPConfig.AutoAssignCIDRs) > 0
-	unstructured.SetNestedField(cfg.Object, allowIngressIP, "allowIngressIP")
-	return cfg
+	err = unstructured.SetNestedField(cfg.Object, allowIngressIP, "allowIngressIP")
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
-func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) runtime.Object {
+func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) (runtime.Object, error) {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("RestrictedEndpointsAdmissionConfig")
 	var restrictedCIDRs []string
 	restrictedCIDRs = append(restrictedCIDRs, clusterNetwork...)
 	restrictedCIDRs = append(restrictedCIDRs, serviceNetwork...)
-	unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
-	return cfg
+	err := unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func admissionPlugins() []string {

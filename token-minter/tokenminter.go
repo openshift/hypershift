@@ -63,8 +63,8 @@ refresh the token as it expires.`,
 	cmd.Flags().StringVar(&opts.kubeconfigSecretNamespace, "kubeconfig-secret-namespace", "", "namespace of a secret containing a kubeconfig key")
 	cmd.Flags().BoolVar(&opts.oneshot, "oneshot", false, "Exit after minting the token")
 
-	cmd.MarkFlagRequired("service-account-namespace")
-	cmd.MarkFlagRequired("service-account-name")
+	_ = cmd.MarkFlagRequired("service-account-namespace")
+	_ = cmd.MarkFlagRequired("service-account-name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(cmd.Context())
@@ -217,7 +217,9 @@ func mintToken(ctx context.Context, opts options) (metav1.Time, error) {
 	if err != nil {
 		return metav1.Time{}, fmt.Errorf("failed to create token file: %w", err)
 	}
-	defer f.Close()
+	defer func(f *os.File) {
+		_ = f.Close()
+	}(f)
 	if _, err := f.WriteString(token.Status.Token); err != nil {
 		return metav1.Time{}, fmt.Errorf("failed to write token file: %w", err)
 	}

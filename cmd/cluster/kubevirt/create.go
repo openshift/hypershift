@@ -306,7 +306,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	kubevirtOpts := DefaultOptions()
 	BindDeveloperOptions(kubevirtOpts, cmd.Flags())
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

@@ -56,16 +56,16 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 	cmd.Flags().BoolVar(&opts.Wait, "wait", opts.Wait, "Wait for instance to be running")
 
-	cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
 
-	cmd.MarkFlagFilename("ssh-key-file")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagFilename("ssh-key-file")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 

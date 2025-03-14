@@ -38,9 +38,12 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	r.Client = mgr.GetClient()
 
-	mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
+	err := mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
 		return []string{o.GetName()}
 	})
+	if err != nil {
+		return err
+	}
 
 	// A channel is used to generate an initial sync event.
 	// Afterwards, the controller syncs on HostedClusters.

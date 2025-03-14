@@ -17,7 +17,7 @@ import (
 
 func main() {
 	cmd := NewCommand()
-	cmd.Execute()
+	_ = cmd.Execute()
 }
 
 type Options struct {

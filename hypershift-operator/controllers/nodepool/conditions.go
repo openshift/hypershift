@@ -550,7 +550,10 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
 
-	r.setCIDRConflictCondition(nodePool, machines, hc)
+	err = r.setCIDRConflictCondition(nodePool, machines, hc)
+	if err != nil {
+		return err
+	}
 
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		err = r.setAllMachinesLMCondition(ctx, nodePool, hc)
