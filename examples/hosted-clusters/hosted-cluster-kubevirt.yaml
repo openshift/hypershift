@@ -1,0 +1,52 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example-agent
+  namespace: clusters
+spec:
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
+  pullSecret:
+    name: pull-secret
+  sshKey:
+    name: ssh-key
+  networking:
+    networkType: OVNKubernetes
+    clusterNetwork:
+      - cidr: 10.132.0.0/14
+    serviceNetwork:
+      - cidr: 172.31.0.0/16
+    machineNetwork:
+      - cidr: 192.168.0.0/24
+  platform:
+    type: Agent
+    agent:
+      agentNamespace: example-agent-namespace
+  infraID: example-agent-infra
+  etcd:
+    managed:
+      storage:
+        type: PersistentVolume
+        persistentVolume:
+          size: 4Gi
+  services:
+    - service: APIServer
+      servicePublishingStrategy:
+        type: NodePort
+    - service: OAuthServer
+      servicePublishingStrategy:
+        type: NodePort
+    - service: OIDC
+      servicePublishingStrategy:
+        type: NodePort
+    - service: Konnectivity
+      servicePublishingStrategy:
+        type: NodePort
+    - service: Ignition
+      servicePublishingStrategy:
+        type: NodePort
+  dns:
+    baseDomain: example.com
+  controllerAvailabilityPolicy: SingleReplica
+  infrastructureAvailabilityPolicy: SingleReplica
+  fips: true
