@@ -145,7 +145,7 @@ spec:
             - name: name
               value: init
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:6d307bd02891fea47e5b4e1a3adfaa1c9cc9760acb92c6c3be5d15992cd1fc09
+              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:59ef75d02b642df3c20bb6e0705ed398cb7aa1833f66622fe1325051a8170416
             - name: kind
               value: task
           resolver: bundles
@@ -271,7 +271,7 @@ spec:
             - name: name
               value: prefetch-dependencies
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:79abdddffcca0fb71374ab6118e07cc55468252bed6f38b1ae6d81eac3ef71e0
+              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:840934679b1b7c706f79a49585e9a4381149c27e29755d94da74c16111449336
             - name: kind
               value: task
           resolver: bundles
@@ -306,7 +306,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:0e022da1be692c48348e282e73f30c7e6b1f520d37fb6f985ccb2795940dbe72
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:e9b3816fcff69bd79460dd830531230b87a3067b7e976e2b43710ea3ae7f8b38
             - name: kind
               value: task
           resolver: bundles
@@ -343,7 +343,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:8e75d07f09a828bde672b5cbb2a912ec5c6b75c26be7633376e05a3046937794
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:63e43c72f264a94a26200b8583a77f1fe5f44476a3fb021581c03300bb899ae2
             - name: kind
               value: task
           resolver: bundles
@@ -380,7 +380,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:8e75d07f09a828bde672b5cbb2a912ec5c6b75c26be7633376e05a3046937794
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:63e43c72f264a94a26200b8583a77f1fe5f44476a3fb021581c03300bb899ae2
             - name: kind
               value: task
           resolver: bundles
@@ -418,7 +418,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:8e75d07f09a828bde672b5cbb2a912ec5c6b75c26be7633376e05a3046937794
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:63e43c72f264a94a26200b8583a77f1fe5f44476a3fb021581c03300bb899ae2
             - name: kind
               value: task
           resolver: bundles
@@ -452,7 +452,7 @@ spec:
             - name: name
               value: build-image-manifest
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:4c7ee801ca6d7dcd2f75c40dc72c2500bcb4de648d4e9f784619b12494a81b57
+              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:72bbf0925ba346f5d1389ed9d376d26c7cc00b7a1838fde92553a3aa02c72f1a
             - name: kind
               value: task
           resolver: bundles
@@ -472,7 +472,7 @@ spec:
             - name: name
               value: deprecated-image-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:6fb3cec45655c4bfc44c857769aa543e5d2b546d22ee23959c70134f1c2ba5f3
+              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:47f0cc74cbb70a96af18bce46c31e9599bf16b67771673078b5cc21845179a7f
             - name: kind
               value: task
           resolver: bundles
@@ -494,7 +494,7 @@ spec:
             - name: name
               value: clair-scan
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:bbf512e27a8e505c01f2a3bd9067167ece1cf147024c1116d6839ff0701429be
+              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:e9c29ce65c9cf9ce796f14c1464bd95402b335292333f054ad4f8d951d63f630
             - name: kind
               value: task
           resolver: bundles
@@ -511,7 +511,7 @@ spec:
             - name: name
               value: sast-snyk-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.3@sha256:a752b35502c7615045d8affba5731074724364528d0dcfcb2d74b8e300b0e3f8
+              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.3@sha256:bc394bfc78f282cbce13a334203731be57c4150ce3db691f775ef0dd97be6f77
             - name: kind
               value: task
           resolver: bundles
@@ -541,7 +541,7 @@ spec:
             - name: name
               value: clamav-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:48c1dae0d14e8ef45af9cbd566b8341d91618a9154fa24f28f5e5beb0e2a7419
+              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:c30c12681b02eb4b83aeb4021d0e714a72db4d1d3bb14579652f4d1a763473ab
             - name: kind
               value: task
           resolver: bundles
@@ -563,7 +563,7 @@ spec:
             - name: name
               value: rpms-signature-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:b9cb1e126d186010e0a5281501b475177d55b4eb2829c5e7d7614c173a8c929c
+              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:d00d159c370e3c99447516970c316ef57dfd27c29e0ce3cff50727c9c40936d8
             - name: kind
               value: task
           resolver: bundles
