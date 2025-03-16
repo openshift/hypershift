@@ -6,7 +6,7 @@ type Generator interface {
 	Name() string
 
 	// GenGroup runs the generator against the given APIGroupContext.
-	GenGroup(APIGroupContext) error
+	GenGroup(APIGroupContext) ([]Result, error)
 
 	// ApplyConfig creates a new generator instance with the given configuration.
 	ApplyConfig(*Config) Generator
