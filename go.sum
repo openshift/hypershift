@@ -505,8 +505,8 @@ github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3/go.mod h1:WHi2cToOBZyHQea0Yq3qVnOQRl6OMTGBPJMi0c4/GS8=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96 h1:MaA7f+qALdKTlMdjMZ5rvy8nUvFjWYvX3i9a+dTO+xU=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96/go.mod h1:OzR0JFhrNsvrbXEY1BiwLzzBXQGp45/8EQMKplcj1kw=
-github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256 h1:YLqKXRH7DTukM1sxLOi++uUe7R2m0ivK7yqf0X6emok=
-github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256/go.mod h1:nMuHN1oKtpWkQlV1jwqMYV0UfF6wWb+e3TazrWTbNSY=
+github.com/openshift/cluster-node-tuning-operator v0.0.0-20250308031438-33b83c7ca017 h1:6MOU2l1lq7EsgW8fph1PYkn6eey88JYSREjzPtXD76k=
+github.com/openshift/cluster-node-tuning-operator v0.0.0-20250308031438-33b83c7ca017/go.mod h1:nMuHN1oKtpWkQlV1jwqMYV0UfF6wWb+e3TazrWTbNSY=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 h1:cHyxR+Y8rAMT6m1jQCaYGRwikqahI0OjjUDhFNf3ySQ=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
 github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2 h1:LaJmI+EeFnpbxs5H4Y6KOiNXhtPjldqvNzVfPpNM+dI=
