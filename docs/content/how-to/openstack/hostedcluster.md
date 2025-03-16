@@ -14,7 +14,7 @@ Here are the available options specific to the OpenStack platform:
 | `--openstack-node-additional-port`      | Attach additional ports to nodes. Params: `network-id`, `vnic-type`, `disable-port-security`, `address-pairs`. | No       |               |
 | `--openstack-node-availability-zone`    | Availability zone for the nodepool                                                           | No       |               |
 | `--openstack-node-flavor`               | Flavor for the nodepool                                                                      | Yes      |               |
-| `--openstack-image-retention-policy`    | OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'.              | No       | `Prune`       |
+| `--openstack-image-retention-policy`    | OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'.              | No       | `Orphan`       |
 | `--openstack-node-image-name`           | Image name for the nodepool                                                                  | No       |               |
 | `--openstack-dns-nameservers`           | List of DNS server addresses that will be provided when creating the subnet                  | No       |               |
 
@@ -90,8 +90,8 @@ hcp create cluster openstack \
 
     When not providing the `--openstack-node-image-name` flag, the latest RHCOS image will be used.
     ORC will handle the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when it's no longer needed.
-    If you want ORC to not delete the image, you can create the HostedCluster with the following option: `--openstack-image-retention-policy=Orphan`.
-    This will prevent ORC from deleting the image resource.
+    If you want ORC to delete the image when the cluster is deleted, you can create the HostedCluster with the following
+    option: `--openstack-image-retention-policy=Prune`.
 
 After a few moments we should see our hosted control plane pods up and running:
 

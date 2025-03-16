@@ -387,7 +387,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 						},
 					},
 				},
-				ManagedOptions: &orc.ManagedOptions{OnDelete: orc.OnDeleteDelete},
+				ManagedOptions: &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach},
 			},
 		},
 		{

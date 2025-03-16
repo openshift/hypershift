@@ -3,7 +3,6 @@ package nodepool
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
@@ -30,7 +29,7 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 			})
 			return fmt.Errorf("couldn't discover an OpenStack Image for release image: %w", err)
 		}
-		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, releaseImage, nodePool)
+		imageName, err := r.reconcileOpenStackImageCR(ctx, r.Client, hcluster, controlPlaneNamespace, releaseImage, nodePool)
 		if err != nil {
 			return err
 		}
@@ -56,12 +55,11 @@ func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePoo
 // reconcileOpenStackImageCR reconciles the OpenStack Image CR for the given NodePool.
 // An ORC object will be created or updated with the image spec.
 // The image name will be returned.
-func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, client client.Client, hcluster *hyperv1.HostedCluster, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) (string, error) {
+func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, client client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, release *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool) (string, error) {
 	releaseVersion, err := openstack.OpenStackReleaseImage(release)
 	if err != nil {
 		return "", err
 	}
-	controlPlaneNamespace := fmt.Sprintf("%s-%s", nodePool.Namespace, strings.ReplaceAll(nodePool.Spec.ClusterName, ".", "-"))
 	openstackCluster, err := openstack.GetOpenStackClusterForHostedCluster(ctx, client, hcluster, controlPlaneNamespace)
 	if err != nil {
 		return "", err

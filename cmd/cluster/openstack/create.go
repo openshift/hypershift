@@ -47,7 +47,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
 	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
-	flags.Var(&opts.OpenStackImageRetentionPolicy, "openstack-image-retention-policy", "OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'. By default images are pruned. (optional)")
+	flags.Var(&opts.OpenStackImageRetentionPolicy, "openstack-image-retention-policy", "OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'. By default images are orphaned. (optional)")
 }
 
 type RawCreateOptions struct {

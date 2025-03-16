@@ -9461,9 +9461,9 @@ RetentionPolicy
 <em>(Optional)</em>
 <p>imageRetentionPolicy defines the policy for handling resources associated with the image
 when the cluster is deleted.
-The default (set by the Nodepool controller) matches OpenStack Resource Controller (ORC)
-behavior where the OpenStack Glance Image is pruned when the Image object is deleted during the
-HostedCluster deletion.
+The default (set by the Nodepool controller) is to orphan the image so that it can be
+used by other clusters. If the image is no longer needed, it can be manually deleted.
+If the image is set to be pruned, it will be deleted when the cluster is deleted.
 It is defined at the HostedCluster level and will be used for all nodepools images
 so there is no conflict between different ORC objects.
 On day 2 operations, if this field is changed, the corresponding ORC object will be updated
@@ -10666,7 +10666,7 @@ creating new nodes and deleting the old ones.</p>
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;Prune&#34;</p></td>
+<tbody><tr><td><p>&#34;Orphan&#34;</p></td>
 <td><p>PruneRetentionPolicy is the default policy for handling OpenStack Glance Images
 when the HostedCluster is deleted.</p>
 </td>
