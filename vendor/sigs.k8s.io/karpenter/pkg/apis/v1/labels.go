@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"sigs.k8s.io/karpenter/pkg/apis"
@@ -32,6 +33,7 @@ const (
 	ArchitectureArm64    = "arm64"
 	CapacityTypeSpot     = "spot"
 	CapacityTypeOnDemand = "on-demand"
+	CapacityTypeReserved = "reserved"
 )
 
 // Karpenter specific domains and labels
@@ -48,10 +50,7 @@ const (
 	ProviderCompatibilityAnnotationKey         = apis.CompatibilityGroup + "/provider"
 	NodePoolHashAnnotationKey                  = apis.Group + "/nodepool-hash"
 	NodePoolHashVersionAnnotationKey           = apis.Group + "/nodepool-hash-version"
-	KubeletCompatibilityAnnotationKey          = apis.CompatibilityGroup + "/v1beta1-kubelet-conversion"
-	NodeClassReferenceAnnotationKey            = apis.CompatibilityGroup + "/v1beta1-nodeclass-reference"
 	NodeClaimTerminationTimestampAnnotationKey = apis.Group + "/nodeclaim-termination-timestamp"
-	StoredVersionMigratedKey                   = apis.Group + "/stored-version-migrated"
 )
 
 // Karpenter specific finalizers
@@ -143,4 +142,8 @@ func GetLabelDomain(key string) string {
 		return parts[0]
 	}
 	return ""
+}
+
+func NodeClassLabelKey(gk schema.GroupKind) string {
+	return fmt.Sprintf("%s/%s", gk.Group, strings.ToLower(gk.Kind))
 }
