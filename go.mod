@@ -100,7 +100,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.19.5
-	sigs.k8s.io/karpenter v1.0.5
+	sigs.k8s.io/karpenter v1.3.1
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2
 	sigs.k8s.io/yaml v1.4.0
