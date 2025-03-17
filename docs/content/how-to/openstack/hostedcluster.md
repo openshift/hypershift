@@ -89,9 +89,8 @@ hcp create cluster openstack \
 !!! note
 
     When not providing the `--openstack-node-image-name` flag, the latest RHCOS image will be used.
-    ORC will handle the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when it's no longer needed.
-    If you want ORC to not delete the image, you can create the HostedCluster with the following option: `--openstack-image-retention-policy=Orphan`.
-    This will prevent ORC from deleting the image resource.
+    ORC will handle the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when the HostedCluster is deleted.
+    The OpenStack Glance Image will be named like this: `<hosted-cluster-name>-rhcos-<rhcos-version>`.
 
 After a few moments we should see our hosted control plane pods up and running:
 

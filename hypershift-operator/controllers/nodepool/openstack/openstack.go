@@ -104,13 +104,14 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 		SecretName: hcluster.Spec.Platform.OpenStack.IdentityRef.Name,
 		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
 	}
-	releaseVersion, err := OpenStackReleaseImage(release)
+
+	imageName, err := ClusterImageName(hcluster, release)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get image name: %w", err)
 	}
 
 	openStackImageSpec.Resource = &orc.ImageResourceSpec{
-		Name: "rhcos-" + releaseVersion,
+		Name: imageName,
 		Content: &orc.ImageContent{
 			ContainerFormat: "bare",
 			DiskFormat:      "qcow2",
@@ -178,4 +179,13 @@ func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, erro
 		return "", fmt.Errorf("couldn't find OS metadata for openstack")
 	}
 	return openStack.Release, nil
+}
+
+// ClusterImageName returns the name of the image for the given HostedCluster.
+func ClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	releaseVersion, err := OpenStackReleaseImage(releaseImage)
+	if err != nil {
+		return "", err
+	}
+	return hcluster.Name + "-rhcos-" + releaseVersion, nil
 }

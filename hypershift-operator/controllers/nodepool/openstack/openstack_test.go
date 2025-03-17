@@ -601,3 +601,90 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 		})
 	}
 }
+
+func TestClusterImageName(t *testing.T) {
+	testCases := []struct {
+		name           string
+		hostedCluster  *hyperv1.HostedCluster
+		releaseImage   *releaseinfo.ReleaseImage
+		expectedResult string
+		expectedError  bool
+	}{
+		{
+			name: "valid release image",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Artifacts: map[string]releaseinfo.CoreOSArtifact{
+								"openstack": {
+									Release: "4.19.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: "test-cluster-rhcos-4.19.0",
+			expectedError:  false,
+		},
+		{
+			name: "missing architecture",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{},
+				},
+			},
+			expectedError: true,
+		},
+		{
+			name: "missing openstack artifact",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Artifacts: map[string]releaseinfo.CoreOSArtifact{},
+						},
+					},
+				},
+			},
+			expectedError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := ClusterImageName(tc.hostedCluster, tc.releaseImage)
+			if tc.expectedError {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if result != tc.expectedResult {
+					t.Errorf("expected result %q but got %q", tc.expectedResult, result)
+				}
+			}
+		})
+	}
+}
