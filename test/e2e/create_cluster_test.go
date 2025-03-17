@@ -1473,7 +1473,7 @@ func TestCreateClusterExternalOIDC(t *testing.T) {
 						{
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
-								URL: "test.com",
+                                URL: "https://notreal.example.com",
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
 								},
