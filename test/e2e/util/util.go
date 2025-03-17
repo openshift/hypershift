@@ -2068,6 +2068,13 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 }
 
 func EnsureOIDCProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+    // no auth configuration options specified. Can't evaluate authentication type, return early without
+    // performing any OIDC configuation for the tests.
+    if hostedCluster.Spec.Configuration == nil || hostedCluster.Spec.Configuration.Authentication == nil {
+        return
+    }
+
+    // auth configuration is not set to OIDC. Skip any OIDC specific test configuration.
 	if hostedCluster.Spec.Configuration.Authentication.Type != configv1.AuthenticationTypeOIDC {
 		return
 	}
