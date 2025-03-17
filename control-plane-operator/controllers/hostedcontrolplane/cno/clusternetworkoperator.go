@@ -117,8 +117,6 @@ type Params struct {
 	DeploymentConfig         config.DeploymentConfig
 	IsPrivate                bool
 	DefaultIngressDomain     string
-	AzureClientID            string
-	AzureTenantID            string
 	AzureCertificateName     string
 	AzureCredentialsFilepath string
 }
@@ -170,8 +168,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 
 	if azureutil.IsAroHCP() {
-		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID
-		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CertificateName
 		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CredentialsSecretName
 	}
 
@@ -622,22 +618,11 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		{Name: "ca-bundle", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.RootCASecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
 	}
 
-	// For ARO HCP deployments, we pass the env variable for the SecretProviderClass for the Secrets Store CSI driver
-	// to use on the CNCC deployment.
+	// For managed Azure deployments, we pass the env variables for:
+	// - the SecretProviderClass for the Secrets Store CSI driver to use on the CNCC deployment
+	// - the filepath of the credentials
 	if azureutil.IsAroHCP() {
 		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  config.ManagedAzureClientIdEnvVarKey,
-				Value: params.AzureClientID,
-			},
-			corev1.EnvVar{
-				Name:  config.ManagedAzureTenantIdEnvVarKey,
-				Value: params.AzureTenantID,
-			},
-			corev1.EnvVar{
-				Name:  config.ManagedAzureCertificateNameEnvVarKey,
-				Value: params.AzureCertificateName,
-			},
 			corev1.EnvVar{
 				Name:  config.ManagedAzureSecretProviderClassEnvVarKey,
 				Value: config.ManagedAzureNetworkSecretStoreProviderClassName,
