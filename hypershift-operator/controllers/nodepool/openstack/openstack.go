@@ -93,7 +93,6 @@ func GetOpenStackClusterForHostedCluster(ctx context.Context, c client.Client, h
 
 // ReconcileOpenStackImageSpec reconciles the OpenStack ImageSpec for the given HostedCluster.
 // The image spec will be set to the default RHCOS image for the given release.
-// The image retention policy will be set based on the HostedCluster's ImageRetentionPolicy.
 func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImageSpec *orc.ImageSpec, release *releaseinfo.ReleaseImage) error {
 	imageURL, imageHash, err := OpenstackDefaultImage(release)
 	if err != nil {
@@ -105,7 +104,7 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 		CloudName:  hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName,
 	}
 
-	imageName, err := ClusterImageName(hcluster, release)
+	imageName, err := PrefixedClusterImageName(hcluster, release)
 	if err != nil {
 		return fmt.Errorf("failed to get image name: %w", err)
 	}
@@ -124,21 +123,6 @@ func ReconcileOpenStackImageSpec(hcluster *hyperv1.HostedCluster, openStackImage
 				},
 			},
 		},
-	}
-
-	// Set the image retention policy in ORC, whether to orphan or delete the image on deletion of the ORC Image CR.
-	var imageRetentionPolicy hyperv1.RetentionPolicy
-	if hcluster.Spec.Platform.OpenStack.ImageRetentionPolicy == "" {
-		imageRetentionPolicy = hyperv1.DefaultImageRetentionPolicy
-	} else {
-		imageRetentionPolicy = hcluster.Spec.Platform.OpenStack.ImageRetentionPolicy
-	}
-	if imageRetentionPolicy == hyperv1.OrphanRetentionPolicy {
-		openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach}
-	} else if imageRetentionPolicy == hyperv1.PruneRetentionPolicy {
-		openStackImageSpec.ManagedOptions = &orc.ManagedOptions{OnDelete: orc.OnDeleteDelete}
-	} else {
-		return fmt.Errorf("unsupported image retention policy: %s", imageRetentionPolicy)
 	}
 
 	return nil
@@ -181,8 +165,8 @@ func OpenStackReleaseImage(releaseImage *releaseinfo.ReleaseImage) (string, erro
 	return openStack.Release, nil
 }
 
-// ClusterImageName returns the name of the image for the given HostedCluster.
-func ClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+// PrefixedClusterImageName returns a prefixed name of the image for the given HostedCluster.
+func PrefixedClusterImageName(hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	releaseVersion, err := OpenStackReleaseImage(releaseImage)
 	if err != nil {
 		return "", err

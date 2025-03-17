@@ -138,7 +138,6 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackNodeFlavor, "e2e.openstack-node-flavor", "", "The flavor to use for OpenStack nodes")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackNodeImageName, "e2e.openstack-node-image-name", "", "The image name to use for OpenStack nodes")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.OpenStackDNSNameservers, "e2e.openstack-dns-nameservers", "List of DNS nameservers to use for the cluster")
-	flag.Var(&globalOpts.ConfigurableClusterOptions.OpenStackImageRetentionPolicy, "e2e.openstack-image-retention-policy", "The image retention policy to use for OpenStack nodes. Valid values are 'Orphan' and 'Prune'. When not set, images will be retained indefinitely so that they can be reused by other tests")
 
 	// PowerVS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.PowerVSPER, "e2e-powervs-power-edge-router", false, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")

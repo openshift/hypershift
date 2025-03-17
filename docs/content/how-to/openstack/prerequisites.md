@@ -81,8 +81,7 @@ Follow this [procedure](etcd-local-storage.md) to leverage a well-known and test
 The user can specify which RHCOS image to use when deploying the node pools
 on OpenStack by uploading the image to the OpenStack cloud. If the image is not
 uploaded to OpenStack, [OpenStack Resource Controller (ORC)](https://github.com/k-orc/openstack-resource-controller) will
-manage the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when it's no longer needed
-or left as an orphan image that can be re-used by other clusters and deleted when it's no longer needed.
+manage the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when the HostedCluster is deleted.
 
 Here is an example of how to upload an RHCOS image to OpenStack:
 

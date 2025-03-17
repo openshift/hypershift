@@ -14,7 +14,6 @@ Here are the available options specific to the OpenStack platform:
 | `--openstack-node-additional-port`      | Attach additional ports to nodes. Params: `network-id`, `vnic-type`, `disable-port-security`, `address-pairs`. | No       |               |
 | `--openstack-node-availability-zone`    | Availability zone for the nodepool                                                           | No       |               |
 | `--openstack-node-flavor`               | Flavor for the nodepool                                                                      | Yes      |               |
-| `--openstack-image-retention-policy`    | OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'.              | No       | `Prune`       |
 | `--openstack-node-image-name`           | Image name for the nodepool                                                                  | No       |               |
 | `--openstack-dns-nameservers`           | List of DNS server addresses that will be provided when creating the subnet                  | No       |               |
 

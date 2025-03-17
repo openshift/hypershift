@@ -1,7 +1,5 @@
 package v1beta1
 
-import "fmt"
-
 // PortSecurityPolicy defines whether or not to enable port security on a port.
 type PortSecurityPolicy string
 
@@ -14,31 +12,7 @@ const (
 
 	// PortSecurityDefault uses the default port security policy.
 	PortSecurityDefault PortSecurityPolicy = ""
-
-	// PruneRetentionPolicy is the default policy for handling OpenStack Glance Images
-	// when the HostedCluster is deleted.
-	DefaultImageRetentionPolicy RetentionPolicy = PruneRetentionPolicy
 )
-
-func (p *RetentionPolicy) String() string {
-	return string(*p)
-}
-
-func (p *RetentionPolicy) Set(s string) error {
-	switch s {
-	case string(OrphanRetentionPolicy):
-		*p = OrphanRetentionPolicy
-	case string(PruneRetentionPolicy):
-		*p = PruneRetentionPolicy
-	default:
-		return fmt.Errorf("invalid RetentionPolicy: %s", s)
-	}
-	return nil
-}
-
-func (p *RetentionPolicy) Type() string {
-	return "RetentionPolicy"
-}
 
 type OpenStackNodePoolPlatform struct {
 	// Flavor is the OpenStack flavor to use for the node instances.
@@ -162,20 +136,6 @@ type OpenStackPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="floatingIP must be a valid IPv4 or IPv6 address"
 	// +optional
 	IngressFloatingIP string `json:"ingressFloatingIP,omitempty"`
-
-	// imageRetentionPolicy defines the policy for handling resources associated with the image
-	// when the cluster is deleted.
-	// The default (set by the Nodepool controller) matches OpenStack Resource Controller (ORC)
-	// behavior where the OpenStack Glance Image is pruned when the Image object is deleted during the
-	// HostedCluster deletion.
-	// It is defined at the HostedCluster level and will be used for all nodepools images
-	// so there is no conflict between different ORC objects.
-	// On day 2 operations, if this field is changed, the corresponding ORC object will be updated
-	// to reflect the chosen retention policy (prune or orphan) which is translated into ORC format
-	// (either 'delete' or 'detach' in ORC terminology).
-	//
-	// +optional
-	ImageRetentionPolicy RetentionPolicy `json:"imageRetentionPolicy,omitempty"`
 }
 
 // OpenStackIdentityReference is a reference to an infrastructure
