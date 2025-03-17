@@ -219,6 +219,11 @@ func (o *Options) DefaultNoneOptions() none.RawCreateOptions {
 }
 
 func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions {
+	var imageName string
+	// ORC was introduced in 4.19 so before that we all HostedClusters will use the same image.
+	if IsLessThan(Version419) {
+		imageName = p.ConfigurableClusterOptions.OpenStackNodeImageName
+	}
 	opts := hypershiftopenstack.RawCreateOptions{
 		OpenStackCredentialsFile:   p.ConfigurableClusterOptions.OpenStackCredentialsFile,
 		OpenStackCACertFile:        p.ConfigurableClusterOptions.OpenStackCACertFile,
@@ -227,6 +232,7 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
 				Flavor:         p.ConfigurableClusterOptions.OpenStackNodeFlavor,
 				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
+				ImageName:      imageName,
 			},
 		},
 		OpenStackDNSNameservers: p.ConfigurableClusterOptions.OpenStackDNSNameservers,

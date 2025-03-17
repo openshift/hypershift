@@ -57,9 +57,9 @@ func (o OpenStackAdvancedTest) Setup(t *testing.T) {
 		t.Skip("test only supported on platform OpenStack")
 	}
 
-	// The features that are being tested here is only available in 4.18+
-	if e2eutil.IsLessThan(e2eutil.Version418) {
-		t.Skip("test only applicable for 4.18+")
+	// The features that are being tested here is only available in 4.19+
+	if e2eutil.IsLessThan(e2eutil.Version419) {
+		t.Skip("test only applicable for 4.19+")
 	}
 }
 
