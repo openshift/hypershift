@@ -5499,7 +5499,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	// Retrieve the KMS UserAssignedCredentials path
-	credentialsPath := config.ManagedAzureCertificateMountPath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+	credentialsPath := config.ManagedAzureCertificatePath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
 	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
