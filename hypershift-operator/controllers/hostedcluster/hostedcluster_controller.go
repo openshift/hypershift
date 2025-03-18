@@ -654,6 +654,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	{
+		updatesCondition := &metav1.Condition{
+			Type:               "ClusterVersionAvailableUpdateVersions",
+			Status:             metav1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            compileUpdateVersions(hcluster.Status.Version),
+			ObservedGeneration: hcluster.Generation,
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *updatesCondition)
+	}
+
 	for conditionType := range hcpCVOConditions {
 		var hcCVOCondition *metav1.Condition
 		// Set unknown status.
@@ -5513,4 +5524,20 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 	}
 
 	return nil
+}
+
+func compileUpdateVersions(v *hyperv1.ClusterVersionStatus) string {
+	if v == nil {
+		return ""
+	}
+
+	if len(v.AvailableUpdates) == 0 {
+		return ""
+	}
+
+	var versions []string
+	for _, release := range v.AvailableUpdates {
+		versions = append(versions, release.Version)
+	}
+	return strings.Join(versions, ",")
 }
