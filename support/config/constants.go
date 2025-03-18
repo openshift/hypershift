@@ -65,6 +65,7 @@ const (
 	ManagedAzureClientIdEnvVarKey            = "ARO_HCP_MI_CLIENT_ID"
 	ManagedAzureTenantIdEnvVarKey            = "ARO_HCP_TENANT_ID"
 	ManagedAzureCertificatePathEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
+	ManagedAzureCertificateNameEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_NAME"
 	ManagedAzureSecretProviderClassEnvVarKey = "ARO_HCP_SECRET_PROVIDER_CLASS"
 	ManagedAzureCertificateMountPath         = "/mnt/certs"
 	ManagedAzureCertificatePath              = "/mnt/certs/"
