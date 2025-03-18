@@ -113,50 +113,50 @@ func TestReconcileAuthConfig(t *testing.T) {
 				JWT: []JWTAuthenticator{
 					{
 						Issuer: Issuer{
-							URL: "test.com",
-                            CertificateAuthority: "ca-bundle contents",
-                            Audiences: []string{
-                                "one",
-                                "two",
-                            },
-                            AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							URL:                  "test.com",
+							CertificateAuthority: "ca-bundle contents",
+							Audiences: []string{
+								"one",
+								"two",
+							},
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
 						},
-                        ClaimMappings: ClaimMappings{
-                            Username: PrefixedClaimOrExpression{
-                                Prefix: ptr.To(""),
-                                Claim: "username",
-                            },
-                            Groups: PrefixedClaimOrExpression{
-                                Prefix: ptr.To(""),
-                                Claim: "groups",
-                            },
-                        },
-                        ClaimValidationRules: []ClaimValidationRule{
-                            {
-                                Claim: "foo",
-                                RequiredValue: "bar",
-                            },
-                        },
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "groups",
+							},
+						},
+						ClaimValidationRules: []ClaimValidationRule{
+							{
+								Claim:         "foo",
+								RequiredValue: "bar",
+							},
+						},
 					},
 					{
 						Issuer: Issuer{
-							URL: "test-two.com",
-                            CertificateAuthority: "ca-bundle contents",
-                            Audiences: []string{
-                                "three",
-                            },
-                            AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							URL:                  "test-two.com",
+							CertificateAuthority: "ca-bundle contents",
+							Audiences: []string{
+								"three",
+							},
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
 						},
-                        ClaimMappings: ClaimMappings{
-                            Username: PrefixedClaimOrExpression{
-                                Prefix: ptr.To("oidc-user:"),
-                                Claim: "username",
-                            },
-                            Groups: PrefixedClaimOrExpression{
-                                Prefix: ptr.To("oidc-group:"),
-                                Claim: "groups",
-                            },
-                        },
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("oidc-user:"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To("oidc-group:"),
+								Claim:  "groups",
+							},
+						},
 					},
 				},
 			},
@@ -173,63 +173,63 @@ func TestReconcileAuthConfig(t *testing.T) {
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
 								},
-                                Audiences: []configv1.TokenAudience{
-                                    "one",
-                                    "two",
-                                },
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
-                            ClaimMappings: configv1.TokenClaimMappings{
-                                Username: configv1.UsernameClaimMapping{
-                                    TokenClaimMapping: configv1.TokenClaimMapping{
-                                        Claim: "username",
-                                    },
-                                    PrefixPolicy: configv1.NoOpinion,
-                                },
-                                Groups: configv1.PrefixedClaimMapping{
-                                    TokenClaimMapping: configv1.TokenClaimMapping{
-                                        Claim: "groups",
-                                    },
-                                    Prefix: "",
-                                },
-                            },
-                            ClaimValidationRules: []configv1.TokenClaimValidationRule{
-                                {
-                                    Type: configv1.TokenValidationRuleTypeRequiredClaim,
-                                    RequiredClaim: &configv1.TokenRequiredClaim{
-                                        Claim: "foo",
-                                        RequiredValue: "bar",
-                                    },
-                                },
-                            },
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.NoOpinion,
+								},
+								Groups: configv1.PrefixedClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "groups",
+									},
+									Prefix: "",
+								},
+							},
+							ClaimValidationRules: []configv1.TokenClaimValidationRule{
+								{
+									Type: configv1.TokenValidationRuleTypeRequiredClaim,
+									RequiredClaim: &configv1.TokenRequiredClaim{
+										Claim:         "foo",
+										RequiredValue: "bar",
+									},
+								},
+							},
 						},
-                        {
+						{
 							Name: "test-two",
 							Issuer: configv1.TokenIssuer{
 								URL: "test-two.com",
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
 								},
-                                Audiences: []configv1.TokenAudience{
-                                    "three",
-                                },
+								Audiences: []configv1.TokenAudience{
+									"three",
+								},
 							},
-                            ClaimMappings: configv1.TokenClaimMappings{
-                                Username: configv1.UsernameClaimMapping{
-                                    TokenClaimMapping: configv1.TokenClaimMapping{
-                                        Claim: "username",
-                                    },
-                                    PrefixPolicy: configv1.Prefix,
-                                    Prefix: &configv1.UsernamePrefix{
-                                        PrefixString: "oidc-user:",
-                                    },
-                                },
-                                Groups: configv1.PrefixedClaimMapping{
-                                    TokenClaimMapping: configv1.TokenClaimMapping{
-                                        Claim: "groups",
-                                    },
-                                    Prefix: "oidc-group:",
-                                },
-                            },
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.Prefix,
+									Prefix: &configv1.UsernamePrefix{
+										PrefixString: "oidc-user:",
+									},
+								},
+								Groups: configv1.PrefixedClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "groups",
+									},
+									Prefix: "oidc-group:",
+								},
+							},
 						},
 					},
 				},

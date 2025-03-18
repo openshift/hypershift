@@ -47,16 +47,18 @@ type PlatformAgnosticOptions struct {
 	OpenStackPlatform openstack.RawCreateOptions
 }
 
-type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
-type hypershiftTest struct {
-	*testing.T
-	ctx    context.Context
-	client crclient.Client
+type (
+	hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
+	hypershiftTest     struct {
+		*testing.T
+		ctx    context.Context
+		client crclient.Client
 
-	test hypershiftTestFunc
+		test hypershiftTestFunc
 
-	hasBeenTornedDown bool
-}
+		hasBeenTornedDown bool
+	}
+)
 
 func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFunc) *hypershiftTest {
 	client, err := GetClient()
@@ -274,6 +276,25 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 			}
 		}
 	}
+
+    tempHc := &hyperv1.HostedCluster{}
+    opts.BeforeApply(tempHc)
+    if tempHc.Spec.Configuration != nil && tempHc.Spec.Configuration.Authentication != nil && tempHc.Spec.Configuration.Authentication.Type == configv1.AuthenticationTypeOIDC {
+        // do oidc setup
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-provider-ca",
+				Namespace: namespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": "ca-bundle contents",
+			},
+		}
+
+		err := h.client.Create(h.ctx, cm)
+        g.Expect(err).NotTo(HaveOccurred(), "failed to create OIDC provider-ca ConfigMap")
+    }
+
 
 	// Build the skeletal HostedCluster based on the provided platform.
 	hc := &hyperv1.HostedCluster{

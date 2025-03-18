@@ -1635,7 +1635,6 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
-	EnsureOIDCProvider(t, ctx, client, hostedCluster)
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -2067,39 +2066,6 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 	})
 }
 
-func EnsureOIDCProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-    // no auth configuration options specified. Can't evaluate authentication type, return early without
-    // performing any OIDC configuation for the tests.
-    if hostedCluster.Spec.Configuration == nil || hostedCluster.Spec.Configuration.Authentication == nil {
-        return
-    }
-
-    // auth configuration is not set to OIDC. Skip any OIDC specific test configuration.
-	if hostedCluster.Spec.Configuration.Authentication.Type != configv1.AuthenticationTypeOIDC {
-		return
-	}
-
-	t.Run("EnsureOIDCProvider", func(t *testing.T) {
-		AtLeast(t, Version419)
-
-		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-		cm := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-provider-ca",
-				Namespace: hcpNamespace,
-			},
-			Data: map[string]string{
-				"ca-bundle.crt": "ca-bundle contents",
-			},
-		}
-
-		err := client.Create(ctx, cm)
-		if err != nil {
-			t.Fatalf("unable to create OIDC provider CA configmap: %v", err)
-		}
-	})
-}
-
 func WaitForExternalOIDCAuthConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	EventuallyObject(t, ctx, "ExternalOIDCAuthConfig", func(ctx context.Context) (*corev1.ConfigMap, error) {
 		cm := &corev1.ConfigMap{
@@ -2112,12 +2078,12 @@ func WaitForExternalOIDCAuthConfig(t *testing.T, ctx context.Context, client crc
 		return cm, err
 	}, []Predicate[*corev1.ConfigMap]{
 		func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
-            if cm.Name == "auth-config" {
-                if _, ok := cm.Data["auth.json"]; ok {
-                        return true, "exists", nil
-                }
-            }
-            return false, "notexists", nil
+			if cm.Name == "auth-config" {
+				if _, ok := cm.Data["auth.json"]; ok {
+					return true, "exists", nil
+				}
+			}
+			return false, "notexists", nil
 		},
-	}, WithTimeout(time.Minute * 30), WithInterval(time.Minute * 1))
+	}, WithTimeout(time.Minute*30), WithInterval(time.Minute*1))
 }

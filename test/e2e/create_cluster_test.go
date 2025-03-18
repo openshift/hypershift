@@ -1473,7 +1473,7 @@ func TestCreateClusterExternalOIDC(t *testing.T) {
 						{
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
-                                URL: "https://notreal.example.com",
+								URL: "https://notreal.example.com",
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
 								},
@@ -1499,14 +1499,13 @@ func TestCreateClusterExternalOIDC(t *testing.T) {
 								},
 							},
 						},
-                    },
+					},
 				},
 			}
 		}
 	}
 
-    e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-        e2eutil.WaitForExternalOIDCAuthConfig(t, ctx, mgtClient, hostedCluster)
-    }).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "oidc", globalOpts.ServiceAccountSigningKey)
-
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		e2eutil.WaitForExternalOIDCAuthConfig(t, ctx, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "oidc", globalOpts.ServiceAccountSigningKey)
 }
