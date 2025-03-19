@@ -22,7 +22,7 @@ func InstallCRDs(ctx context.Context, client crclient.Client) error {
 		return fmt.Errorf("cannot decode controlplanecomponent CRD: %v", err)
 	}
 
-	createOrUpdate := upsert.NewV2(false)
-	_, err := createOrUpdate.CreateOrUpdateV2(ctx, client, obj)
+	provider := upsert.NewApplyProvider(false)
+	_, err := provider.ApplyManifest(ctx, client, obj)
 	return err
 }

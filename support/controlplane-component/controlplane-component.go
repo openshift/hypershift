@@ -34,8 +34,8 @@ type ControlPlaneComponent interface {
 type ControlPlaneContext struct {
 	context.Context
 
-	// CreateOrUpdateProviderV2 knows how to create/update manifest based resources.
-	upsert.CreateOrUpdateProviderV2
+	// ApplyProvider knows how to create/update manifest based resources.
+	upsert.ApplyProvider
 	// Client knows how to perform CRUD operations on Kubernetes objects in the HCP namespace.
 	Client client.Client
 	// HCP is the HostedControlPlane object
@@ -243,7 +243,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
 		}
 
-		if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, obj); err != nil {
+		if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {
 			return err
 		}
 
@@ -266,7 +266,7 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 					return err
 				}
 			}
-			if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, kubeconfigSecret); err != nil {
+			if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, kubeconfigSecret); err != nil {
 				return err
 			}
 		}
@@ -305,7 +305,7 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 	}
 	c.workloadProvider.ApplyOptionsTo(cpContext, workloadObj, oldWorkloadObj, deploymentConfig)
 
-	if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, workloadObj); err != nil {
+	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj); err != nil {
 		return err
 	}
 	return nil
