@@ -43,7 +43,6 @@ func NewComponent() component.ControlPlaneComponent {
 			component.AdaptPodDisruptionBudget(),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		RolloutOnConfigMapChange("router").
 		Build()
 }
 

@@ -1,7 +1,6 @@
 package kcm
 
 import (
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 )
@@ -34,7 +33,6 @@ func NewComponent() component.ControlPlaneComponent {
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(adaptServiceMonitor),
 		).
-		RolloutOnConfigMapChange("kcm-config", manifests.RootCAConfigMap("").Name, manifests.ServiceServingCA("").Name).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }

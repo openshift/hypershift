@@ -1,6 +1,7 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -13,7 +14,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
@@ -29,6 +29,10 @@ var (
 		"router",
 		"packageserver",
 	)
+
+	configMapsToExcludeFromHash = []string{
+		"client-ca",
+	}
 )
 
 func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, podTemplateSpec *corev1.PodTemplateSpec, desiredReplicas *int32) (*config.DeploymentConfig, error) {
@@ -52,10 +56,6 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 		return nil, err
 	}
 
-	if err := c.applyWatchedResourcesAnnotation(cpContext, podTemplateSpec); err != nil {
-		return nil, err
-	}
-
 	if c.serviceAccountKubeConfigOpts != nil {
 		c.addServiceAccountKubeconfigVolumes(podTemplateSpec)
 	}
@@ -66,6 +66,10 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 
 	if c.tokenMinterContainerOpts != nil {
 		c.tokenMinterContainerOpts.injectTokenMinterContainer(cpContext, &podTemplateSpec.Spec)
+	}
+
+	if err := c.applyWatchedResourcesAnnotation(cpContext, podTemplateSpec); err != nil {
+		return nil, err
 	}
 
 	if c.availabilityProberOpts != nil {
@@ -108,60 +112,101 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 	return deploymentConfig, nil
 }
 
+func podConfigMapNames(spec *corev1.PodSpec, excludeNames []string) []string {
+	names := sets.New[string]()
+	for _, v := range spec.Volumes {
+		switch {
+		case v.ConfigMap != nil:
+			names.Insert(v.ConfigMap.Name)
+		case v.Projected != nil:
+			for _, source := range v.Projected.Sources {
+				if source.ConfigMap != nil {
+					names.Insert(source.ConfigMap.Name)
+				}
+			}
+		}
+	}
+	for _, name := range excludeNames {
+		names.Delete(name)
+	}
+
+	return sets.List(names)
+}
+
+func podSecretNames(spec *corev1.PodSpec) []string {
+	names := sets.New[string]()
+	for _, v := range spec.Volumes {
+		switch {
+		case v.Secret != nil:
+			names.Insert(v.Secret.SecretName)
+		case v.Projected != nil:
+			for _, source := range v.Projected.Sources {
+				if source.Secret != nil {
+					names.Insert(source.Secret.Name)
+				}
+			}
+		}
+	}
+	return sets.List(names)
+}
+
+func fetchResource[T client.Object](ctx context.Context, obj T, namespace string, c client.Client) func(string) (T, error) {
+	return func(name string) (T, error) {
+		resource := obj.DeepCopyObject().(client.Object)
+		resource.SetName(name)
+		resource.SetNamespace(namespace)
+		if err := c.Get(ctx, client.ObjectKeyFromObject(resource), resource); err != nil && !apierrors.IsNotFound(err) {
+			return obj, err
+		}
+		return resource.(T), nil
+	}
+}
+
 func (c *controlPlaneWorkload[T]) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
-	if c.rolloutSecretsNames == nil && c.rolloutConfigMapsNames == nil {
-		return nil
-	}
 	// remove duplicate entries if any.
-	secretsNames := sets.New(c.rolloutSecretsNames...)
-	configMapsNames := sets.New(c.rolloutConfigMapsNames...)
+	secretNames := podSecretNames(&podTemplate.Spec)
+	configMapNames := podConfigMapNames(&podTemplate.Spec, configMapsToExcludeFromHash)
 
-	var hashedData []string
-	for secretName := range secretsNames {
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      secretName,
-				Namespace: cpContext.HCP.Namespace,
-			},
-		}
-		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(secret), secret); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return err
-		}
-
-		for _, value := range secret.Data {
-			hashedData = append(hashedData, util.HashSimple(value))
-		}
+	hashString, err := computeResourceHash(secretNames, configMapNames,
+		fetchResource(cpContext, &corev1.Secret{}, cpContext.HCP.Namespace, cpContext.Client),
+		fetchResource(cpContext, &corev1.ConfigMap{}, cpContext.HCP.Namespace, cpContext.Client))
+	if err != nil {
+		return err
 	}
-
-	for configMapName := range configMapsNames {
-		configMap := &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      configMapName,
-				Namespace: cpContext.HCP.Namespace,
-			},
-		}
-		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(configMap), configMap); err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
-			}
-			return err
-		}
-
-		for _, value := range configMap.Data {
-			hashedData = append(hashedData, util.HashSimple(value))
-		}
-	}
-	// if not sorted, we could get a different value on each reconciliation loop and cause unneeded rollout.
-	slices.Sort(hashedData)
 
 	if podTemplate.Annotations == nil {
 		podTemplate.Annotations = map[string]string{}
 	}
-	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = strings.Join(hashedData, "")
+	podTemplate.Annotations["component.hypershift.openshift.io/config-hash"] = hashString
 	return nil
+}
+
+func computeResourceHash(secretNames, configMapNames []string,
+	fetchSecret func(string) (*corev1.Secret, error),
+	fetchConfigMap func(string) (*corev1.ConfigMap, error),
+) (string, error) {
+	var hashes []string
+	for _, name := range secretNames {
+		secret, err := fetchSecret(name)
+		if err != nil {
+			return "", err
+		}
+		for _, value := range secret.Data {
+			hashes = append(hashes, util.HashSimple(value))
+		}
+	}
+
+	for _, name := range configMapNames {
+		configMap, err := fetchConfigMap(name)
+		if err != nil {
+			return "", err
+		}
+		for _, value := range configMap.Data {
+			hashes = append(hashes, util.HashSimple(value))
+		}
+	}
+	slices.Sort(hashes)
+	return strings.Join(hashes, ""), nil
 }
 
 func enforceVolumesDefaultMode(podSpec *corev1.PodSpec) {
