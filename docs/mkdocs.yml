@@ -96,6 +96,7 @@ nav:
   - 'Azure':
     - how-to/azure/create-azure-cluster-with-options.md
     - how-to/azure/create-azure-cluster_on_aks.md
+    - how-to/azure/scheduler.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
