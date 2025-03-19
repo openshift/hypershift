@@ -33,6 +33,7 @@ type KubeAPIServerImages struct {
 	TokenMinterImage           string
 	AWSPodIdentityWebhookImage string
 	KonnectivityServer         string
+	KASBootstrap               string
 }
 
 type KubeAPIServerParams struct {
@@ -116,6 +117,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			AzureKMS:                   releaseImageProvider.GetImage("azure-kms-encryption-provider"),
 			AWSPodIdentityWebhookImage: releaseImageProvider.GetImage("aws-pod-identity-webhook"),
 			KonnectivityServer:         releaseImageProvider.GetImage("apiserver-network-proxy"),
+			KASBootstrap:               releaseImageProvider.GetImage(util.CPOImageName),
 		},
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
