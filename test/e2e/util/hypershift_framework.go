@@ -2,10 +2,17 @@ package util
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -277,24 +284,57 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		}
 	}
 
-    tempHc := &hyperv1.HostedCluster{}
-    opts.BeforeApply(tempHc)
-    if tempHc.Spec.Configuration != nil && tempHc.Spec.Configuration.Authentication != nil && tempHc.Spec.Configuration.Authentication.Type == configv1.AuthenticationTypeOIDC {
-        // do oidc setup
+	tempHc := &hyperv1.HostedCluster{}
+	if opts.BeforeApply != nil {
+		opts.BeforeApply(tempHc)
+	}
+	if tempHc.Spec.Configuration != nil && tempHc.Spec.Configuration.Authentication != nil && tempHc.Spec.Configuration.Authentication.Type == configv1.AuthenticationTypeOIDC {
+		// do oidc setup
+
+		// create a fake, but valid, PEM encoded CA certificate
+		ca := &x509.Certificate{
+			SerialNumber: big.NewInt(2025),
+			Subject: pkix.Name{
+				Organization:  []string{"HyperShift OIDC Testing"},
+				Country:       []string{"US"},
+				Province:      []string{""},
+				Locality:      []string{"Raleigh"},
+				StreetAddress: []string{"Red Hat Tower"},
+				PostalCode:    []string{"27601"},
+			},
+			NotBefore:             time.Now(),
+			NotAfter:              time.Now().AddDate(0, 0, 1),
+			IsCA:                  true,
+			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+		}
+
+		caPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
+		g.Expect(err).NotTo(HaveOccurred(), "generating CA private key")
+
+		caBytes, err := x509.CreateCertificate(rand.Reader, ca, ca, &caPrivKey.PublicKey, caPrivKey)
+		g.Expect(err).NotTo(HaveOccurred(), "creating CA certificate")
+
+		caPEM := new(bytes.Buffer)
+		pem.Encode(caPEM, &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: caBytes,
+		})
+
 		cm := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-provider-ca",
 				Namespace: namespace.Name,
 			},
 			Data: map[string]string{
-				"ca-bundle.crt": "ca-bundle contents",
+				"ca-bundle.crt": caPEM.String(),
 			},
 		}
 
-		err := h.client.Create(h.ctx, cm)
-        g.Expect(err).NotTo(HaveOccurred(), "failed to create OIDC provider-ca ConfigMap")
-    }
-
+		err = h.client.Create(h.ctx, cm)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create OIDC provider-ca ConfigMap")
+	}
 
 	// Build the skeletal HostedCluster based on the provided platform.
 	hc := &hyperv1.HostedCluster{
