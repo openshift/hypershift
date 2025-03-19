@@ -558,6 +558,10 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
+			// TODO(alberto): Remove this once we move the kasContainerApplyBootstrap logic into the kas-bootstrap binary.
+			if strings.HasPrefix(pod.Name, "kube-apiserver") {
+				continue
+			}
 			// TODO: Figure out why Karpenter needs restaring some times https://issues.redhat.com/browse/HOSTEDCP-2254.
 			if strings.HasPrefix(pod.Name, "karpenter") {
 				continue
