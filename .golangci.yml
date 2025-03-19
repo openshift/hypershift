@@ -29,6 +29,9 @@ issues:
         - staticcheck
       text: "SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead"
     - linters:
+        - staticcheck
+      text: "SA1019: httpProxy.Tr.Dial has been deprecated since Go 1.7"
+    - linters:
         - unused
       text: "const `tuningConfigKey` is unused"
 linters:
