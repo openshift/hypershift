@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -481,6 +482,17 @@ func Conditions(item client.Object) ([]Condition, error) {
 			conditions[i] = Condition{
 				Type:    string(obj.Status.Conditions[i].Type),
 				Status:  metav1.ConditionStatus(obj.Status.Conditions[i].Status),
+				Reason:  obj.Status.Conditions[i].Reason,
+				Message: obj.Status.Conditions[i].Message,
+			}
+		}
+		return conditions, nil
+	case *karpenterv1.NodeClaim:
+		conditions := make([]Condition, len(obj.Status.Conditions))
+		for i := range obj.Status.Conditions {
+			conditions[i] = Condition{
+				Type:    obj.Status.Conditions[i].Type,
+				Status:  obj.Status.Conditions[i].Status,
 				Reason:  obj.Status.Conditions[i].Reason,
 				Message: obj.Status.Conditions[i].Message,
 			}
