@@ -74,7 +74,7 @@ func (r *NodePoolReconciler) reconcileOpenStackImageCR(ctx context.Context, clie
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					// Since there is no code that deletes the ORC image object, the only way the OpenStack Glance image
-					// can be deleted is when the OpenStackCluster CR is deleted and that the imageRetentionPolicy is set to "Prune".
+					// can be deleted is when the OpenStackCluster CR is deleted.
 					// That means Nodepools can share the same image and changing the image of a Nodepool will not affect the other Nodepools.
 					APIVersion: openstackCluster.APIVersion,
 					Kind:       openstackCluster.Kind,

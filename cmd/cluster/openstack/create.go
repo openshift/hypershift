@@ -29,8 +29,7 @@ const (
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		OpenStackImageRetentionPolicy: hyperv1.PruneRetentionPolicy,
-		NodePoolOpts:                  openstacknodepool.DefaultOptions(),
+		NodePoolOpts: openstacknodepool.DefaultOptions(),
 	}
 }
 
@@ -47,17 +46,15 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OpenStackExternalNetworkID, "openstack-external-network-id", opts.OpenStackExternalNetworkID, "ID of the OpenStack external network (optional)")
 	flags.StringVar(&opts.OpenStackIngressFloatingIP, "openstack-ingress-floating-ip", opts.OpenStackIngressFloatingIP, "An available floating IP in your OpenStack cluster that will be associated with the OpenShift ingress port (optional)")
 	flags.StringSliceVar(&opts.OpenStackDNSNameservers, "openstack-dns-nameservers", opts.OpenStackDNSNameservers, "List of DNS nameservers to use for the cluster (optional)")
-	flags.Var(&opts.OpenStackImageRetentionPolicy, "openstack-image-retention-policy", "OpenStack Glance Image retention policy. Valid values are 'Orphan' and 'Prune'. By default images are pruned. (optional)")
 }
 
 type RawCreateOptions struct {
-	OpenStackCredentialsFile      string
-	OpenStackCloud                string
-	OpenStackCACertFile           string
-	OpenStackExternalNetworkID    string
-	OpenStackIngressFloatingIP    string
-	OpenStackDNSNameservers       []string
-	OpenStackImageRetentionPolicy hyperv1.RetentionPolicy
+	OpenStackCredentialsFile   string
+	OpenStackCloud             string
+	OpenStackCACertFile        string
+	OpenStackExternalNetworkID string
+	OpenStackIngressFloatingIP string
+	OpenStackDNSNameservers    []string
 
 	NodePoolOpts *openstacknodepool.RawOpenStackPlatformCreateOptions
 }
@@ -138,10 +135,6 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
-	if err := validateRetentionPolicy(o.OpenStackImageRetentionPolicy); err != nil {
-		return nil, err
-	}
-
 	if opts.ExternalDNSDomain != "" {
 		err := fmt.Errorf("--external-dns-domain is not supported on OpenStack")
 		opts.Log.Error(err, "Failed to create cluster")
@@ -201,8 +194,6 @@ func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster
 	if len(cluster.Spec.Networking.MachineNetwork) == 0 {
 		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(config.DefaultMachineNetwork)}}
 	}
-
-	cluster.Spec.Platform.OpenStack.ImageRetentionPolicy = hyperv1.RetentionPolicy(o.OpenStackImageRetentionPolicy)
 
 	return nil
 }
@@ -366,18 +357,4 @@ func extractCloud(cloudsYAMLPath, caCertPath, cloudName string) ([]byte, []byte,
 	}
 
 	return cloudsYAML, caCert, nil
-}
-
-// validateRetentionPolicy validates the retention policy is valid
-func validateRetentionPolicy(policy hyperv1.RetentionPolicy) error {
-	if policy == "" {
-		return nil
-	}
-
-	switch policy {
-	case hyperv1.OrphanRetentionPolicy, hyperv1.PruneRetentionPolicy:
-		return nil
-	default:
-		return fmt.Errorf("invalid retention policy: %s", policy)
-	}
 }

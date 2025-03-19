@@ -76,7 +76,6 @@ spec:
       identityRef:
         cloudName: openstack
         name: example-cloud-credentials
-      imageRetentionPolicy: Prune
     type: OpenStack
   pullSecret:
     name: example-pull-secret

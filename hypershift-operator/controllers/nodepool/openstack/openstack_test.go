@@ -333,8 +333,11 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 		expectedErrorSubstring string
 	}{
 		{
-			name: "valid configuration with no retention policy",
+			name: "valid configuration",
 			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-cluster",
+				},
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
 						OpenStack: &hyperv1.OpenStackPlatformSpec{
@@ -373,7 +376,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 					CloudName:  "test-cloud",
 				},
 				Resource: &orc.ImageResourceSpec{
-					Name: "rhcos-4.9.0",
+					Name: "test-cluster-rhcos-4.9.0",
 					Content: &orc.ImageContent{
 						ContainerFormat: "bare",
 						DiskFormat:      "qcow2",
@@ -387,165 +390,7 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 						},
 					},
 				},
-				ManagedOptions: &orc.ManagedOptions{OnDelete: orc.OnDeleteDelete},
 			},
-		},
-		{
-			name: "valid configuration with orphan retention policy",
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						OpenStack: &hyperv1.OpenStackPlatformSpec{
-							IdentityRef: hyperv1.OpenStackIdentityReference{
-								Name:      "test-secret",
-								CloudName: "test-cloud",
-							},
-							ImageRetentionPolicy: hyperv1.OrphanRetentionPolicy,
-						},
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
-						"x86_64": {
-							Artifacts: map[string]releaseinfo.CoreOSArtifact{
-								"openstack": {
-									Release: "4.9.0",
-									Formats: map[string]map[string]releaseinfo.CoreOSFormat{
-										"qcow2.gz": {
-											"disk": {
-												Location: "https://example.com/image.qcow2.gz",
-												SHA256:   "abcdef1234567890",
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedImageSpec: &orc.ImageSpec{
-				CloudCredentialsRef: orc.CloudCredentialsReference{
-					SecretName: "test-secret",
-					CloudName:  "test-cloud",
-				},
-				Resource: &orc.ImageResourceSpec{
-					Name: "rhcos-4.9.0",
-					Content: &orc.ImageContent{
-						ContainerFormat: "bare",
-						DiskFormat:      "qcow2",
-						Download: &orc.ImageContentSourceDownload{
-							URL:        "https://example.com/image.qcow2.gz",
-							Decompress: ptr.To(orc.ImageCompressionGZ),
-							Hash: &orc.ImageHash{
-								Algorithm: "sha256",
-								Value:     "abcdef1234567890",
-							},
-						},
-					},
-				},
-				ManagedOptions: &orc.ManagedOptions{OnDelete: orc.OnDeleteDetach},
-			},
-		},
-		{
-			name: "valid configuration with prune retention policy",
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						OpenStack: &hyperv1.OpenStackPlatformSpec{
-							IdentityRef: hyperv1.OpenStackIdentityReference{
-								Name:      "test-secret",
-								CloudName: "test-cloud",
-							},
-							ImageRetentionPolicy: hyperv1.PruneRetentionPolicy,
-						},
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
-						"x86_64": {
-							Artifacts: map[string]releaseinfo.CoreOSArtifact{
-								"openstack": {
-									Release: "4.9.0",
-									Formats: map[string]map[string]releaseinfo.CoreOSFormat{
-										"qcow2.gz": {
-											"disk": {
-												Location: "https://example.com/image.qcow2.gz",
-												SHA256:   "abcdef1234567890",
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedImageSpec: &orc.ImageSpec{
-				CloudCredentialsRef: orc.CloudCredentialsReference{
-					SecretName: "test-secret",
-					CloudName:  "test-cloud",
-				},
-				Resource: &orc.ImageResourceSpec{
-					Name: "rhcos-4.9.0",
-					Content: &orc.ImageContent{
-						ContainerFormat: "bare",
-						DiskFormat:      "qcow2",
-						Download: &orc.ImageContentSourceDownload{
-							URL:        "https://example.com/image.qcow2.gz",
-							Decompress: ptr.To(orc.ImageCompressionGZ),
-							Hash: &orc.ImageHash{
-								Algorithm: "sha256",
-								Value:     "abcdef1234567890",
-							},
-						},
-					},
-				},
-				ManagedOptions: &orc.ManagedOptions{OnDelete: orc.OnDeleteDelete},
-			},
-		},
-		{
-			name: "invalid retention policy",
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						OpenStack: &hyperv1.OpenStackPlatformSpec{
-							IdentityRef: hyperv1.OpenStackIdentityReference{
-								Name:      "test-secret",
-								CloudName: "test-cloud",
-							},
-							ImageRetentionPolicy: "invalid",
-						},
-					},
-				},
-			},
-			releaseImage: &releaseinfo.ReleaseImage{
-				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
-					Architectures: map[string]releaseinfo.CoreOSArchitecture{
-						"x86_64": {
-							Artifacts: map[string]releaseinfo.CoreOSArtifact{
-								"openstack": {
-									Release: "4.9.0",
-									Formats: map[string]map[string]releaseinfo.CoreOSFormat{
-										"qcow2.gz": {
-											"disk": {
-												Location: "https://example.com/image.qcow2.gz",
-												SHA256:   "abcdef1234567890",
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedError:          true,
-			expectedErrorSubstring: "unsupported image retention policy",
 		},
 		{
 			name: "release image error",
@@ -557,7 +402,6 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 								Name:      "test-secret",
 								CloudName: "test-cloud",
 							},
-							ImageRetentionPolicy: hyperv1.PruneRetentionPolicy,
 						},
 					},
 				},
@@ -596,6 +440,93 @@ func TestReconcileOpenStackImageSpec(t *testing.T) {
 			if tc.expectedImageSpec != nil {
 				if !equality.Semantic.DeepEqual(tc.expectedImageSpec, imageSpec) {
 					t.Error(cmp.Diff(tc.expectedImageSpec, imageSpec))
+				}
+			}
+		})
+	}
+}
+
+func TestClusterImageName(t *testing.T) {
+	testCases := []struct {
+		name           string
+		hostedCluster  *hyperv1.HostedCluster
+		releaseImage   *releaseinfo.ReleaseImage
+		expectedResult string
+		expectedError  bool
+	}{
+		{
+			name: "valid release image",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Artifacts: map[string]releaseinfo.CoreOSArtifact{
+								"openstack": {
+									Release: "4.19.0",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: "test-cluster-rhcos-4.19.0",
+			expectedError:  false,
+		},
+		{
+			name: "missing architecture",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{},
+				},
+			},
+			expectedError: true,
+		},
+		{
+			name: "missing openstack artifact",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Artifacts: map[string]releaseinfo.CoreOSArtifact{},
+						},
+					},
+				},
+			},
+			expectedError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := PrefixedClusterImageName(tc.hostedCluster, tc.releaseImage)
+			if tc.expectedError {
+				if err == nil {
+					t.Error("expected error but got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if result != tc.expectedResult {
+					t.Errorf("expected result %q but got %q", tc.expectedResult, result)
 				}
 			}
 		})
