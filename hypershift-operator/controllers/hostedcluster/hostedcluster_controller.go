@@ -40,6 +40,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -4284,6 +4285,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
+	if err := r.validateOCPConfigurations(ctx, hc, r.Client); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -4599,6 +4604,13 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	return errs.ToAggregate()
 }
 
+func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client) error {
+	var errs field.ErrorList
+	errs = append(errs, validateOCPAPIServerConfiguration(ctx, hc, client)...)
+
+	return errs.ToAggregate()
+}
+
 // findAdvertiseAddress function returns a string and an error indicating the AdvertiseAddress for the hostedcluster.
 // if the advertise address is properly set, it will return that value and nil, otherwise will return an error.
 // if the advertise address is not set, it will return the default one based on the network primary stack.
@@ -4795,6 +4807,13 @@ func compareCIDREntries(ce []cidrEntry) field.ErrorList {
 			}
 		}
 	}
+	return errs
+}
+
+func validateOCPAPIServerConfiguration(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client) field.ErrorList {
+	var errs field.ErrorList
+	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
+
 	return errs
 }
 
