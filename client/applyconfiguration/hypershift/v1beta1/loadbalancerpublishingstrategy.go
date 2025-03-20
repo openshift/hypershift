@@ -20,7 +20,8 @@ package v1beta1
 // LoadBalancerPublishingStrategyApplyConfiguration represents an declarative configuration of the LoadBalancerPublishingStrategy type for use
 // with apply.
 type LoadBalancerPublishingStrategyApplyConfiguration struct {
-	Hostname *string `json:"hostname,omitempty"`
+	Hostname    *string           `json:"hostname,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
 }
 
 // LoadBalancerPublishingStrategyApplyConfiguration constructs an declarative configuration of the LoadBalancerPublishingStrategy type for use with
@@ -34,5 +35,19 @@ func LoadBalancerPublishingStrategy() *LoadBalancerPublishingStrategyApplyConfig
 // If called multiple times, the Hostname field is set to the value of the last call.
 func (b *LoadBalancerPublishingStrategyApplyConfiguration) WithHostname(value string) *LoadBalancerPublishingStrategyApplyConfiguration {
 	b.Hostname = &value
+	return b
+}
+
+// WithAnnotations puts the entries into the Annotations field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the Annotations field,
+// overwriting an existing map entries in Annotations field with the same key.
+func (b *LoadBalancerPublishingStrategyApplyConfiguration) WithAnnotations(entries map[string]string) *LoadBalancerPublishingStrategyApplyConfiguration {
+	if b.Annotations == nil && len(entries) > 0 {
+		b.Annotations = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.Annotations[k] = v
+	}
 	return b
 }

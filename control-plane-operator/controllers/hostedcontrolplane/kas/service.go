@@ -2,21 +2,21 @@ package kas
 
 import (
 	"fmt"
+	"maps"
 	"strings"
 	"time"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/events"
-	"github.com/openshift/hypershift/support/util"
-
-	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	routev1 "github.com/openshift/api/route/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/events"
+	"github.com/openshift/hypershift/support/util"
 )
 
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, hcp *hyperv1.HostedControlPlane) error {
@@ -59,6 +59,8 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		// Add custom annotations
+		maps.Copy(svc.Annotations, strategy.LoadBalancer.Annotations)
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
