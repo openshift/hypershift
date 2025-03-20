@@ -4,6 +4,8 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/support/config"
+	supportpki "github.com/openshift/hypershift/support/pki"
+
 	corev1 "k8s.io/api/core/v1"
 )
 
@@ -31,7 +33,7 @@ func ReconcileKonnectivityClusterSecret(secret, ca *corev1.Secret, ownerRef conf
 		fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", secret.Namespace),
 	}
 	ips := []string{}
-	if isNumericIP(externalKconnectivityAddress) {
+	if supportpki.IsNumericIP(externalKconnectivityAddress) {
 		ips = append(ips, externalKconnectivityAddress)
 	} else {
 		dnsNames = append(dnsNames, externalKconnectivityAddress)
