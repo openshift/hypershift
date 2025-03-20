@@ -3055,11 +3055,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile bootstrap kubeconfig secret: %w", err)
 	}
 
-	kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
-		return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyConfig())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile api server audit config: %w", err)
+	if p.ConfigParams().AuditEnabled {
+		kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
+			return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyConfig())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile api server audit config: %w", err)
+		}
 	}
 
 	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
@@ -3263,7 +3265,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.CloudProviderCreds,
 			p.Images,
 			kubeAPIServerConfig,
-			kubeAPIServerAuditConfig,
+			p.IsKASAuditingEnabled(),
 			kubeAPIServerAuthConfig,
 			p.AuditWebhookRef,
 			aesCBCActiveKey,
