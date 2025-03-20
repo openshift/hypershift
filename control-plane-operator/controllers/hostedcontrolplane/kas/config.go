@@ -147,11 +147,13 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("allow-privileged", "true")
 	args.Set("anonymous-auth", "true")
 	args.Set("api-audiences", p.ServiceAccountIssuerURL)
-	args.Set("audit-log-format", "json")
-	args.Set("audit-log-maxbackup", "1")
-	args.Set("audit-log-maxsize", "10")
-	args.Set("audit-log-path", cpath(kasVolumeWorkLogs().Name, AuditLogFile))
-	args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
+	if p.AuditEnabled {
+		args.Set("audit-log-format", "json")
+		args.Set("audit-log-maxbackup", "1")
+		args.Set("audit-log-maxsize", "10")
+		args.Set("audit-log-path", cpath(kasVolumeWorkLogs().Name, AuditLogFile))
+		args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
+	}
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))
 	if p.CloudProviderConfigRef != nil && p.CloudProvider != azure.Provider {

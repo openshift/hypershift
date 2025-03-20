@@ -49,7 +49,6 @@ var (
 			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
 			kasVolumeAuthConfig().Name:             "/etc/kubernetes/auth",
 			kasVolumeConfig().Name:                 "/etc/kubernetes/config",
-			kasVolumeAuditConfig().Name:            "/etc/kubernetes/audit",
 			kasVolumeKonnectivityCA().Name:         "/etc/kubernetes/certs/konnectivity-ca",
 			kasVolumeServerCert().Name:             "/etc/kubernetes/certs/server",
 			kasVolumeServerPrivateCert().Name:      "/etc/kubernetes/certs/server-private",
@@ -76,6 +75,12 @@ var (
 	cloudProviderConfigVolumeMount = util.PodVolumeMounts{
 		kasContainerMain().Name: {
 			kasVolumeCloudConfig().Name: "/etc/kubernetes/cloud",
+		},
+	}
+
+	kasAuditConfigFileVolumeMount = util.PodVolumeMounts{
+		kasContainerMain().Name: {
+			kasVolumeAuditConfig().Name: "/etc/kubernetes/audit",
 		},
 	}
 
@@ -109,7 +114,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	cloudProviderCreds *corev1.LocalObjectReference,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
-	auditConfig *corev1.ConfigMap,
+	auditEnabled bool,
 	authConfig *corev1.ConfigMap,
 	auditWebhookRef *corev1.LocalObjectReference,
 	aesCBCActiveKey []byte,
@@ -132,12 +137,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		return fmt.Errorf("kube apiserver configuration is not expected to be empty")
 	}
 	configHash := util.ComputeHash(configBytes)
-
-	auditConfigBytes, ok := auditConfig.Data[AuditPolicyConfigMapKey]
-	if !ok {
-		return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
-	}
-	auditConfigHash := util.ComputeHash(auditConfigBytes)
 
 	authConfigBytes, ok := authConfig.Data[AuthConfigMapKey]
 	if !ok {
@@ -184,9 +183,8 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
 			Annotations: map[string]string{
-				configHashAnnotation:      configHash,
-				auditConfigHashAnnotation: auditConfigHash,
-				authConfigHashAnnotation:  authConfigHash,
+				configHashAnnotation:     configHash,
+				authConfigHashAnnotation: authConfigHash,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -213,7 +211,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildVolume(kasVolumeWorkLogs(), buildKASVolumeWorkLogs),
 				util.BuildVolume(kasVolumeConfig(), buildKASVolumeConfig),
 				util.BuildVolume(kasVolumeAuthConfig(), buildKASVolumeAuthConfig),
-				util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig),
 				util.BuildVolume(kasVolumeKonnectivityCA(), buildKASVolumeKonnectivityCA),
 				util.BuildVolume(kasVolumeServerCert(), buildKASVolumeServerCert),
 				util.BuildVolume(kasVolumeServerPrivateCert(), buildKASVolumeServerPrivateCert),
@@ -236,7 +233,32 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		},
 	}
 
-	if auditConfig.Data[AuditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
+	if auditEnabled {
+
+		auditConfig := manifests.KASAuditConfig(hcp.Namespace)
+
+		auditConfigBytes, ok := auditConfig.Data[AuditPolicyConfigMapKey]
+		if !ok {
+			return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
+		}
+		deployment.Spec.Template.Annotations[auditConfigHashAnnotation] = util.ComputeHash(auditConfigBytes)
+
+		// Create audit apiserver volumes and volume mounts
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(kasVolumeAuditConfig(), buildKASVolumeAuditConfig))
+		var apiServerContainer *corev1.Container
+		for i, c := range deployment.Spec.Template.Spec.Containers {
+			if c.Name == kasContainerMain().Name {
+				apiServerContainer = &deployment.Spec.Template.Spec.Containers[i]
+				break
+			}
+		}
+		if apiServerContainer == nil {
+			panic("main kube apiserver container not found in spec")
+		}
+		apiServerContainer.VolumeMounts = append(apiServerContainer.VolumeMounts,
+			kasAuditConfigFileVolumeMount.ContainerMounts(kasContainerMain().Name)...)
+
+		// Create audit-logs container and mount it to kube-apiserver pod
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "audit-logs",
 			Image:           images.CLI,

@@ -383,6 +383,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		EtcdURL:                      p.EtcdURL,
 		FeatureGates:                 p.FeatureGates(),
 		NodePortRange:                p.ServiceNodePortRange(),
+		AuditEnabled:                 p.IsKASAuditingEnabled(),
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
 		DisableProfiling:             p.DisableProfiling,
@@ -411,6 +412,7 @@ type KubeAPIServerConfigParams struct {
 	EtcdURL                      string
 	FeatureGates                 []string
 	NodePortRange                string
+	AuditEnabled                 bool
 	AuditWebhookEnabled          bool
 	ConsolePublicURL             string
 	DisableProfiling             bool
@@ -488,6 +490,13 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	} else {
 		return config.DefaultServiceNodePortRange
 	}
+}
+
+func (p *KubeAPIServerParams) IsKASAuditingEnabled() bool {
+	if p.APIServer != nil {
+		return p.APIServer.Audit.Profile != configv1.NoneAuditProfileType
+	}
+	return true
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
