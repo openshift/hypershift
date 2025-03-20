@@ -79,8 +79,12 @@ type KubeAPIServerParams struct {
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
 	GoAwayChance                string
+<<<<<<< HEAD
 
 	RenderedFeatureGates []string
+=======
+	AuditEnabled                bool
+>>>>>>> 21e0b9b13 (Apiserver fixes)
 }
 
 type KubeAPIServerServiceParams struct {
@@ -129,6 +133,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
 		GoAwayChance:                fmt.Sprint(defaultGoAwayChance),
 		RenderedFeatureGates:        featureGates,
+		AuditEnabled:                true,
 	}
 
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
@@ -151,6 +156,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
 		params.GoAwayChance = goAwayChance
+	}
+
+	if params.APIServer != nil {
+		params.AuditEnabled = string(params.APIServer.Audit.Profile) != string(configv1.NoneAuditProfileType)
 	}
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
@@ -410,7 +419,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		EtcdURL:                      p.EtcdURL,
 		FeatureGates:                 p.FeatureGates(),
 		NodePortRange:                p.ServiceNodePortRange(),
-		AuditEnabled:                 p.IsKASAuditingEnabled(),
+		AuditEnabled:                 p.AuditEnabled,
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
 		DisableProfiling:             p.DisableProfiling,
@@ -513,13 +522,6 @@ func (p *KubeAPIServerParams) ServiceNodePortRange() string {
 	} else {
 		return config.DefaultServiceNodePortRange
 	}
-}
-
-func (p *KubeAPIServerParams) IsKASAuditingEnabled() bool {
-	if p.APIServer != nil {
-		return p.APIServer.Audit.Profile != configv1.NoneAuditProfileType
-	}
-	return true
 }
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
