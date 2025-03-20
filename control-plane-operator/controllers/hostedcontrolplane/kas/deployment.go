@@ -115,6 +115,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	images KubeAPIServerImages,
 	config *corev1.ConfigMap,
 	auditEnabled bool,
+	auditConfig *corev1.ConfigMap,
 	authConfig *corev1.ConfigMap,
 	auditWebhookRef *corev1.LocalObjectReference,
 	aesCBCActiveKey []byte,
@@ -234,9 +235,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 
 	if auditEnabled {
-
-		auditConfig := manifests.KASAuditConfig(hcp.Namespace)
-
 		auditConfigBytes, ok := auditConfig.Data[AuditPolicyConfigMapKey]
 		if !ok {
 			return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
