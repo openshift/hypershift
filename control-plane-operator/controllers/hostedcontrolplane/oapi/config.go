@@ -26,7 +26,7 @@ const (
 	defaultInternalRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
-func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) error {
+func ReconcileConfig(cm *corev1.ConfigMap, auditEnabled bool, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) error {
 	ownerRef.ApplyTo(cm)
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -37,7 +37,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectRe
 			return fmt.Errorf("failed to read existing config: %w", err)
 		}
 	}
-	reconcileConfigObject(openshiftAPIServerConfig, auditWebhookRef, etcdURL, ingressDomain, minTLSVersion, cipherSuites, imageConfig, projectConfig)
+	reconcileConfigObject(openshiftAPIServerConfig, auditEnabled, auditWebhookRef, etcdURL, ingressDomain, minTLSVersion, cipherSuites, imageConfig, projectConfig)
 	serializedConfig, err := util.SerializeResource(openshiftAPIServerConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver config: %w", err)
@@ -46,7 +46,7 @@ func ReconcileConfig(cm *corev1.ConfigMap, auditWebhookRef *corev1.LocalObjectRe
 	return nil
 }
 
-func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWebhookRef *corev1.LocalObjectReference, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) {
+func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditEnabled bool, auditWebhookRef *corev1.LocalObjectReference, etcdURL, ingressDomain, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, projectConfig *configv1.Project) {
 	cfg.TypeMeta = metav1.TypeMeta{
 		Kind:       "OpenShiftAPIServerConfig",
 		APIVersion: openshiftcpv1.GroupVersion.String(),
@@ -57,11 +57,14 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWeb
 	}
 	cfg.APIServerArguments = map[string][]string{
 		"shutdown-delay-duration": {"15s"},
-		"audit-log-format":        {"json"},
-		"audit-log-maxsize":       {"10"},
-		"audit-log-maxbackup":     {"1"},
-		"audit-policy-file":       {cpath(oasVolumeAuditConfig().Name, auditPolicyConfigMapKey)},
-		"audit-log-path":          {cpath(oasVolumeWorkLogs().Name, "audit.log")},
+	}
+
+	if auditEnabled {
+		cfg.APIServerArguments["audit-log-format"] = []string{"json"}
+		cfg.APIServerArguments["audit-log-maxsize"] = []string{"10"}
+		cfg.APIServerArguments["audit-log-maxbackup"] = []string{"1"}
+		cfg.APIServerArguments["audit-policy-file"] = []string{cpath(oasVolumeAuditConfig().Name, auditPolicyConfigMapKey)}
+		cfg.APIServerArguments["audit-log-path"] = []string{cpath(oasVolumeWorkLogs().Name, "audit.log")}
 	}
 
 	if auditWebhookRef != nil {

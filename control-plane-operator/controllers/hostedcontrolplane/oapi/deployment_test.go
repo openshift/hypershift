@@ -30,7 +30,7 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 	testCases := []struct {
 		name                  string
 		cm                    corev1.ConfigMap
-		auditConfig           *corev1.ConfigMap
+		auditEnabled          bool
 		deploymentConfig      config.DeploymentConfig
 		additionalTrustBundle *corev1.LocalObjectReference
 		clusterConf           *hyperv1.ClusterConfiguration
@@ -44,7 +44,7 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 				},
 				Data: map[string]string{"config.yaml": "test-data"},
 			},
-			auditConfig:           manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:          true,
 			deploymentConfig:      config.DeploymentConfig{},
 			additionalTrustBundle: &corev1.LocalObjectReference{Name: "test-trust-bundle"},
 			clusterConf:           nil,
@@ -58,8 +58,7 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 		expectedTermGraceSeconds := oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds
 		oapiDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
-		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, nil, tc.clusterConf, nil, "")
+		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditEnabled, serviceServingCA, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, nil, tc.clusterConf, nil, "")
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedTermGraceSeconds).To(Equal(oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds))
 		g.Expect(expectedMinReadySeconds).To(Equal(oapiDeployment.Spec.MinReadySeconds))
@@ -91,7 +90,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 		cm                                corev1.ConfigMap
 		expectedVolume                    *corev1.Volume
 		expectedProxyVolume               *corev1.Volume
-		auditConfig                       *corev1.ConfigMap
+		auditEnabled                      bool
 		expectedVolumeProjection          []corev1.VolumeProjection
 		deploymentConfig                  config.DeploymentConfig
 		additionalTrustBundle             *corev1.LocalObjectReference
@@ -102,7 +101,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	}{
 		{
 			name:             "Trust bundle provided",
-			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:     true,
 			deploymentConfig: config.DeploymentConfig{},
 			additionalTrustBundle: &corev1.LocalObjectReference{
 				Name: "user-ca-bundle",
@@ -121,7 +120,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 		},
 		{
 			name:                              "Trust bundle not provided",
-			auditConfig:                       manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:                      true,
 			deploymentConfig:                  config.DeploymentConfig{},
 			expectedVolume:                    nil,
 			additionalTrustBundle:             nil,
@@ -130,7 +129,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 		},
 		{
 			name:             "Trust bundle and image registry additional CAs provided",
-			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:     true,
 			deploymentConfig: config.DeploymentConfig{},
 			additionalTrustBundle: &corev1.LocalObjectReference{
 				Name: "user-ca-bundle",
@@ -162,7 +161,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 		},
 		{
 			name:             "Trust bundle and proxy trust bundle provided",
-			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:     true,
 			deploymentConfig: config.DeploymentConfig{},
 			additionalTrustBundle: &corev1.LocalObjectReference{
 				Name: "user-ca-bundle",
@@ -194,8 +193,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			g := NewGomegaWithT(t)
 			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 			ownerRef := config.OwnerRefFrom(hcp)
-			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditConfig, nil, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.imageRegistryAdditionalCAs, tc.clusterConf, nil, "")
+			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditEnabled, nil, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.imageRegistryAdditionalCAs, tc.clusterConf, nil, "")
 			g.Expect(err).To(BeNil())
 			if tc.expectProjectedVolumeMounted {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedVolume))
