@@ -2,7 +2,6 @@ package pki
 
 import (
 	"fmt"
-	"net"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/clientcmd"
@@ -14,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	supportpki "github.com/openshift/hypershift/support/pki"
 	"github.com/openshift/hypershift/support/util"
 	utilsnet "k8s.io/utils/net"
 )
@@ -25,43 +25,9 @@ const (
 )
 
 func ReconcileKASServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef, externalAPIAddress, internalAPIAddress string, serviceCIDRs []string, nodeInternalAPIServerIP string) error {
-	svc := manifests.KubeAPIServerService(secret.Namespace)
-	svcAddresses := make([]string, 0)
-
-	for _, serviceCIDR := range serviceCIDRs {
-		serviceIP, err := util.FirstUsableIP(serviceCIDR)
-		if err != nil {
-			return fmt.Errorf("cannot get the first usable IP from CIDR %s: %w", serviceIP, err)
-		}
-		svcAddresses = append(svcAddresses, serviceIP)
-	}
-
-	dnsNames := []string{
-		"localhost",
-		"kubernetes",
-		"kubernetes.default",
-		"kubernetes.default.svc",
-		"kubernetes.default.svc.cluster.local",
-		svc.Name,
-		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
-		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
-	}
-	apiServerIPs := []string{
-		"127.0.0.1",
-		"0:0:0:0:0:0:0:1",
-	}
-	apiServerIPs = append(apiServerIPs, svcAddresses...)
-	apiServerIPs = append(apiServerIPs, nodeInternalAPIServerIP)
-
-	if isNumericIP(externalAPIAddress) {
-		apiServerIPs = append(apiServerIPs, externalAPIAddress)
-	} else {
-		dnsNames = append(dnsNames, externalAPIAddress)
-	}
-	if isNumericIP(internalAPIAddress) {
-		apiServerIPs = append(apiServerIPs, internalAPIAddress)
-	} else {
-		dnsNames = append(dnsNames, internalAPIAddress)
+	dnsNames, apiServerIPs, err := supportpki.GetKASServerCertificatesSANs(externalAPIAddress, internalAPIAddress, serviceCIDRs, nodeInternalAPIServerIP, secret.Namespace)
+	if err != nil {
+		return fmt.Errorf("failed to get KAS server certificates SANs: %w", err)
 	}
 	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "kubernetes", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, apiServerIPs)
 }
@@ -97,10 +63,6 @@ func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *cor
 	}
 	svcURL := inClusterKASURL(hcp.Spec.Platform.Type)
 	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
-}
-
-func isNumericIP(s string) bool {
-	return net.ParseIP(s) != nil
 }
 
 func ReconcileKubeConfig(secret, cert *corev1.Secret, ca *corev1.ConfigMap, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
