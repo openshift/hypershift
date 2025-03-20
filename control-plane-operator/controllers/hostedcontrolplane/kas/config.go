@@ -152,7 +152,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 		args.Set("audit-log-maxbackup", "1")
 		args.Set("audit-log-maxsize", "10")
 		args.Set("audit-log-path", cpath(kasVolumeWorkLogs().Name, AuditLogFile))
-		args.Set("audit-policy-file", cpath(kasVolumeAuditConfig().Name, AuditPolicyConfigMapKey))
+		args.Set("audit-policy-file", path.Join(kasAuditConfigFileVolumeMount.Path(kasContainerMain().Name, kasVolumeAuditConfig().Name), AuditPolicyConfigMapKey))
 	}
 	args.Set("authorization-mode", "Scope", "SystemMasters", "RBAC", "Node")
 	args.Set("client-ca-file", cpath(common.VolumeTotalClientCA().Name, certs.CASignerCertMapKey))

@@ -63,7 +63,7 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditEna
 		cfg.APIServerArguments["audit-log-format"] = []string{"json"}
 		cfg.APIServerArguments["audit-log-maxsize"] = []string{"10"}
 		cfg.APIServerArguments["audit-log-maxbackup"] = []string{"1"}
-		cfg.APIServerArguments["audit-policy-file"] = []string{cpath(oasVolumeAuditConfig().Name, auditPolicyConfigMapKey)}
+		cfg.APIServerArguments["audit-policy-file"] = []string{path.Join(oasAuditConfigFileVolumeMount.Path(oasContainerMain().Name, oasVolumeAuditConfig().Name), auditPolicyConfigMapKey)}
 		cfg.APIServerArguments["audit-log-path"] = []string{cpath(oasVolumeWorkLogs().Name, "audit.log")}
 	}
 

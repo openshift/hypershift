@@ -92,6 +92,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	ownerRef config.OwnerRef,
 	config *corev1.ConfigMap,
 	auditEnabled bool,
+	auditConfig *corev1.ConfigMap,
 	serviceServingCA *corev1.ConfigMap,
 	deploymentConfig config.DeploymentConfig,
 	image string,
@@ -172,8 +173,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	}
 
 	if auditEnabled {
-		auditConfig := manifests.OpenShiftAPIServerAuditConfig(deployment.Namespace)
-		auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
+		auditConfigBytes, ok := auditConfig.Data[auditPolicyProfileMapKey]
 		if !ok {
 			return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
 		}
@@ -190,10 +190,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 			}
 		}
 		if oasAPIServerContainer == nil {
-			panic("main kube apiserver container not found in spec")
+			panic("main openshift apiserver container not found in spec")
 		}
 		oasAPIServerContainer.VolumeMounts = append(oasAPIServerContainer.VolumeMounts,
-			oasAuditWebhookConfigFileVolumeMount.ContainerMounts(oasContainerMain().Name)...)
+			oasAuditConfigFileVolumeMount.ContainerMounts(oasContainerMain().Name)...)
 
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "audit-logs",

@@ -2972,8 +2972,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile bootstrap kubeconfig secret: %w", err)
 	}
 
-	if p.ConfigParams().AuditEnabled {
-		kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
+	kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
+	if p.AuditEnabled {
 		if _, err := createOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
 			return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyConfig())
 		}); err != nil {
@@ -3183,7 +3183,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.CloudProviderCreds,
 			p.Images,
 			kubeAPIServerConfig,
-			p.IsKASAuditingEnabled(),
+			p.AuditEnabled,
+			kubeAPIServerAuditConfig,
 			kubeAPIServerAuthConfig,
 			p.AuditWebhookRef,
 			aesCBCActiveKey,
@@ -3325,8 +3326,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
 
+	auditCfg := manifests.OpenShiftAPIServerAuditConfig(hcp.Namespace)
 	if p.AuditEnabled {
-		auditCfg := manifests.OpenShiftAPIServerAuditConfig(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
 			return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
 		}); err != nil {
@@ -3373,7 +3374,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}
 
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, p.AuditEnabled, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, imageRegistryAdditionalTrustedCAs, hcp.Spec.Configuration, p.Proxy, noProxy)
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, p.AuditEnabled, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, imageRegistryAdditionalTrustedCAs, hcp.Spec.Configuration, p.Proxy, noProxy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
