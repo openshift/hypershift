@@ -6,6 +6,7 @@ require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
 	github.com/golangci/golangci-lint v1.63.4
 	github.com/openshift/api/tools v0.0.0-20241014171745-f199b1f2660c
+	go.uber.org/mock v0.5.0
 	gotest.tools/gotestsum v1.12.0
 	honnef.co/go/tools v0.5.1
 	k8s.io/code-generator v0.31.1
