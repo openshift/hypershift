@@ -116,6 +116,13 @@ func (c *AzureCluster) ValidateUpdate(oldRaw runtime.Object) (admission.Warnings
 		allErrs = append(allErrs, err)
 	}
 
+	if err := webhookutils.ValidateImmutable(
+		field.NewPath("spec", "networkSpec", "privateDNSZoneResourceGroup"),
+		old.Spec.NetworkSpec.PrivateDNSZoneResourceGroup,
+		c.Spec.NetworkSpec.PrivateDNSZoneResourceGroup); err != nil {
+		allErrs = append(allErrs, err)
+	}
+
 	// Allow enabling azure bastion but avoid disabling it.
 	if old.Spec.BastionSpec.AzureBastion != nil && !reflect.DeepEqual(old.Spec.BastionSpec.AzureBastion, c.Spec.BastionSpec.AzureBastion) {
 		allErrs = append(allErrs,
