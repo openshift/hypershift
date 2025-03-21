@@ -69,8 +69,6 @@ spec:
         env:
         - name: OPERAND_IMAGE
           value: csi-snapshot-controller
-        - name: WEBHOOK_IMAGE
-          value: csi-snapshot-validation-webhook
         - name: OPERATOR_IMAGE_VERSION
           value: 4.18.0
         - name: OPERAND_IMAGE_VERSION
