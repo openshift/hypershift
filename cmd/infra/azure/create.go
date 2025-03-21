@@ -872,9 +872,10 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 // assignRole assigns the role to the service principal
 func assignRole(assigneeID, role, scope string) error {
 	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
-	_, err := execAzCommand(cmdStr)
+	log.Log.Info("Role assignment command", "command", cmdStr)
+	output, err := execAzCommand(cmdStr)
 	if err != nil {
-		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w", role, assigneeID, scope, err)
+		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w output: %s", role, assigneeID, scope, err, string(output))
 	}
 	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
 	return nil
@@ -897,11 +898,7 @@ func execAzCommand(cmdStr string) ([]byte, error) {
 	cmd := exec.Command("sh", "-c", cmdStr)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute az command: %w", err)
-	}
-
-	if strings.Contains(string(output), "ERROR") {
-		return nil, errors.New(string(output))
+		return nil, fmt.Errorf("failed to execute az command, output: %s err: %w", string(output), err)
 	}
 
 	return output, nil
