@@ -47,6 +47,13 @@ spec:
         - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
         command:
         - /usr/bin/oauth-apiserver
+        env:
+        - name: HTTP_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: HTTPS_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver,etcd-client,audit-webhook
         image: oauth-apiserver
         imagePullPolicy: IfNotPresent
         livenessProbe:
