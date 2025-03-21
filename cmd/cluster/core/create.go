@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	CLIVersion "github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -106,6 +107,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
+	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 
 }
 
@@ -166,6 +168,7 @@ type RawCreateOptions struct {
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
 	FeatureSet                       string
+	VersionCheck                     bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -605,6 +608,13 @@ type ValidatedCreateOptions struct {
 }
 
 func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOptions, error) {
+	if opts.VersionCheck {
+		err := validateVersion(ctx, opts)
+		if err != nil {
+			return nil, fmt.Errorf("version validation failed: %w", err)
+		}
+	}
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
@@ -1036,5 +1046,53 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		}
 	}
 
+	return nil
+}
+
+func validateVersion(ctx context.Context, opts *RawCreateOptions) error {
+	versionCLI := CLIVersion.GetRevision()
+
+	kubecfg, err := util.GetConfig()
+	if err != nil {
+		opts.Log.Info("failed to get Kubernetes config", "error", err)
+		return err
+	}
+	kubeClient, err := kubeclient.NewForConfig(kubecfg)
+	if err != nil {
+		opts.Log.Info("failed to create Kubernetes client", "error", err)
+		return err
+	}
+
+	deployment, err := kubeClient.AppsV1().Deployments("hypershift").Get(ctx, "operator", metav1.GetOptions{})
+	if err != nil {
+		opts.Log.Info("failed to get HyperShift operator deployment", "error", err)
+		return err
+	}
+
+	if len(deployment.Spec.Template.Spec.Containers) == 0 {
+		opts.Log.Info("operator deployment has no containers")
+		return err
+	}
+	operatorImage := deployment.Spec.Template.Spec.Containers[0].Image
+
+	pullSecret, err := os.ReadFile(opts.PullSecretFile)
+	if err != nil {
+		opts.Log.Info("failed to read pull secret file", "pull secret", opts.PullSecretFile, "error", err)
+		return err
+	}
+
+	metadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+	metadata, err := metadataProvider.ImageMetadata(ctx, operatorImage, pullSecret)
+	if err != nil {
+		opts.Log.Info("failed to retrieve operator image metadata from Quay", "error", err)
+		return err
+	}
+
+	operatorVersion := metadata.Config.Labels["io.openshift.build.commit.id"]
+	if operatorVersion != versionCLI {
+		return fmt.Errorf("version mismatch detected, CLI: %s, Hypershift Operator: %s", versionCLI, operatorVersion)
+	} else {
+		opts.Log.Info("versions matched", "CLI", versionCLI, "Hypershift Operator", operatorVersion)
+	}
 	return nil
 }
