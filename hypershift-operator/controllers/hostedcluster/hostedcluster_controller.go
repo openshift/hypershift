@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -1979,9 +1980,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Versio
 	}
 }
 
-// reconcileHostedControlPlane reconciles the given HostedControlPlane, which
-// will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
 
 	if hcp.Annotations == nil {
 		hcp.Annotations = map[string]string{}
@@ -2029,14 +2028,30 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		val, hasVal := hcluster.Annotations[key]
 		if hasVal {
 			hcp.Annotations[key] = val
+		} else {
+			delete(hcp.Annotations, key)
 		}
 	}
 
-	// All annotations on the HostedCluster with this special prefix are copied
+	prefixesToSync := []string{
+		hyperv1.IdentityProviderOverridesAnnotationPrefix,
+		hyperv1.ResourceRequestOverrideAnnotationPrefix,
+	}
+
+	// All annotations on the HostedCluster with prefixes to sync
+	// should be synced
+	for key := range hcp.Annotations {
+		for _, prefix := range prefixesToSync {
+			if strings.HasPrefix(key, prefix) {
+				delete(hcp.Annotations, key)
+			}
+		}
+	}
 	for key, val := range hcluster.Annotations {
-		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) ||
-			strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix) {
-			hcp.Annotations[key] = val
+		for _, prefix := range prefixesToSync {
+			if strings.HasPrefix(key, prefix) {
+				hcp.Annotations[key] = val
+			}
 		}
 	}
 
@@ -2055,15 +2070,24 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if err != nil {
 		return err
 	}
-	for k, v := range certAnnotations {
-		hcp.Annotations[k] = v
-	}
+	maps.Copy(hcp.Annotations, certAnnotations)
 
 	// Set the DisableClusterAutoscalerAnnotation if autoscaling is not needed
 	if !isAutoscalingNeeded {
 		hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation] = "true"
 	} else {
 		delete(hcp.Annotations, hyperv1.DisableClusterAutoscalerAnnotation)
+	}
+
+	return nil
+}
+
+// reconcileHostedControlPlane reconciles the given HostedControlPlane, which
+// will be mutated.
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+
+	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, certRenewalAnnotations); err != nil {
+		return err
 	}
 
 	if hcp.Labels == nil {
