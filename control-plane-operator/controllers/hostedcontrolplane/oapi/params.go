@@ -32,6 +32,7 @@ type OpenShiftAPIServerParams struct {
 	Ingress                 *configv1.IngressSpec
 	Image                   *configv1.ImageSpec
 	Project                 *configv1.Project
+	AuditEnabled            bool
 	AuditWebhookRef         *corev1.LocalObjectReference
 	InternalOAuthDisable    bool
 }
@@ -46,6 +47,7 @@ type OAuthDeploymentParams struct {
 	AvailabilityProberImage      string
 	Availability                 hyperv1.AvailabilityPolicy
 	OwnerRef                     config.OwnerRef
+	AuditEnabled                 bool
 	AuditWebhookRef              *corev1.LocalObjectReference
 	AccessTokenInactivityTimeout *metav1.Duration
 }
@@ -60,6 +62,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		Project:                 observedConfig.Project,
+		AuditEnabled:            true,
 		InternalOAuthDisable:    !util.HCPOAuthEnabled(hcp),
 	}
 
@@ -68,6 +71,10 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Image = hcp.Spec.Configuration.Image
 		params.Proxy = hcp.Spec.Configuration.Proxy
+	}
+
+	if params.APIServer != nil {
+		params.AuditEnabled = params.APIServer.Audit.Profile != configv1.NoneAuditProfileType
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -228,6 +235,7 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.H
 		AvailabilityProberImage: p.AvailabilityProberImage,
 		Availability:            p.Availability,
 		OwnerRef:                p.OwnerRef,
+		AuditEnabled:            p.AuditEnabled,
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
