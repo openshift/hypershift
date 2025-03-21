@@ -189,7 +189,7 @@ func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedCl
 	return out
 }
 
-func generateUIDClaimMapping(uid configv1.UIDClaimMapping) (ClaimOrExpression, error) {
+func generateUIDClaimMapping(uid configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
 	out := ClaimOrExpression{}
 
 	// UID mapping can only specify either claim or expression, not both.
