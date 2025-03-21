@@ -5,9 +5,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AzureProviderConfig is a configMap for azure config.
-// TODO (alberto): can we drop this completely?
-// It has some consumers atm: it's reconciled into guest cluster, ignition local provider. Review them and drop it.
+// AzureProviderConfig is a configMap for Azure cloud config. This is needed for ignition configuration by the
+// machine-config-operator (MCO). https://github.com/openshift/machine-config-operator/blob/fe8353e4ea7e72dfd69105069b870a37a87478ec/pkg/operator/bootstrap.go#L124
 func AzureProviderConfig(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
