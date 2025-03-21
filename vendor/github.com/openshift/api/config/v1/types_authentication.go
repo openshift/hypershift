@@ -262,6 +262,31 @@ type TokenClaimMappings struct {
 	// groups for the cluster identity.
 	// The referenced claim must use array of strings values.
 	Groups PrefixedClaimMapping `json:"groups,omitempty"`
+
+	// uid is an optional field for configuring the claim mapping
+	// used to construct the uid for the cluster identity.
+	//
+	// When using uid.claim to specify the claim it must be a single string value.
+	// When using uid.expression the expression must result in a single string value.
+	//
+	// When omitted, this means the user has no opinion and the platform
+	// is left to choose a default, which is subject to change over time.
+	// The current default is to use the 'sub' claim.
+	//
+	// +optional
+	UID TokenClaimOrExpressionMapping `json:"uid,omitempty"`
+
+	// extra is an optional field for configuring the mappings
+	// used to construct the extra attribute for the cluster identity.
+	// When omitted, no extra attributes will be present on the cluster identity.
+	// key values for extra mappings must be unique.
+	// A maximum of 64 extra attribute mappings may be provided.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=64
+	// +listType=map
+	// +listMapKey=key
+	Extra []ExtraMapping `json:"extra,omitempty"`
 }
 
 type TokenClaimMapping struct {
@@ -269,6 +294,99 @@ type TokenClaimMapping struct {
 	//
 	// +required
 	Claim string `json:"claim"`
+}
+
+// +kubebuilder:validation:XValidation:rule="!(has(self.claim) && has(self.expression))",message="both claim and expression must not be set"
+// +kubebuilder:validation:XValidation:rule="has(self.claim) || has(self.expression)",message="either claim or expression must be set"
+type TokenClaimOrExpressionMapping struct {
+	// claim is an optional field for specifying the
+	// JWT token claim that is used in the mapping.
+	// The value of this claim will be assigned to
+	// the field in which this mapping is associated.
+	//
+	// Either claim or expression must be set.
+	// claim must not be specified when expression is set.
+	//
+	// +optional
+	Claim string `json:"claim"`
+
+	// expression is an optional field for specifying a
+	// CEL expression that produces a string value from
+	// JWT token claims.
+	//
+	// CEL expressions have access to the token claims
+	// through a CEL variable, 'claims'.
+	// 'claims' is a map of claim names to claim values.
+	// For example, the 'sub' claim value can be accessed as 'claims.sub'.
+	// Nested claims can be accessed using dot notation ('claims.foo.bar').
+	//
+	// Either claim or expression must be set.
+	// expression must not be specified when claim is set.
+	// When specified, expression must be at least 1 character in length
+	// and must not exceed 1024 characters in length.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:MinLength=1
+	Expression string `json:"expression,omitempty"`
+}
+
+type ExtraMapping struct {
+	// key is a required field that specifies the string
+	// to use as the extra attribute key.
+	//
+	// key must be a domain-prefix path (e.g 'example.org/foo').
+	// key must not exceed 318 characters in length.
+	// key must contain the '/' character, separating the domain and path characters.
+	// key must not be empty.
+	//
+	// The domain portion of the key (string of characters prior to the '/') must be a valid RFC1123 subdomain.
+	// It must not exceed 253 characters in length.
+	// It must start and end with an alphanumeric character.
+	// It must only contain lower case alphanumeric characters and '-' or '.'.
+	// It must not use the reserved domains, or be subdomains of, "kubernetes.io", "k8s.io", and "openshift.io".
+	//
+	// The path portion of the key (string of characters after the '/') must not be empty and must consist of at least one
+	// alphanumeric character, percent-encoded octets, '-', '.', '_', '~', '!', '$', '&', ''', '(', ')', '*', '+', ',', ';', '=', and ':'.
+	// It must not exceed 64 characters in length.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=318
+	// +kubebuilder:validation:XValidation:rule="self.contains('/')",message="key must contain the '/' character"
+	//
+	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self.split('/', 2)[0]).hasValue()",message="the domain of the key must consist of only lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'kubernetes.io'",message="the domain 'kubernetes.io' is reserved for Kubernetes use"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.kubernetes.io')",message="the subdomains '*.kubernetes.io' are reserved for Kubernetes use"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'k8s.io'",message="the domain 'k8s.io' is reserved for Kubernetes use"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.k8s.io')",message="the subdomains '*.k8s.io' are reserved for Kubernetes use"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'openshift.io'",message="the domain 'openshift.io' is reserved for OpenShift use"
+	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.openshift.io')",message="the subdomains '*.openshift.io' are reserved for OpenShift use"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0].size() < 253",message="the domain of the key must not exceed 253 characters in length"
+	//
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].matches('[A-Za-z0-9/\\\\-._~%!$&\\'()*+;=:]+')",message="the path of the key must not be empty and must consist of at least one alphanumeric character, percent-encoded octets, apostrophe, '-', '.', '_', '~', '!', '$', '&', '(', ')', '*', '+', ',', ';', '=', and ':'"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].size() < 64",message="the path of the key must not exceed 64 characters in length"
+	Key string `json:"key"`
+
+	// valueExpression is a required field to specify the CEL expression to extract
+	// the extra attribute value from a JWT token's claims.
+	// valueExpression must produce a string or string array value.
+	// "", [], and null are treated as the extra mapping not being present.
+	// Empty string values within an array are filtered out.
+	//
+	// CEL expressions have access to the token claims
+	// through a CEL variable, 'claims'.
+	// 'claims' is a map of claim names to claim values.
+	// For example, the 'sub' claim value can be accessed as 'claims.sub'.
+	// Nested claims can be accessed using dot notation ('claims.foo.bar').
+	//
+	// valueExpression must not exceed 1024 characters in length.
+	// valueExpression must not be empty.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=1024
+	ValueExpression string `json:"valueExpression"`
 }
 
 type OIDCClientConfig struct {
