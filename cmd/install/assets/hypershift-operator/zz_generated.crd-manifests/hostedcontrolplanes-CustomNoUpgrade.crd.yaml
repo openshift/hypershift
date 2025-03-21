@@ -4432,6 +4432,11 @@ spec:
                         x-kubernetes-validations:
                         - message: floatingIP must be a valid IPv4 or IPv6 address
                           rule: isIP(self)
+                      kasPortID:
+                        description: KASPortID is the ID of a pre-existing port to
+                          use for the API server VIP.
+                        format: uuid
+                        type: string
                       managedSubnets:
                         description: |-
                           ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
