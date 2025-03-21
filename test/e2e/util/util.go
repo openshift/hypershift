@@ -26,6 +26,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
@@ -219,7 +220,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 			}, nil, WithTimeout(10*time.Minute),
 		)
-
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
@@ -323,7 +323,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionTrue,
 			}),
 		},
-		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		// TODO:https://issues.redhat.com/browse/OCPBUGS-43824
 		WithTimeout(1*time.Minute),
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
@@ -725,7 +725,6 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 0)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to run command in pod: %v", err)
 	})
-
 }
 
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1064,6 +1063,19 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
 	})
+
+	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+
+		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
+	})
 }
 
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
@@ -1148,7 +1160,6 @@ func NewLogr(t *testing.T) logr.Logger {
 }
 
 func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName string) {
-
 	for _, c := range ds.Spec.Template.Spec.Containers {
 		if c.Name == ds.Name {
 			c.Name = dsName
@@ -1168,7 +1179,6 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	// Set NodeSelector for the DS
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
-
 }
 
 func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
@@ -1345,11 +1355,9 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 			return false, nil
 		})
-
 		if err != nil {
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
-
 	})
 }
 
@@ -1400,7 +1408,6 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
-
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -1691,7 +1698,6 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
 	}
-
 }
 
 func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
@@ -2072,4 +2078,72 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
 		}
 	})
+}
+
+// EnsureCreateClusterWithDisabledCapabilities implements a test that creates a cluster
+// with the ImageRegistry capability disabled, then attempts to enable it.
+func EnsureCreateClusterWithDisabledCapabilities(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	AtLeast(t, Version419)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+
+	cfgClient, err := configv1client.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	_, err = cfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"image-registry\" not found"))
+
+	guestClient, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	// ensure existing service accounts don't have pull-secrets.
+	EventuallyObject(t, ctx, "Waiting for service account default/default to be provisioned...",
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, fmt.Sprintf("expected default/default service account to exist, got nil"), nil
+			},
+		},
+		WithInterval(10*time.Second), WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// create a namespace and ensure no pull-secrets are provisioned to
+	// the newly auto-created service accounts.
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"}}
+	ns, err = guestClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't create test namespace")
+
+	EventuallyObject(t, ctx, fmt.Sprintf("Waiting for service account default/%s to be provisioned...", ns.Name),
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, fmt.Sprintf("expected default/default service account to exist, got nil"), nil
+			},
+		},
+		WithInterval(10*time.Second), WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err = guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// ensure image-registry resources are not present
+	_, err = guestClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 }

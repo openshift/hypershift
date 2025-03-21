@@ -52,6 +52,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
+						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+					},
+					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.DNS.BaseDomain = "@foo"
@@ -876,7 +898,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -1279,6 +1300,11 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			hc.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
 		}
 	}
 
@@ -1291,7 +1317,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1299,6 +1324,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
+
+		// ensure image registry component is disabled
+		EnsureCreateClusterWithDisabledCapabilities(ctx, t, g, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -1340,7 +1368,6 @@ func TestCreateClusterCustomConfigV2(t *testing.T) {
 	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
 		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
 
@@ -1452,5 +1479,4 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
-
 }
