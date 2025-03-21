@@ -1003,7 +1003,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		Context:                   ctx,
 		Client:                    r.Client,
 		HCP:                       hcp,
-		CreateOrUpdateProviderV2:  upsert.NewV2(r.EnableCIDebugOutput),
+		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
 		InfraStatus:               infraStatus,
 		ReleaseImageProvider:      releaseImageProvider,
 		UserReleaseImageProvider:  userReleaseImageProvider,

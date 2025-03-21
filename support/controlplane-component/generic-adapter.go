@@ -70,7 +70,7 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 			return err
 		}
 	}
-	if _, err := cpContext.CreateOrUpdateV2(cpContext, cpContext.Client, obj); err != nil {
+	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {
 		return err
 	}
 

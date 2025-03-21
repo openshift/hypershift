@@ -368,9 +368,7 @@ spec:
       partition: 0
     type: RollingUpdate
   volumeClaimTemplates:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
+  - metadata:
       creationTimestamp: null
       name: data
     spec:
