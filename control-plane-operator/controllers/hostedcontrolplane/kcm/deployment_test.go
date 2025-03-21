@@ -42,7 +42,7 @@ func TestKCMArgs(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			args := kcmArgs(tc.p)
 
-			seen := sets.String{}
+			seen := sets.New[string]()
 			for _, arg := range args {
 				key := strings.Split(arg, "=")[0]
 				if allowedDuplicateArgs.Has(key) {

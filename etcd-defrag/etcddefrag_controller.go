@@ -201,10 +201,12 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 			successfulDefrags++
 
 			// Give cluster time to recover before we move to the next member.
-			if err := wait.Poll(
+			if err := wait.PollUntilContextTimeout(
+				ctx,
 				pollWaitDuration,
 				pollTimeoutDuration,
-				func() (bool, error) {
+				true,
+				func(ctx context.Context) (bool, error) {
 					// Ensure defragmentation attempts have clear observable signal.
 					r.log.Info("Sleeping to allow cluster to recover before defragging next member", "waiting", r.defragWaitDuration)
 					time.Sleep(r.defragWaitDuration)
