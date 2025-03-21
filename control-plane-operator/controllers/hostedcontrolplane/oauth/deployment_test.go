@@ -69,7 +69,7 @@ func TestReconcileOauthDeploymentNoChanges(t *testing.T) {
 		fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
 		oauthDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthDeployment.Spec.MinReadySeconds
-		err := ReconcileDeployment(ctx, fakeClient, oauthDeployment, tc.serverParams.AuditWebhookRef, ownerRef, &tc.cm, &tc.auditCM, imageName, tc.deploymentConfig, tc.serverParams.IdentityProviders(), tc.serverParams.OauthConfigOverrides,
+		err := ReconcileDeployment(ctx, fakeClient, oauthDeployment, tc.serverParams.AuditWebhookRef, ownerRef, &tc.cm, true, &tc.auditCM, imageName, tc.deploymentConfig, tc.serverParams.IdentityProviders(), tc.serverParams.OauthConfigOverrides,
 			tc.serverParams.AvailabilityProberImage, tc.serverParams.NamedCertificates(), tc.serverParams.ProxyImage, nil, "", tc.serverParams.OAuthNoProxy, &tc.configParams, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthDeployment.Spec.MinReadySeconds))

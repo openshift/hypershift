@@ -252,7 +252,7 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 		oauthAPIDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthAPIDeployment.Spec.MinReadySeconds
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, tc.auditConfig, &tc.params, hyperv1.IBMCloudPlatform)
+		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, true, tc.auditConfig, &tc.params, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthAPIDeployment.Spec.MinReadySeconds))
 	}

@@ -47,6 +47,7 @@ type OAuthDeploymentParams struct {
 	AvailabilityProberImage      string
 	Availability                 hyperv1.AvailabilityPolicy
 	OwnerRef                     config.OwnerRef
+	AuditEnabled                 bool
 	AuditWebhookRef              *corev1.LocalObjectReference
 	AccessTokenInactivityTimeout *metav1.Duration
 }
@@ -234,6 +235,7 @@ func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.H
 		AvailabilityProberImage: p.AvailabilityProberImage,
 		Availability:            p.Availability,
 		OwnerRef:                p.OwnerRef,
+		AuditEnabled:            p.AuditEnabled,
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
