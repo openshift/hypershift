@@ -42,6 +42,7 @@ type KubeAPIServerConfigParams struct {
 	EtcdURL                      string
 	FeatureGates                 []string
 	NodePortRange                string
+	AuditEnabled                 bool
 	AuditWebhookEnabled          bool
 	ConsolePublicURL             string
 	DisableProfiling             bool
@@ -72,6 +73,7 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		NodePortRange:                serviceNodePortRange(hcp.Spec.Configuration),
 		ConsolePublicURL:             fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 		DisableProfiling:             util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
+		AuditEnabled:                 true,
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
@@ -87,6 +89,10 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		kasConfig.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
 	default:
 		kasConfig.EtcdURL = config.DefaultEtcdURL
+	}
+
+	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		kasConfig.AuditEnabled = false
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
