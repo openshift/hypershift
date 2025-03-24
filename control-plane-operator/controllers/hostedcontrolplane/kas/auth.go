@@ -189,7 +189,7 @@ func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedCl
 	return out
 }
 
-func generateUIDClaimMapping(uid configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
+func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
 	out := ClaimOrExpression{}
 
 	// UID mapping can only specify either claim or expression, not both.
@@ -197,15 +197,18 @@ func generateUIDClaimMapping(uid configv1.TokenClaimOrExpressionMapping) (ClaimO
 	// Even though this is the case, we still perform a runtime validation to ensure we never
 	// attempt to create an invalid configuration.
 	// If neither claim or expression is specified, default the claim to "sub"
+    
 	switch {
+    case uid == nil:
+        out.Claim = "sub"
 	case uid.Claim != "" && uid.Expression == "":
 		out.Claim = uid.Claim
 	case uid.Expression != "" && uid.Claim == "":
 		out.Expression = uid.Expression
 	case uid.Claim != "" && uid.Expression != "":
 		return out, fmt.Errorf("uid mapping must set either claim or expression, not both: %v", uid)
-	default:
-		out.Claim = "sub"
+    default:
+        return out, fmt.Errorf("unable to handle uid mapping: %v", uid)
 	}
 
 	return out, nil

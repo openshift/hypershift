@@ -508,7 +508,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 								URL: "https://test.com",
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
-								UID: configv1.TokenClaimOrExpressionMapping{
+								UID: &configv1.TokenClaimOrExpressionMapping{
 									Claim: "custom",
 								},
 							},
@@ -557,7 +557,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 								URL: "https://test.com",
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
-								UID: configv1.TokenClaimOrExpressionMapping{
+								UID: &configv1.TokenClaimOrExpressionMapping{
 									Expression: "claims.foo",
 								},
 							},
@@ -579,7 +579,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 								URL: "https://test.com",
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
-								UID: configv1.TokenClaimOrExpressionMapping{
+								UID: &configv1.TokenClaimOrExpressionMapping{
 									Claim:      "foo",
 									Expression: "claims.foo",
 								},

@@ -274,7 +274,7 @@ type TokenClaimMappings struct {
 	// The current default is to use the 'sub' claim.
 	//
 	// +optional
-	UID TokenClaimOrExpressionMapping `json:"uid,omitempty"`
+	UID *TokenClaimOrExpressionMapping `json:"uid,omitempty"`
 
 	// extra is an optional field for configuring the mappings
 	// used to construct the extra attribute for the cluster identity.
@@ -296,6 +296,9 @@ type TokenClaimMapping struct {
 	Claim string `json:"claim"`
 }
 
+// TokenClaimOrExpressionMapping allows specifying either a JWT
+// token claim or CEL expression to be used when mapping claims
+// from an authentication token to cluster identities.
 // +kubebuilder:validation:XValidation:rule="!(has(self.claim) && has(self.expression))",message="both claim and expression must not be set"
 // +kubebuilder:validation:XValidation:rule="has(self.claim) || has(self.expression)",message="either claim or expression must be set"
 type TokenClaimOrExpressionMapping struct {
@@ -306,9 +309,13 @@ type TokenClaimOrExpressionMapping struct {
 	//
 	// Either claim or expression must be set.
 	// claim must not be specified when expression is set.
+	// When specified, claim must be at least 1 character in length
+	// and must not exceed 256 characters in length.
 	//
 	// +optional
-	Claim string `json:"claim"`
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:MinLength=1
+	Claim string `json:"claim,omitempty"`
 
 	// expression is an optional field for specifying a
 	// CEL expression that produces a string value from
@@ -323,14 +330,18 @@ type TokenClaimOrExpressionMapping struct {
 	// Either claim or expression must be set.
 	// expression must not be specified when claim is set.
 	// When specified, expression must be at least 1 character in length
-	// and must not exceed 1024 characters in length.
+	// and must not exceed 4096 characters in length.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:MaxLength=4096
 	// +kubebuilder:validation:MinLength=1
 	Expression string `json:"expression,omitempty"`
 }
 
+// ExtraMapping allows specifying a key and CEL expression
+// to evaluate the keys' value. It is used to create additional
+// mappings and attributes added to a cluster identity from
+// a provided authentication token.
 type ExtraMapping struct {
 	// key is a required field that specifies the string
 	// to use as the extra attribute key.
@@ -348,11 +359,11 @@ type ExtraMapping struct {
 	//
 	// The path portion of the key (string of characters after the '/') must not be empty and must consist of at least one
 	// alphanumeric character, percent-encoded octets, '-', '.', '_', '~', '!', '$', '&', ''', '(', ')', '*', '+', ',', ';', '=', and ':'.
-	// It must not exceed 64 characters in length.
+	// It must not exceed 63 characters in length.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=318
+	// +kubebuilder:validation:MaxLength=317
 	// +kubebuilder:validation:XValidation:rule="self.contains('/')",message="key must contain the '/' character"
 	//
 	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self.split('/', 2)[0]).hasValue()",message="the domain of the key must consist of only lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
@@ -362,10 +373,9 @@ type ExtraMapping struct {
 	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.k8s.io')",message="the subdomains '*.k8s.io' are reserved for Kubernetes use"
 	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'openshift.io'",message="the domain 'openshift.io' is reserved for OpenShift use"
 	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.openshift.io')",message="the subdomains '*.openshift.io' are reserved for OpenShift use"
-	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0].size() < 253",message="the domain of the key must not exceed 253 characters in length"
 	//
 	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].matches('[A-Za-z0-9/\\\\-._~%!$&\\'()*+;=:]+')",message="the path of the key must not be empty and must consist of at least one alphanumeric character, percent-encoded octets, apostrophe, '-', '.', '_', '~', '!', '$', '&', '(', ')', '*', '+', ',', ';', '=', and ':'"
-	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].size() < 64",message="the path of the key must not exceed 64 characters in length"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].size() <= 63",message="the path of the key must not exceed 63 characters in length"
 	Key string `json:"key"`
 
 	// valueExpression is a required field to specify the CEL expression to extract
@@ -380,12 +390,12 @@ type ExtraMapping struct {
 	// For example, the 'sub' claim value can be accessed as 'claims.sub'.
 	// Nested claims can be accessed using dot notation ('claims.foo.bar').
 	//
-	// valueExpression must not exceed 1024 characters in length.
+	// valueExpression must not exceed 4096 characters in length.
 	// valueExpression must not be empty.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=1024
+	// +kubebuilder:validation:MaxLength=4096
 	ValueExpression string `json:"valueExpression"`
 }
 
