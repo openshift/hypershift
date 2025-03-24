@@ -3,6 +3,7 @@ package kas
 import (
 	"fmt"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -33,4 +34,8 @@ func AdaptAuditConfig(cpContext component.WorkloadContext, auditCfgMap *corev1.C
 	auditCfgMap.Data[AuditPolicyConfigMapKey] = string(policyBytes)
 	auditCfgMap.Data[AuditPolicyProfileMapKey] = string(auditConfig.Profile)
 	return nil
+}
+
+func auditEnabled(cpContext component.ControlPlaneContext) bool {
+	return cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile != configv1.NoneAuditProfileType
 }
