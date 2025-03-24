@@ -333,7 +333,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
 				fmt.Sprintf("--enable-ci-debug-output=%t", false),
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
-				"--feature-gates=AROHCPManagedIdentities=true,AllAlpha=true,AllBeta=true,DisableClusterCapabilities=true,OpenStack=true",
+				"--feature-gates=AROHCPManagedIdentities=true,AllAlpha=true,AllBeta=true,OpenStack=true",
 			},
 		},
 	}

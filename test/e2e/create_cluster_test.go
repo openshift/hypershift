@@ -58,6 +58,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "Unsupported value: \"OpenStack\"",
 					},
+					{
+						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+					},
 				},
 			},
 			{
@@ -1080,6 +1102,17 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch hc := o.(type) {
+		case *hyperv1.HostedCluster:
+			hc.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
+		}
+	}
+
 	// find kms key ARN using alias
 	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.configurableClusterOptions.AWSKmsKeyAlias)
 	if err != nil || kmsKeyArn == nil {
@@ -1097,6 +1130,8 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
+		// ensure image registry component is disabled
+		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
 

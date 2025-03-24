@@ -30,7 +30,7 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			caps := &hyperv1.Capabilities{
-				DisabledCapabilities: test.disabledCapabilities,
+				Disabled: test.disabledCapabilities,
 			}
 			enabled := IsImageRegistryCapabilityEnabled(caps)
 			if test.expectImageRegistryEnabled && !enabled {
@@ -98,7 +98,7 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			caps := &hyperv1.Capabilities{
-				DisabledCapabilities: test.disabledCapabilities,
+				Disabled: test.disabledCapabilities,
 			}
 			enabledCapabilities := CalculateEnabledCapabilities(caps)
 			if !reflect.DeepEqual(test.expectedCapabilities, enabledCapabilities) {

@@ -96,7 +96,6 @@ hostedclusters.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - AROHCPManagedIdentities
-  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - HCPPodsLabels
@@ -150,7 +149,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   Category: cluster-api
   FeatureGates:
   - AROHCPManagedIdentities
-  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - NetworkDiagnosticsConfig
