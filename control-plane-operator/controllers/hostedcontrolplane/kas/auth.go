@@ -12,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -197,18 +198,22 @@ func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (Claim
 	// Even though this is the case, we still perform a runtime validation to ensure we never
 	// attempt to create an invalid configuration.
 	// If neither claim or expression is specified, default the claim to "sub"
-    
+
 	switch {
-    case uid == nil:
-        out.Claim = "sub"
+	case uid == nil:
+		out.Claim = "sub"
 	case uid.Claim != "" && uid.Expression == "":
 		out.Claim = uid.Claim
 	case uid.Expression != "" && uid.Claim == "":
+		err := validateClaimMappingExpression(uid.Expression)
+		if err != nil {
+			return out, fmt.Errorf("validating CEL expression: %v", err)
+		}
 		out.Expression = uid.Expression
 	case uid.Claim != "" && uid.Expression != "":
 		return out, fmt.Errorf("uid mapping must set either claim or expression, not both: %v", uid)
-    default:
-        return out, fmt.Errorf("unable to handle uid mapping: %v", uid)
+	default:
+		return out, fmt.Errorf("unable to handle uid mapping: %v", uid)
 	}
 
 	return out, nil
@@ -239,6 +244,11 @@ func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
 	if extra.ValueExpression == "" {
 		return out, errors.New("extra mapping must specify a valueExpression, but none was provided")
 	}
+
+    err := validateExtraMappingExpression(extra.ValueExpression)
+    if err != nil {
+        return out, fmt.Errorf("validating valueExpression: %v", err)
+    }
 
 	out.Key = extra.Key
 	out.ValueExpression = extra.ValueExpression
@@ -280,4 +290,14 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 	}
 
 	return out, nil
+}
+
+func validateClaimMappingExpression(expression string) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ClaimMappingExpression{Expression: expression})
+	return err
+}
+
+func validateExtraMappingExpression(expression string) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ExtraMappingExpression{Expression: expression})
+	return err
 }

@@ -590,6 +590,28 @@ func TestReconcileAuthConfig(t *testing.T) {
 			},
 			shouldError: true,
 		},
+        {
+			name:   "authn spec provided, uid claim mapping specified, empty claim, non-empty but invalid expression provided, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								UID: &configv1.TokenClaimOrExpressionMapping{
+									Expression: "#@!$&*(^)",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
 			client: nil,
@@ -647,6 +669,31 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+		},
+        {
+			name:   "authn spec provided, extra claim mapping specified, non-empty key, invalid valueExpression, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Extra: []configv1.ExtraMapping{
+									{
+                                        Key: "example.com/foo",
+										ValueExpression: "#@!$&*(^)",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, empty key provided, error",
