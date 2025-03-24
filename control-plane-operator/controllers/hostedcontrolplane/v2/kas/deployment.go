@@ -55,6 +55,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount(auditConfigVolumeName, util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume(auditConfigVolumeName, &deployment.Spec.Template.Spec)
 	}
 
 	// With managed etcd, we should wait for the known etcd client service name to
