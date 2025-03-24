@@ -20,7 +20,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 		name                                string
 		client                              crclient.Client
 		expectedAuthenticationConfiguration *AuthenticationConfiguration
-		ownerRef                            hcpconfig.OwnerRef
 		kasParams                           KubeAPIServerConfigParams
 		shouldError                         bool
 	}
@@ -36,9 +35,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 				JWT: []JWTAuthenticator{},
 			},
-			ownerRef: hcpconfig.OwnerRef{
-				Reference: nil,
-			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: nil,
 			},
@@ -52,9 +48,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
-			},
-			ownerRef: hcpconfig.OwnerRef{
-				Reference: nil,
 			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
@@ -83,9 +76,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 				JWT: []JWTAuthenticator{},
 			},
-			ownerRef: hcpconfig.OwnerRef{
-				Reference: nil,
-			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
 					OIDCProviders: []configv1.OIDCProvider{
@@ -103,7 +93,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 			},
 			shouldError: true,
 		},
-		// TODO: break this into multiple tests
 		{
 			name:   "non-nil authentication spec provided, getting CA configmap succeeds, contains key 'ca-bundle.crt', no error, oidc providers are mapped appropriately",
 			client: fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: v1.ObjectMeta{Name: "test-provider-ca", Namespace: "test"}, Data: map[string]string{"ca-bundle.crt": "ca-bundle contents"}}).Build(),
@@ -115,7 +104,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				JWT: []JWTAuthenticator{
 					{
 						Issuer: Issuer{
-							URL:                  "test.com",
+							URL:                  "https://test.com",
 							CertificateAuthority: "ca-bundle contents",
 							Audiences: []string{
 								"one",
@@ -125,12 +114,610 @@ func TestReconcileAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: ClaimMappings{
 							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("test.com#"),
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+								CertificateAuthority: configv1.ConfigMapNameReference{
+									Name: "test-provider-ca",
+								},
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoPrefix, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
 								Claim:  "username",
 							},
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.NoPrefix,
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of Prefix, prefix provided, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("providedPrefix"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.Prefix,
+									Prefix: &configv1.UsernamePrefix{
+										PrefixString: "providedPrefix",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of Prefix, prefix not provided, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.Prefix,
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoOpinion, username claim is not email, no error, successful mapping with issuer URL as prefix",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+									PrefixPolicy: configv1.NoOpinion,
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoOpinion, username claim is email, no error, successful mapping with no username prefix",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "email",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "email",
+									},
+									PrefixPolicy: configv1.NoOpinion,
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, groups claim mapping specified, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To("groups-prefix"),
 								Claim:  "groups",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+					{
+						Issuer: Issuer{
+							URL:                 "https://testtwo.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://testtwo.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "groups",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Groups: configv1.PrefixedClaimMapping{
+									Prefix: "groups-prefix",
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "groups",
+									},
+								},
+							},
+						},
+						{
+							Name: "testtwo",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://testtwo.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Groups: configv1.PrefixedClaimMapping{
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "groups",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, uid claim mapping specified, non-empty claim provided, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "custom",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								UID: configv1.TokenClaimOrExpressionMapping{
+									Claim: "custom",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, uid claim mapping specified, non-empty expression provided, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Expression: "claims.foo",
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								UID: configv1.TokenClaimOrExpressionMapping{
+									Expression: "claims.foo",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, uid claim mapping specified, non-empty claim and expression provided, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								UID: configv1.TokenClaimOrExpressionMapping{
+									Claim:      "foo",
+									Expression: "claims.foo",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{
+								{
+									Key:             "example.com/foo",
+									ValueExpression: "claims.foo",
+								},
+							},
+						},
+					},
+				},
+			},
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Extra: []configv1.ExtraMapping{
+									{
+										Key:             "example.com/foo",
+										ValueExpression: "claims.foo",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, extra claim mapping specified, empty key provided, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Extra: []configv1.ExtraMapping{
+									{
+										ValueExpression: "claims.foo",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "authn spec provided, extra claim mapping specified, non-empty key and empty valueExpression provided, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Extra: []configv1.ExtraMapping{
+									{
+										Key: "example.com/foo",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim is set, no error, successful mapping",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: v1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
 							},
 							UID: ClaimOrExpression{
 								Claim: "sub",
@@ -143,33 +730,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 							},
 						},
 					},
-					{
-						Issuer: Issuer{
-							URL:                  "test-two.com",
-							CertificateAuthority: "ca-bundle contents",
-							Audiences: []string{
-								"three",
-							},
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
-						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("oidc-user:"),
-								Claim:  "username",
-							},
-							Groups: PrefixedClaimOrExpression{
-								Prefix: ptr.To("oidc-group:"),
-								Claim:  "groups",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
-							},
-						},
-					},
 				},
-			},
-			ownerRef: hcpconfig.OwnerRef{
-				Reference: nil,
 			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
@@ -177,28 +738,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 						{
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
-								URL: "test.com",
-								CertificateAuthority: configv1.ConfigMapNameReference{
-									Name: "test-provider-ca",
-								},
-								Audiences: []configv1.TokenAudience{
-									"one",
-									"two",
-								},
-							},
-							ClaimMappings: configv1.TokenClaimMappings{
-								Username: configv1.UsernameClaimMapping{
-									TokenClaimMapping: configv1.TokenClaimMapping{
-										Claim: "username",
-									},
-									PrefixPolicy: configv1.NoOpinion,
-								},
-								Groups: configv1.PrefixedClaimMapping{
-									TokenClaimMapping: configv1.TokenClaimMapping{
-										Claim: "groups",
-									},
-									Prefix: "",
-								},
+								URL: "https://test.com",
 							},
 							ClaimValidationRules: []configv1.TokenClaimValidationRule{
 								{
@@ -210,39 +750,54 @@ func TestReconcileAuthConfig(t *testing.T) {
 								},
 							},
 						},
-						{
-							Name: "test-two",
-							Issuer: configv1.TokenIssuer{
-								URL: "test-two.com",
-								CertificateAuthority: configv1.ConfigMapNameReference{
-									Name: "test-provider-ca",
-								},
-								Audiences: []configv1.TokenAudience{
-									"three",
-								},
-							},
-							ClaimMappings: configv1.TokenClaimMappings{
-								Username: configv1.UsernameClaimMapping{
-									TokenClaimMapping: configv1.TokenClaimMapping{
-										Claim: "username",
-									},
-									PrefixPolicy: configv1.Prefix,
-									Prefix: &configv1.UsernamePrefix{
-										PrefixString: "oidc-user:",
-									},
-								},
-								Groups: configv1.PrefixedClaimMapping{
-									TokenClaimMapping: configv1.TokenClaimMapping{
-										Claim: "groups",
-									},
-									Prefix: "oidc-group:",
-								},
-							},
-						},
 					},
 				},
 			},
 			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim not set, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+                            ClaimValidationRules: []configv1.TokenClaimValidationRule{
+                                {
+                                    Type: configv1.TokenValidationRuleTypeRequiredClaim,
+                                },
+                            },
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+        {
+			name:   "authn spec provided, claim validation rules specified, type set to invalid value, error",
+			client: nil,
+			kasParams: KubeAPIServerConfigParams{
+				Authentication: &configv1.AuthenticationSpec{
+					OIDCProviders: []configv1.OIDCProvider{
+						{
+							Name: "test",
+							Issuer: configv1.TokenIssuer{
+								URL: "https://test.com",
+							},
+                            ClaimValidationRules: []configv1.TokenClaimValidationRule{
+                                {
+                                    Type: "Invalid",
+                                },
+                            },
+						},
+					},
+				},
+			},
+			shouldError: true,
 		},
 	}
 
@@ -253,8 +808,13 @@ func TestReconcileAuthConfig(t *testing.T) {
 					Namespace: "test",
 				},
 			}
+
+			ownerRef := hcpconfig.OwnerRef{
+				Reference: nil,
+			}
+
 			ctx := context.TODO()
-			err := ReconcileAuthConfig(ctx, tc.client, cm, tc.ownerRef, tc.kasParams)
+			err := ReconcileAuthConfig(ctx, tc.client, cm, ownerRef, tc.kasParams)
 
 			if tc.shouldError && err == nil {
 				t.Fatal("expected an error to have occurred but got none")
