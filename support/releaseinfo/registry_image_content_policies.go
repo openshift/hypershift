@@ -2,9 +2,12 @@ package releaseinfo
 
 import (
 	"context"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"strings"
 	"sync"
+
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var _ ProviderWithOpenShiftImageRegistryOverrides = (*ProviderWithOpenShiftImageRegistryOverridesDecorator)(nil)
@@ -31,8 +34,13 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 				// Attempt to lookup image with mirror registry destination
 				releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
 				if releaseImage != nil {
-					p.mirroredReleaseImage = image
-					return releaseImage, nil
+					// Verify mirror image availability.
+					if _, _, err = registryclient.GetRepoSetup(ctx, image, pullSecret); err == nil {
+						p.mirroredReleaseImage = image
+						return releaseImage, nil
+					}
+					logger.Info("WARNING: The current mirrors image is unavailable, continue Scanning multiple mirrors", "error", err.Error(), "mirror image", image)
+					continue
 				}
 
 				logger.Error(err, "Failed to look up release image using registry mirror", "registry mirror", registryReplacement)
