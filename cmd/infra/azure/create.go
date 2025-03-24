@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -826,37 +827,38 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
 	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
 
-	role := "b24988ac-6180-42a0-ab88-20f7382dd24c"
+	// Default to the Contributor role
+	role := config.ContributorRoleDefinitionID
 
 	scopes := []string{managedRG}
 
 	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
 	switch component {
 	case cloudProvider:
-		role = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
+		role = config.CloudProviderRoleDefinitionID
 		scopes = append(scopes, nsgRG, vnetRG)
 	case ingress:
-		role = "0336e1d3-7a87-462b-b6db-342b63f7802c"
+		role = config.IngressRoleDefinitionID
 		scopes = append(scopes, vnetRG, dnsZoneRG)
 	case cpo:
 		scopes = append(scopes, nsgRG, vnetRG)
 		if assignCustomHCPRoles {
-			role = "7d8bb4e4-6fa7-4545-96cf-20fce11b705d"
+			role = config.CPOCustomRoleDefinitionID
 		}
 	case azureFile:
-		role = "0d7aedc0-15fd-4a67-a412-efad370c947e"
+		role = config.AzureFileRoleDefinitionID
 		scopes = append(scopes, nsgRG, vnetRG)
 	case azureDisk:
-		role = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
+		role = config.AzureDiskRoleDefinitionID
 	case cncc:
-		role = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
+		role = config.NetworkRoleDefinitionID
 		scopes = append(scopes, vnetRG)
 	case ciro:
-		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
+		role = config.ImageRegistryRoleDefinitionID
 	case nodePoolMgmt:
 		scopes = append(scopes, vnetRG)
 		if assignCustomHCPRoles {
-			role = "Azure Red Hat OpenShift NodePool Management Role"
+			role = config.CAPZCustomRoleDefinitionID
 		}
 	}
 
