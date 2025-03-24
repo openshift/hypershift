@@ -3002,9 +3002,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3063,9 +3062,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3123,9 +3121,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3183,9 +3180,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3243,9 +3239,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3303,9 +3298,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3385,9 +3379,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3446,9 +3439,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4201,9 +4193,8 @@ spec:
                                 type: string
                               clientID:
                                 description: |-
-                                  clientID is the client ID of a managed identity.
-                                  Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                  removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                  clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                  mainly used for CI purposes.
                                 type: string
                                 x-kubernetes-validations:
                                 - message: the client ID of a managed identity must

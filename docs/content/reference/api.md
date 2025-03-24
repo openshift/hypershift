@@ -8143,9 +8143,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>clientID is the client ID of a managed identity.
-Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
+<p>clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+mainly used for CI purposes.</p>
 </td>
 </tr>
 <tr>
