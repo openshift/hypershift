@@ -233,3 +233,46 @@ func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretP
 		},
 	}
 }
+
+func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component string, assignCustomHCPRoles bool) (string, []string) {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
+
+	// Default to the Contributor role
+	role := config.ContributorRoleDefinitionID
+
+	scopes := []string{managedRG}
+
+	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
+	switch component {
+	case config.CloudProvider:
+		role = config.CloudProviderRoleDefinitionID
+		scopes = append(scopes, nsgRG, vnetRG)
+	case config.Ingress:
+		role = config.IngressRoleDefinitionID
+		scopes = append(scopes, vnetRG, dnsZoneRG)
+	case config.CPO:
+		scopes = append(scopes, nsgRG, vnetRG)
+		if assignCustomHCPRoles {
+			role = config.CPOCustomRoleDefinitionID
+		}
+	case config.AzureFile:
+		role = config.AzureFileRoleDefinitionID
+		scopes = append(scopes, nsgRG, vnetRG)
+	case config.AzureDisk:
+		role = config.AzureDiskRoleDefinitionID
+	case config.CNCC:
+		role = config.NetworkRoleDefinitionID
+	case config.CIRO:
+		role = config.ImageRegistryRoleDefinitionID
+	case config.NodePoolMgmt:
+		scopes = append(scopes, vnetRG)
+		if assignCustomHCPRoles {
+			role = config.CAPZCustomRoleDefinitionID
+		}
+	}
+
+	return role, scopes
+}

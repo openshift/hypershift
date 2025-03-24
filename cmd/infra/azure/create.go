@@ -16,6 +16,8 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
@@ -233,15 +235,21 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			config.CNCC:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
 		}
 
+		// Perform role assignments over each component's service principal
 		if o.AssignServicePrincipalRoles {
 			for component, clientID := range components {
 				objectID, err := findObjectId(clientID)
 				if err != nil {
 					return nil, err
 				}
-				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.AssignCustomHCPRoles)
-				if err != nil {
-					return nil, err
+
+				role, scopes := azureutil.GetServicePrincipalScopes(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, o.AssignCustomHCPRoles)
+
+				// For each resource group (aka scope), assign the role to the service principal
+				for _, scope := range scopes {
+					if err := assignRole(ctx, subscriptionID, o.InfraID, component, objectID, role, scope, azureCreds); err != nil {
+						return nil, fmt.Errorf("failed to perform role assignment: %w", err)
+					}
 				}
 			}
 		}
@@ -264,7 +272,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			if err != nil {
 				return nil, err
 			}
-			err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.CIRO+"WI", objectID, config.ImageRegistryRoleDefinitionID, managedRG, azureCreds)
 			if err != nil {
 				return nil, err
 			}
@@ -273,7 +281,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			if err != nil {
 				return nil, err
 			}
-			err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.AzureDisk+"WI", objectID, config.AzureDiskRoleDefinitionID, managedRG, azureCreds)
 			if err != nil {
 				return nil, err
 			}
@@ -282,7 +290,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			if err != nil {
 				return nil, err
 			}
-			err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.AzureFile+"WI", objectID, config.AzureFileRoleDefinitionID, managedRG, azureCreds)
 			if err != nil {
 				return nil, err
 			}
@@ -811,67 +819,39 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 	return nil
 }
 
-// assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
-func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, assignCustomHCPRoles bool) error {
-	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
-	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
-	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
-	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
-
-	// Default to the Contributor role
-	role := config.ContributorRoleDefinitionID
-
-	scopes := []string{managedRG}
-
-	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
-	switch component {
-	case config.CloudProvider:
-		role = config.CloudProviderRoleDefinitionID
-		scopes = append(scopes, nsgRG, vnetRG)
-	case config.Ingress:
-		role = config.IngressRoleDefinitionID
-		scopes = append(scopes, vnetRG, dnsZoneRG)
-	case config.CPO:
-		scopes = append(scopes, nsgRG, vnetRG)
-		if assignCustomHCPRoles {
-			role = config.CPOCustomRoleDefinitionID
-		}
-	case config.AzureFile:
-		role = config.AzureFileRoleDefinitionID
-		scopes = append(scopes, nsgRG, vnetRG)
-	case config.AzureDisk:
-		role = config.AzureDiskRoleDefinitionID
-	case config.CNCC:
-		role = config.NetworkRoleDefinitionID
-		scopes = append(scopes, vnetRG)
-	case config.CIRO:
-		role = config.ImageRegistryRoleDefinitionID
-	case config.NodePoolMgmt:
-		scopes = append(scopes, vnetRG)
-		if assignCustomHCPRoles {
-			role = config.CAPZCustomRoleDefinitionID
-		}
-	}
-
-	// Assign contributor role to service principal
-	for _, scope := range scopes {
-		if err := assignRole(assigneeID, role, scope); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-// assignRole assigns the role to the service principal
-func assignRole(assigneeID, role, scope string) error {
-	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
-	log.Log.Info("Role assignment command", "command", cmdStr)
-	output, err := execAzCommand(cmdStr)
+// assignRole assigns a scoped role to the service principal assignee
+func assignRole(ctx context.Context, subscriptionID, infraID, component, assigneeID, role, scope string, azureCreds *azidentity.DefaultAzureCredential) error {
+	roleAssignmentClient, err := azureauth.NewRoleAssignmentsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w output: %s", role, assigneeID, scope, err, string(output))
+		return fmt.Errorf("failed to create new role assignments client: %w", err)
 	}
-	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
+
+	// Generate the role assignment name
+	roleAssignmentName := util.GenerateRoleAssignmentName(infraID, component, scope)
+
+	// Generate the role definition ID
+	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", subscriptionID, role)
+
+	// Generate the role assignment properties
+	roleAssignmentProperties := azureauth.RoleAssignmentCreateParameters{
+		Properties: &azureauth.RoleAssignmentProperties{
+			PrincipalID:      ptr.To(assigneeID),
+			RoleDefinitionID: ptr.To(roleDefinitionID),
+			Scope:            ptr.To(scope),
+		},
+	}
+
+	// Create the role assignment
+	_, err = roleAssignmentClient.Create(ctx, scope, roleAssignmentName, roleAssignmentProperties, nil)
+	if err != nil {
+		// Azure will return an error if the role assignment already exists, but we can ignore it since the role
+		// assignment already exists.
+		if !strings.Contains(err.Error(), "The role assignment already exists") {
+			return fmt.Errorf("failed to create role assignment: %w", err)
+		}
+		log.Log.Info("WARNING: Role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+	}
+	log.Log.Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
 	return nil
 }
 
