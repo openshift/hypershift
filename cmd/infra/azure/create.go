@@ -41,15 +41,6 @@ const (
 	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
-
-	azureDisk     = "azure-disk"
-	azureFile     = "azure-file"
-	ciro          = "ciro"
-	cloudProvider = "cloud-provider"
-	cncc          = "cncc"
-	cpo           = "cpo"
-	ingress       = "ingress"
-	nodePoolMgmt  = "capz"
 )
 
 type CreateInfraOptions struct {
@@ -232,14 +223,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		components := map[string]string{
-			cpo:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
-			ciro:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
-			nodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
-			cloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
-			azureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
-			azureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
-			ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
-			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+			config.CPO:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
+			config.CIRO:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
+			config.NodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
+			config.CloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
+			config.AzureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
+			config.AzureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
+			config.Ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
+			config.CNCC:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
 		}
 
 		if o.AssignServicePrincipalRoles {
@@ -834,28 +825,28 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 
 	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
 	switch component {
-	case cloudProvider:
+	case config.CloudProvider:
 		role = config.CloudProviderRoleDefinitionID
 		scopes = append(scopes, nsgRG, vnetRG)
-	case ingress:
+	case config.Ingress:
 		role = config.IngressRoleDefinitionID
 		scopes = append(scopes, vnetRG, dnsZoneRG)
-	case cpo:
+	case config.CPO:
 		scopes = append(scopes, nsgRG, vnetRG)
 		if assignCustomHCPRoles {
 			role = config.CPOCustomRoleDefinitionID
 		}
-	case azureFile:
+	case config.AzureFile:
 		role = config.AzureFileRoleDefinitionID
 		scopes = append(scopes, nsgRG, vnetRG)
-	case azureDisk:
+	case config.AzureDisk:
 		role = config.AzureDiskRoleDefinitionID
-	case cncc:
+	case config.CNCC:
 		role = config.NetworkRoleDefinitionID
 		scopes = append(scopes, vnetRG)
-	case ciro:
+	case config.CIRO:
 		role = config.ImageRegistryRoleDefinitionID
-	case nodePoolMgmt:
+	case config.NodePoolMgmt:
 		scopes = append(scopes, vnetRG)
 		if assignCustomHCPRoles {
 			role = config.CAPZCustomRoleDefinitionID

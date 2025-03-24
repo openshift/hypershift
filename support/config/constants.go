@@ -98,6 +98,16 @@ const (
 	NetworkRoleDefinitionID       = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
 	ImageRegistryRoleDefinitionID = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	CAPZCustomRoleDefinitionID    = "Azure Red Hat OpenShift NodePool Management Role"
+
+	// Azure Components with Control Plane Managed Identities
+	AzureDisk     = "azure-disk"
+	AzureFile     = "azure-file"
+	CIRO          = "ciro"
+	CloudProvider = "cloud-provider"
+	CNCC          = "cncc"
+	CPO           = "cpo"
+	Ingress       = "ingress"
+	NodePoolMgmt  = "capz"
 )
 
 var (
