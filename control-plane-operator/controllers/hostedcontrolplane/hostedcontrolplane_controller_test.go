@@ -1666,7 +1666,6 @@ func TestControlPlaneComponents(t *testing.T) {
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
-		CreateOrUpdateProviderV2: upsert.NewV2(false),
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
@@ -1685,6 +1684,8 @@ func TestControlPlaneComponents(t *testing.T) {
 	}
 	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
+		// This needs to be defined here, to avoid loopDetector reporting a no-op update, as changing the featureset will actually cause an update.
+		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
 			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
@@ -1697,8 +1698,9 @@ func TestControlPlaneComponents(t *testing.T) {
 				Build()
 			cpContext.Client = fakeClient
 
-			// Reconcile multiple times to make sure multiple runs don't produce different results.
-			for i := 0; i < 2; i++ {
+			// Reconcile multiple times to make sure multiple runs don't produce different results,
+			// and to check if resrouces are making a no-op update calls.
+			for range 2 {
 				if err := component.Reconcile(cpContext); err != nil {
 					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
 				}
@@ -1767,7 +1769,12 @@ func TestControlPlaneComponents(t *testing.T) {
 			}
 			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 		}
+
+		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+			t.Fatalf("update loop detected: %v", err)
+		}
 	}
+
 }
 
 func componentsFakeObjects(namespace string) ([]client.Object, error) {

@@ -84,7 +84,7 @@ func TestReconcile(t *testing.T) {
 
 			cpContext := ControlPlaneContext{
 				Context:                  context.Background(),
-				CreateOrUpdateProviderV2: upsert.NewV2(false),
+				ApplyProvider:            upsert.NewApplyProvider(false),
 				ReleaseImageProvider:     testutil.FakeImageProvider(),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
 				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{

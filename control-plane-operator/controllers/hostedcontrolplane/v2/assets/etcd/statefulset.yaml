@@ -293,9 +293,7 @@ spec:
       partition: 0
     type: RollingUpdate
   volumeClaimTemplates:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
+  - metadata:
       name: data
     spec:
       accessModes:
