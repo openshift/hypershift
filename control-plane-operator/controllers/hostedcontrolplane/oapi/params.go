@@ -45,6 +45,7 @@ type OAuthDeploymentParams struct {
 	ServiceAccountIssuerURL      string
 	DeploymentConfig             config.DeploymentConfig
 	AvailabilityProberImage      string
+	KonnectivityProxyImage       string
 	Availability                 hyperv1.AvailabilityPolicy
 	OwnerRef                     config.OwnerRef
 	AuditWebhookRef              *corev1.LocalObjectReference
@@ -221,6 +222,7 @@ func (p *OpenShiftAPIServerParams) AuditPolicyConfig() configv1.Audit {
 func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.HostedControlPlane) *OAuthDeploymentParams {
 	params := &OAuthDeploymentParams{
 		Image:                   p.OAuthAPIServerImage,
+		KonnectivityProxyImage:  p.ProxyImage,
 		EtcdURL:                 p.EtcdURL,
 		ServiceAccountIssuerURL: p.ServiceAccountIssuerURL,
 		DeploymentConfig:        p.OpenShiftOAuthAPIServerDeploymentConfig,

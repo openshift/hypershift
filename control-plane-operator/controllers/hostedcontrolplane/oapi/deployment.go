@@ -2,7 +2,6 @@ package oapi
 
 import (
 	"fmt"
-	"net/url"
 	"path"
 	"strings"
 
@@ -139,9 +138,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
-	etcdUrlData, err := url.Parse(etcdURL)
+	etcdHost, err := util.HostFromURL(etcdURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse etcd url: %w", err)
+		return err
 	}
 	if deployment.Spec.Template.Annotations == nil {
 		deployment.Spec.Template.Annotations = map[string]string{}
@@ -152,7 +151,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deployment.Spec.Template.Spec.InitContainers = []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))}
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
+		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdHost, defaultOAPIPort, internalOAuthDisable)),
 		util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage, proxyConfig, noProxy)),
 	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
