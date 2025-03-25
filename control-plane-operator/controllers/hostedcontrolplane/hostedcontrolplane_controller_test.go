@@ -1633,6 +1633,14 @@ func TestControlPlaneComponents(t *testing.T) {
 			Configuration: &hyperv1.ClusterConfiguration{
 				FeatureGate: &configv1.FeatureGateSpec{},
 			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
 					{
