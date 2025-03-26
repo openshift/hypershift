@@ -69,6 +69,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+	nodelib "github.com/openshift/library-go/pkg/apiserver/node"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -94,6 +95,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
@@ -112,6 +114,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/blang/semver"
+	semverv4 "github.com/blang/semver/v4"
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -203,6 +206,8 @@ type HostedClusterReconciler struct {
 	EnableCVOManagementClusterMetricsAccess bool
 
 	EnableEtcdRecovery bool
+
+	FeatureGates map[featuregate.Feature]featuregate.FeatureSpec
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -769,9 +774,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
+		// Copy the platform status from the hostedcontrolplane
 		hcluster.Status.Platform = hcp.Status.Platform
+
+		// Copy the oldestKubeletVersion status from the hostedcontrolplane
+		hcluster.Status.OldestKubeletVersion = hcp.Status.OldestKubeletVersion
 	}
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
@@ -4285,6 +4293,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
+	if err := r.validateMinimumKubeletVersion(ctx, hc); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -4326,6 +4338,30 @@ func (r *HostedClusterReconciler) validateUserCAConfigMaps(ctx context.Context, 
 	}
 
 	return errs
+}
+
+// validateMinimumKubeletVersion
+func (r *HostedClusterReconciler) validateMinimumKubeletVersion(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	if hcluster.Spec.Configuration == nil || hcluster.Spec.Configuration.Node == nil {
+		return nil
+	}
+	specifiedMinVersion := hcluster.Spec.Configuration.Node.MinimumKubeletVersion
+	if specifiedMinVersion == "" {
+		return nil
+	}
+	v, err := semverv4.Parse(specifiedMinVersion)
+	if err != nil {
+		return fmt.Errorf("invalid minimumKubeletVersion: %s %v", specifiedMinVersion, err)
+	}
+
+	if hcluster.Status.OldestKubeletVersion == nil || *hcluster.Status.OldestKubeletVersion == "" {
+		// No Kubelets are running in the cluster yet, this is safe?
+		return nil
+	}
+	if err := nodelib.IsKubeletVersionTooOld(*hcluster.Status.OldestKubeletVersion, &v); err != nil {
+		return fmt.Errorf("validating failed for %s: %v", specifiedMinVersion, err)
+	}
+	return nil
 }
 
 func (r *HostedClusterReconciler) validateReleaseImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
