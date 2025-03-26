@@ -268,3 +268,11 @@ replace (
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/common => github.com/prometheus/common v0.45.0
 )
+
+// CVE-2025-22868
+// This is from tag v0.26.openshift.1
+replace golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
+
+// CVE-2025-22869
+// This is from tag v0.33.openshift.1
+replace golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
