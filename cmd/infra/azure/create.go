@@ -850,6 +850,7 @@ func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgRe
 		role = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
 	case cncc:
 		role = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
+		scopes = append(scopes, vnetRG)
 	case ciro:
 		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	case nodePoolMgmt:
