@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -160,6 +161,8 @@ const (
 
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
+
+	azureCredentials = "AzureCredentials"
 )
 
 var (
@@ -194,6 +197,7 @@ type HostedControlPlaneReconciler struct {
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
 	ImageMetadataProvider                   util.ImageMetadataProvider
+	azureCredentialsLoaded                  sync.Map
 
 	IsCPOV2 bool
 }
@@ -901,7 +905,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 	}
 
 	if hyperazureutil.IsAroHCP() {
-		if err := verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
+		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
 	}
@@ -5607,11 +5611,32 @@ func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c cli
 }
 
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
-func verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
-	creds, err := dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
-	if err != nil {
-		return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	var (
+		creds     azcore.TokenCredential
+		found, ok bool
+		err       error
+	)
+
+	key := hcp.Namespace + azureCredentials
+	log := ctrl.LoggerFrom(ctx)
+
+	// We need to only store the Azure credentials once and reuse them after that.
+	storedCreds, found := r.azureCredentialsLoaded.Load(key)
+	if !found {
+		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
+		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
+		if err != nil {
+			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+		}
+
+		r.azureCredentialsLoaded.Store(key, creds)
+		log.Info("Storing new UserAssignedManagedIdentity credentials to authenticate to Azure")
+	} else {
+		creds, ok = storedCreds.(azcore.TokenCredential)
+		if !ok {
+			return fmt.Errorf("expected %T to be a TokenCredential", storedCreds)
+		}
 	}
 
 	// Retrieve full vnet information from the VNET ID
