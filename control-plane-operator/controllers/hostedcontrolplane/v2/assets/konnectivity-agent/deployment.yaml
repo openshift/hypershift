@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: konnectivity-agent
+spec:
+  selector:
+    matchLabels:
+      app: konnectivity-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: konnectivity-agent
+    spec:
+      containers:
+      - args:
+        - --logtostderr=true
+        - --ca-cert
+        - /etc/konnectivity/ca/ca.crt
+        - --agent-cert
+        - /etc/konnectivity/agent/tls.crt
+        - --agent-key
+        - /etc/konnectivity/agent/tls.key
+        - --proxy-server-host
+        - konnectivity-server
+        - --proxy-server-port
+        - "8091"
+        - --health-server-port
+        - "2041"
+        - --keepalive-time
+        - 30s
+        - --probe-interval
+        - 5s
+        - --sync-interval
+        - 5s
+        - --sync-interval-cap
+        - 30s
+        - --v
+        - "3"
+        command:
+        - /usr/bin/proxy-agent
+        image: apiserver-network-proxy
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: konnectivity-agent
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: readyz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 40m
+            memory: 50Mi
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        volumeMounts:
+        - mountPath: /etc/konnectivity/agent
+          name: agent-certs
+        - mountPath: /etc/konnectivity/ca
+          name: konnectivity-ca
+      volumes:
+      - name: agent-certs
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-agent
+      - configMap:
+          defaultMode: 420
+          name: konnectivity-ca-bundle
+        name: konnectivity-ca

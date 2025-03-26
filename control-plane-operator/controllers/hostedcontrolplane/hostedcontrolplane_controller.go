@@ -71,6 +71,7 @@ import (
 	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
+	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
 	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
@@ -264,6 +265,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		ingressoperatorv2.NewComponent(),
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
+		konnectivityv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
@@ -1004,6 +1006,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) error {
+	if err := r.cleanupOldKonnectivityServerDeployment(ctx, hcp); err != nil {
+		return err
+	}
+
 	cpContext := component.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1219,10 +1225,12 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		r.Log.Info("Skipping ignition server reconciliation as specified")
 	}
 
-	// Reconcile Konnectivity
-	r.Log.Info("Reconciling Konnectivity")
-	if err := r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImageProvider, infraStatus, createOrUpdate); err != nil {
-		return fmt.Errorf("failed to reconcile konnectivity: %w", err)
+	if !r.IsCPOV2 {
+		// Reconcile Konnectivity
+		r.Log.Info("Reconciling Konnectivity")
+		if err := r.reconcileKonnectivity(ctx, hostedControlPlane, releaseImageProvider, infraStatus, createOrUpdate); err != nil {
+			return fmt.Errorf("failed to reconcile konnectivity: %w", err)
+		}
 	}
 
 	if util.HCPOAuthEnabled(hostedControlPlane) {
@@ -2911,12 +2919,11 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, infraStatus infra.InfrastructureStatus, createOrUpdate upsert.CreateOrUpdateFN) error {
 	r.Log.Info("Reconciling Konnectivity")
-	p := konnectivity.NewKonnectivityParams(hcp, releaseImageProvider, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, r.SetDefaultSecurityContext)
-	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
-	// Remove the konnectivity-server deployment if it exists
-	if _, err := util.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
-		return fmt.Errorf("failed to remove konnectivity-server deployment: %w", err)
+	if err := r.cleanupOldKonnectivityServerDeployment(ctx, hcp); err != nil {
+		return err
 	}
+
+	p := konnectivity.NewKonnectivityParams(hcp, releaseImageProvider, infraStatus.KonnectivityHost, infraStatus.KonnectivityPort, r.SetDefaultSecurityContext)
 	serverLocalService := manifests.KonnectivityServerLocalService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, serverLocalService, func() error {
 		return kas.ReconcileKonnectivityServerLocalService(serverLocalService, p.OwnerRef)
@@ -2935,6 +2942,15 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivity(ctx context.Context
 		return konnectivity.ReconcileAgentDeployment(agentDeployment, p.OwnerRef, p.AgentDeploymentConfig, p.KonnectivityAgentImage, ips)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile konnectivity agent deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	serverDeployment := manifests.KonnectivityServerDeployment(hcp.Namespace)
+	// Remove the konnectivity-server deployment if it exists
+	if _, err := util.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
+		return fmt.Errorf("failed to remove konnectivity-server deployment: %w", err)
 	}
 	return nil
 }

@@ -50,6 +50,9 @@ status:
     kind: ConfigMap
     name: kas-config
   - group: ""
+    kind: Service
+    name: konnectivity-server-local
+  - group: ""
     kind: Secret
     name: localhost-kubeconfig
   - group: ""
