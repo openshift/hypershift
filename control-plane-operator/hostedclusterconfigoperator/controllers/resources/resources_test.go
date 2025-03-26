@@ -960,7 +960,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 		Spec: hyperv1.HostedControlPlaneSpec{
 			ClusterID: "test-cluster-id",
 			Capabilities: &hyperv1.Capabilities{
-				DisabledCapabilities: []hyperv1.OptionalCapability{
+				Disabled: []hyperv1.OptionalCapability{
 					hyperv1.ImageRegistryCapability,
 				},
 			},
