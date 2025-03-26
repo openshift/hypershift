@@ -1010,6 +1010,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRole},
 			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding},
+
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRole, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.CloudNetworkConfigControllerServiceAccountRoleBinding, reconcile: rbac.ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding},
 		)
 	}
 
