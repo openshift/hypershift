@@ -4729,6 +4729,11 @@ spec:
           status:
             description: Status is the latest observed status of the HostedCluster.
             properties:
+              availableUpdateVersions:
+                description: |-
+                  AvailableUpdateVersions contains a comma separated list of available update versions, generated from
+                  the Version.AvailableUpdates list.
+                type: string
               conditions:
                 description: |-
                   Conditions represents the latest available observations of a control

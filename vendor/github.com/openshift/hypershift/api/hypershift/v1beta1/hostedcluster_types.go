@@ -1516,6 +1516,11 @@ type HostedClusterStatus struct {
 	// Platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// AvailableUpdateVersions contains a comma separated list of available update versions, generated from
+	// the Version.AvailableUpdates list.
+	// +kubebuilder:validation:Optional
+	AvailableUpdateVersions string `json:"availableUpdateVersions,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status

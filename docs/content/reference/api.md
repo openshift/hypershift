@@ -5702,6 +5702,18 @@ PlatformStatus
 <p>Platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>availableUpdateVersions</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>AvailableUpdateVersions contains a comma separated list of available update versions, generated from
+the Version.AvailableUpdates list.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }

@@ -633,6 +633,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set version status
 	hcluster.Status.Version = computeClusterVersionStatus(r.Clock, hcluster, hcp)
+	hcluster.Status.AvailableUpdateVersions = compileUpdateVersions(hcluster.Status.Version)
 
 	// Copy the CVO conditions from the HCP.
 	hcpCVOConditions := map[hyperv1.ConditionType]*metav1.Condition{
@@ -652,17 +653,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ClusterVersionUpgradeable:      meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionUpgradeable)),
 			hyperv1.ClusterVersionAvailable:        meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ClusterVersionAvailable)),
 		}
-	}
-
-	{
-		updatesCondition := &metav1.Condition{
-			Type:               "ClusterVersionAvailableUpdateVersions",
-			Status:             metav1.ConditionTrue,
-			Reason:             hyperv1.AsExpectedReason,
-			Message:            compileUpdateVersions(hcluster.Status.Version),
-			ObservedGeneration: hcluster.Generation,
-		}
-		meta.SetStatusCondition(&hcluster.Status.Conditions, *updatesCondition)
 	}
 
 	for conditionType := range hcpCVOConditions {
