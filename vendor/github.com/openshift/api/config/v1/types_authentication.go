@@ -299,15 +299,14 @@ type TokenClaimMapping struct {
 // TokenClaimOrExpressionMapping allows specifying either a JWT
 // token claim or CEL expression to be used when mapping claims
 // from an authentication token to cluster identities.
-// +kubebuilder:validation:XValidation:rule="!(has(self.claim) && has(self.expression))",message="both claim and expression must not be set"
-// +kubebuilder:validation:XValidation:rule="has(self.claim) || has(self.expression)",message="either claim or expression must be set"
+// +kubebuilder:validation:XValidation:rule="has(self.claim) ? !has(self.expression) : has(self.expression)",message="precisely one of claim or expression must be set"
 type TokenClaimOrExpressionMapping struct {
 	// claim is an optional field for specifying the
 	// JWT token claim that is used in the mapping.
 	// The value of this claim will be assigned to
 	// the field in which this mapping is associated.
 	//
-	// Either claim or expression must be set.
+	// Precisely one of claim or expression must be set.
 	// claim must not be specified when expression is set.
 	// When specified, claim must be at least 1 character in length
 	// and must not exceed 256 characters in length.
@@ -327,7 +326,7 @@ type TokenClaimOrExpressionMapping struct {
 	// For example, the 'sub' claim value can be accessed as 'claims.sub'.
 	// Nested claims can be accessed using dot notation ('claims.foo.bar').
 	//
-	// Either claim or expression must be set.
+	// Precisely one of claim or expression must be set.
 	// expression must not be specified when claim is set.
 	// When specified, expression must be at least 1 character in length
 	// and must not exceed 4096 characters in length.
@@ -347,7 +346,7 @@ type ExtraMapping struct {
 	// to use as the extra attribute key.
 	//
 	// key must be a domain-prefix path (e.g 'example.org/foo').
-	// key must not exceed 318 characters in length.
+	// key must not exceed 510 characters in length.
 	// key must contain the '/' character, separating the domain and path characters.
 	// key must not be empty.
 	//
@@ -359,14 +358,16 @@ type ExtraMapping struct {
 	//
 	// The path portion of the key (string of characters after the '/') must not be empty and must consist of at least one
 	// alphanumeric character, percent-encoded octets, '-', '.', '_', '~', '!', '$', '&', ''', '(', ')', '*', '+', ',', ';', '=', and ':'.
-	// It must not exceed 63 characters in length.
+	// It must not exceed 256 characters in length.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=317
+	// +kubebuilder:validation:MaxLength=510
 	// +kubebuilder:validation:XValidation:rule="self.contains('/')",message="key must contain the '/' character"
 	//
-	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self.split('/', 2)[0]).hasValue()",message="the domain of the key must consist of only lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
+    // +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0].matches(\"^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$\")",message="the domain of the key must consist of only lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character"
+    // +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0].size() <= 253",message="the domain of the key must not exceed 253 characters in length"
+    //
 	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'kubernetes.io'",message="the domain 'kubernetes.io' is reserved for Kubernetes use"
 	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.kubernetes.io')",message="the subdomains '*.kubernetes.io' are reserved for Kubernetes use"
 	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[0] != 'k8s.io'",message="the domain 'k8s.io' is reserved for Kubernetes use"
@@ -375,7 +376,7 @@ type ExtraMapping struct {
 	// +kubebuilder:validation:XValidation:rule="!self.split('/', 2)[0].endsWith('.openshift.io')",message="the subdomains '*.openshift.io' are reserved for OpenShift use"
 	//
 	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].matches('[A-Za-z0-9/\\\\-._~%!$&\\'()*+;=:]+')",message="the path of the key must not be empty and must consist of at least one alphanumeric character, percent-encoded octets, apostrophe, '-', '.', '_', '~', '!', '$', '&', '(', ')', '*', '+', ',', ';', '=', and ':'"
-	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].size() <= 63",message="the path of the key must not exceed 63 characters in length"
+	// +kubebuilder:validation:XValidation:rule="self.split('/', 2)[1].size() <= 256",message="the path of the key must not exceed 256 characters in length"
 	Key string `json:"key"`
 
 	// valueExpression is a required field to specify the CEL expression to extract

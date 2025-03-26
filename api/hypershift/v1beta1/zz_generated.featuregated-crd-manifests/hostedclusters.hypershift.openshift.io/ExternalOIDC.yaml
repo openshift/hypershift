@@ -672,8 +672,10 @@ spec:
                                             of only lower case alphanumeric characters,
                                             '-' or '.', and must start and end with
                                             an alphanumeric character
-                                          rule: '!format.dns1123Subdomain().validate(self.split(''/'',
-                                            2)[0]).hasValue()'
+                                          rule: self.split('/', 2)[0].matches("^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$")
+                                        - message: the domain of the key must not
+                                            exceed 253 characters in length
+                                          rule: self.split('/', 2)[0].size() <= 253
                                         - message: the domain 'kubernetes.io' is reserved
                                             for Kubernetes use
                                           rule: self.split('/', 2)[0] != 'kubernetes.io'
