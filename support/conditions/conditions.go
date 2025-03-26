@@ -39,8 +39,12 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 
 		conditions[hyperv1.ValidAWSIdentityProvider] = metav1.ConditionTrue
 		conditions[hyperv1.AWSDefaultSecurityGroupCreated] = metav1.ConditionTrue
-		conditions[hyperv1.AWSEndpointAvailable] = metav1.ConditionTrue
-		conditions[hyperv1.AWSEndpointServiceAvailable] = metav1.ConditionTrue
+		if hostedCluster.Spec.Platform.AWS != nil {
+			if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private || hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate {
+				conditions[hyperv1.AWSEndpointAvailable] = metav1.ConditionTrue
+				conditions[hyperv1.AWSEndpointServiceAvailable] = metav1.ConditionTrue
+			}
+		}
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
 			// AWS KMS is not configured
 			conditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown
