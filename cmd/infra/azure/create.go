@@ -2,10 +2,12 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
@@ -43,6 +46,8 @@ const (
 	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
+
+	graphAPIEndpoint = "https://graph.microsoft.com/v1.0/servicePrincipals"
 )
 
 type CreateInfraOptions struct {
@@ -79,6 +84,12 @@ type CreateInfraOutput struct {
 	SecurityGroupID     string                                 `json:"securityGroupID"`
 	ControlPlaneMIs     hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities     `json:"dataPlaneIdentities"`
+}
+
+type ServicePrincipalResponse struct {
+	Value []struct {
+		ID string `json:"id"`
+	} `json:"value"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -237,8 +248,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 		// Perform role assignments over each component's service principal
 		if o.AssignServicePrincipalRoles {
+			// Get an access token for Microsoft Graph API for getting the object IDs
+			token, err := getAzureToken(azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
 			for component, clientID := range components {
-				objectID, err := findObjectId(clientID)
+				objectID, err := getObjectIDFromClientID(clientID, token)
 				if err != nil {
 					return nil, err
 				}
@@ -267,8 +284,14 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		if o.AssignServicePrincipalRoles {
+			// Get an access token for Microsoft Graph API for getting the object IDs
+			token, err := getAzureToken(azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
 			// Setup Data Plane MI role assignments
-			objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
+			objectID, err := getObjectIDFromClientID(result.DataPlaneIdentities.ImageRegistryMSIClientID, token)
 			if err != nil {
 				return nil, err
 			}
@@ -277,7 +300,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				return nil, err
 			}
 
-			objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
+			objectID, err = getObjectIDFromClientID(result.DataPlaneIdentities.DiskMSIClientID, token)
 			if err != nil {
 				return nil, err
 			}
@@ -286,7 +309,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				return nil, err
 			}
 
-			objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
+			objectID, err = getObjectIDFromClientID(result.DataPlaneIdentities.FileMSIClientID, token)
 			if err != nil {
 				return nil, err
 			}
@@ -855,25 +878,54 @@ func assignRole(ctx context.Context, subscriptionID, infraID, component, assigne
 	return nil
 }
 
-func findObjectId(appID string) (string, error) {
-	cmdStr := fmt.Sprintf("az ad sp show --id %s --query id | sed 's/\"//g'", appID)
-
-	output, err := execAzCommand(cmdStr)
+func getAzureToken(azureCreds *azidentity.DefaultAzureCredential) (azcore.AccessToken, error) {
+	token, err := azureCreds.GetToken(context.Background(), policy.TokenRequestOptions{
+		Scopes: []string{"https://graph.microsoft.com/.default"},
+	})
 	if err != nil {
-		return "", fmt.Errorf("failed to find object ID for service principal, %s : %w", appID, err)
-
+		return azcore.AccessToken{}, fmt.Errorf("failed to get access token: %w", err)
 	}
-	objectID := strings.ReplaceAll(string(output), "\n", "")
 
-	return objectID, nil
+	return token, nil
 }
 
-func execAzCommand(cmdStr string) ([]byte, error) {
-	cmd := exec.Command("sh", "-c", cmdStr)
-	output, err := cmd.CombinedOutput()
+func getObjectIDFromClientID(clientID string, token azcore.AccessToken) (string, error) {
+	filterQuery := "$filter=appId eq '" + clientID + "'"
+	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
+
+	// Make the API request
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute az command, output: %s err: %w", string(output), err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	return output, nil
+	// Set Authorization header
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	// Parse response
+	var result ServicePrincipalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Value) == 0 {
+		return "", fmt.Errorf("no object id found for client id: %s", clientID)
+	}
+
+	if len(result.Value) > 1 {
+		return "", fmt.Errorf("more than one object id found for client id: %s", clientID)
+	}
+
+	return result.Value[0].ID, nil
 }

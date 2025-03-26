@@ -264,6 +264,7 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 	case config.AzureDisk:
 		role = config.AzureDiskRoleDefinitionID
 	case config.CNCC:
+		scopes = append(scopes, vnetRG)
 		role = config.NetworkRoleDefinitionID
 	case config.CIRO:
 		role = config.ImageRegistryRoleDefinitionID
