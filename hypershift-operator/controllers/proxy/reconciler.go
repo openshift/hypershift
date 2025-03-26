@@ -4,18 +4,20 @@ import (
 	"context"
 	"fmt"
 
+	proxypkg "github.com/openshift/hypershift/support/proxy"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	configv1 "github.com/openshift/api/config/v1"
-	proxypkg "github.com/openshift/hypershift/support/proxy"
 )
 
 func Setup(mgr manager.Manager, deploymentNamespace string, deploymentName string) error {

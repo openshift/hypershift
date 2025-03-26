@@ -1,0 +1,202 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-network-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-network-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: cluster-network-operator
+        name: cluster-network-operator
+    spec:
+      containers:
+      - args:
+        - start
+        - --listen=0.0.0.0:9104
+        - --kubeconfig=/configs/hosted
+        - --namespace=openshift-network-operator
+        - --extra-clusters=management=/configs/management
+        command:
+        - /usr/bin/cluster-network-operator
+        env:
+        - name: HYPERSHIFT
+          value: "true"
+        - name: CA_CONFIG_MAP
+          value: root-ca
+        - name: CA_CONFIG_MAP_KEY
+          value: ca.crt
+        - name: OVN_NB_RAFT_ELECTION_TIMER
+          value: "10"
+        - name: OVN_SB_RAFT_ELECTION_TIMER
+          value: "16"
+        - name: OVN_NORTHD_PROBE_INTERVAL
+          value: "5000"
+        - name: OVN_CONTROLLER_INACTIVITY_PROBE
+          value: "180000"
+        - name: OVN_NB_INACTIVITY_PROBE
+          value: "60000"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: HOSTED_CLUSTER_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cluster-network-operator
+        imagePullPolicy: IfNotPresent
+        name: cluster-network-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /configs
+          name: configs
+        - mountPath: /var/run/secrets/kubernetes.io/hosted
+          name: client-token
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
+      - args:
+        - --service-account-namespace
+        - openshift-network-operator
+        - --service-account-name
+        - cluster-network-operator
+        - --token-file
+        - /var/client-token/token
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: client-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/client-token
+          name: client-token
+        - mountPath: /etc/kubernetes
+          name: hosted-etc-kube
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - args:
+        - --kubeconfig=/etc/hosted-kubernetes/kubeconfig
+        - -n=openshift-network-operator
+        - delete
+        - --ignore-not-found=true
+        - deployment
+        - network-operator
+        command:
+        - /usr/bin/kubectl
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: remove-old-cno
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/hosted-kubernetes
+          name: hosted-etc-kube
+      - args:
+        - --service-account-namespace
+        - openshift-network-operator
+        - --service-account-name
+        - cluster-network-operator
+        - --token-file
+        - /var/client-token/token
+        - --kubeconfig
+        - /etc/kubernetes/kubeconfig
+        - --oneshot
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: init-client-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/client-token
+          name: client-token
+        - mountPath: /etc/kubernetes
+          name: hosted-etc-kube
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -xeuo pipefail
+
+          kc=/configs/management
+          kubectl --kubeconfig $kc config set clusters.default.server "https://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}"
+          kubectl --kubeconfig $kc config set clusters.default.certificate-authority /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          kubectl --kubeconfig $kc config set users.admin.tokenFile /var/run/secrets/kubernetes.io/serviceaccount/token
+          kubectl --kubeconfig $kc config set contexts.default.cluster default
+          kubectl --kubeconfig $kc config set contexts.default.user admin
+          kubectl --kubeconfig $kc config set contexts.default.namespace $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+          kubectl --kubeconfig $kc config use-context default
+
+
+          kc=/configs/hosted
+          kubectl --kubeconfig $kc config set clusters.default.server "https://kube-apiserver:${KUBE_APISERVER_SERVICE_PORT}"
+          kubectl --kubeconfig $kc config set clusters.default.certificate-authority /etc/certificate/ca/ca.crt
+          kubectl --kubeconfig $kc config set users.admin.tokenFile /var/run/secrets/kubernetes.io/hosted/token
+          kubectl --kubeconfig $kc config set contexts.default.cluster default
+          kubectl --kubeconfig $kc config set contexts.default.user admin
+          kubectl --kubeconfig $kc config set contexts.default.namespace openshift-network-operator
+          kubectl --kubeconfig $kc config use-context default
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: rewrite-config
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/hosted-kubernetes
+          name: hosted-etc-kube
+        - mountPath: /configs
+          name: configs
+        - mountPath: /var/run/secrets/kubernetes.io/hosted
+          name: client-token
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
+      serviceAccount: cluster-network-operator
+      serviceAccountName: cluster-network-operator
+      volumes:
+      - name: hosted-etc-kube
+        secret:
+          defaultMode: 420
+          secretName: service-network-admin-kubeconfig
+      - emptyDir: {}
+        name: configs
+      - emptyDir: {}
+        name: client-token
+      - name: ca-bundle
+        secret:
+          defaultMode: 416
+          secretName: root-ca

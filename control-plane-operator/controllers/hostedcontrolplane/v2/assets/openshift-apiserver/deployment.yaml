@@ -1,0 +1,191 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openshift-apiserver
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: openshift-apiserver
+  strategy:
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-apiserver
+    spec:
+      containers:
+      - args:
+        - start
+        - --config=/etc/kubernetes/config/config.yaml
+        - --authorization-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --authentication-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --requestheader-client-ca-file=/etc/kubernetes/certs/aggregator-client-ca/ca.crt
+        - --requestheader-allowed-names=kube-apiserver-proxy,system:kube-apiserver-proxy,system:openshift-aggregator
+        - --requestheader-username-headers=X-Remote-User
+        - --requestheader-group-headers=X-Remote-Group
+        - --requestheader-extra-headers-prefix=X-Remote-Extra-
+        - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
+        env:
+        - name: HTTP_PROXY
+          value: http://127.0.0.1:8090
+        - name: HTTPS_PROXY
+          value: http://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver,etcd-client,audit-webhook
+        image: openshift-apiserver
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: openshift-apiserver
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: healthz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 100m
+            memory: 200Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/aggregator-client-ca
+          name: aggregator-ca
+        - mountPath: /etc/kubernetes/audit-config
+          name: audit-config
+        - mountPath: /etc/kubernetes/certs/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/certs/etcd-client-ca
+          name: etcd-client-ca
+        - mountPath: /etc/kubernetes/certs/etcd-client
+          name: etcd-client-cert
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: oas-trust-anchor
+        - mountPath: /var/lib/kubelet
+          name: pull-secret
+        - mountPath: /etc/kubernetes/certs/serving
+          name: serving-cert
+        - mountPath: /var/log/openshift-apiserver
+          name: work-logs
+        workingDir: /var/log/openshift-apiserver
+      - args:
+        - -c
+        - |          
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            pkill -P $$$
+            wait
+            exit
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/log/openshift-apiserver/audit.log &
+          wait $!
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: audit-logs
+        resources:
+          requests:
+            cpu: 5m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /var/log/openshift-apiserver
+          name: work-logs
+      initContainers:
+      - command:
+        - /bin/bash
+        - -c
+        - |2
+
+          #!/bin/bash
+
+          set -euo pipefail
+
+          cp -f -r /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/
+
+          if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then
+             exit 0
+          fi
+
+          chmod 0666 /run/ca-trust-generated/tls-ca-bundle.pem
+          echo '#service signer ca' >> /run/ca-trust-generated/tls-ca-bundle.pem
+          cat /run/service-ca-signer/service-ca.crt >>/run/ca-trust-generated/tls-ca-bundle.pem
+          chmod 0444 /run/ca-trust-generated/tls-ca-bundle.pem
+        image: openshift-apiserver
+        imagePullPolicy: IfNotPresent
+        name: oas-trust-anchor-generator
+        volumeMounts:
+        - mountPath: /run/ca-trust-generated
+          name: oas-trust-anchor
+      terminationGracePeriodSeconds: 120
+      volumes:
+      - emptyDir: {}
+        name: work-logs
+      - configMap:
+          defaultMode: 420
+          name: openshift-apiserver
+        name: config
+      - configMap:
+          defaultMode: 420
+          name: openshift-apiserver-audit
+        name: audit-config
+      - configMap:
+          defaultMode: 420
+          name: aggregator-client-ca
+        name: aggregator-ca
+      - configMap:
+          defaultMode: 420
+          name: etcd-ca
+        name: etcd-client-ca
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: openshift-apiserver-cert
+      - name: etcd-client-cert
+        secret:
+          defaultMode: 416
+          secretName: etcd-client-tls
+      - emptyDir: {}
+        name: oas-trust-anchor
+      - name: pull-secret
+        secret:
+          defaultMode: 416
+          items:
+          - key: .dockerconfigjson
+            path: config.json
+          secretName: pull-secret

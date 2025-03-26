@@ -7,8 +7,12 @@ import (
 	"strings"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
+	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -20,38 +24,35 @@ import (
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	"github.com/openshift/hypershift/pkg/version"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	tokenminter "github.com/openshift/hypershift/token-minter"
-	"go.uber.org/zap/zapcore"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	"github.com/spf13/cobra"
-
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
-	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/upsert"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	// +kubebuilder:scaffold:imports
+	"go.uber.org/zap/zapcore"
 )
 
 var (
@@ -59,7 +60,7 @@ var (
 )
 
 func main() {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 	basename := filepath.Base(os.Args[0])
@@ -68,7 +69,7 @@ func main() {
 	cmd.Version = version.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 
@@ -124,7 +125,7 @@ func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -238,6 +239,18 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
+
+		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			setupLog.Error(err, "unable to create hcp client")
+			os.Exit(1)
+		}
+		hcpList, err := hcpClient.HypershiftV1beta1().HostedControlPlanes(namespace).List(ctx, metav1.ListOptions{})
+		if err != nil || len(hcpList.Items) == 0 {
+			setupLog.Error(err, "failed to get hostedcontrolplane for the cluster")
+			os.Exit(1)
+		}
+		hcp := &hcpList.Items[0]
 
 		// The HyperShift operator is generally able to specify with precision the images
 		// that we need to use here. In order to be backwards-compatible, though, we need
@@ -365,7 +378,6 @@ func NewStartCommand() *cobra.Command {
 			"token-minter":                   tokenMinterImage,
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
-			"cluster-version-operator":       os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		}
 		for name, image := range imageOverrides {
 			componentImages[name] = image
@@ -378,6 +390,18 @@ func NewStartCommand() *cobra.Command {
 			imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
 		}
 
+		if len(registryOverrides) > 0 {
+			if imageRegistryOverrides == nil {
+				imageRegistryOverrides = map[string][]string{}
+			}
+			for registry, override := range registryOverrides {
+				if _, exists := imageRegistryOverrides[registry]; !exists {
+					imageRegistryOverrides[registry] = []string{}
+				}
+				imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+			}
+		}
+
 		coreReleaseProvider := &releaseinfo.StaticProviderDecorator{
 			Delegate: &releaseinfo.CachedProvider{
 				Inner: &releaseinfo.RegistryClientProvider{},
@@ -386,6 +410,7 @@ func NewStartCommand() *cobra.Command {
 			ComponentImages: componentImages,
 		}
 
+		// It should be used to lookup spec.releaseImage.
 		userReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate:          coreReleaseProvider,
@@ -394,11 +419,16 @@ func NewStartCommand() *cobra.Command {
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
+		// It should be used to lookup spec.controlPlaneReleaseImage.
 		cpReleaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 			Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
 				Delegate:          coreReleaseProvider,
 				RegistryOverrides: registryOverrides,
 			},
+			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+		}
+
+		imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		}
 
@@ -412,6 +442,7 @@ func NewStartCommand() *cobra.Command {
 		setupLog.Info("Using metrics set", "set", metricsSet.String())
 
 		enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
+		_, isCPOV2 := os.LookupEnv(hyperv1.ControlPlaneOperatorV2EnvVar)
 
 		if err := (&hostedcontrolplane.HostedControlPlaneReconciler{
 			Client:                                  mgr.GetClient(),
@@ -424,12 +455,22 @@ func NewStartCommand() *cobra.Command {
 			MetricsSet:                              metricsSet,
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
+			IsCPOV2:                                 isCPOV2,
+			ImageMetadataProvider:                   imageMetaDataProvider,
 		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
 		}
 
-		if mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+		if err := (&healthcheck.HealthCheckUpdater{
+			Client:             mgr.GetClient(),
+			HostedControlPlane: crclient.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Name},
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "health-check-updater")
+			os.Exit(1)
+		}
+
+		if hcp.Spec.Platform.Type == hyperv1.AWSPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
 			controllerName := "PrivateKubeAPIServerServiceObserver"
 			if err := (&awsprivatelink.PrivateServiceObserver{
 				Client:                 mgr.GetClient(),

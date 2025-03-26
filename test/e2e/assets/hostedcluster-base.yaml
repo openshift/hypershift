@@ -1,0 +1,51 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: base
+  namespace: default
+spec:
+  etcd:
+    managementType: "Managed"
+    managed:
+      storage:
+        type: "PersistentVolume"
+        persistentVolume:
+          size: "8Gi"
+  dns:
+    baseDomain: agarcial.hypershift.devcluster.openshift.com
+  serviceAccountSigningKey:
+    name: service-account-signing-key
+  platform:
+    type: AWS
+  pullSecret:
+    name: secret
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.15.11-x86_64
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: key-management-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.agarcial.hypershift.devcluster.openshift.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: OAuthServer.agarcial.hypershift.devcluster.openshift.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: Konnectivity.agarcial.hypershift.devcluster.openshift.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+      
+
+  

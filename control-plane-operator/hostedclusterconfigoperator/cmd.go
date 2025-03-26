@@ -36,16 +36,17 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
+	"k8s.io/client-go/rest"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
-
-	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cluster"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
@@ -209,7 +210,7 @@ func (o *HostedClusterConfigOperator) Complete() error {
 }
 
 func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 	versions := map[string]string{
@@ -240,10 +241,21 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		kubevirtInfraConfig = cpConfig
 	}
 
-	var imageRegistryOverrides map[string][]string
+	imageRegistryOverrides := map[string][]string{}
 	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
 	if ok {
 		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	}
+	if len(o.registryOverrides) > 0 {
+		if imageRegistryOverrides == nil {
+			imageRegistryOverrides = map[string][]string{}
+		}
+		for registry, override := range o.registryOverrides {
+			if _, exists := imageRegistryOverrides[registry]; !exists {
+				imageRegistryOverrides[registry] = []string{}
+			}
+			imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+		}
 	}
 
 	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
@@ -254,8 +266,12 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 					Cache: map[string]*releaseinfo.ReleaseImage{},
 				},
 			},
-			RegistryOverrides: o.registryOverrides,
+			RegistryOverrides: nil,
 		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}
 
@@ -299,6 +315,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthPort:             o.OAuthPort,
 		OperateOnReleaseImage: os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		EnableCIDebugOutput:   o.enableCIDebugOutput,
+		ImageMetaDataProvider: imageMetaDataProvider,
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)

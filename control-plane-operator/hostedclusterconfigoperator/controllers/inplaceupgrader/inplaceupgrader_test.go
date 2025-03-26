@@ -5,17 +5,19 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestGetNodesForMachineSet(t *testing.T) {
-	capiv1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
 
 	selector := map[string]string{
 		"foo": "bar",
@@ -42,7 +44,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 					{
 						Kind:       "MachineSet",
 						Name:       "test",
-						Controller: pointer.Bool(true),
+						Controller: ptr.To(true),
 						UID:        "valid",
 					},
 				},
@@ -61,7 +63,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 					{
 						Kind:       "other",
 						Name:       "test",
-						Controller: pointer.Bool(true),
+						Controller: ptr.To(true),
 						UID:        "other",
 					},
 				},
@@ -80,7 +82,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 					{
 						Kind:       "MachineSet",
 						Name:       "test",
-						Controller: pointer.Bool(true),
+						Controller: ptr.To(true),
 						UID:        "valid",
 					},
 				},

@@ -2,9 +2,17 @@ package util
 
 import (
 	hyperapi "github.com/openshift/hypershift/support/api"
+
+	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+
 	operatorsv1 "github.com/operator-framework/api/pkg/operators/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 )
 
 var (
@@ -16,7 +24,12 @@ var (
 )
 
 func init() {
-	operatorsv1.AddToScheme(scheme)
-	operatorsv1alpha1.AddToScheme(scheme)
-	capikubevirt.AddToScheme(scheme)
+	_ = operatorsv1.AddToScheme(scheme)
+	_ = operatorsv1alpha1.AddToScheme(scheme)
+	_ = capikubevirt.AddToScheme(scheme)
+
+	awsKarpanterGroupVersion := schema.GroupVersion{Group: awskarpenterapis.Group, Version: "v1"}
+	metav1.AddToGroupVersion(scheme, awsKarpanterGroupVersion)
+	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClass{})
+	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClassList{})
 }

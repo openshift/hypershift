@@ -5,16 +5,16 @@ import (
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -36,8 +36,8 @@ var (
 
 func openShiftControllerManagerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-controller-manager",
-		hyperv1.ControlPlaneComponent: "openshift-controller-manager",
+		"app":                              "openshift-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "openshift-controller-manager",
 	}
 }
 
@@ -70,7 +70,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 	deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
 		configHashAnnotation: configHash,
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		util.BuildContainer(ocmContainerMain(), buildOCMContainerMain(image)),
 	}
@@ -130,7 +130,7 @@ func ocmVolumeKubeconfig() *corev1.Volume {
 func buildOCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func ocmVolumeServingCert() *corev1.Volume {
@@ -142,5 +142,5 @@ func ocmVolumeServingCert() *corev1.Volume {
 func buildOCMVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftControllerManagerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }

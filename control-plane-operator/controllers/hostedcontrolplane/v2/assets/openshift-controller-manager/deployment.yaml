@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openshift-controller-manager
+spec:
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: openshift-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-controller-manager
+    spec:
+      containers:
+      - args:
+        - start
+        - --config
+        - /etc/kubernetes/config/config.yaml
+        command:
+        - openshift-controller-manager
+        image: openshift-controller-manager
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: openshift-controller-manager
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/kubernetes/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/certs
+          name: serving-cert
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: openshift-controller-manager-config
+        name: config
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: openshift-controller-manager-cert
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca

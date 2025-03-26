@@ -7,20 +7,22 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 type CreateIAMOptions struct {
@@ -36,10 +38,13 @@ type CreateIAMOptions struct {
 	OutputFile                      string
 	KMSKeyARN                       string
 	AdditionalTags                  []string
+	VPCOwnerCredentialsOpts         awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount    bool
 
 	CredentialsSecretData *util.CredentialsSecretData
 
-	additionalIAMTags []*iam.Tag
+	additionalIAMTags      []*iam.Tag
+	CreateKarpenterRoleARN bool
 }
 
 type CreateIAMOutput struct {
@@ -50,6 +55,11 @@ type CreateIAMOutput struct {
 	Roles              hyperv1.AWSRolesRef `json:"roles"`
 	KMSKeyARN          string              `json:"kmsKeyARN"`
 	KMSProviderRoleARN string              `json:"kmsProviderRoleARN"`
+
+	SharedIngressRoleARN      string `json:"sharedIngressRoleARN,omitempty"`
+	SharedControlPlaneRoleARN string `json:"sharedControlPlaneRoleARN,omitempty"`
+
+	KarpenterRoleARN string `json:"karpenterRoleARN,omitempty"`
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -75,15 +85,17 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.LocalZoneID, "local-zone-id", opts.LocalZoneID, "The id of the clusters local route53 zone")
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("public-zone-id")
-	cmd.MarkFlagRequired("private-zone-id")
-	cmd.MarkFlagRequired("local-zone-id")
-	cmd.MarkFlagRequired("oidc-bucket-name")
-	cmd.MarkFlagRequired("oidc-bucket-region")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("public-zone-id")
+	_ = cmd.MarkFlagRequired("private-zone-id")
+	_ = cmd.MarkFlagRequired("local-zone-id")
+	_ = cmd.MarkFlagRequired("oidc-bucket-name")
+	_ = cmd.MarkFlagRequired("oidc-bucket-region")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -123,7 +135,9 @@ func (o *CreateIAMOptions) Output(results *CreateIAMOutput) error {
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
@@ -155,7 +169,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 
 	var errs []error
 	if o.OIDCStorageProviderS3BucketName == "" {
-		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't excplicitly passed either"))
+		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-bucket-name could not be discovered from the cluster's ConfigMap in 'kube-public' and wasn't explicitly passed either"))
 	}
 	if o.OIDCStorageProviderS3Region == "" {
 		errs = append(errs, errors.New("mandatory --oidc-storage-provider-s3-region could not be discovered from cluster's  ConfigMap in 'kube-public' and wasn't explicitly passed either"))
@@ -169,13 +183,38 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
+	sharedVPC := false
+	if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
+		sharedVPC = true
+	}
+
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	results, err := o.CreateOIDCResources(iamClient, logger)
+	results, err := o.CreateOIDCResources(iamClient, logger, sharedVPC)
 	if err != nil {
 		return nil, err
 	}
+
+	if sharedVPC {
+		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession("cli-create-iam", nil, o.Region)
+		if err != nil {
+			return nil, err
+		}
+		vpcOwnerIAMClient := iam.New(vpcOwnerAWSSession, awsConfig)
+
+		route53RoleClient := vpcOwnerIAMClient
+		if o.PrivateZonesInClusterAccount {
+			route53RoleClient = iamClient
+		}
+		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
+			return nil, err
+		}
+		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
+			return nil, err
+		}
+	}
+
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
 	results.KMSKeyARN = o.KMSKeyARN

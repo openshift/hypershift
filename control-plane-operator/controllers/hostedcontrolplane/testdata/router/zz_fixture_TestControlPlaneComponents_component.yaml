@@ -1,0 +1,28 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: router
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: router Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: router Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: router
+  - group: policy
+    kind: PodDisruptionBudget
+    name: router
+  version: 4.18.0

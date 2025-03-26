@@ -12,14 +12,23 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	supportutil "github.com/openshift/hypershift/support/util"
+
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-	"github.com/spf13/cobra"
+
+	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,23 +45,22 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	hyperapi "github.com/openshift/hypershift/support/api"
-	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/go-logr/logr"
+	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	"github.com/spf13/cobra"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 const (
@@ -130,7 +138,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
-	cmd.MarkFlagRequired("artifact-dir")
+	_ = cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -176,7 +184,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
 
 	kubeAPIServerPodList := &corev1.PodList{}
-	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponent: "kube-apiserver"}); err != nil {
+	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"}); err != nil {
 		return fmt.Errorf("failed to list kube-apiserver pods in control plane namespace: %w", err)
 	}
 	var podToForward *corev1.Pod
@@ -332,6 +340,8 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	cmd.Run(ctx, objectType(&corev1.Node{}))
 
+	cmd.Run(ctx, objectType(&scheduling.ClusterSizingConfiguration{}))
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
 
 	kubevirtExternalInfraClusters, localKubevirtInUse := shouldDumpKubevirt(nodePools)
@@ -349,9 +359,11 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&capiazure.AzureCluster{},
 		&capiazure.AzureMachine{},
 		&capiazure.AzureMachineTemplate{},
-		&capiopenstack.OpenStackCluster{},
-		&capiopenstack.OpenStackMachine{},
-		&capiopenstack.OpenStackMachineTemplate{},
+		&capiopenstackv1alpha1.OpenStackServer{},
+		&capiopenstackv1beta1.OpenStackCluster{},
+		&capiopenstackv1beta1.OpenStackMachine{},
+		&capiopenstackv1beta1.OpenStackMachineTemplate{},
+		&orcv1alpha1.Image{},
 		&agentv1.AgentMachine{},
 		&agentv1.AgentMachineTemplate{},
 		&agentv1.AgentCluster{},
@@ -362,11 +374,21 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&networkingv1.NetworkPolicy{},
 	)
 
+	// These resources are not required to exist since they
+	// are live behind a feature gate. Therefore, we'll
+	// check whether they are registered in the management
+	// cluster before dumping them.
+	featureGatedResources := []client.Object{
+		&hyperv1.ControlPlaneComponent{},
+		&secretsstorev1.SecretProviderClass{},
+	}
+
 	// The management cluster may not be an OpenShift cluster.
 	// Only dump registered OpenShift GVKs to avoid errors.
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	kubeDiscoveryClient := kubeClient.Discovery()
-	for _, resource := range ocpResources {
+	optionalResources := append(featureGatedResources, ocpResources...)
+	for _, resource := range optionalResources {
 		gvk, err := c.GroupVersionKindFor(resource)
 		if err != nil {
 			return err
@@ -474,6 +496,8 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		// https://github.com/openshift/api/blob/2bde012f248a5172dcde2f7104caf0726cf6d93a/config/v1/types_cluster_version.go#L266-L270
 		&snapshotv1.VolumeSnapshotClass{},
 		&snapshotv1.VolumeSnapshotContent{},
+		&admissionregistrationv1beta1.ValidatingAdmissionPolicy{},
+		&admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding{},
 	)
 
 	resourceList := strings.Join(resourceTypes(resources), ",")
@@ -519,7 +543,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	// oc adm inspect command always returns an error so ignore
-	cmd.CombinedOutput()
+	_, _ = cmd.CombinedOutput()
 }
 
 type OCAdmNodeLogs struct {
@@ -546,7 +570,12 @@ func (i *OCAdmNodeLogs) Run(ctx context.Context, cmdArgs ...string) {
 		i.log.Info(fmt.Sprintf("failed creating file to dump node-logs: %v", err))
 		return
 	}
-	defer nodeLogsFile.Close()
+	defer func(nodeLogsFile *os.File) {
+		err := nodeLogsFile.Close()
+		if err != nil {
+			i.log.Info(fmt.Sprintf("failed closing file to dump node-logs: %v", err))
+		}
+	}(nodeLogsFile)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	var errb bytes.Buffer
 	cmd.Stdout = nodeLogsFile

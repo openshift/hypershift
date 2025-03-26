@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/storage/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
+
 	"k8s.io/apimachinery/pkg/util/rand"
 )
 
@@ -21,8 +23,10 @@ func TestEnvironmentReplacer(t *testing.T) {
 		images[payloadName] = replaced
 	}
 
+	imageProviver := imageprovider.NewFromImages(images)
+
 	er := newEnvironmentReplacer()
-	er.setOperatorImageReferences(images, images)
+	er.setOperatorImageReferences(imageProviver, imageProviver)
 	version := rand.String(10)
 	er.setVersions(version)
 

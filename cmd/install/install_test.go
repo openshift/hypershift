@@ -4,7 +4,12 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	corev1 "k8s.io/api/core/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -93,6 +98,58 @@ func TestOptions_Validate(t *testing.T) {
 			} else {
 				g.Expect(err).To(BeNil())
 			}
+		})
+	}
+}
+
+func TestSetupCRDs(t *testing.T) {
+	tests := []struct {
+		name         string
+		inputOptions Options
+		expectError  bool
+	}{
+		{
+			name: "When is TechPreviewNoUpgrade it should have a single nodepool CRD with the TechPreviewNoUpgrade annotation",
+			inputOptions: Options{
+				TechPreviewNoUpgrade: true,
+			},
+		},
+		{
+			name:         "When is NOT TechPreviewNoUpgrade it should have a single nodepool CRD with the default annotation",
+			inputOptions: Options{},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			crds := setupCRDs(tc.inputOptions, &corev1.Namespace{}, nil)
+			nodePoolCRDS := make([]crclient.Object, 0)
+			var machineDeploymentCRD crclient.Object
+			var awsEndpointServicesCRD crclient.Object
+			for _, crd := range crds {
+				if crd.GetName() == "nodepools.hypershift.openshift.io" {
+					nodePoolCRDS = append(nodePoolCRDS, crd)
+				}
+				if crd.GetName() == "machinedeployments.cluster.x-k8s.io" {
+					machineDeploymentCRD = crd
+				}
+				if crd.GetName() == "awsendpointservices.hypershift.openshift.io" {
+					awsEndpointServicesCRD = crd
+				}
+			}
+
+			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
+			g.Expect(machineDeploymentCRD).ToNot(BeNil())
+			g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
+
+			// Validate the feature set specific CRDs are applied.
+			g.Expect(nodePoolCRDS).To(HaveLen(1))
+			if tc.inputOptions.TechPreviewNoUpgrade {
+				g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("TechPreviewNoUpgrade"))
+				return
+			}
+			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
 		})
 	}
 }

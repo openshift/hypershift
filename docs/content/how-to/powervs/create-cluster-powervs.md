@@ -22,7 +22,7 @@ Use the `hypershift create cluster powervs` command:
     RESOURCE_GROUP=ibm-hypershift-dev
     RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-0.nightly-multi-2022-09-08-131900
     PULL_SECRET="$HOME/pull-secret"
-    
+
     ./bin/hypershift create cluster powervs \
         --name $CLUSTER_NAME \
         --region $REGION \
@@ -30,9 +30,10 @@ Use the `hypershift create cluster powervs` command:
         --vpc-region $VPC_REGION \
         --base-domain $BASEDOMAIN \
         --resource-group $RESOURCE_GROUP \
-        --release-image $RELEASE_IMAGE
+        --release-image $RELEASE_IMAGE \
         --pull-secret $PULL_SECRET \
-        --node-pool-replicas=2
+        --node-pool-replicas=2 \
+        --transit-gateway-location $TRANSIT_GATEWAY_LOCATION
 
 where
 
@@ -44,32 +45,14 @@ where
 * RESOURCE_GROUP is the resource group in IBM Cloud where your infrastructure resources will be created.
 * RELEASE_IMAGE is the latest multi arch release image.
 * PULL_SECRET is a file that contains a valid OpenShift pull secret.
-* node-pool-replicas is worker node count 
+* node-pool-replicas is worker node count. 
+* TRANSIT_GATEWAY_LOCATION is the location where you want to create the transit gateway. 
 
 Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
 
-## Utilizing Power Edge Router(PER) via Transit Gateway
-To use IBM Cloud's PER feature via transit gateway, need to pass `--use-power-edge-router` and `--transit-gateway-location $TRANSIT_GATEWAY_LOCATION` flags to create cluster command like below.
-
-    TRANSIT_GATEWAY_LOCATION=us-south
-    ./bin/hypershift create cluster powervs \
-        --name $CLUSTER_NAME \
-        --region $REGION \
-        --zone $ZONE \
-        --vpc-region $VPC_REGION \
-        --base-domain $BASEDOMAIN \
-        --resource-group $RESOURCE_GROUP \
-        --release-image $RELEASE_IMAGE
-        --pull-secret $PULL_SECRET \
-        --node-pool-replicas=2 \
-        --use-power-edge-router \
-        --transit-gateway-location $TRANSIT_GATEWAY_LOCATION
-
-Read [here](https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-per) to know more about PER and data centers where its deployed currently.
-
 !!! important
 
-        Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
 
         This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
 

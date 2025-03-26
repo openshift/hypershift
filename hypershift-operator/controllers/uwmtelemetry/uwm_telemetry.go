@@ -9,7 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/monitoring"
+	"github.com/openshift/hypershift/support/upsert"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -17,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -25,9 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/monitoring"
-	"github.com/openshift/hypershift/support/upsert"
+	monv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
@@ -159,7 +162,10 @@ func reconcileMonitoringConfigContent(cm *corev1.ConfigMap) error {
 			return fmt.Errorf("cannot parse current configuration content: %w", err)
 		}
 	}
-	unstructured.SetNestedField(content, true, "enableUserWorkload")
+	err := unstructured.SetNestedField(content, true, "enableUserWorkload")
+	if err != nil {
+		return err
+	}
 	contentBytes, err := yaml.Marshal(content)
 	if err != nil {
 		return fmt.Errorf("cannot serialize configuration content: %w", err)
@@ -199,7 +205,10 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 	}
 	if !found {
 		remoteWriteConfigs = []interface{}{}
-		unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+		err = unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+		if err != nil {
+			return err
+		}
 	}
 	foundIndex := -1
 	for i, rwConfig := range remoteWriteConfigs {
@@ -236,9 +245,9 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 		QueueConfig: &monv1.QueueConfig{
 			Capacity:          30000,
 			MaxSamplesPerSend: 10000,
-			BatchSendDeadline: "1m",
-			MinBackoff:        "1s",
-			MaxBackoff:        "256s",
+			BatchSendDeadline: ptr.To(monv1.Duration("1m")),
+			MinBackoff:        ptr.To(monv1.Duration("1s")),
+			MaxBackoff:        ptr.To(monv1.Duration("256s")),
 		},
 	}
 	if relabelConfig != nil {
@@ -254,7 +263,10 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 	} else {
 		remoteWriteConfigs = append(remoteWriteConfigs, telemetryRemoteWriteMap)
 	}
-	unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+	err = unstructured.SetNestedSlice(content, remoteWriteConfigs, "prometheus", "remoteWrite")
+	if err != nil {
+		return err
+	}
 	contentBytes, err := yaml.Marshal(content)
 	if err != nil {
 		return fmt.Errorf("cannot serialize configuration content: %w", err)

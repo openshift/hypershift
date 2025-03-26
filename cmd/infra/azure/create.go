@@ -5,27 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
-	"k8s.io/apimachinery/pkg/util/wait"
-
-	"github.com/go-logr/logr"
-	"github.com/hashicorp/go-uuid"
-	"github.com/spf13/cobra"
-
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/yaml"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -33,42 +24,67 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/pageblob"
+
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 const (
 	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
+
+	azureDisk     = "azure-disk"
+	azureFile     = "azure-file"
+	ciro          = "ciro"
+	cloudProvider = "cloud-provider"
+	cncc          = "cncc"
+	cpo           = "cpo"
+	ingress       = "ingress"
+	nodePoolMgmt  = "capz"
 )
 
 type CreateInfraOptions struct {
-	Name                   string
-	BaseDomain             string
-	Location               string
-	InfraID                string
-	CredentialsFile        string
-	Credentials            *util.AzureCreds
-	OutputFile             string
-	RHCOSImage             string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
+	Name                        string
+	BaseDomain                  string
+	Location                    string
+	InfraID                     string
+	CredentialsFile             string
+	Credentials                 *util.AzureCreds
+	OutputFile                  string
+	RHCOSImage                  string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	ManagedIdentitiesFile       string
+	DataPlaneIdentitiesFile     string
+	AssignServicePrincipalRoles bool
+	DNSZoneRG                   string
+	AssignCustomHCPRoles        bool
 }
 
 type CreateInfraOutput struct {
-	BaseDomain        string `json:"baseDomain"`
-	PublicZoneID      string `json:"publicZoneID"`
-	PrivateZoneID     string `json:"privateZoneID"`
-	Location          string `json:"region"`
-	ResourceGroupName string `json:"resourceGroupName"`
-	VNetID            string `json:"vnetID"`
-	SubnetID          string `json:"subnetID"`
-	BootImageID       string `json:"bootImageID"`
-	InfraID           string `json:"infraID"`
-	MachineIdentityID string `json:"machineIdentityID"`
-	SecurityGroupID   string `json:"securityGroupID"`
+	BaseDomain          string                                 `json:"baseDomain"`
+	PublicZoneID        string                                 `json:"publicZoneID"`
+	PrivateZoneID       string                                 `json:"privateZoneID"`
+	Location            string                                 `json:"region"`
+	ResourceGroupName   string                                 `json:"resourceGroupName"`
+	VNetID              string                                 `json:"vnetID"`
+	SubnetID            string                                 `json:"subnetID"`
+	BootImageID         string                                 `json:"bootImageID"`
+	InfraID             string                                 `json:"infraID"`
+	SecurityGroupID     string                                 `json:"securityGroupID"`
+	ControlPlaneMIs     hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
+	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities     `json:"dataPlaneIdentities"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -125,7 +141,7 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Create an Azure resource group
-	resourceGroupID, resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, "", subscriptionID)
+	resourceGroupName, msg, err := createResourceGroup(ctx, o, azureCreds, "", subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a resource group: %w", err)
 	}
@@ -138,37 +154,29 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		return nil, err
 	}
 
-	// Create the managed identity
-	identityID, identityRolePrincipalID, err := createManagedIdentity(ctx, subscriptionID, resourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
-	if err != nil {
-		return nil, err
-	}
-	result.MachineIdentityID = identityID
-	l.Info("Successfully created managed identity", "name", identityID)
-
-	// Assign 'Contributor' role definition to managed identity
-	l.Info("Assigning role to managed identity, this may take some time")
-	err = setManagedIdentityRole(ctx, subscriptionID, resourceGroupID, identityRolePrincipalID, azureCreds)
-	if err != nil {
-		return nil, err
-	}
-	l.Info("Successfully assigned contributor role to managed identity", "name", identityID)
-
 	// Set the network security group ID either from the flag value or create one
+	nsgResourceGroupName := ""
 	if len(o.NetworkSecurityGroupID) > 0 {
 		result.SecurityGroupID = o.NetworkSecurityGroupID
+
+		// We need to get the resource group name for creating the service principals
+		_, nsgResourceGroupName, err = azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(o.NetworkSecurityGroupID)
+		if err != nil {
+			return nil, err
+		}
+
 		l.Info("Using existing network security group", "ID", result.SecurityGroupID)
 	} else {
 		// Create a resource group for network security group
-		nsgResourceGroupName := o.Name + "-nsg"
-		_, nsgRG, msg, err := createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
+		nsgResourceGroupName = o.Name + "-nsg"
+		nsgResourceGroupName, msg, err = createResourceGroup(ctx, o, azureCreds, nsgResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for network security group: %w", err)
 		}
-		l.Info(msg, "name", nsgRG)
+		l.Info(msg, "name", nsgResourceGroupName)
 
 		// Create a network security group
-		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgRG, o.Name, o.InfraID, o.Location, azureCreds)
+		nsgID, err := createSecurityGroup(ctx, subscriptionID, nsgResourceGroupName, o.Name, o.InfraID, o.Location, azureCreds)
 		if err != nil {
 			return nil, err
 		}
@@ -183,26 +191,110 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Retrieve a client's existing virtual network if a VNET ID was provided; otherwise, create a new one
+	vnetResourceGroupName := ""
 	if len(o.VnetID) > 0 {
 		result.VNetID = o.VnetID
+
+		// We need to get the resource group name for creating the service principals
+		_, vnetResourceGroupName, err = azureutil.GetVnetNameAndResourceGroupFromVnetID(o.VnetID)
+		if err != nil {
+			return nil, err
+		}
+
 		l.Info("Using existing vnet", "ID", result.VNetID)
 	} else {
 		//create a resource group for virtual network
-		vnetResourceGroupName := o.Name + "-vnet"
-		_, vnetRG, msg, err := createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
+		vnetResourceGroupName = o.Name + "-vnet"
+		vnetResourceGroupName, msg, err = createResourceGroup(ctx, o, azureCreds, vnetResourceGroupName, subscriptionID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create resource group for virtual network: %w", err)
 		}
-		l.Info(msg, "name", vnetRG)
+		l.Info(msg, "name", vnetResourceGroupName)
 
 		// Create a virtual network
-		vnet, err := createVirtualNetwork(ctx, subscriptionID, vnetRG, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
+		vnet, err := createVirtualNetwork(ctx, subscriptionID, vnetResourceGroupName, o.Name, o.InfraID, o.Location, o.SubnetID, result.SecurityGroupID, azureCreds)
 		if err != nil {
 			return nil, err
 		}
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
+	}
+
+	if o.ManagedIdentitiesFile != "" {
+		managedIdentitiesRaw, err := os.ReadFile(o.ManagedIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
+		}
+		if err := yaml.Unmarshal(managedIdentitiesRaw, &result.ControlPlaneMIs.ControlPlane); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --managed-identities-file: %w", err)
+		}
+
+		components := map[string]string{
+			cpo:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
+			ciro:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
+			nodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
+			cloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
+			azureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
+			azureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
+			ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
+			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+		}
+
+		if o.AssignServicePrincipalRoles {
+			for component, clientID := range components {
+				objectID, err := findObjectId(clientID)
+				if err != nil {
+					return nil, err
+				}
+				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.AssignCustomHCPRoles)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
+	if o.DataPlaneIdentitiesFile != "" {
+		managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, resourceGroupName)
+
+		dataPlaneIdentitiesRaw, err := os.ReadFile(o.DataPlaneIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --data-plane-identities-file %s: %w", o.DataPlaneIdentitiesFile, err)
+		}
+		if err := yaml.Unmarshal(dataPlaneIdentitiesRaw, &result.DataPlaneIdentities); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --data-plane-identities-file: %w", err)
+		}
+
+		if o.AssignServicePrincipalRoles {
+			// Setup Data Plane MI role assignments
+			objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
+			if err != nil {
+				return nil, err
+			}
+
+			objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
+			if err != nil {
+				return nil, err
+			}
+
+			objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	// Create private DNS zone
@@ -264,23 +356,23 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 // 1. The resource group for the cluster's infrastructure
 // 2. The resource group for the virtual network
 // 3. The resource group for the network security group
-func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, rgName, subscriptionID string) (string, string, string, error) {
+func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds azcore.TokenCredential, rgName, subscriptionID string) (string, string, error) {
 	existingRGSuccessMsg := "Successfully found existing resource group"
 	createdRGSuccessMsg := "Successfully created resource group"
 
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
+		return "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
 	// Use a provided resource group if it was provided
 	if o.ResourceGroupName != "" && rgName == "" {
 		response, err := resourceGroupClient.Get(ctx, o.ResourceGroupName, nil)
 		if err != nil {
-			return "", "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
+			return "", "", fmt.Errorf("failed to get resource group name, '%s': %w", o.ResourceGroupName, err)
 		}
 
-		return *response.ID, *response.Name, existingRGSuccessMsg, nil
+		return *response.Name, existingRGSuccessMsg, nil
 	} else {
 
 		resourceGroupTags := map[string]*string{}
@@ -299,10 +391,10 @@ func createResourceGroup(ctx context.Context, o *CreateInfraOptions, azureCreds 
 		}
 		response, err := resourceGroupClient.CreateOrUpdate(ctx, resourceGroupName, parameters, nil)
 		if err != nil {
-			return "", "", "", fmt.Errorf("createResourceGroup: failed to create a resource group: %w", err)
+			return "", "", fmt.Errorf("createResourceGroup: failed to create a resource group: %w", err)
 		}
 
-		return *response.ID, *response.Name, createdRGSuccessMsg, nil
+		return *response.Name, createdRGSuccessMsg, nil
 	}
 }
 
@@ -327,78 +419,6 @@ func getBaseDomainID(ctx context.Context, subscriptionID string, azureCreds azco
 		}
 	}
 	return "", fmt.Errorf("could not find any DNS zones in subscription")
-}
-
-// createManagedIdentity creates a managed identity
-func createManagedIdentity(ctx context.Context, subscriptionID string, resourceGroupName string, name string, infraID string, location string, azureCreds azcore.TokenCredential) (string, string, error) {
-	identityClient, err := armmsi.NewUserAssignedIdentitiesClient(subscriptionID, azureCreds, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create new identity client: %w", err)
-	}
-	identity, err := identityClient.CreateOrUpdate(ctx, resourceGroupName, name+"-"+infraID, armmsi.Identity{Location: &location}, nil)
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create managed identity: %w", err)
-	}
-	return *identity.ID, *identity.Properties.PrincipalID, nil
-}
-
-// setManagedIdentityRole sets the managed identity's principal role to 'Contributor'
-func setManagedIdentityRole(ctx context.Context, subscriptionID string, resourceGroupID string, identityRolePrincipalID string, azureCreds azcore.TokenCredential) error {
-	roleDefinitionClient, err := armauthorization.NewRoleDefinitionsClient(azureCreds, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new role definitions client: %w", err)
-	}
-
-	found := false
-	var roleDefinition *armauthorization.RoleDefinition = nil
-	roleDefinitionsResponse := roleDefinitionClient.NewListPager(resourceGroupID, nil)
-	for roleDefinitionsResponse.More() && !found {
-		page, err := roleDefinitionsResponse.NextPage(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve next page for role definitions: %w", err)
-		}
-
-		for _, role := range page.Value {
-			if *role.Properties.RoleName == "Contributor" {
-				roleDefinition = role
-				found = true
-				break
-			}
-		}
-	}
-
-	if roleDefinition == nil {
-		return fmt.Errorf("didn't find the 'Contributor' role")
-	}
-
-	roleAssignmentClient, err := armauthorization.NewRoleAssignmentsClient(subscriptionID, azureCreds, nil)
-	if err != nil {
-		return fmt.Errorf("failed to create new role assignments client: %w", err)
-	}
-
-	roleAssignmentName, err := uuid.GenerateUUID()
-	if err != nil {
-		return fmt.Errorf("failed to generate uuid for role assignment name: %w", err)
-	}
-
-	for try := 0; try < 100; try++ {
-		_, err := roleAssignmentClient.Create(ctx, resourceGroupID, roleAssignmentName,
-			armauthorization.RoleAssignmentCreateParameters{
-				Properties: &armauthorization.RoleAssignmentProperties{
-					RoleDefinitionID: roleDefinition.ID,
-					PrincipalID:      ptr.To(identityRolePrincipalID),
-				},
-			}, nil)
-		if err != nil {
-			if try < 99 {
-				time.Sleep(time.Second)
-				continue
-			}
-			return fmt.Errorf("failed to add role assignment to role: %w", err)
-		}
-		break
-	}
-	return nil
 }
 
 // createSecurityGroup creates the security group the virtual network will use
@@ -469,7 +489,7 @@ func createVirtualNetwork(ctx context.Context, subscriptionID string, resourceGr
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no ID or name")
 	}
 
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) < 1 {
+	if len(vnet.Properties.Subnets) < 1 {
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("created vnet has no subnets: %+v", vnet)
 	}
 
@@ -700,7 +720,7 @@ func createPublicIPAddressForLB(ctx context.Context, subscriptionID string, reso
 			Properties: &armnetwork.PublicIPAddressPropertiesFormat{
 				PublicIPAddressVersion:   ptr.To(armnetwork.IPVersionIPv4),
 				PublicIPAllocationMethod: ptr.To(armnetwork.IPAllocationMethodStatic),
-				IdleTimeoutInMinutes:     ptr.To(int32(4)),
+				IdleTimeoutInMinutes:     ptr.To[int32](4),
 			},
 			SKU: &armnetwork.PublicIPAddressSKU{
 				Name: ptr.To(armnetwork.PublicIPAddressSKUNameStandard),
@@ -759,7 +779,7 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 							Protocol:          ptr.To(armnetwork.ProbeProtocolHTTP),
 							Port:              ptr.To[int32](30595),
 							IntervalInSeconds: ptr.To[int32](5),
-							NumberOfProbes:    ptr.To[int32](2),
+							ProbeThreshold:    ptr.To[int32](2),
 							RequestPath:       ptr.To("/healthz"),
 						},
 					},
@@ -779,9 +799,9 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 								},
 							},
 							Protocol:               ptr.To(armnetwork.LoadBalancerOutboundRuleProtocolAll),
-							AllocatedOutboundPorts: ptr.To(int32(1024)),
+							AllocatedOutboundPorts: ptr.To[int32](1024),
 							EnableTCPReset:         ptr.To(true),
-							IdleTimeoutInMinutes:   ptr.To(int32(4)),
+							IdleTimeoutInMinutes:   ptr.To[int32](4),
 						},
 					},
 				},
@@ -797,4 +817,89 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 		return fmt.Errorf("failed waiting to create guest cluster egress load balancer: %w", err)
 	}
 	return nil
+}
+
+// assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
+func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, assignCustomHCPRoles bool) error {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
+
+	role := "b24988ac-6180-42a0-ab88-20f7382dd24c"
+
+	scopes := []string{managedRG}
+
+	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
+	switch component {
+	case cloudProvider:
+		role = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
+		scopes = append(scopes, nsgRG, vnetRG)
+	case ingress:
+		role = "0336e1d3-7a87-462b-b6db-342b63f7802c"
+		scopes = append(scopes, vnetRG, dnsZoneRG)
+	case cpo:
+		scopes = append(scopes, nsgRG, vnetRG)
+		if assignCustomHCPRoles {
+			role = "7d8bb4e4-6fa7-4545-96cf-20fce11b705d"
+		}
+	case azureFile:
+		role = "0d7aedc0-15fd-4a67-a412-efad370c947e"
+		scopes = append(scopes, nsgRG, vnetRG)
+	case azureDisk:
+		role = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
+	case cncc:
+		role = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
+	case ciro:
+		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
+	case nodePoolMgmt:
+		scopes = append(scopes, vnetRG)
+		if assignCustomHCPRoles {
+			role = "Azure Red Hat OpenShift NodePool Management Role"
+		}
+	}
+
+	// Assign contributor role to service principal
+	for _, scope := range scopes {
+		if err := assignRole(assigneeID, role, scope); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// assignRole assigns the role to the service principal
+func assignRole(assigneeID, role, scope string) error {
+	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
+	log.Log.Info("Role assignment command", "command", cmdStr)
+	output, err := execAzCommand(cmdStr)
+	if err != nil {
+		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w output: %s", role, assigneeID, scope, err, string(output))
+	}
+	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
+	return nil
+}
+
+func findObjectId(appID string) (string, error) {
+	cmdStr := fmt.Sprintf("az ad sp show --id %s --query id | sed 's/\"//g'", appID)
+
+	output, err := execAzCommand(cmdStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to find object ID for service principal, %s : %w", appID, err)
+
+	}
+	objectID := strings.ReplaceAll(string(output), "\n", "")
+
+	return objectID, nil
+}
+
+func execAzCommand(cmdStr string) ([]byte, error) {
+	cmd := exec.Command("sh", "-c", cmdStr)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute az command, output: %s err: %w", string(output), err)
+	}
+
+	return output, nil
 }

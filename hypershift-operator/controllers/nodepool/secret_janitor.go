@@ -6,14 +6,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	supportutil "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/blang/semver"
 )
 
 // secretJanitor reconciles secrets and determines which secrets should remain in the cluster and which should be cleaned up.
@@ -62,8 +65,14 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
 	} else if apierrors.IsNotFound(err) {
+		// this is expected, don't delete the secret.
+		if strings.HasSuffix(nodePoolName, "karpenter") {
+			return ctrl.Result{}, nil
+		}
+
 		log.Info("removing secret as nodePool is missing")
 		return ctrl.Result{}, r.Client.Delete(ctx, secret)
+
 	}
 
 	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)

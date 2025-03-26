@@ -4,13 +4,14 @@ import (
 	"fmt"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+
+	routev1 "github.com/openshift/api/route/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/intstr"
-
-	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/config"
 )
 
 const (
@@ -20,8 +21,8 @@ const (
 
 var (
 	oauthServerLabels = map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
+		"app":                              "oauth-openshift",
+		hyperv1.ControlPlaneComponentLabel: "oauth-openshift",
 	}
 )
 

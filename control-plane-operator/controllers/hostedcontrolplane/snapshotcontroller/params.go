@@ -5,13 +5,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	utilpointer "k8s.io/utils/pointer"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
 	snapshotControllerOperatorImageName = "cluster-csi-snapshot-controller-operator"
 	snapshotControllerImageName         = "csi-snapshot-controller"
-	snapshotWebhookImageName            = "csi-snapshot-validation-webhook"
 )
 
 type Params struct {
@@ -27,14 +27,13 @@ type Params struct {
 func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
-	releaseImageProvider *imageprovider.ReleaseImageProvider,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	params := Params{
 		OwnerRef:                        config.OwnerRefFrom(hcp),
 		SnapshotControllerOperatorImage: releaseImageProvider.GetImage(snapshotControllerOperatorImageName),
 		SnapshotControllerImage:         releaseImageProvider.GetImage(snapshotControllerImageName),
-		SnapshotWebhookImage:            releaseImageProvider.GetImage(snapshotWebhookImageName),
 		AvailabilityProberImage:         releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Version:                         version,
 	}
@@ -47,7 +46,7 @@ func NewParams(
 	params.DeploymentConfig.AdditionalLabels = map[string]string{
 		config.NeedManagementKASAccessLabel: "true",
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return &params

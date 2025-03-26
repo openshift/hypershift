@@ -2,9 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -13,8 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
@@ -28,19 +23,22 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
-	"github.com/go-logr/logr"
-	"github.com/spf13/pflag"
-	"golang.org/x/crypto/ssh"
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/pflag"
 )
 
 func DefaultOptions() *RawCreateOptions {
@@ -50,10 +48,12 @@ func DefaultOptions() *RawCreateOptions {
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
 		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
 		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
+		MachineCIDR:                    []string{},
 		Log:                            log.Log,
 		Arch:                           "amd64",
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
 		NetworkType:                    string(hyperv1.OVNKubernetes),
+		FeatureSet:                     string(configv1.Default),
 	}
 }
 
@@ -67,7 +67,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
-	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specificed domain for services with publishing type LoadBalancer or Route.")
+	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specified domain for services with publishing type LoadBalancer or Route.")
 	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
 	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
@@ -88,11 +88,14 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfrastructureAvailabilityPolicy, "infra-availability-policy", opts.InfrastructureAvailabilityPolicy, "Availability policy for infrastructure services in guest cluster. Supported options: SingleReplica, HighlyAvailable")
 	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
+	flags.StringVar(&opts.EtcdStorageSize, "etcd-storage-size", opts.EtcdStorageSize, "The storage size for etcd data volume. Example: 8Gi")
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
+	flags.StringArrayVar(&opts.MachineCIDR, "machine-cidr", opts.MachineCIDR, "The CIDR of the machine network. Can be specified multiple times.")
 	flags.BoolVar(&opts.DefaultDual, "default-dual", opts.DefaultDual, "Defines the Service and Cluster CIDRs as dual-stack default values. Cannot be defined with service-cidr or cluster-cidr flag.")
 	flags.StringToStringVar(&opts.NodeSelector, "node-selector", opts.NodeSelector, "A comma separated list of key=value to use as node selector for the Hosted Control Plane pods to stick to. E.g. role=cp,disk=fast")
+	flags.StringToStringVar(&opts.PodsLabels, "pods-labels", opts.PodsLabels, "A comma separated list of key=value to use as labels for the Hosted Control Plane pods")
 	flags.StringArrayVar(&opts.Tolerations, "toleration", opts.Tolerations, "A comma separated list of options for a toleration that will be applied to the hcp pods. Valid options are, key, value, operator, effect, tolerationSeconds. E.g. key=node-role.kubernetes.io/master,operator=Exists,effect=NoSchedule. Can be specified multiple times to add multiple tolerations")
 	flags.BoolVar(&opts.Wait, "wait", opts.Wait, "If the create command should block until the cluster is up. Requires at least one node.")
 	flags.DurationVar(&opts.Timeout, "timeout", opts.Timeout, "If the --wait flag is set, set the optional timeout to limit the waiting duration. The format is duration; e.g. 30s or 1h30m45s; 0 means no timeout; default = 0")
@@ -102,6 +105,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Arch, "arch", opts.Arch, "The default processor architecture for the NodePool (e.g. arm64, amd64)")
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
+	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
 
 }
 
@@ -122,6 +126,7 @@ type RawCreateOptions struct {
 	ControlPlaneAvailabilityPolicy   string
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
+	EtcdStorageSize                  string
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
@@ -145,10 +150,12 @@ type RawCreateOptions struct {
 	SSHKeyFile                       string
 	ServiceCIDR                      []string
 	ClusterCIDR                      []string
+	MachineCIDR                      []string
 	DefaultDual                      bool
 	ExternalDNSDomain                string
 	Arch                             string
 	NodeSelector                     map[string]string
+	PodsLabels                       map[string]string
 	Tolerations                      []string
 	Wait                             bool
 	Timeout                          time.Duration
@@ -158,6 +165,7 @@ type RawCreateOptions struct {
 	PausedUntil                      string
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
+	FeatureSet                       string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -182,10 +190,10 @@ type resources struct {
 func (r *resources) asObjects() []crclient.Object {
 	var objects []crclient.Object
 
-	if object := r.AdditionalTrustBundle; object != nil {
+	if object := r.Namespace; object != nil {
 		objects = append(objects, object)
 	}
-	if object := r.Namespace; object != nil {
+	if object := r.AdditionalTrustBundle; object != nil {
 		objects = append(objects, object)
 	}
 	if object := r.PullSecret; object != nil {
@@ -194,14 +202,14 @@ func (r *resources) asObjects() []crclient.Object {
 	if object := r.SSHKey; object != nil {
 		objects = append(objects, object)
 	}
-	if object := r.Cluster; object != nil {
-		objects = append(objects, object)
-	}
 
 	// there's no way to check that the objects in `r.Resources` are not nil, as we can have
 	// a non-nil controllerruntime.Object interface vtable but a nil object that it points to
 	objects = append(objects, r.Resources...)
 
+	if object := r.Cluster; object != nil {
+		objects = append(objects, object)
+	}
 	for _, object := range r.NodePools {
 		if object != nil {
 			objects = append(objects, object)
@@ -325,6 +333,14 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)
 	}
 
+	if opts.EtcdStorageSize != "" {
+		etcdStorageSize, err := resource.ParseQuantity(opts.EtcdStorageSize)
+		if err != nil {
+			return nil, fmt.Errorf("failed parse ectd storage size: %w", err)
+		}
+		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
+	}
+
 	sshKey, sshPrivateKey := opts.PublicKey, opts.PrivateKey
 	// overrides secret if SSHKeyFile is set
 	if len(opts.SSHKeyFile) > 0 {
@@ -337,7 +353,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		}
 		sshKey = key
 	} else if opts.GenerateSSH {
-		sshKey, sshPrivateKey, err = generateSSHKeys()
+		sshKey, sshPrivateKey, err = util.GenerateSSHKeys()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate ssh keys: %w", err)
 		}
@@ -403,8 +419,22 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 	}
 	prototype.Cluster.Spec.Networking.ServiceNetwork = serviceNetworkEntries
 
+	var machineNetworkEntries []hyperv1.MachineNetworkEntry
+	for _, cidr := range opts.MachineCIDR {
+		parsedCIDR, err := ipnet.ParseCIDR(cidr)
+		if err != nil {
+			return nil, fmt.Errorf("parsing MachineCIDR (%s): %w", cidr, err)
+		}
+		machineNetworkEntries = append(machineNetworkEntries, hyperv1.MachineNetworkEntry{CIDR: *parsedCIDR})
+	}
+	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
+
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
+	}
+
+	if opts.PodsLabels != nil {
+		prototype.Cluster.Spec.Labels = opts.PodsLabels
 	}
 
 	for _, tStr := range opts.Tolerations {
@@ -450,29 +480,26 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		prototype.Cluster.Spec.ImageContentSources = imageContentSources
 	}
 
+	if opts.FeatureSet != string(configv1.Default) {
+		switch opts.FeatureSet {
+		case string(configv1.TechPreviewNoUpgrade):
+			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{
+					FeatureSet: configv1.TechPreviewNoUpgrade,
+				},
+			}
+		case string(configv1.DevPreviewNoUpgrade):
+			prototype.Cluster.Spec.Configuration.FeatureGate = &configv1.FeatureGateSpec{
+				FeatureGateSelection: configv1.FeatureGateSelection{
+					FeatureSet: configv1.DevPreviewNoUpgrade,
+				},
+			}
+		default:
+			return nil, fmt.Errorf("invalid feature set: %s", opts.FeatureSet)
+		}
+	}
+
 	return prototype, nil
-}
-
-func generateSSHKeys() ([]byte, []byte, error) {
-	privateKey, err := rsa.GenerateKey(certs.Reader(), 4096)
-	if err != nil {
-		return nil, nil, err
-	}
-	privateDER := x509.MarshalPKCS1PrivateKey(privateKey)
-	privatePEMBlock := pem.Block{
-		Type:    "RSA PRIVATE KEY",
-		Headers: nil,
-		Bytes:   privateDER,
-	}
-	privatePEM := pem.EncodeToMemory(&privatePEMBlock)
-
-	publicRSAKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	publicBytes := ssh.MarshalAuthorizedKey(publicRSAKey)
-
-	return publicBytes, privatePEM, nil
 }
 
 func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {
@@ -607,8 +634,12 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		if err != nil {
 			return nil, fmt.Errorf("could not retrieve kube clientset: %w", err)
 		}
-		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc); err != nil {
-			return nil, err
+		if err := validateMgmtClusterAndNodePoolCPUArchitectures(ctx, opts, kc, &hyperutil.RegistryClientImageMetadataProvider{}); err != nil {
+			if strings.Contains(err.Error(), "failed to retrieve manifest") {
+				opts.Log.Info("WARNING: Unable to access the payload, skipping the Architectures check.", "error", err.Error())
+			} else {
+				return nil, err
+			}
 		}
 	}
 
@@ -620,6 +651,17 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	case hyperv1.ArchitecturePPC64LE:
 	default:
 		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
+	}
+
+	// Validate feature set is "", TechPreviewNoUpgrade, or DevPreviewNoUpgrade
+	switch opts.FeatureSet {
+	case string(configv1.Default):
+	case string(configv1.TechPreviewNoUpgrade):
+	case string(configv1.DevPreviewNoUpgrade):
+	case string(configv1.CustomNoUpgrade):
+		return nil, fmt.Errorf("only a predefined feature set is supported by the feature-set flag")
+	default:
+		return nil, fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
 	}
 
 	return &ValidatedCreateOptions{
@@ -960,7 +1002,7 @@ func parseTolerationString(str string) (*corev1.Toleration, error) {
 // validateMgmtClusterAndNodePoolCPUArchitectures checks if a multi-arch release image or release stream was provided.
 // If none were provided, checks to make sure the NodePool CPU arch and the management cluster CPU arch match; if they
 // do not, the CLI will return an error since the NodePool will fail to complete during runtime.
-func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *RawCreateOptions, kc kubeclient.Interface) error {
+func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *RawCreateOptions, kc kubeclient.Interface, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
 	validMultiArchImage := false
 
 	// Check if the release image is multi-arch
@@ -969,8 +1011,7 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		if err != nil {
 			return fmt.Errorf("failed to read pull secret file: %w", err)
 		}
-
-		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret)
+		validMultiArchImage, err = registryclient.IsMultiArchManifestList(ctx, opts.ReleaseImage, pullSecret, imageMetadataProvider)
 		if err != nil {
 			return err
 		}

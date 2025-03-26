@@ -5,7 +5,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	utilpointer "k8s.io/utils/pointer"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -24,13 +25,13 @@ type Params struct {
 func NewParams(
 	hcp *hyperv1.HostedControlPlane,
 	version string,
-	releaseImageProvider *imageprovider.ReleaseImageProvider,
-	userReleaseImageProvider *imageprovider.ReleaseImageProvider,
+	releaseImageProvider imageprovider.ReleaseImageProvider,
+	userReleaseImageProvider imageprovider.ReleaseImageProvider,
 	setDefaultSecurityContext bool) *Params {
 
 	ir := newEnvironmentReplacer()
 	ir.setVersions(version)
-	ir.setOperatorImageReferences(releaseImageProvider.ComponentImages(), userReleaseImageProvider.ComponentImages())
+	ir.setOperatorImageReferences(releaseImageProvider, userReleaseImageProvider)
 
 	params := Params{
 		OwnerRef:                config.OwnerRefFrom(hcp),
@@ -48,7 +49,7 @@ func NewParams(
 	params.DeploymentConfig.Scheduling = config.Scheduling{
 		PriorityClass: config.DefaultPriorityClass,
 	}
-	params.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return &params

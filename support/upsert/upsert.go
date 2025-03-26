@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	routev1 "github.com/openshift/api/route/v1"
-	appsv1 "k8s.io/api/apps/v1"
-
 	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -16,6 +16,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
@@ -84,10 +85,31 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		return controllerutil.OperationResultCreated, nil
 	}
 
-	existing := obj.DeepCopyObject() //nolint
+	existing := obj.DeepCopyObject().(crclient.Object) //nolint
 	if err := mutate(f, key, obj); err != nil {
 		return controllerutil.OperationResultNone, err
 	}
+
+	result, err := p.update(ctx, c, obj, existing)
+	if err != nil || result == controllerutil.OperationResultNone {
+		return result, err
+	}
+
+	// update statue
+	if hasStatusSubResource(obj) {
+		if err := mutate(f, key, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		if err := c.Status().Update(ctx, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+	}
+
+	return controllerutil.OperationResultUpdated, nil
+}
+
+func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing crclient.Object) (controllerutil.OperationResult, error) {
+	key := crclient.ObjectKeyFromObject(obj)
 
 	switch existingTyped := existing.(type) {
 	case *appsv1.Deployment:
@@ -100,6 +122,8 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		defaultCronJobSpec(&existingTyped.Spec, &obj.(*batchv1.CronJob).Spec)
 	case *corev1.Service:
 		defaultServiceSpec(&existingTyped.Spec, &obj.(*corev1.Service).Spec)
+	case *corev1.ServiceAccount:
+		preserveServiceAccountPullSecrets(existingTyped, obj.(*corev1.ServiceAccount))
 	case *routev1.Route:
 		defaultRouteSpec(&existingTyped.Spec, &obj.(*routev1.Route).Spec)
 	case *apiextensionsv1.CustomResourceDefinition:
@@ -121,14 +145,7 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 	if err := c.Update(ctx, obj); err != nil {
 		return controllerutil.OperationResultNone, err
 	}
-	if hasStatusSubResource(obj) {
-		if err := mutate(f, key, obj); err != nil {
-			return controllerutil.OperationResultNone, err
-		}
-		if err := c.Status().Update(ctx, obj); err != nil {
-			return controllerutil.OperationResultNone, err
-		}
-	}
+
 	return controllerutil.OperationResultUpdated, nil
 }
 
@@ -143,7 +160,7 @@ func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Obje
 	return nil
 }
 
-// Below defaulting funcs. Their code is based on upstream code that is unfortunatelly
+// Below defaulting funcs. Their code is based on upstream code that is unfortunately
 // not in staging so we can't import it:
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/core/v1/zz_generated.defaults.go
 // * https://github.com/kubernetes/kubernetes/blob/e5976909c6fb129228a67515e0f86336a53884f0/pkg/apis/apps/v1/zz_generated.defaults.go

@@ -7,12 +7,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -46,7 +47,7 @@ type Params struct {
 }
 
 // NewParams creates a new Params object for a DNS operator deployment.
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
 			DNSOperator:   releaseImageProvider.GetImage("cluster-dns-operator"),
@@ -62,16 +63,16 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		"target.workload.openshift.io/management": `{"effect": "PreferredDuringScheduling"}`,
 	}
 	p.DeploymentConfig.AdditionalLabels = map[string]string{
-		"name":                        "dns-operator",
-		"app":                         "dns-operator",
-		hyperv1.ControlPlaneComponent: "dns-operator",
+		"name":                             "dns-operator",
+		"app":                              "dns-operator",
+		hyperv1.ControlPlaneComponentLabel: "dns-operator",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return p
@@ -106,7 +107,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 	dep.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{"name": "dns-operator"},
 	}
-	dep.Spec.Template.Spec.AutomountServiceAccountToken = utilpointer.Bool(false)
+	dep.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	dep.Spec.Template.Spec.Containers = []corev1.Container{{
 		Command: []string{"dns-operator"},
 		Env: []corev1.EnvVar{
@@ -142,13 +143,13 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		}},
 	}}
 	dep.Spec.Template.Spec.RestartPolicy = corev1.RestartPolicyAlways
-	dep.Spec.Template.Spec.TerminationGracePeriodSeconds = utilpointer.Int64(2)
+	dep.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To[int64](2)
 	dep.Spec.Template.Spec.Volumes = []corev1.Volume{{
 		Name: "dns-operator-kubeconfig",
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName:  "dns-operator-kubeconfig",
-				DefaultMode: utilpointer.Int32(0640),
+				DefaultMode: ptr.To[int32](0640),
 			},
 		},
 	}}

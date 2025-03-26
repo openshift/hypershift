@@ -32,7 +32,7 @@ func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image stri
 		return nil, err
 	}
 
-	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overriden.
+	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overridden.
 	for i := range imageStream.Spec.Tags {
 		for registrySource, registryDest := range p.RegistryOverrides {
 			imageStream.Spec.Tags[i].From.Name = strings.Replace(imageStream.Spec.Tags[i].From.Name, registrySource, registryDest, 1)

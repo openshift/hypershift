@@ -8,17 +8,20 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
-	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
+	"k8s.io/utils/ptr"
+
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
 )
 
 const (
@@ -76,10 +79,10 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 	}
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
+		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",

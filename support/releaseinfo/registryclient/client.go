@@ -13,18 +13,20 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/docker/distribution"
-	"github.com/docker/distribution/manifest/manifestlist"
-	"github.com/docker/distribution/registry/client/transport"
-	"github.com/opencontainers/go-digest"
-	"k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
-
 	dockerarchive "github.com/openshift/hypershift/support/thirdparty/docker/pkg/archive"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest"
 	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/cli/image/manifest/dockercredentials"
+
+	"k8s.io/client-go/rest"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/docker/distribution/registry/client/transport"
 )
 
 const (
@@ -32,12 +34,21 @@ const (
 	ArchitectureS390X   = "s390x"
 	ArchitecturePPC64LE = "ppc64le"
 	ArchitectureARM64   = "arm64"
+
+	DeserializeFuncName deserializeFuncCtxKey = "deserializeFunc"
 )
+
+type deserializeFuncCtxKey string
+type ManifestProvider interface {
+	GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error)
+	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
+	GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
+}
 
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
 // list of files to extract. It returns a map with file contents or an error.
 func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +125,7 @@ func allFound(content map[string][]byte) bool {
 }
 
 func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -172,7 +183,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 		return fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -234,20 +245,20 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 	return nil
 }
 
-func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
+func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
 	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
 	}
 	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
+		return nil, nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
 	}
-	_, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
+	imageConfig, layers, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
+		return nil, nil, nil, fmt.Errorf("failed to obtain image layers for %s: %w", imageRef, err)
 	}
-	return layers, repo.Blobs(ctx), nil
+	return imageConfig, layers, repo.Blobs(ctx), nil
 }
 
 // GetRepoSetup connects to a repo and pulls the imageRef's docker image information from the repo. Returns the repo and the docker image.
@@ -280,42 +291,9 @@ func GetRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (dist
 	return repo, dockerImageRef, nil
 }
 
-// GetManifest gets the manifest from an image
-func GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
-	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return nil, err
-	}
-
-	var srcDigest digest.Digest
-	if len(ref.Tag) > 0 {
-		desc, err := repo.Tags(ctx).Get(ctx, ref.Tag)
-		if err != nil {
-			return nil, err
-		}
-		srcDigest = desc.Digest
-	}
-
-	if len(ref.ID) > 0 {
-		srcDigest = digest.Digest(ref.ID)
-	}
-
-	manifests, err := repo.Manifests(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	digestsManifest, err := manifests.Get(ctx, srcDigest, manifest.PreferManifestList)
-	if err != nil {
-		return nil, err
-	}
-
-	return digestsManifest, nil
-}
-
 // IsMultiArchManifestList determines whether an image is a manifest listed image and contains manifests the following processor architectures: amd64, arm64, s390x, ppc64le
-func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte) (bool, error) {
-	srcManifest, err := GetManifest(ctx, imageRef, pullSecret)
+func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []byte, imageMetadataProvider ManifestProvider) (bool, error) {
+	srcManifest, err := imageMetadataProvider.GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return false, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
 	}
@@ -331,13 +309,19 @@ func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 		return false, nil
 	}
 
-	deserializedManifestList := new(manifestlist.DeserializedManifestList)
-	if err = deserializedManifestList.UnmarshalJSON(payload); err != nil {
-		return false, fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	// Default to using the deserializeManifest function, but allow for a custom deserialization function to be passed in the context for testing purposes and avoiding parallelism issues
+	deserializeFunc := deserializeManifest
+	if ctx.Value(DeserializeFuncName) != nil {
+		deserializeFunc = ctx.Value(DeserializeFuncName).(func([]byte) (*manifestlist.DeserializedManifestList, error))
+	}
+
+	manifestList, err := deserializeFunc(payload)
+	if err != nil {
+		return false, fmt.Errorf("failed to deserialize payload: %w", err)
 	}
 
 	count := 0
-	for _, arch := range deserializedManifestList.ManifestList.Manifests {
+	for _, arch := range manifestList.ManifestList.Manifests {
 		switch arch.Platform.Architecture {
 		case ArchitectureAMD64, ArchitectureS390X, ArchitecturePPC64LE, ArchitectureARM64:
 			count = count + 1
@@ -350,9 +334,18 @@ func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 	return false, nil
 }
 
+func deserializeManifest(b []byte) (*manifestlist.DeserializedManifestList, error) {
+	deserializedManifestList := new(manifestlist.DeserializedManifestList)
+	if err := deserializedManifestList.UnmarshalJSON(b); err != nil {
+		return nil, fmt.Errorf("failed to get unmarshalled manifest list: %w", err)
+	}
+
+	return deserializedManifestList, nil
+}
+
 // findImageRefByArch finds the appropriate image reference in a multi-arch manifest image based on the current platform's OS and processor architecture
-func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string) (manifestImageRef string, err error) {
-	manifestList, err := GetManifest(ctx, imageRef, pullSecret)
+func findImageRefByArch(ctx context.Context, imageRef string, pullSecret []byte, osToFind string, archToFind string, imageMetadataPorvider ManifestProvider) (manifestImageRef string, err error) {
+	manifestList, err := imageMetadataPorvider.GetManifest(ctx, imageRef, pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to retrieve manifest from image ref, %s: %w", imageRef, err)
 	}
@@ -421,10 +414,10 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 
 // GetCorrectArchImage returns the appropriate image related to the system os/arch if the image reference is manifest
 // listed, else returns the original image reference
-func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte) (manifestImageRef string, err error) {
+func GetCorrectArchImage(ctx context.Context, component string, imageRef string, pullSecret []byte, imageMetadataProvider ManifestProvider) (manifestImageRef string, err error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	isMultiArchImage, err := IsMultiArchManifestList(ctx, imageRef, pullSecret)
+	isMultiArchImage, err := IsMultiArchManifestList(ctx, imageRef, pullSecret, imageMetadataProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if image is manifest listed: %w", err)
 	}
@@ -435,7 +428,7 @@ func GetCorrectArchImage(ctx context.Context, component string, imageRef string,
 		log.Info(component + " image is a manifest listed image; extracting manifest for os/arch: " + operatingSystem + "/" + arch)
 
 		// Verify MF Image has the right os/arch image
-		imageRef, err = findImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch)
+		imageRef, err = findImageRefByArch(ctx, imageRef, pullSecret, operatingSystem, arch, imageMetadataProvider)
 		if err != nil {
 			return "", fmt.Errorf("failed to extract appropriate os/arch manifest from %s: %w", imageRef, err)
 		}
@@ -444,25 +437,4 @@ func GetCorrectArchImage(ctx context.Context, component string, imageRef string,
 	}
 
 	return imageRef, nil
-}
-
-func GetListDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, error) {
-	repo, dockerImageRef, err := GetRepoSetup(ctx, imageRef, pullSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to get repo setup: %v", err)
-	}
-
-	var srcDigest digest.Digest
-	if len(dockerImageRef.ID) > 0 {
-		srcDigest = digest.Digest(dockerImageRef.ID)
-	} else if len(dockerImageRef.Tag) > 0 {
-		desc, err := repo.Tags(ctx).Get(ctx, dockerImageRef.Tag)
-		if err != nil {
-			return "", err
-		}
-		srcDigest = desc.Digest
-	} else {
-		return "", fmt.Errorf("no tag or digest specified")
-	}
-	return srcDigest, nil
 }

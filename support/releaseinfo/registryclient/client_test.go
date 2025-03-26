@@ -2,19 +2,70 @@ package registryclient
 
 import (
 	"context"
+	"fmt"
 	"testing"
+
+	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
-	. "github.com/onsi/gomega"
+	"github.com/opencontainers/go-digest"
 )
 
 const (
-	ReleaseImage1     = "quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f"
-	ReleaseImage2     = "quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716"
-	ManifestMediaType = "application/vnd.docker.distribution.manifest.v2+json"
-	LinuxOS           = "linux"
+	ReleaseImage1         = "quay.io/openshift-release-dev/ocp-release@sha256:1a101ef5215da468cea8bd2eb47114e85b2b64a6b230d5882f845701f55d057f"
+	ReleaseImage2         = "quay.io/openshift-release-dev/ocp-release:4.11.0-0.nightly-multi-2022-07-12-131716"
+	ManifestMediaType     = "application/vnd.docker.distribution.manifest.v2+json"
+	ManifestListMediaType = "application/vnd.docker.distribution.manifest.list.v2+json"
+	ImageIndexMediaType   = "application/vnd.oci.image.index.v1+json"
+	LinuxOS               = "linux"
 )
+
+type fakeRegistryClientImageMetadataProvider struct {
+	mediaType string
+	result    *dockerv1client.DockerImageConfig
+	digest    string
+	ref       *reference.DockerImageReference
+}
+type fakeManifest struct {
+	mediaType string
+}
+
+func (f *fakeRegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
+	return f.result, nil
+}
+
+func (f *fakeRegistryClientImageMetadataProvider) GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
+	_, _, err := GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	}
+	return &fakeManifest{
+		f.mediaType,
+	}, nil
+}
+
+func (f *fakeRegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
+	var err error
+	_, f.ref, err = GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to retrieve manifest %s: %w", imageRef, err)
+	}
+	f.ref.ID = f.digest
+	return digest.Digest(f.digest), f.ref, nil
+}
+
+func (f *fakeRegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
+	return f.result, []distribution.Descriptor{}, nil, nil
+}
+
+type FakeManifest struct{}
+
+func (f *fakeManifest) References() []distribution.Descriptor { return []distribution.Descriptor{} }
+func (f *fakeManifest) Payload() (string, []byte, error)      { return f.mediaType, []byte{}, nil }
 
 func TestFindMatchingManifest(t *testing.T) {
 	deserializedManifestList1 := &manifestlist.DeserializedManifestList{
@@ -198,48 +249,123 @@ func TestFindMatchingManifest(t *testing.T) {
 
 func TestIsMultiArchManifestList(t *testing.T) {
 	pullSecretBytes := []byte("{\"auths\":{\"quay.io\":{\"auth\":\"\",\"email\":\"\"}}}")
-
 	testCases := []struct {
 		name                   string
 		image                  string
 		pullSecretBytes        []byte
+		mediaType              string
+		manifests              []manifestlist.ManifestDescriptor
 		expectedMultiArchImage bool
 		expectErr              bool
 	}{
 		{
 			name:                   "Check an amd64 image; no err",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+			mediaType:              ManifestMediaType,
 			pullSecretBytes:        pullSecretBytes,
 			expectedMultiArchImage: false,
 			expectErr:              false,
+			manifests: []manifestlist.ManifestDescriptor{
+				{
+					Descriptor: distribution.Descriptor{
+						MediaType: ManifestMediaType,
+						Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+					},
+					Platform: manifestlist.PlatformSpec{
+						Architecture: ArchitectureAMD64,
+						OS:           LinuxOS,
+					},
+				},
+			},
 		},
 		{
 			name:                   "Check a ppc64le image; no err",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			mediaType:              ManifestMediaType,
 			pullSecretBytes:        pullSecretBytes,
 			expectedMultiArchImage: false,
 			expectErr:              false,
+			manifests: []manifestlist.ManifestDescriptor{
+				{
+					Descriptor: distribution.Descriptor{
+						MediaType: ManifestMediaType,
+						Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+					},
+					Platform: manifestlist.PlatformSpec{
+						Architecture: ArchitecturePPC64LE,
+						OS:           LinuxOS,
+					},
+				},
+			},
 		},
 		{
 			name:                   "Check a multi-arch image; no err",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-multi",
+			mediaType:              ManifestListMediaType,
 			pullSecretBytes:        pullSecretBytes,
 			expectedMultiArchImage: true,
 			expectErr:              false,
+			manifests: []manifestlist.ManifestDescriptor{
+				{
+					Descriptor: distribution.Descriptor{
+						MediaType: ManifestListMediaType,
+						Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+					},
+					Platform: manifestlist.PlatformSpec{
+						Architecture: ArchitectureAMD64,
+						OS:           LinuxOS,
+					},
+				},
+				{
+					Descriptor: distribution.Descriptor{
+						MediaType: ManifestListMediaType,
+						Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+					},
+					Platform: manifestlist.PlatformSpec{
+						Architecture: ArchitecturePPC64LE,
+						OS:           LinuxOS,
+					},
+				},
+			},
 		},
 		{
 			name:                   "Bad pull secret; err",
 			image:                  "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			mediaType:              ManifestMediaType,
 			pullSecretBytes:        []byte(""),
 			expectedMultiArchImage: false,
 			expectErr:              true,
+			manifests: []manifestlist.ManifestDescriptor{
+				{
+					Descriptor: distribution.Descriptor{
+						MediaType: ManifestMediaType,
+						Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+					},
+					Platform: manifestlist.PlatformSpec{
+						Architecture: ArchitecturePPC64LE,
+						OS:           LinuxOS,
+					},
+				},
+			},
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			isMultiArchImage, err := IsMultiArchManifestList(context.TODO(), tc.image, tc.pullSecretBytes)
+			deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+				return &manifestlist.DeserializedManifestList{
+					ManifestList: manifestlist.ManifestList{
+						Manifests: tc.manifests,
+					},
+				}, nil
+			}
+			ctx := context.WithValue(context.Background(), DeserializeFuncName, deserializeFunc)
+			imageMetadataProvider := &fakeRegistryClientImageMetadataProvider{
+				mediaType: tc.mediaType,
+			}
+
+			isMultiArchImage, err := IsMultiArchManifestList(ctx, tc.image, tc.pullSecretBytes, imageMetadataProvider)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {

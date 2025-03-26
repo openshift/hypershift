@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"github.com/openshift/hypershift/support/util"
+
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

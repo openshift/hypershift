@@ -10,19 +10,23 @@ import (
 	"os"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/ram"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
+	"github.com/aws/aws-sdk-go/service/sts"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 type CreateInfraOptions struct {
@@ -36,11 +40,17 @@ type CreateInfraOptions struct {
 	OutputFile                  string
 	AdditionalTags              []string
 	EnableProxy                 bool
+	EnableSecureProxy           bool
 	ProxyVPCEndpointServiceName string
-	SSHKeyFile                  string
 	SingleNATGateway            bool
+	VPCCIDR                     string
 
 	CredentialsSecretData *util.CredentialsSecretData
+
+	VPCOwnerCredentialOpts       awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
+
+	PublicOnly bool
 
 	additionalEC2Tags []*ec2.Tag
 }
@@ -51,19 +61,27 @@ type CreateInfraOutputZone struct {
 }
 
 type CreateInfraOutput struct {
-	Region           string                   `json:"region"`
-	Zone             string                   `json:"zone"`
-	InfraID          string                   `json:"infraID"`
-	MachineCIDR      string                   `json:"machineCIDR"`
-	VPCID            string                   `json:"vpcID"`
-	Zones            []*CreateInfraOutputZone `json:"zones"`
-	Name             string                   `json:"Name"`
-	BaseDomain       string                   `json:"baseDomain"`
-	BaseDomainPrefix string                   `json:"baseDomainPrefix"`
-	PublicZoneID     string                   `json:"publicZoneID"`
-	PrivateZoneID    string                   `json:"privateZoneID"`
-	LocalZoneID      string                   `json:"localZoneID"`
-	ProxyAddr        string                   `json:"proxyAddr"`
+	Region             string                   `json:"region"`
+	Zone               string                   `json:"zone"`
+	InfraID            string                   `json:"infraID"`
+	MachineCIDR        string                   `json:"machineCIDR"`
+	VPCID              string                   `json:"vpcID"`
+	Zones              []*CreateInfraOutputZone `json:"zones"`
+	Name               string                   `json:"Name"`
+	BaseDomain         string                   `json:"baseDomain"`
+	BaseDomainPrefix   string                   `json:"baseDomainPrefix"`
+	PublicZoneID       string                   `json:"publicZoneID"`
+	PrivateZoneID      string                   `json:"privateZoneID"`
+	LocalZoneID        string                   `json:"localZoneID"`
+	ProxyAddr          string                   `json:"proxyAddr"`
+	SecureProxyAddr    string                   `json:"secureProxyAddr"`
+	ProxyPrivateSSHKey string                   `json:"proxyPrivateSSHKey"`
+	PublicOnly         bool                     `json:"publicOnly"`
+	ProxyCA            string                   `json:"proxyCA"`
+
+	// Fields related to shared VPCs
+	VPCCreatorAccountID string `json:"vpcCreatorAccountID"`
+	ClusterAccountID    string `json:"clusterAccountID"`
 }
 
 const (
@@ -95,19 +113,27 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	cmd.Flags().StringSliceVar(&opts.Zones, "zones", opts.Zones, "The availability zones in which NodePool can be created")
-	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If true, a proxy should be set up, rather than allowing direct internet access from the nodes")
+	cmd.Flags().BoolVar(&opts.EnableSecureProxy, "enable-secure-proxy", opts.EnableSecureProxy, "If true, a secure proxy should be set up, rather than allowing direct internet access from the nodes")
 	cmd.Flags().StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	cmd.Flags().BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
+	cmd.Flags().StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
+	cmd.Flags().BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, no private subnets or NAT gateway are created")
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
+	opts.VPCOwnerCredentialOpts.BindVPCOwnerFlags(cmd.Flags())
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		err := opts.AWSCredentialsOpts.Validate()
 		if err != nil {
+			return err
+		}
+		if err = opts.Validate(); err != nil {
 			return err
 		}
 		if err := opts.Run(cmd.Context(), l); err != nil {
@@ -129,6 +155,13 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) error {
 	return o.Output(result)
 }
 
+func (o *CreateInfraOptions) Validate() error {
+	if o.EnableProxy && o.EnableSecureProxy {
+		return fmt.Errorf("specify either --enable-proxy or --enable-secure-proxy, but not both")
+	}
+	return nil
+}
+
 func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 	// Write out stateful information
 	out := os.Stdout
@@ -138,7 +171,9 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 		if err != nil {
 			return fmt.Errorf("cannot create output file: %w", err)
 		}
-		defer out.Close()
+		defer func(out *os.File) {
+			_ = out.Close()
+		}(out)
 	}
 	outputBytes, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
@@ -154,12 +189,40 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
 	l.Info("Creating infrastructure", "id", o.InfraID)
 
+	if o.VPCCIDR == "" {
+		o.VPCCIDR = DefaultCIDRBlock
+	}
+
+	if err := awsutil.ValidateVPCCIDR(o.VPCCIDR); err != nil {
+		return nil, err
+	}
+
 	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-create-infra", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return nil, err
 	}
-	ec2Client := ec2.New(awsSession, awsutil.NewConfig())
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	var vpcOwnerAWSSession *session.Session
+	if o.VPCOwnerCredentialOpts.AWSCredentialsFile != "" {
+		vpcOwnerAWSSession, err = o.VPCOwnerCredentialOpts.GetSession("cli-create-infra", nil, o.Region)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	var clusterCreatorEC2Client, ec2Client *ec2.EC2
+	var vpcOwnerRoute53Client, route53Client *route53.Route53
+	clusterCreatorEC2Client = ec2.New(awsSession, awsutil.NewConfig())
+	if vpcOwnerAWSSession != nil {
+		ec2Client = ec2.New(vpcOwnerAWSSession, awsutil.NewConfig())
+	} else {
+		ec2Client = clusterCreatorEC2Client
+	}
+	route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	if vpcOwnerAWSSession != nil {
+		vpcOwnerRoute53Client = route53.New(vpcOwnerAWSSession, awsutil.NewAWSRoute53Config())
+	} else {
+		vpcOwnerRoute53Client = route53Client
+	}
 
 	if err := o.parseAdditionalTags(); err != nil {
 		return nil, err
@@ -167,11 +230,12 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 
 	result := &CreateInfraOutput{
 		InfraID:          o.InfraID,
-		MachineCIDR:      DefaultCIDRBlock,
+		MachineCIDR:      o.VPCCIDR,
 		Region:           o.Region,
 		Name:             o.Name,
 		BaseDomain:       o.BaseDomain,
 		BaseDomainPrefix: o.BaseDomainPrefix,
+		PublicOnly:       o.PublicOnly,
 	}
 	if len(o.Zones) == 0 {
 		zone, err := o.firstZone(l, ec2Client)
@@ -195,41 +259,56 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	// Per zone resources
+	_, cidrNetwork, err := net.ParseCIDR(o.VPCCIDR)
+	if err != nil {
+		return nil, err
+	}
+	publicNetwork := copyIPNet(cidrNetwork)
+	publicNetwork.Mask = net.CIDRMask(20, 32)
+
+	privateNetwork := copyIPNet(cidrNetwork)
+	privateNetwork.Mask = net.CIDRMask(20, 32)
+	privateNetwork.IP[2] += 128
+
 	var endpointRouteTableIds []*string
 	var publicSubnetIDs []string
-	_, privateNetwork, err := net.ParseCIDR(basePrivateSubnetCIDR)
-	if err != nil {
-		return nil, err
-	}
-	_, publicNetwork, err := net.ParseCIDR(basePublicSubnetCIDR)
-	if err != nil {
-		return nil, err
-	}
 	var natGatewayID string
 	for _, zone := range o.Zones {
-		privateSubnetID, err := o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
-		if err != nil {
-			return nil, err
+		var (
+			privateSubnetID string
+			err             error
+		)
+		if !o.PublicOnly {
+			privateSubnetID, err = o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
+			if err != nil {
+				return nil, err
+			}
 		}
 		publicSubnetID, err := o.CreatePublicSubnet(l, ec2Client, result.VPCID, zone, publicNetwork.String())
 		if err != nil {
 			return nil, err
 		}
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
-		if !o.EnableProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
+		if !o.PublicOnly && !o.EnableProxy && !o.EnableSecureProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
 			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
 			}
 		}
-		privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
-		if err != nil {
-			return nil, err
+		if !o.PublicOnly {
+			privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+			if err != nil {
+				return nil, err
+			}
+			endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
 		}
-		endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
+		zoneSubnetID := privateSubnetID
+		if o.PublicOnly {
+			zoneSubnetID = publicSubnetID
+		}
 		result.Zones = append(result.Zones, &CreateInfraOutputZone{
 			Name:     zone,
-			SubnetID: privateSubnetID,
+			SubnetID: zoneSubnetID,
 		})
 		// increment each subnet by /20
 		privateNetwork.IP[2] = privateNetwork.IP[2] + 16
@@ -249,16 +328,39 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID)
+	if vpcOwnerAWSSession != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, publicSubnetIDs, result); err != nil {
+			return nil, err
+		}
+	}
+
+	privateZoneClient := vpcOwnerRoute53Client
+	var initialVPC string
+	if o.PrivateZonesInClusterAccount {
+		privateZoneClient = route53Client
+
+		// Create a dummy vpc that we can use to create the private hosted zones
+		if initialVPC, err = o.createVPC(l, clusterCreatorEC2Client); err != nil {
+			return nil, err
+		}
+	}
+
+	result.PrivateZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, ZoneName(o.Name, o.BaseDomainPrefix, o.BaseDomain), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
 		return nil, err
 	}
-	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, route53Client, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID)
+	result.LocalZoneID, err = o.CreatePrivateZone(ctx, l, privateZoneClient, fmt.Sprintf("%s.%s", o.Name, hypershiftLocalZoneName), result.VPCID, o.PrivateZonesInClusterAccount, vpcOwnerRoute53Client, initialVPC)
 	if err != nil {
 		return nil, err
 	}
 
-	if o.EnableProxy {
+	if initialVPC != "" {
+		if err := o.deleteVPC(l, clusterCreatorEC2Client, initialVPC); err != nil {
+			return nil, err
+		}
+	}
+
+	if o.EnableProxy || o.EnableSecureProxy {
 		sgGroupID, err := o.createProxySecurityGroup(ctx, l, ec2Client, result.VPCID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create security group for proxy: %w", err)
@@ -270,17 +372,14 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 				return nil, err
 			}
 		} else {
-			var sshKeyFile []byte
-			if o.SSHKeyFile != "" {
-				sshKeyFile, err = os.ReadFile(o.SSHKeyFile)
-				if err != nil {
-					return nil, fmt.Errorf("failed to read ssh-key-file from %s: %w", o.SSHKeyFile, err)
-				}
-			}
-			result.ProxyAddr, err = o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, string(sshKeyFile), sgGroupID)
+			proxyResult, err := o.createProxyHost(ctx, l, ec2Client, result.Zones[0].SubnetID, sgGroupID, o.EnableSecureProxy)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create proxy host: %w", err)
 			}
+			result.ProxyAddr = proxyResult.HTTPProxyURL
+			result.SecureProxyAddr = proxyResult.HTTPSProxyURL
+			result.ProxyCA = proxyResult.CA
+			result.ProxyPrivateSSHKey = proxyResult.PrivateKey
 		}
 	}
 	return result, nil
@@ -365,13 +464,33 @@ func (o *CreateInfraOptions) createProxyVPCEndpoint(ctx context.Context, l logr.
 	return fmt.Sprintf("http://%s:3128", *output.VpcEndpoint.DnsEntries[0].DnsName), nil
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID, sshKeys string, sgGroupID *string) (string, error) {
-	result, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
+type proxyInfo struct {
+	HTTPProxyURL  string
+	HTTPSProxyURL string
+	CA            string
+	PrivateKey    string
+}
+
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID string, sgGroupID *string, isSecure bool) (*proxyInfo, error) {
+
+	var result proxyInfo
+
+	publicSSHKey, privateSSHKey, err := util.GenerateSSHKeys()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate proxy ssh keys: %w", err)
+	}
+
+	instanceType := "t2.micro"
+	if isSecure {
+		instanceType = "t3.medium"
+	}
+
+	runResult, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
 		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
 		MaxCount:     aws.Int64(1),
 		MinCount:     aws.Int64(1),
-		InstanceType: aws.String("t2.micro"),
-		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf(proxyConfigurationScript, sshKeys)))),
+		InstanceType: aws.String(instanceType),
+		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(proxyConfigScript(isSecure, string(publicSSHKey))))),
 		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
 			{
 				DeviceIndex:              aws.Int64(0),
@@ -383,11 +502,151 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		TagSpecifications: o.ec2TagSpecifications("instance", o.InfraID+"-http-proxy"),
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to launch proxy host: %w", err)
+		return nil, fmt.Errorf("failed to launch proxy host: %w", err)
 	}
 	l.Info("Created proxy host")
 
-	return fmt.Sprintf("http://%s:3128", *result.Instances[0].PrivateIpAddress), nil
+	privateIP := aws.StringValue(runResult.Instances[0].PrivateIpAddress)
+	if isSecure {
+		if err := client.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []*string{runResult.Instances[0].InstanceId},
+		}); err != nil {
+			return nil, fmt.Errorf("failed to wait for proxy host to be in running state: %w", err)
+		}
+
+		describeResult, err := client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []*string{runResult.Instances[0].InstanceId},
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe proxy instance: %w", err)
+		}
+
+		publicIP := aws.StringValue(describeResult.Reservations[0].Instances[0].PublicIpAddress)
+
+		backoff := wait.Backoff{
+			Steps:    10,
+			Duration: 10 * time.Second,
+			Factor:   1.0,
+			Jitter:   0.1,
+		}
+
+		var proxyCA string
+		err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+			var err error
+			proxyCA, err = fetchProxyCA(publicIP, privateIP, privateSSHKey)
+			if err != nil {
+				l.Info("Waiting to fetch proxy CA", "message", err.Error())
+				return err
+			}
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch proxy CA trust bundle: %w", err)
+		}
+		l.Info("Obtained proxy CA trust bundle")
+		result.HTTPSProxyURL = fmt.Sprintf("https://%s:3128", privateIP)
+		result.CA = proxyCA
+	}
+
+	result.HTTPProxyURL = fmt.Sprintf("http://%s:3128", privateIP)
+	result.PrivateKey = base64.StdEncoding.EncodeToString(privateSSHKey)
+
+	return &result, nil
+}
+
+func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, publicSubnetIDs []string, output *CreateInfraOutput) error {
+	// Obtain account IDs for both accounts
+	clusterSTSClient := sts.New(clusterSession, awsutil.NewConfig())
+	clusterEC2Client := ec2.New(clusterSession, awsutil.NewConfig())
+	vpcOwnerSTSClient := sts.New(vpcOwnerSession, awsutil.NewConfig())
+	vpcOwnerEC2Client := ec2.New(vpcOwnerSession, awsutil.NewConfig())
+
+	clusterAccountID, err := clusterSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return err
+	}
+	vpcOwnerAccountID, err := vpcOwnerSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return err
+	}
+	output.VPCCreatorAccountID = aws.StringValue(vpcOwnerAccountID.Account)
+	output.ClusterAccountID = aws.StringValue(clusterAccountID.Account)
+
+	privateSubnetIDsToShare := make([]*string, 0, len(output.Zones))
+	publicSubnetIDsToShare := make([]*string, 0, len(publicSubnetIDs))
+	allSubnetIDsToShare := make([]*string, 0, len(output.Zones)+len(publicSubnetIDs))
+
+	for _, zone := range output.Zones {
+		privateSubnetIDsToShare = append(privateSubnetIDsToShare, aws.String(zone.SubnetID))
+	}
+	for _, subnetID := range publicSubnetIDs {
+		publicSubnetIDsToShare = append(publicSubnetIDsToShare, aws.String(subnetID))
+	}
+
+	allSubnetIDsToShare = append(allSubnetIDsToShare, privateSubnetIDsToShare...)
+	allSubnetIDsToShare = append(allSubnetIDsToShare, publicSubnetIDsToShare...)
+
+	subnetsResult, err := vpcOwnerEC2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+		SubnetIds: allSubnetIDsToShare,
+	})
+	if err != nil {
+		return err
+	}
+	subnetArns := make([]*string, 0, len(subnetsResult.Subnets))
+	for _, subnet := range subnetsResult.Subnets {
+		subnetArns = append(subnetArns, subnet.SubnetArn)
+	}
+
+	// Share subnets
+	l.Info("Sharing VPC subnets with cluster creator account", "subnetids", allSubnetIDsToShare)
+	ramClient := ram.New(vpcOwnerSession, awsutil.NewConfig())
+	if _, err = ramClient.CreateResourceShareWithContext(ctx, &ram.CreateResourceShareInput{
+		Name:         aws.String(fmt.Sprintf("%s-share", o.InfraID)),
+		Principals:   []*string{aws.String(output.ClusterAccountID)},
+		ResourceArns: subnetArns,
+		Tags: []*ram.Tag{
+			{
+				Key:   aws.String(clusterTag(o.InfraID)),
+				Value: aws.String(clusterTagValue),
+			},
+		},
+	}); err != nil {
+		return err
+	}
+
+	// Wait for subnets to be visible in the cluster creator account
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 30 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+	var subnetResult *ec2.DescribeSubnetsOutput
+	if err = retry.OnError(backoff, func(error) bool { return true }, func() error {
+		var err error
+		subnetResult, err = clusterEC2Client.DescribeSubnets(&ec2.DescribeSubnetsInput{
+			SubnetIds: allSubnetIDsToShare,
+		})
+		if err != nil || len(subnetResult.Subnets) != len(allSubnetIDsToShare) {
+			l.Info("Waiting for subnets to be available in cluster creator account")
+			return fmt.Errorf("not ready yet")
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	// Tag subnets in cluster creator account
+	for _, subnet := range subnetsResult.Subnets {
+		l.Info("Tagging subnet", "id", aws.StringValue(subnet.SubnetId))
+		if _, err := clusterEC2Client.CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
+			Resources: []*string{subnet.SubnetId},
+			Tags:      subnet.Tags,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ec2Backoff() wait.Backoff {
@@ -410,14 +669,10 @@ func ZoneName(clusterName, prefix, baseDomain string) string {
 	return fmt.Sprintf("%s.%s", prefix, baseDomain)
 }
 
-const proxyConfigurationScript = `#!/bin/bash
-yum install -y squid
-# By default, squid only allows connect on port 443
-sed -E 's/(^http_access deny CONNECT.*)/#\1/' -i /etc/squid/squid.conf
-systemctl enable --now squid
-mkdir -p /home/ec2-user/.ssh
-chmod 0700 /home/ec2-user/.ssh
-echo -e '%s' >/home/ec2-user/.ssh/authorized_keys
-chmod 0600 /home/ec2-user/.ssh/authorized_keys
-chown -R ec2-user:ec2-user /home/ec2-user/.ssh
-`
+func copyIPNet(in *net.IPNet) *net.IPNet {
+	result := *in
+	resultIP := make(net.IP, len(in.IP))
+	copy(resultIP, in.IP)
+	result.IP = resultIP
+	return &result
+}

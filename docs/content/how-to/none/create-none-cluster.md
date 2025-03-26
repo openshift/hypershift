@@ -55,7 +55,7 @@ podman run -it -v ${PWD}/tmp:/var/tmp/hypershift-bin/:Z --rm docker.io/golang:1.
 sudo install -m 0755 -o root -g root ./tmp/hypershift /usr/local/bin/hypershift
 ~~~
 
-> **WARNING**: At the time of writting this document, there were some issues already fixed in HyperShift but unfortunately those weren't included in the latest release of the container.
+> **WARNING**: At the time of writing this document, there were some issues already fixed in HyperShift but unfortunately those weren't included in the latest release of the container.
 
 ## Prerequisite (optional): Create a custom HyperShift image
 
@@ -134,7 +134,7 @@ api.hosted0.example.com.  IN A  10.19.138.37
 
 ### Procedure
 
-* Create a file containing all the variables depending on the enviroment:
+* Create a file containing all the variables depending on the environment:
 
 ~~~sh
 cat <<'EOF' > ./myvars
@@ -336,7 +336,7 @@ curl -v -o rhcos.iso http://www.example.com/hypershift-none/rhcos.iso
 
 * Attach the ISO to the BMC and boot from it once.
 
-This step is highly dependant on the hardware used. In this example, using Dell hardware, the following steps can be done, but your milleage may vary:
+This step is highly dependent on the hardware used. In this example, using Dell hardware, the following steps can be done, but your milleage may vary:
 
 ~~~sh
 export IDRACIP=10.19.136.22

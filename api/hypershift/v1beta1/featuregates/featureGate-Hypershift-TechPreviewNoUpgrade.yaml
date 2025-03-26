@@ -1,0 +1,45 @@
+{
+    "apiVersion": "config.openshift.io/v1",
+    "kind": "FeatureGate",
+    "metadata": {
+        "annotations": {
+            "include.release.openshift.io/ibm-cloud-managed": "false-except-for-the-config-operator"
+        },
+        "creationTimestamp": null,
+        "name": "cluster"
+    },
+    "spec": {
+      "featureSet": "TechPreviewNoUpgrade"
+    },
+    "status": {
+        "featureGates": [
+            {
+                "disabled": [],
+                "enabled": [
+                    {
+                        "name": "AutoNodeKarpenter",
+                    },
+                    {
+                        "name": "ExternalOIDC"
+                    },
+                    {
+                        "name": "DynamicResourceAllocation"
+                    },
+                    {
+                        "name": "NetworkDiagnosticsConfig"
+                    },
+                    {
+                        "name": "OpenStack"
+                    },
+                    {
+                        "name": "DisableClusterCapabilities"
+                    },
+                    {
+                        "name": "ClusterVersionOperatorConfiguration"
+                    }
+                ],
+                "version": ""
+            }
+        ]
+    }
+}

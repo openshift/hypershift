@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	capkv1alpha1 "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
@@ -50,7 +49,10 @@ func NewKubeVirtAdvancedMultinetTest(ctx context.Context, mgmtClient crclient.Cl
 
 func (k KubeVirtAdvancedMultinetTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.KubevirtPlatform {
-		t.Skip("test only supported on platform KubeVirt")
+		t.Skip("test only supported on KubeVirt platform")
+	}
+	if e2eutil.IsLessThan(e2eutil.Version415) {
+		t.Skip("test only supported from version 4.15")
 	}
 
 	t.Log("Starting test KubeVirtAdvancedMultinetTest")
@@ -109,9 +111,9 @@ func (k KubeVirtAdvancedMultinetTest) BuildNodePoolManifest(defaultNodepool hype
 		nodePool.Spec.Platform.Kubevirt.AdditionalNetworks = []hyperv1.KubevirtNetwork{{
 			Name: "default/" + k.infra.NADName(),
 		}}
-		nodePool.Spec.Platform.Kubevirt.AttachDefaultNetwork = pointer.Bool(false)
+		nodePool.Spec.Platform.Kubevirt.AttachDefaultNetwork = ptr.To(false)
 	}
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 	return nodePool, nil
 }
 
@@ -164,7 +166,7 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 		ports = append(ports, discoveryv1.EndpointPort{
 			Name:     &port.Name,
 			Protocol: &port.Protocol,
-			Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
+			Port:     ptr.To(int32(port.TargetPort.IntValue())),
 		})
 	}
 	eps := discoveryv1.EndpointSlice{
@@ -180,9 +182,9 @@ func (k KubeVirtAdvancedMultinetTest) SetupInfra(t *testing.T) error {
 		Endpoints: []discoveryv1.Endpoint{{
 			Addresses: []string{dnsmasqPod.Status.PodIP},
 			Conditions: discoveryv1.EndpointConditions{
-				Ready:       pointer.Bool(true),
-				Serving:     pointer.Bool(true),
-				Terminating: pointer.Bool(false),
+				Ready:       ptr.To(true),
+				Serving:     ptr.To(true),
+				Terminating: ptr.To(false),
 			},
 		}},
 	}
@@ -278,7 +280,7 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 		}
 	}
 	if internalAddress == "" {
-		return "", fmt.Errorf("missing internal addres at kubevirt machine")
+		return "", fmt.Errorf("missing internal address at kubevirt machine")
 	}
 	return internalAddress, nil
 }
@@ -319,7 +321,7 @@ func (k KubeVirtAdvancedMultinetTest) composeDNSMasqPod(t *testing.T) *corev1.Po
 						"-c",
 						fmt.Sprintf(`set -xe
 dnf install -y iptables dnsmasq procps-ng
-ip a add 192.168.66.1/24 dev %[1]s 
+ip a add 192.168.66.1/24 dev %[1]s
 echo "net.ipv4.ip_forward=1" | tee -a /etc/sysctl.conf
 sysctl -p
 iptables -A FORWARD -i %[1]s -j ACCEPT
@@ -329,7 +331,7 @@ dnsmasq -d --interface=%[1]s --dhcp-option=option:router,192.168.66.1 --dhcp-ran
 					},
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					SecurityContext: &corev1.SecurityContext{
-						Privileged: pointer.Bool(true),
+						Privileged: ptr.To(true),
 					},
 				},
 			},

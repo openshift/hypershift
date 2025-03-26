@@ -1,0 +1,33 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-apiserver
+  namespace: HCP_NAMESPACE
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: (apiserver_storage_objects|apiserver_request_total|apiserver_current_inflight_requests)
+      sourceLabels:
+      - __name__
+    scheme: https
+    targetPort: client
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: kube-apiserver
+  namespaceSelector:
+    matchNames:
+    - HCP_NAMESPACE
+  selector:
+    matchLabels:
+      app: kube-apiserver

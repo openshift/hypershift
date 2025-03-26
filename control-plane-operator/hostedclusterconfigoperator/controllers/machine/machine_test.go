@@ -6,16 +6,17 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/format"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/client/clientset/clientset/scheme"
-	"gopkg.in/yaml.v2"
+
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-	kubevirtv1 "kubevirt.io/api/core/v1"
+	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -24,7 +25,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/onsi/gomega/format"
+	"gopkg.in/yaml.v2"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 func TestReconcileDefaultIngressEndpoints(t *testing.T) {
@@ -226,23 +229,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][0]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(2222),
+				Port:     ptr.To[int32](2222),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 		for _, t := range endpointSliceTransform {
@@ -265,23 +268,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv6,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][1]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(2222),
+				Port:     ptr.To[int32](2222),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 
@@ -305,23 +308,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][0]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(4444),
+				Port:     ptr.To[int32](4444),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 	}
@@ -344,23 +347,23 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					Kind:               vmTypeMeta.Kind,
 					UID:                vm.UID,
 					Name:               vm.Name,
-					Controller:         pointer.Bool(true),
-					BlockOwnerDeletion: pointer.Bool(true),
+					Controller:         ptr.To(true),
+					BlockOwnerDeletion: ptr.To(true),
 				}},
 			},
 			AddressType: discoveryv1.AddressTypeIPv6,
 			Endpoints: []discoveryv1.Endpoint{{
 				Addresses: []string{addressesByMachine[machine.Name][1]},
 				Conditions: discoveryv1.EndpointConditions{
-					Ready:       pointer.Bool(true),
-					Serving:     pointer.Bool(true),
-					Terminating: pointer.Bool(false),
+					Ready:       ptr.To(true),
+					Serving:     ptr.To(true),
+					Terminating: ptr.To(false),
 				},
 			}},
 			Ports: []discoveryv1.EndpointPort{{
-				Port:     pointer.Int32(4444),
+				Port:     ptr.To[int32](4444),
 				Protocol: &protocolTCP,
-				Name:     pointer.String("port1"),
+				Name:     ptr.To("port1"),
 			}},
 		}
 	}
@@ -370,11 +373,11 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		return service
 	}
 
-	capiv1.AddToScheme(scheme.Scheme)
-	hyperv1.AddToScheme(scheme.Scheme)
-	kubevirtv1.AddToScheme(scheme.Scheme)
-	discoveryv1.AddToScheme(scheme.Scheme)
-	corev1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
+	_ = hyperv1.AddToScheme(scheme.Scheme)
+	_ = kubevirtv1.AddToScheme(scheme.Scheme)
+	_ = discoveryv1.AddToScheme(scheme.Scheme)
+	_ = corev1.AddToScheme(scheme.Scheme)
 	testCases := []struct {
 		name                          string
 		machines                      []capiv1.Machine
@@ -497,12 +500,14 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			}
 			obtainedEndpointSliceList := discoveryv1.EndpointSliceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedEndpointSliceList)).To(Succeed())
-			yaml.Marshal(obtainedEndpointSliceList)
+			_, err := yaml.Marshal(obtainedEndpointSliceList)
+			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedEndpointSliceList.Items).To(WithTransform(resetResourceVersionFromEndpointSlices, ConsistOf(tc.expectedIngressEndpointSlices)))
 
 			obtainedServicesList := corev1.ServiceList{}
 			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedServicesList)).To(Succeed())
-			yaml.Marshal(obtainedServicesList)
+			_, err = yaml.Marshal(obtainedServicesList)
+			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedServicesList.Items).To(WithTransform(resetResourceVersionFromServices, ConsistOf(tc.expectedServices)))
 
 		})

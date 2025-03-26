@@ -1,4 +1,7 @@
 bin/
+hack/tools/bin/
+contrib/
+.git/
 .github/
 .tekton/
 .ci-operator.yaml

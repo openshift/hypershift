@@ -13,3 +13,38 @@ func (c *ClusterConfiguration) GetNetwork() *configv1.NetworkSpec         { retu
 func (c *ClusterConfiguration) GetOAuth() *configv1.OAuthSpec             { return c.OAuth }
 func (c *ClusterConfiguration) GetScheduler() *configv1.SchedulerSpec     { return c.Scheduler }
 func (c *ClusterConfiguration) GetProxy() *configv1.ProxySpec             { return c.Proxy }
+
+func (c *ClusterConfiguration) GetTLSSecurityProfile() *configv1.TLSSecurityProfile {
+	if c != nil && c.APIServer != nil {
+		return c.APIServer.TLSSecurityProfile
+	}
+	return nil
+}
+
+func (c *ClusterConfiguration) GetAutoAssignCIDRs() []string {
+	if c != nil && c.Network != nil && c.Network.ExternalIP != nil {
+		return c.Network.ExternalIP.AutoAssignCIDRs
+	}
+	return nil
+}
+
+func (c *ClusterConfiguration) GetAuditPolicyConfig() configv1.Audit {
+	if c != nil && c.APIServer != nil && c.APIServer.Audit.Profile != "" {
+		return c.APIServer.Audit
+	}
+	return configv1.Audit{Profile: configv1.DefaultAuditProfileType}
+}
+
+func (c *ClusterConfiguration) GetFeatureGateSelection() configv1.FeatureGateSelection {
+	if c != nil && c.FeatureGate != nil {
+		return c.FeatureGate.FeatureGateSelection
+	}
+	return configv1.FeatureGateSelection{FeatureSet: configv1.Default}
+}
+
+func (c *ClusterConfiguration) GetNamedCertificates() []configv1.APIServerNamedServingCert {
+	if c != nil && c.APIServer != nil {
+		return c.APIServer.ServingCerts.NamedCertificates
+	}
+	return []configv1.APIServerNamedServingCert{}
+}

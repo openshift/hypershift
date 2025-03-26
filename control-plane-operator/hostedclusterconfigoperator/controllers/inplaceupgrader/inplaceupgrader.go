@@ -10,11 +10,13 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -361,7 +363,7 @@ func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoIm
 			},
 			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			SecurityContext: &corev1.SecurityContext{
-				Privileged: k8sutilspointer.Bool(true),
+				Privileged: ptr.To(true),
 			},
 			VolumeMounts: []corev1.VolumeMount{
 				{
@@ -441,7 +443,7 @@ func getNodesToUpgrade(nodes []*corev1.Node, targetConfig string, maxUnavailable
 	capacity := getCapacity(nodes, targetConfig, maxUnavailable)
 	availableCandidates := getAvailableCandidates(nodes, targetConfig, capacity)
 
-	// Next, we get the currently updating candidates, that aren't targetting the latest config
+	// Next, we get the currently updating candidates, that aren't targeting the latest config
 	alreadyUnavailableNodes := getAlreadyUnavailableCandidates(nodes, targetConfig)
 
 	return append(availableCandidates, alreadyUnavailableNodes...)

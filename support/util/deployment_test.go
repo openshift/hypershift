@@ -6,7 +6,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestIsDeploymentReady(t *testing.T) {
@@ -22,7 +22,7 @@ func TestIsDeploymentReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.DeploymentStatus{
 					Replicas:           3,
@@ -42,7 +42,7 @@ func TestIsDeploymentReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.DeploymentStatus{
 					Replicas:           3,
@@ -62,7 +62,7 @@ func TestIsDeploymentReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.DeploymentStatus{
 					Replicas:           3,
@@ -82,7 +82,7 @@ func TestIsDeploymentReady(t *testing.T) {
 					Generation: 2,
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.DeploymentStatus{
 					Replicas:           3,
@@ -102,7 +102,7 @@ func TestIsDeploymentReady(t *testing.T) {
 					Generation: 2,
 				},
 				Spec: appsv1.DeploymentSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.DeploymentStatus{
 					Replicas:            3,
@@ -138,7 +138,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:           3,
@@ -158,7 +158,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:           3,
@@ -178,7 +178,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 					Generation: 1,
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:           3,
@@ -198,7 +198,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 					Generation: 2,
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:           3,

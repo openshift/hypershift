@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: kubevirt-csi-controller
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: kubevirt-csi-driver
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: socket-dir
+        component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: kubevirt-csi-driver
+        hypershift.openshift.io/control-plane-component: kubevirt-csi-controller
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --endpoint=$(CSI_ENDPOINT)
+        - --infra-cluster-namespace=$(INFRACLUSTER_NAMESPACE)
+        - --tenant-cluster-kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --infra-cluster-labels=$(INFRACLUSTER_LABELS)
+        - --run-node-service=false
+        - --run-controller-service=true
+        - --v=5
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+        - name: KUBE_NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: INFRACLUSTER_NAMESPACE
+          valueFrom:
+            configMapKeyRef:
+              key: infraClusterNamespace
+              name: driver-config
+        - name: INFRACLUSTER_LABELS
+          valueFrom:
+            configMapKeyRef:
+              key: infraClusterLabels
+              name: driver-config
+        - name: INFRA_STORAGE_CLASS_ENFORCEMENT
+          valueFrom:
+            configMapKeyRef:
+              key: infraStorageClassEnforcement
+              name: driver-config
+        image: kubevirt-csi-driver
+        imagePullPolicy: IfNotPresent
+        name: csi-driver
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --default-fstype=ext4
+        - --v=5
+        - --kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --timeout=3m
+        - --retry-interval-max=1m
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: csi-external-provisioner
+        imagePullPolicy: IfNotPresent
+        name: csi-provisioner
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --v=5
+        - --kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --timeout=3m
+        - --retry-interval-max=1m
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: csi-external-attacher
+        imagePullPolicy: IfNotPresent
+        name: csi-attacher
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --probe-timeout=3s
+        - --health-port=10301
+        image: csi-livenessprobe
+        imagePullPolicy: IfNotPresent
+        name: csi-liveness-probe
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      - args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --timeout=3m
+        image: csi-external-snapshotter
+        imagePullPolicy: IfNotPresent
+        name: csi-snapshotter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      priorityClassName: hypershift-control-plane
+      serviceAccount: kubevirt-csi
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - emptyDir: {}
+        name: socket-dir
+      - name: service-account-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: kubevirt-csi-controller-service-account-kubeconfig
+status: {}

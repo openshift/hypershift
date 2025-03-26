@@ -3,16 +3,18 @@ package scheduler
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 type KubeSchedulerParams struct {
@@ -26,7 +28,7 @@ type KubeSchedulerParams struct {
 	DisableProfiling        bool                    `json:"disableProfiling"`
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		HyperkubeImage:          releaseImageProvider.GetImage("hyperkube"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
@@ -54,7 +56,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		schedulerContainerMain().Name: {
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/healthz",
+					Path:   "/livez",
 					Port:   intstr.FromInt(schedulerSecurePort),
 					Scheme: corev1.URISchemeHTTPS,
 				},
@@ -66,7 +68,11 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 			TimeoutSeconds:      5,
 		},
 	}
-	params.DeploymentConfig.SetDefaults(hcp, labels, nil)
+	replicas := ptr.To(2)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		replicas = ptr.To(1)
+	}
+	params.DeploymentConfig.SetDefaults(hcp, labels, replicas)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
 	params.DisableProfiling = util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.SchedulerDeployment("").Name)
@@ -77,9 +83,9 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 
 func (p *KubeSchedulerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
 	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{FeatureSet: configv1.Default})
+		return config.FeatureGates(configv1.FeatureGateSelection{FeatureSet: configv1.Default})
 	}
 }
 

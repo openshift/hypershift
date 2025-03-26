@@ -1,10 +1,11 @@
 package ingress
 
 import (
-	configv1 "github.com/openshift/api/config/v1"
-	v1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/globalconfig"
+
+	configv1 "github.com/openshift/api/config/v1"
+	v1 "github.com/openshift/api/operator/v1"
 )
 
 type IngressParams struct {
@@ -15,6 +16,7 @@ type IngressParams struct {
 	IBMCloudUPI       bool
 	AWSNLB            bool
 	LoadBalancerScope v1.LoadBalancerScope
+	LoadBalancerIP    string
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -22,6 +24,7 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	isPrivate := false
 	ibmCloudUPI := false
 	nlb := false
+	var loadBalancerIP string
 	loadBalancerScope := v1.ExternalLoadBalancer
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
@@ -41,6 +44,9 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 			loadBalancerScope = v1.InternalLoadBalancer
 		}
 	}
+	if hcp.Spec.Platform.OpenStack != nil && hcp.Spec.Platform.OpenStack.IngressFloatingIP != "" {
+		loadBalancerIP = hcp.Spec.Platform.OpenStack.IngressFloatingIP
+	}
 
 	return &IngressParams{
 		IngressSubdomain:  globalconfig.IngressDomain(hcp),
@@ -50,5 +56,6 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		IBMCloudUPI:       ibmCloudUPI,
 		AWSNLB:            nlb,
 		LoadBalancerScope: loadBalancerScope,
+		LoadBalancerIP:    loadBalancerIP,
 	}
 }

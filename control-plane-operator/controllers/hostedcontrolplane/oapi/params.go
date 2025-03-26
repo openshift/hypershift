@@ -1,17 +1,18 @@
 package oapi
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 type OpenShiftAPIServerParams struct {
@@ -44,13 +45,14 @@ type OAuthDeploymentParams struct {
 	ServiceAccountIssuerURL      string
 	DeploymentConfig             config.DeploymentConfig
 	AvailabilityProberImage      string
+	KonnectivityProxyImage       string
 	Availability                 hyperv1.AvailabilityPolicy
 	OwnerRef                     config.OwnerRef
 	AuditWebhookRef              *corev1.LocalObjectReference
 	AccessTokenInactivityTimeout *metav1.Duration
 }
 
-func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
+func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *OpenShiftAPIServerParams {
 	params := &OpenShiftAPIServerParams{
 		OpenShiftAPIServerImage: releaseImageProvider.GetImage("openshift-apiserver"),
 		OAuthAPIServerImage:     releaseImageProvider.GetImage("oauth-apiserver"),
@@ -220,6 +222,7 @@ func (p *OpenShiftAPIServerParams) AuditPolicyConfig() configv1.Audit {
 func (p *OpenShiftAPIServerParams) OAuthAPIServerDeploymentParams(hcp *hyperv1.HostedControlPlane) *OAuthDeploymentParams {
 	params := &OAuthDeploymentParams{
 		Image:                   p.OAuthAPIServerImage,
+		KonnectivityProxyImage:  p.ProxyImage,
 		EtcdURL:                 p.EtcdURL,
 		ServiceAccountIssuerURL: p.ServiceAccountIssuerURL,
 		DeploymentConfig:        p.OpenShiftOAuthAPIServerDeploymentConfig,

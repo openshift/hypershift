@@ -5,9 +5,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/go-logr/logr"
 )
 
 // IsReconciliationPaused checks the pauseUntil field to see if reconciliation on the resource should be

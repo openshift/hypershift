@@ -25,6 +25,13 @@ func HasTrueCondition(csr *certificatesv1.CertificateSigningRequest, conditionTy
 	return false
 }
 
+// IsCertificateRequestPending returns true if a certificate request has no
+// "Approved" or "Denied" conditions; false otherwise.
+func IsCertificateRequestPending(csr *certificatesv1.CertificateSigningRequest) bool {
+	approved, denied := GetCertApprovalCondition(&csr.Status)
+	return !approved && !denied
+}
+
 func GetCertApprovalCondition(status *certificatesv1.CertificateSigningRequestStatus) (approved bool, denied bool) {
 	for _, c := range status.Conditions {
 		if c.Type == certificatesv1.CertificateApproved {

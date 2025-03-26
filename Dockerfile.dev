@@ -1,7 +1,7 @@
 # Disclaimer: The purpose of this Dockerfile is to simplify development tasks by building a container image with all-in-one binaries.
 # The control-plane-operator should not be included in the Hypershift operator image because it is already part of the OpenShift payload.
 
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.18 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.19 AS builder
 WORKDIR /hypershift
 
 COPY . .
@@ -12,6 +12,7 @@ FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
+                    /hypershift/bin/karpenter-operator \
                     /hypershift/bin/control-plane-operator \
                     /hypershift/bin/control-plane-pki-operator \
      /usr/bin/

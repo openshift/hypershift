@@ -6,17 +6,19 @@ import (
 	"fmt"
 	"path"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -51,11 +53,9 @@ func ReconcileOAuthServerConfig(ctx context.Context, cm *corev1.ConfigMap, owner
 }
 
 func generateOAuthConfig(ctx context.Context, client crclient.Client, namespace string, params *OAuthConfigParams) (*osinv1.OsinServerConfig, error) {
-	var identityProviders []osinv1.IdentityProvider
-	identityProviders, _, err := convertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
-	if err != nil {
-		return nil, err
-	}
+	// Ignore the error here since we don't want to fail the deployment if the identity providers are invalid
+	// A condition will be set on the HC to indicate the error
+	identityProviders, _, _ := ConvertIdentityProviders(ctx, params.IdentityProviders, params.OauthConfigOverrides, client, namespace)
 
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(oauthContainerMain().Name, volume)

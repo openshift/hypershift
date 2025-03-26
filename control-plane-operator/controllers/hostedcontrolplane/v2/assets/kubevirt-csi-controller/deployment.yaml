@@ -1,0 +1,127 @@
+# sourced from https://github.com/kubevirt/csi-driver/tree/main/deploy/split-infra-tenant
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: kubevirt-csi-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kubevirt-csi-driver
+  template:
+    metadata:
+      labels:
+        app: kubevirt-csi-driver
+    spec:
+      serviceAccount: kubevirt-csi
+      containers:
+        - name: csi-driver
+          imagePullPolicy: Always
+          image: kubevirt-csi-driver
+          args:
+            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--infra-cluster-namespace=$(INFRACLUSTER_NAMESPACE)"
+            - "--tenant-cluster-kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+            - "--infra-cluster-labels=$(INFRACLUSTER_LABELS)"
+            - "--run-node-service=false"
+            - "--run-controller-service=true"
+            - "--v=5"
+          env:
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/csi/sockets/pluginproxy/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: INFRACLUSTER_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: driver-config
+                  key: infraClusterNamespace
+            - name: INFRACLUSTER_LABELS
+              valueFrom:
+                configMapKeyRef:
+                  name: driver-config
+                  key: infraClusterLabels
+            - name: INFRA_STORAGE_CLASS_ENFORCEMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: driver-config
+                  key: infraStorageClassEnforcement
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-provisioner
+          image: csi-external-provisioner
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--default-fstype=ext4"
+            - "--v=5"
+            - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+            - "--timeout=3m"
+            - "--retry-interval-max=1m"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-attacher
+          image: csi-external-attacher
+          args:
+            - "--csi-address=$(ADDRESS)"
+            - "--v=5"
+            - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+            - "--timeout=3m"
+            - "--retry-interval-max=1m"
+          env:
+            - name: ADDRESS
+              value: /var/lib/csi/sockets/pluginproxy/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/lib/csi/sockets/pluginproxy/
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-liveness-probe
+          image: csi-livenessprobe
+          args:
+            - "--csi-address=/csi/csi.sock"
+            - "--probe-timeout=3s"
+            - "--health-port=10301"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+        - name: csi-snapshotter
+          args:
+          - "--v=5"
+          - "--csi-address=/csi/csi.sock"
+          - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+          - "--timeout=3m"
+          image: csi-external-snapshotter
+          imagePullPolicy: IfNotPresent
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
+      volumes:
+        - name: socket-dir
+          emptyDir: {}

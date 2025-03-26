@@ -3,20 +3,26 @@ package azure
 import (
 	"context"
 	"encoding/json"
-	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
+	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
-	"github.com/spf13/pflag"
+
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/pflag"
 )
 
 func TestCreateCluster(t *testing.T) {
@@ -50,7 +56,6 @@ func TestCreateCluster(t *testing.T) {
 		SubnetID:          "fakeSubnetID",
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
-		MachineIdentityID: "fakeMachineIdentityID",
 		SecurityGroupID:   "fakeSecurityGroupID",
 	})
 	if err != nil {
@@ -72,6 +77,7 @@ func TestCreateCluster(t *testing.T) {
 				"--infra-json=" + infraFile,
 				"--rhcos-image=whatever",
 				"--render-sensitive",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
@@ -89,6 +95,7 @@ func TestCreateCluster(t *testing.T) {
 				"--instance-type=Standard_DS2_v2",
 				"--disk-storage-account-type=Standard_LRS",
 				"--render-sensitive",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 		{
@@ -108,14 +115,31 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-offer=aro4",
 				"--marketplace-sku=aro_414",
 				"--marketplace-version=414.92.2024021",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+			},
+		},
+		{
+			name: "with availability zones",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--rhcos-image=whatever",
+				"--render-sensitive",
+				"--availability-zones=1,2",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			log := logr.Logger{}
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts := DefaultOptions()
+			azureOpts, err := DefaultOptions(fakeClient, log)
+			if err != nil {
+				t.Fatal("failed to create azure options: ", err)
+			}
 			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
 			BindDeveloperOptions(azureOpts, flags)
 			if err := flags.Parse(testCase.args); err != nil {

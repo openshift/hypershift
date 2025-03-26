@@ -3,16 +3,18 @@ package kcm
 import (
 	"context"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 type KubeControllerManagerParams struct {
@@ -22,6 +24,7 @@ type KubeControllerManagerParams struct {
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
+	PlatformType        hyperv1.PlatformType
 	ServiceCIDR         string
 	ClusterCIDR         string
 	APIServer           *configv1.APIServerSpec `json:"apiServer"`
@@ -38,7 +41,7 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
@@ -54,6 +57,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		params.CloudProvider = "external"
 	}
+	params.PlatformType = hcp.Spec.Platform.Type
 
 	if hcp.Spec.Configuration != nil {
 		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
@@ -106,7 +110,11 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 			},
 		},
 	}
-	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), nil)
+	replicas := ptr.To(2)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		replicas = ptr.To(1)
+	}
+	params.DeploymentConfig.SetDefaults(hcp, kcmLabels(), replicas)
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	params.SetDefaultSecurityContext = setDefaultSecurityContext
@@ -117,9 +125,9 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
 	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{
+		return config.FeatureGates(configv1.FeatureGateSelection{
 			FeatureSet: configv1.Default,
 		})
 	}

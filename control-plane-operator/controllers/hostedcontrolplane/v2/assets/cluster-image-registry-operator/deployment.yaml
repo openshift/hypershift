@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cluster-image-registry-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-image-registry-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        name: cluster-image-registry-operator
+    spec:
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -euo pipefail
+
+          while true; do
+             if [[ -f /var/run/secrets/kubernetes.io/serviceaccount/token ]]; then
+                break
+             fi
+             echo "Waiting for client token"
+             sleep 2
+          done
+
+          echo "openshift-image-registry" > "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+          cp "/etc/certificate/ca/ca.crt" "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          export KUBERNETES_SERVICE_HOST=kube-apiserver
+          export KUBERNETES_SERVICE_PORT=$KUBE_APISERVER_SERVICE_PORT
+
+          while true; do
+            if curl --fail --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt -H "Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" "https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}/apis/config.openshift.io/v1/featuregates" &> /dev/null; then
+              break
+            fi
+            echo "Waiting for access to featuregates resource"
+            sleep 2
+          done
+
+          exec /usr/bin/cluster-image-registry-operator \
+            --files="/etc/secrets/tls.crt" \
+            --files="/etc/secrets/tls.key"
+        command:
+        - /bin/bash
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: WATCH_NAMESPACE
+          value: openshift-image-registry
+        - name: OPERATOR_NAME
+          value: cluster-image-registry-operator
+        - name: OPERATOR_IMAGE
+          value: ""
+        - name: IMAGE
+          value: ""
+        - name: IMAGE_PRUNER
+          value: ""
+        - name: AZURE_ENVIRONMENT_FILEPATH
+          value: /tmp/azurestackcloud.json
+        - name: OPERATOR_IMAGE_VERSION
+          value: ""
+        image: cluster-image-registry-operator
+        name: cluster-image-registry-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/certificate/ca
+          name: ca-bundle
+        - mountPath: /etc/secrets
+          name: serving-cert
+      priorityClassName: hypershift-control-plane
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: cluster-image-registry-operator
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: ca-bundle
+        secret:
+          defaultMode: 416
+          secretName: root-ca

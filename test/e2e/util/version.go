@@ -6,13 +6,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/blang/semver"
-
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+
+	"github.com/blang/semver"
 )
 
 var (
 	// y-stream versions supported by e2e in main
+	Version419 = semver.MustParse("4.19.0")
 	Version418 = semver.MustParse("4.18.0")
 	Version417 = semver.MustParse("4.17.0")
 	Version416 = semver.MustParse("4.16.0")
@@ -26,6 +28,7 @@ func init() {
 	// Ensure that the version constants are valid semver versions
 	// This is a compile-time check to ensure that the versions are valid
 	// semver versions.
+	_ = Version419
 	_ = Version418
 	_ = Version417
 	_ = Version416
@@ -55,6 +58,17 @@ func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pull
 
 func AtLeast(t *testing.T, version semver.Version) {
 	if releaseVersion.LT(version) {
+		t.Skipf("Only tested in %s and later", version)
+	}
+}
+
+func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) {
+	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
+		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
+		AtLeast(t, version)
+	}
+	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
+	if cpoVersion.LT(version) {
 		t.Skipf("Only tested in %s and later", version)
 	}
 }

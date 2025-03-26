@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"text/template"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	supportconfig "github.com/openshift/hypershift/support/config"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	supportconfig "github.com/openshift/hypershift/support/config"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -78,7 +78,7 @@ func ReconcileCCMConfigMap(ccmConfig *corev1.ConfigMap, hcp *hyperv1.HostedContr
 	return nil
 }
 
-func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) error {
+func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ccmConfig *corev1.ConfigMap, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) error {
 	commandToExec := []string{
 		"/bin/ibm-cloud-controller-manager",
 		"--authentication-skip-lookup",
@@ -98,7 +98,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 	}
 
 	deployment.Spec = appsv1.DeploymentSpec{
-		Replicas: utilpointer.Int32(int32(replicas)),
+		Replicas: ptr.To[int32](replicas),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: map[string]string{"k8s-app": deployment.Name},
 		},
@@ -107,7 +107,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 				Labels: map[string]string{"k8s-app": deployment.Name},
 			},
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: utilpointer.Int64(90),
+				TerminationGracePeriodSeconds: ptr.To[int64](90),
 				Containers: []corev1.Container{
 					{
 						Name:            ccmContainerName,
@@ -178,7 +178,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
-								DefaultMode: utilpointer.Int32(400),
+								DefaultMode: ptr.To[int32](400),
 							},
 						},
 					},
@@ -186,7 +186,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						Name: ccmConfig.Name,
 						VolumeSource: corev1.VolumeSource{
 							ConfigMap: &corev1.ConfigMapVolumeSource{
-								DefaultMode:          utilpointer.Int32(420),
+								DefaultMode:          ptr.To[int32](420),
 								LocalObjectReference: corev1.LocalObjectReference{Name: ccmConfig.Name},
 							},
 						},
@@ -196,7 +196,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  hcp.Spec.Platform.PowerVS.KubeCloudControllerCreds.Name,
-								DefaultMode: utilpointer.Int32(400),
+								DefaultMode: ptr.To[int32](400),
 							},
 						},
 					},
@@ -212,7 +212,7 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 		SetDefaultSecurityContext: setDefaultSecurityContext,
 	}
 
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(replicas))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(replicas))
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil

@@ -7,12 +7,15 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	"github.com/openshift/hypershift/support/config"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	componentbasev1 "k8s.io/component-base/config/v1alpha1"
 	schedulerv1 "k8s.io/kube-scheduler/config/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestGenerateConfig(t *testing.T) {
@@ -25,7 +28,7 @@ func TestGenerateConfig(t *testing.T) {
 	g.Expect(err).ShouldNot(HaveOccurred())
 
 	leaderElectionConfig := componentbasev1.LeaderElectionConfiguration{
-		LeaderElect:   pointer.Bool(true),
+		LeaderElect:   ptr.To(true),
 		LeaseDuration: metav1.Duration{Duration: leaseDuration},
 		RenewDeadline: metav1.Duration{Duration: renewDeadline},
 		RetryPeriod:   metav1.Duration{Duration: retryPeriod},

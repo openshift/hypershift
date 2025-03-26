@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -20,14 +19,18 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
-	AWSCAPIProvider       = "aws-cluster-api-controllers"
-	AzureCAPIProvider     = "azure-cluster-api-controllers"
-	PowerVSCAPIProvider   = "ibmcloud-cluster-api-controllers"
-	OpenStackCAPIProvider = "openstack-cluster-api-controllers"
+	AWSCAPIProvider             = "aws-cluster-api-controllers"
+	AzureCAPIProvider           = "azure-cluster-api-controllers"
+	PowerVSCAPIProvider         = "ibmcloud-cluster-api-controllers"
+	OpenStackCAPIProvider       = "openstack-cluster-api-controllers"
+	OpenStackResourceController = "openstack-resource-controller"
 )
 
 var _ Platform = aws.AWS{}
@@ -62,7 +65,7 @@ type Platform interface {
 
 	// CAPIProviderPolicyRules responsible to return list of policy rules are required to be used
 	// by the CAPI provider in order to manage the resources by this platform
-	// Return nil if no aditional policy rule is required
+	// Return nil if no additional policy rule is required
 	CAPIProviderPolicyRules() []rbacv1.PolicyRule
 
 	// DeleteCredentials is responsible for deleting resources related to platform credentials
@@ -83,6 +86,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 	var (
 		platform          Platform
 		capiImageProvider string
+		orcImage          string
 		payloadVersion    *semver.Version
 		err               error
 	)
@@ -130,8 +134,20 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
 			}
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+			// Get the ORC image only if the payload version is 4.19 or later.
+			// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
+			if payloadVersion != nil && payloadVersion.Major == 4 && payloadVersion.Minor > 18 {
+				orcImage, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, OpenStackResourceController, pullSecretBytes)
+				if err != nil {
+					return nil, fmt.Errorf("failed to retrieve orc image: %w", err)
+				}
+			}
 		}
-		platform = openstack.New(capiImageProvider)
+		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

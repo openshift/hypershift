@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"net"
 
-	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -19,16 +17,22 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func ReconcileIgnitionServer(ctx context.Context,
@@ -181,8 +185,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	ignitionServerLabels := map[string]string{
-		"app":                         ignitionserver.ResourceName,
-		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		"app":                              ignitionserver.ResourceName,
+		hyperv1.ControlPlaneComponentLabel: ignitionserver.ResourceName,
 	}
 	configAPIImage := componentImages["cluster-config-api"]
 	if configAPIImage == "" {
@@ -557,7 +561,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            ignitionserver.ServiceAccount("").Name,
-				TerminationGracePeriodSeconds: utilpointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -570,7 +574,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  servingCertSecretName,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -725,7 +729,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -779,7 +783,7 @@ haproxy -f /tmp/haproxy.conf
 				},
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: utilpointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					{
 						Name:            "haproxy",
@@ -831,7 +835,7 @@ haproxy -f /tmp/haproxy.conf
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  ignitionserver.IgnitionServingCertSecret("").Name,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -857,7 +861,7 @@ haproxy -f /tmp/haproxy.conf
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 

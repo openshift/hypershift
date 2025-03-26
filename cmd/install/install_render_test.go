@@ -78,7 +78,7 @@ func TestTemplateYamlRendering(t *testing.T) {
 		t.Fatal("no objects found in template")
 	}
 	params := []string{
-		"OPERATOR_REPLICAS", "OPERATOR_IMG", "IMAGE_TAG", "NAMESPACE",
+		"OPERATOR_REPLICAS", "OPERATOR_IMG", "NAMESPACE",
 		"OIDC_S3_NAME", "OIDC_S3_REGION", "OIDC_S3_CREDS_SECRET",
 		"OIDC_S3_CREDS_SECRET_KEY",
 	}
@@ -96,7 +96,10 @@ func ExecuteJsonGenerationCommand(args []string) (map[string]interface{}, error)
 	}
 
 	var doc map[string]interface{}
-	json.Unmarshal(out, &doc)
+	err = json.Unmarshal(out, &doc)
+	if err != nil {
+		return nil, err
+	}
 
 	return doc, nil
 }

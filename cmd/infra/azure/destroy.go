@@ -3,7 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
-	"github.com/go-logr/logr"
+	"strings"
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
@@ -91,9 +92,13 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	for _, rg := range resourceGroups {
-		fmt.Printf("Deleting resource group: %s\n", rg)
+		logger.Info("Deleting resource group", "resource-group", rg)
 		destroyFuture, err = resourceGroupClient.BeginDelete(ctx, rg, nil)
 		if err != nil {
+			if strings.Contains(err.Error(), "ResourceGroupNotFound") {
+				logger.Info("Resource group not found, continuing with infra deletion", "resource-group", rg)
+				continue
+			}
 			return fmt.Errorf("failed to start deletion for resource group %s: %w", rg, err)
 		}
 

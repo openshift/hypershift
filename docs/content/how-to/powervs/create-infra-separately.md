@@ -5,12 +5,12 @@ title: Create PowerVS Infra resources separately
 # Create IBMCloud PowerVS Infra resources separately
 
 The default behavior of the `hypershift create cluster powervs` command is to create cloud infrastructure
-along with the manifests for hosted cluster and apply it. 
+along with the manifests for hosted cluster and apply it.
 
 It is possible to create the cloud infrastructure separately so that the `hypershift create cluster powervs` command can just be used to create the manifests and apply it.
 
 In order to do this, you need to:
-1. [Create PowerVS infrastructure](#creating-the-powervs-infra) 
+1. [Create PowerVS infrastructure](#creating-the-powervs-infra)
 2. [Create cluster](#creating-the-cluster)
 
 ## Creating the PowerVS infra
@@ -54,7 +54,7 @@ where
 
 Running this command should result in the following resources getting created in IBM Cloud:
 
-### PowerVS Cluster Infra Resources 
+### PowerVS Cluster Infra Resources
 
 * 1 VPC with Subnet
 * 1 PowerVS Cloud Instance
@@ -79,7 +79,7 @@ E.g.:
     RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-0.nightly-multi-2022-09-08-131900
     PULL_SECRET="$HOME/pull-secret"
     INFRA_JSON=infra.json
-    
+
     ./bin/hypershift create cluster powervs \
         --name $CLUSTER_NAME \
         --region $REGION \
@@ -95,7 +95,7 @@ E.g.:
 
 !!! important
 
-        Need to understand --recreate-secrets flag usage before using it. Enableing this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
 
         This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
 

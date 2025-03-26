@@ -9,10 +9,6 @@ import (
 	"testing"
 	"time"
 
-	awssdk "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
-	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
@@ -23,11 +19,19 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+
+	awssdk "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/arn"
+	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
+
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // createClusterOpts mutates the cluster creation options according to the
@@ -257,9 +261,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 			Zone:                   createOpts.PowerVSPlatform.Zone,
 			VPCRegion:              createOpts.PowerVSPlatform.VPCRegion,
 			CloudInstanceID:        createOpts.PowerVSPlatform.CloudInstanceID,
-			CloudConnection:        createOpts.PowerVSPlatform.CloudConnection,
 			VPC:                    createOpts.PowerVSPlatform.VPC,
-			PER:                    createOpts.PowerVSPlatform.PER,
 			TransitGatewayLocation: createOpts.PowerVSPlatform.TransitGatewayLocation,
 			TransitGateway:         createOpts.PowerVSPlatform.TransitGateway,
 		}

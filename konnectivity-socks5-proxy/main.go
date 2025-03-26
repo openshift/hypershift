@@ -4,20 +4,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/armon/go-socks5"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/armon/go-socks5"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 func NewStartCommand() *cobra.Command {
 	l := log.Log.WithName("konnectivity-socks5-proxy")
-	log.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	log.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 	cmd := &cobra.Command{

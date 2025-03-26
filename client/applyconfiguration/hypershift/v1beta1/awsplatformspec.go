@@ -32,6 +32,7 @@ type AWSPlatformSpecApplyConfiguration struct {
 	EndpointAccess              *hypershiftv1beta1.AWSEndpointAccessType  `json:"endpointAccess,omitempty"`
 	AdditionalAllowedPrincipals []string                                  `json:"additionalAllowedPrincipals,omitempty"`
 	MultiArch                   *bool                                     `json:"multiArch,omitempty"`
+	SharedVPC                   *AWSSharedVPCApplyConfiguration           `json:"sharedVPC,omitempty"`
 }
 
 // AWSPlatformSpecApplyConfiguration constructs an declarative configuration of the AWSPlatformSpec type for use with
@@ -113,5 +114,13 @@ func (b *AWSPlatformSpecApplyConfiguration) WithAdditionalAllowedPrincipals(valu
 // If called multiple times, the MultiArch field is set to the value of the last call.
 func (b *AWSPlatformSpecApplyConfiguration) WithMultiArch(value bool) *AWSPlatformSpecApplyConfiguration {
 	b.MultiArch = &value
+	return b
+}
+
+// WithSharedVPC sets the SharedVPC field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SharedVPC field is set to the value of the last call.
+func (b *AWSPlatformSpecApplyConfiguration) WithSharedVPC(value *AWSSharedVPCApplyConfiguration) *AWSPlatformSpecApplyConfiguration {
+	b.SharedVPC = value
 	return b
 }

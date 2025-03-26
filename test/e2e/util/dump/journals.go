@@ -10,18 +10,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/go-logr/zapr"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
-	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	bastionaws "github.com/openshift/hypershift/cmd/bastion/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+
+	corev1 "k8s.io/api/core/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 //go:embed copy-machine-journals.sh
@@ -180,9 +183,16 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	scriptCmd.Stderr = dumpJournalsLog
 	err = scriptCmd.Run()
 	if err != nil {
+		var errorList []string
 		t.Logf("Error copying machine journals to artifacts directory: %v", err)
 		for _, instance := range machineInstances {
-			os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+			err = os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+			if err != nil {
+				errorList = append(errorList, fmt.Sprintf("failed to write file to artifacts directory: %v. ", err))
+			}
+		}
+		if len(errorList) > 0 {
+			return fmt.Errorf("error writing machine journals to artifacts: %v", errorList)
 		}
 	} else {
 		t.Logf("Successfully copied machine journals to %s", outputDir)

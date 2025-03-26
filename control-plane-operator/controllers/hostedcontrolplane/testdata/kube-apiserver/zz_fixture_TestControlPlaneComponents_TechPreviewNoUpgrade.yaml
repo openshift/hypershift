@@ -1,0 +1,525 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: kube-apiserver
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: kube-apiserver
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs
+        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e223675807360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b5c825c12fe7e69167
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: kube-apiserver
+        hypershift.openshift.io/control-plane-component: kube-apiserver
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/request-serving-component: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: kube-apiserver
+                hypershift.openshift.io/control-plane-component: kube-apiserver
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: kube-apiserver
+                hypershift.openshift.io/control-plane-component: kube-apiserver
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          function cleanup() {
+            pkill -P $$$
+            wait
+            exit
+          }
+          trap cleanup SIGTERM
+          while true; do
+            if oc apply -f /work; then
+              echo "Bootstrap manifests applied successfully."
+              break
+            fi
+            sleep 1
+          done
+          while true; do
+            if oc replace --subresource=status -f /work/99_feature-gate.yaml; then
+              echo "FeatureGate status applied successfully."
+              break
+            fi
+            sleep 1
+          done
+          while true; do
+            sleep 1000 &
+            wait $!
+          done
+        command:
+        - /bin/bash
+        env:
+        - name: KUBECONFIG
+          value: /var/secrets/localhost-kubeconfig/kubeconfig
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: apply-bootstrap
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+        - mountPath: /var/secrets/localhost-kubeconfig
+          name: localhost-kubeconfig
+      - args:
+        - kube-apiserver
+        - --openshift-config=/etc/kubernetes/config/config.json
+        - --v=2
+        command:
+        - hyperkube
+        env:
+        - name: HOST_IP
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: status.podIP
+        image: hyperkube
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: livez?exclude=etcd
+            port: client
+            scheme: HTTPS
+          initialDelaySeconds: 300
+          periodSeconds: 180
+          successThreshold: 1
+          timeoutSeconds: 160
+        name: kube-apiserver
+        ports:
+        - containerPort: 6443
+          name: client
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 18
+          httpGet:
+            path: readyz
+            port: client
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 10
+        resources:
+          requests:
+            cpu: 350m
+            memory: 2Gi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/certs/aggregator-ca
+          name: aggregator-ca
+        - mountPath: /etc/kubernetes/certs/aggregator
+          name: aggregator-crt
+        - mountPath: /etc/kubernetes/audit
+          name: audit-config
+        - mountPath: /etc/kubernetes/auth
+          name: auth-config
+        - mountPath: /etc/kubernetes/auth-token-webhook
+          name: auth-token-webhook-config
+        - mountPath: /etc/kubernetes/certs/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/egress-selector
+          name: egress-selector-config
+        - mountPath: /etc/kubernetes/certs/etcd-ca
+          name: etcd-ca
+        - mountPath: /etc/kubernetes/certs/etcd
+          name: etcd-client-crt
+        - mountPath: /etc/kubernetes/config
+          name: kas-config
+        - mountPath: /etc/kubernetes/certs/konnectivity-ca
+          name: konnectivity-ca
+        - mountPath: /etc/kubernetes/certs/konnectivity-client
+          name: konnectivity-client
+        - mountPath: /etc/kubernetes/certs/kubelet-ca
+          name: kubelet-client-ca
+        - mountPath: /etc/kubernetes/certs/kubelet
+          name: kubelet-client-crt
+        - mountPath: /var/log/kube-apiserver
+          name: logs
+        - mountPath: /etc/kubernetes/oauth
+          name: oauth-metadata
+        - mountPath: /etc/kubernetes/certs/server
+          name: server-crt
+        - mountPath: /etc/kubernetes/certs/server-private
+          name: server-private-crt
+        - mountPath: /etc/kubernetes/secrets/svcacct-key
+          name: svcacct-key
+        workingDir: /var/log/kube-apiserver
+      - args:
+        - --logtostderr=true
+        - --log-file-max-size=0
+        - --cluster-cert
+        - /etc/konnectivity/cluster/tls.crt
+        - --cluster-key
+        - /etc/konnectivity/cluster/tls.key
+        - --server-cert
+        - /etc/konnectivity/server/tls.crt
+        - --server-key
+        - /etc/konnectivity/server/tls.key
+        - --server-ca-cert
+        - /etc/konnectivity/ca/ca.crt
+        - --server-port
+        - "8090"
+        - --agent-port
+        - "8091"
+        - --health-port
+        - "2041"
+        - --admin-port=8093
+        - --mode=http-connect
+        - --proxy-strategies=destHost,defaultRoute
+        - --keepalive-time
+        - 30s
+        - --frontend-keepalive-time
+        - 30s
+        - --server-count
+        - "1"
+        - --cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        command:
+        - /usr/bin/proxy-server
+        image: apiserver-network-proxy
+        imagePullPolicy: IfNotPresent
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - sleep 70
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 30
+        name: konnectivity-server
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /etc/konnectivity/cluster
+          name: cluster-certs
+        - mountPath: /etc/konnectivity/ca
+          name: konnectivity-ca
+        - mountPath: /etc/konnectivity/server
+          name: server-certs
+      - args:
+        - -c
+        - |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            pkill -P $$$
+            wait
+            exit
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/log/kube-apiserver/audit.log &
+          wait $!
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: audit-logs
+        resources:
+          requests:
+            cpu: 5m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /var/log/kube-apiserver
+          name: logs
+      - command:
+        - /usr/bin/aws-pod-identity-webhook
+        - --annotation-prefix=eks.amazonaws.com
+        - --in-cluster=false
+        - --kubeconfig=/var/run/app/kubeconfig/kubeconfig
+        - --logtostderr
+        - --port=4443
+        - --aws-default-region=
+        - --tls-cert=/var/run/app/certs/tls.crt
+        - --tls-key=/var/run/app/certs/tls.key
+        - --token-audience=openshift
+        image: aws-pod-identity-webhook
+        imagePullPolicy: IfNotPresent
+        name: aws-pod-identity-webhook
+        resources:
+          requests:
+            cpu: 10m
+            memory: 25Mi
+        volumeMounts:
+        - mountPath: /var/run/app/certs
+          name: aws-pod-identity-webhook-serving-certs
+        - mountPath: /var/run/app/kubeconfig
+          name: aws-pod-identity-webhook-kubeconfig
+      initContainers:
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          cd /tmp
+          mkdir input output manifests
+
+          touch /tmp/manifests/99_feature-gate.yaml
+          cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+          $(FEATURE_GATE_YAML)
+          EOF
+
+          touch /tmp/manifests/hcco-rolebinding.yaml
+          cat <<EOF >/tmp/manifests/hcco-rolebinding.yaml
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: hcco-cluster-admin
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: User
+            name: system:hosted-cluster-config
+          EOF
+
+          /usr/bin/render \
+             --asset-output-dir /tmp/output \
+             --rendered-manifest-dir=/tmp/manifests \
+             --cluster-profile=ibm-cloud-managed \
+             --payload-version=$(PAYLOAD_VERSION)
+          cp /tmp/output/manifests/* /work
+          cp /tmp/manifests/* /work
+        command:
+        - /bin/bash
+        env:
+        - name: PAYLOAD_VERSION
+          value: 4.18.0
+        - name: FEATURE_GATE_YAML
+          value: |
+            apiVersion: config.openshift.io/v1
+            kind: FeatureGate
+            metadata:
+              creationTimestamp: null
+              name: cluster
+            spec:
+              featureSet: TechPreviewNoUpgrade
+            status:
+              featureGates: null
+        image: cluster-config-api
+        imagePullPolicy: IfNotPresent
+        name: init-bootstrap
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
+        command:
+        - /bin/bash
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: wait-for-etcd
+        resources: {}
+      priorityClassName: hypershift-api-critical
+      schedulerName: default-scheduler
+      terminationGracePeriodSeconds: 95
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - emptyDir: {}
+        name: bootstrap-manifests
+      - name: localhost-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: localhost-kubeconfig
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          defaultMode: 420
+          name: kas-config
+        name: kas-config
+      - configMap:
+          defaultMode: 420
+          name: auth-config
+        name: auth-config
+      - configMap:
+          defaultMode: 420
+          name: kas-audit-config
+        name: audit-config
+      - configMap:
+          defaultMode: 420
+          name: konnectivity-ca-bundle
+        name: konnectivity-ca
+      - name: server-crt
+        secret:
+          defaultMode: 416
+          secretName: kas-server-crt
+      - name: server-private-crt
+        secret:
+          defaultMode: 416
+          secretName: kas-server-private-crt
+      - name: aggregator-crt
+        secret:
+          defaultMode: 416
+          secretName: kas-aggregator-crt
+      - configMap:
+          defaultMode: 420
+          name: aggregator-client-ca
+        name: aggregator-ca
+      - name: svcacct-key
+        secret:
+          defaultMode: 416
+          secretName: sa-signing-key
+      - configMap:
+          defaultMode: 420
+          name: etcd-ca
+        name: etcd-ca
+      - name: etcd-client-crt
+        secret:
+          defaultMode: 416
+          secretName: etcd-client-tls
+      - configMap:
+          defaultMode: 420
+          name: oauth-metadata
+        name: oauth-metadata
+      - name: auth-token-webhook-config
+        secret:
+          defaultMode: 416
+          secretName: kas-authentication-token-webhook-config
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca
+      - name: kubelet-client-crt
+        secret:
+          defaultMode: 416
+          secretName: kas-kubelet-client-crt
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: kubelet-client-ca
+      - name: konnectivity-client
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-client
+      - configMap:
+          defaultMode: 420
+          name: kas-egress-selector-config
+        name: egress-selector-config
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: localhost-kubeconfig
+      - name: server-certs
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-server
+      - name: cluster-certs
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-cluster
+      - name: aws-pod-identity-webhook-serving-certs
+        secret:
+          defaultMode: 416
+          secretName: aws-pod-identity-webhook-serving-cert
+      - name: aws-pod-identity-webhook-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: aws-pod-identity-webhook-kubeconfig
+status: {}

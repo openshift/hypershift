@@ -3,10 +3,11 @@ package globalconfig
 import (
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func DNSConfig() *configv1.DNS {
@@ -31,6 +32,12 @@ func ReconcileDNSConfig(dns *configv1.DNS, hcp *hyperv1.HostedControlPlane) {
 	if len(hcp.Spec.DNS.PrivateZoneID) > 0 {
 		dns.Spec.PrivateZone = &configv1.DNSZone{
 			ID: hcp.Spec.DNS.PrivateZoneID,
+		}
+	}
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+		dns.Spec.Platform.Type = configv1.AWSPlatformType
+		dns.Spec.Platform.AWS = &configv1.AWSDNSSpec{
+			PrivateZoneIAMRole: hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN,
 		}
 	}
 }

@@ -8,16 +8,19 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftv1beta1client "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
+
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/condition"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientgoapplyconfig "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
+func NewHostedControlPlaneStatusReporter(name, namespace, rotator string, client hypershiftv1beta1client.HostedControlPlanesGetter) *HostedControlPlaneStatusReporter {
 	return &HostedControlPlaneStatusReporter{
 		namespace: namespace,
 		name:      name,
+		rotator:   rotator,
 		client:    client,
 	}
 }
@@ -25,6 +28,9 @@ func NewHostedControlPlaneStatusReporter(name, namespace string, client hypershi
 type HostedControlPlaneStatusReporter struct {
 	// namespace, name identify the HostedControlPlane we report to
 	namespace, name string
+
+	// name of the rotating controller
+	rotator string
 
 	client hypershiftv1beta1client.HostedControlPlanesGetter
 }
@@ -41,7 +47,7 @@ func (h *HostedControlPlaneStatusReporter) Report(ctx context.Context, condition
 		newCondition.Message = syncErr.Error()
 	}
 
-	return UpdateHostedControlPlaneStatusCondition(ctx, newCondition, h.namespace, h.name, "cert-rotation-controller", h.client)
+	return UpdateHostedControlPlaneStatusCondition(ctx, newCondition, h.namespace, h.name, h.rotator+"-cert-rotation-controller", h.client)
 }
 
 var _ certrotation.StatusReporter = (*HostedControlPlaneStatusReporter)(nil)

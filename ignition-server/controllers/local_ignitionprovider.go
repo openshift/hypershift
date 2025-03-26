@@ -16,9 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -28,13 +25,18 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/blang/semver"
 )
 
 // LocalIgnitionProvider is an IgnitionProvider that executes MCO binaries
@@ -72,6 +74,10 @@ type LocalIgnitionProvider struct {
 	// to render the ignition payload.
 	FeatureGateManifest string
 
+	// ImageMetaDataProvider is used to get the image metadata for the images
+	// used in the ignition payload.
+	ImageMetadataProvider *util.RegistryClientImageMetadataProvider
+
 	ImageFileCache *imageFileCache
 
 	lock sync.Mutex
@@ -79,8 +85,11 @@ type LocalIgnitionProvider struct {
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 
-const pullSecretName = "pull-secret"
-const additionalTrustBundleName = "user-ca-bundle"
+const (
+	pullSecretName            = "pull-secret"
+	additionalTrustBundleName = "user-ca-bundle"
+	managedTrustBundleName    = "trusted-ca-bundle-managed"
+)
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
 	p.lock.Lock()
@@ -128,6 +137,10 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		}
 		additionalTrustBundle = data
 	}
+	// NOTE: the additionalTrustBundle only contains the bundle in hc.spec.additionalTrustBundle. The hash is generated
+	// by the nodepool controller only based on that bundle, so we test a match here. However, the bundle that we want
+	// to pass to the MCO is the aggregate of the hc.spec.additionalTrustBundle and hc.spec.configuration.proxy.trustedCA
+	// That is contained in the trusted-ca-bundle-managed configmap.
 	if additionalTrustBundleHash != "" && util.HashSimple(additionalTrustBundle) != additionalTrustBundleHash {
 		return nil, fmt.Errorf("additionalTrustBundle does not match hash")
 	}
@@ -164,17 +177,25 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to unmarshal user-ca-bundle-config.yaml: %w", err)
 	}
 
-	// Verify that all the keys and values from additionalTrustBundle are in the user-ca-bundle-config.yaml
-	if atbCM.Data != nil {
-		for key, value := range atbCM.Data {
-			if userCaBundleConfigCM.Data[key] != value {
-				return nil, fmt.Errorf("user-ca-bundle-config.yaml in machine-config-server configmap does not contain all additionalTrustBundles")
-			}
+	managedTrustedBundle := &corev1.ConfigMap{}
+	if err = p.Client.Get(ctx, client.ObjectKey{Namespace: p.Namespace, Name: managedTrustBundleName}, managedTrustedBundle); err != nil {
+		if !errors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get %s configmap: %w", managedTrustBundleName, err)
+		}
+	}
+
+	// Verify that the ca-bundle.crt value in the user-ca-bundle-config.yaml is the same as in managedTrustedBundle
+	// NOTE: Here we compare the contents of the MCS user-ca-bundle-config.yaml and the trusted-ca-bundle-managed
+	// ConfigMap. Both should contain the aggregate of hc.spec.additionalTrustBundle and hc.spec.configuration.proxy.trustedCA
+	// and should match.
+	if managedTrustedBundle.Data != nil {
+		if managedTrustedBundle.Data["ca-bundle.crt"] != userCaBundleConfigCM.Data["ca-bundle.crt"] {
+			return nil, fmt.Errorf("user-ca-bundle-config.yaml in machine-config-server configmap does not contain the same ca-bundle.crt value as in trusted-ca-bundle-managed")
 		}
 	}
 
 	// Look up the release image metadata
-	imageProvider, err := func() (*imageprovider.ReleaseImageProvider, error) {
+	imageProvider, err := func() (*imageprovider.SimpleReleaseImageProvider, error) {
 		img, err := p.ReleaseProvider.Lookup(ctx, releaseImage, pullSecret)
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
@@ -191,11 +212,24 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
 
-	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret)
+	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret, p.ImageMetadataProvider)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("discovered machine-config-operator image", "image", mcoImage)
+
+	log.Info(fmt.Sprintf("discovered image %s image %v", component, mcoImage))
+
+	// Making sure image uses the registry override for disconnected environments
+	checkedMcoImage, err := p.ImageMetadataProvider.GetOverride(ctx, mcoImage, pullSecret)
+	if err != nil {
+		return nil, err
+	}
+
+	mcoComposedImage := checkedMcoImage.String()
+	if mcoComposedImage != mcoImage {
+		mcoImage = mcoComposedImage
+		log.Info(fmt.Sprintf("using mirrored %s image %v", component, mcoImage))
+	}
 
 	// Set up the base working directory
 	workDir, err := os.MkdirTemp(p.WorkDir, "get-payload")
@@ -329,12 +363,24 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 			return fmt.Errorf("release image does not contain $%s (images: %v)", clusterConfigComponent, imageProvider.ComponentImages())
 		}
 
-		clusterConfigImage, err = registryclient.GetCorrectArchImage(ctx, clusterConfigComponent, clusterConfigImage, pullSecret)
+		clusterConfigImage, err = registryclient.GetCorrectArchImage(ctx, clusterConfigComponent, clusterConfigImage, pullSecret, p.ImageMetadataProvider)
 		if err != nil {
 			return err
 		}
 
-		log.Info(fmt.Sprintf("discovered  image %s image %v", clusterConfigComponent, clusterConfigImage))
+		log.Info(fmt.Sprintf("discovered image %s image %v", clusterConfigComponent, clusterConfigImage))
+
+		// Making sure image uses the registry override for disconnected environments
+		checkedClusterConfigImage, err := p.ImageMetadataProvider.GetOverride(ctx, clusterConfigImage, pullSecret)
+		if err != nil {
+			return err
+		}
+
+		ccaComposedImage := checkedClusterConfigImage.String()
+		if ccaComposedImage != clusterConfigImage {
+			clusterConfigImage = ccaComposedImage
+			log.Info(fmt.Sprintf("using mirrored %s image %v", clusterConfigComponent, ccaComposedImage))
+		}
 
 		file, err := os.Create(filepath.Join(binDir, clusterConfigComponent))
 		if err != nil {
@@ -656,7 +702,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	return payload, nil
 }
 
-func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.Context, releaseImageProvider *imageprovider.SimpleReleaseImageProvider) error {
 	hcpList := &hyperv1.HostedControlPlaneList{}
 	if err := r.Client.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
 		return err
@@ -750,7 +796,7 @@ EOF
    --asset-input-dir %[2]s/input \
    --asset-output-dir %[2]s/output \
    --rendered-manifest-files=%[2]s/manifests \
-   --payload-version=%[4]s 
+   --payload-version=%[4]s
 cp %[2]s/manifests/99_feature-gate.yaml %[3]s/99_feature-gate.yaml
 `
 	}

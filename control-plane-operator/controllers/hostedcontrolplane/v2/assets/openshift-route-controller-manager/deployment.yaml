@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: openshift-route-controller-manager
+  namespace: HCP_NAMESPACE
+spec:
+  selector:
+    matchLabels:
+      app: openshift-route-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: openshift-route-controller-manager
+    spec:
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - start
+        - --config
+        - /etc/kubernetes/config/config.yaml
+        - --kubeconfig
+        - /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --namespace=openshift-route-controller-manager
+        command:
+        - route-controller-manager
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          value: openshift-route-controller-manager
+        image: route-controller-manager
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: openshift-route-controller-manager
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 10
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/certs
+          name: serving-cert
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: openshift-route-controller-manager-config
+        name: config
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: openshift-route-controller-manager-cert
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca

@@ -1,15 +1,19 @@
-FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.18 AS builder
+FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.19 AS builder
 
 WORKDIR /hypershift
 
 COPY . .
 
-RUN make hypershift hypershift-operator product-cli
+RUN make hypershift \
+  && make hypershift-operator \
+  && make product-cli \
+  && make karpenter-operator
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
+                    /hypershift/bin/karpenter-operator \
      /usr/bin/
 
 ENTRYPOINT ["/usr/bin/hypershift"]

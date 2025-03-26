@@ -8,14 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/cmd/util"
-
-	"github.com/go-logr/logr"
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
@@ -30,11 +27,14 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
-	"go.uber.org/zap/zapcore"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -46,7 +46,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	"sigs.k8s.io/cluster-api/api/v1beta1"
@@ -55,10 +56,26 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/blang/semver"
+	"github.com/docker/distribution"
+	"github.com/docker/distribution/manifest/manifestlist"
+	"github.com/go-logr/logr"
+	"github.com/google/go-cmp/cmp"
+	"go.uber.org/zap/zapcore"
 )
 
-var Now = metav1.NewTime(time.Now())
-var Later = metav1.NewTime(Now.Add(5 * time.Minute))
+var (
+	Now   = metav1.NewTime(time.Now())
+	Later = metav1.NewTime(Now.Add(5 * time.Minute))
+)
+
+const (
+	ManifestListMediaType = "application/vnd.docker.distribution.manifest.list.v2+json"
+	LinuxOS               = "linux"
+	ArchitectureAMD64     = "amd64"
+	ArchitecturePPC64LE   = "ppc64le"
+)
 
 func TestHasBeenAvailable(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
@@ -128,6 +145,14 @@ func TestHasBeenAvailable(t *testing.T) {
 					Networking: hyperv1.ClusterNetworking{
 						ClusterNetwork: []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}, // Needed or some reconcile checks will fail
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
 				},
 			}
 
@@ -147,7 +172,10 @@ func TestHasBeenAvailable(t *testing.T) {
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result:   &dockerv1client.DockerImageConfig{},
+						Manifest: fakeimagemetadataprovider.FakeManifest{},
+					}, nil
 				},
 				now: func() metav1.Time { return reconcilerNow },
 			}
@@ -266,7 +294,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster, true)
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -295,6 +323,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
+				Reason: hyperv1.WaitingForAvailableReason,
 			},
 		},
 		"hosted controlplane with availability false should cause unavailability": {
@@ -308,13 +337,18 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{ReleaseImage: "a"},
 				Status: hyperv1.HostedControlPlaneStatus{
 					Conditions: []metav1.Condition{
-						{Type: string(hyperv1.HostedControlPlaneAvailable), Status: metav1.ConditionFalse},
+						{
+							Type:   string(hyperv1.HostedControlPlaneAvailable),
+							Status: metav1.ConditionFalse,
+							Reason: hyperv1.KASLoadBalancerNotReachableReason,
+						},
 					},
 				},
 			},
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionFalse,
+				Reason: hyperv1.KASLoadBalancerNotReachableReason,
 			},
 		},
 		"should be available": {
@@ -338,6 +372,7 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			ExpectedCondition: metav1.Condition{
 				Type:   string(hyperv1.HostedClusterAvailable),
 				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
 			},
 		},
 	}
@@ -346,7 +381,6 @@ func TestComputeHostedClusterAvailability(t *testing.T) {
 			actualCondition := computeHostedClusterAvailability(&test.Cluster, test.ControlPlane)
 			// Clear fields irrelevant for diffing
 			actualCondition.ObservedGeneration = 0
-			actualCondition.Reason = ""
 			actualCondition.Message = ""
 			if !equality.Semantic.DeepEqual(test.ExpectedCondition, actualCondition) {
 				t.Error(cmp.Diff(test.ExpectedCondition, actualCondition))
@@ -371,25 +405,25 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 		{
 			name: "advertise address specified",
 			networking: &hyperv1.APIServerNetworking{
-				AdvertiseAddress: pointer.String("1.2.3.4"),
+				AdvertiseAddress: ptr.To("1.2.3.4"),
 			},
-			expectedAPIAdvertiseAddress: pointer.String("1.2.3.4"),
+			expectedAPIAdvertiseAddress: ptr.To("1.2.3.4"),
 		},
 		{
 			name: "port specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port: pointer.Int32(1234),
+				Port: ptr.To[int32](1234),
 			},
-			expectedAPIPort: pointer.Int32(1234),
+			expectedAPIPort: ptr.To[int32](1234),
 		},
 		{
 			name: "both specified",
 			networking: &hyperv1.APIServerNetworking{
-				Port:             pointer.Int32(6789),
-				AdvertiseAddress: pointer.String("9.8.7.6"),
+				Port:             ptr.To[int32](6789),
+				AdvertiseAddress: ptr.To("9.8.7.6"),
 			},
-			expectedAPIPort:             pointer.Int32(6789),
-			expectedAPIAdvertiseAddress: pointer.String("9.8.7.6"),
+			expectedAPIPort:             ptr.To[int32](6789),
+			expectedAPIAdvertiseAddress: ptr.To("9.8.7.6"),
 		},
 	}
 
@@ -398,7 +432,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -456,11 +490,293 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true)
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
 			g.Expect(hostedControlPlane.Spec.Configuration).To(BeEquivalentTo(test.configuration))
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneAutoscalingNeeded(t *testing.T) {
+	tests := []struct {
+		name                     string
+		autoscalingNeeded        bool
+		existingHCPAnnotations   map[string]string
+		expectedHCPAnnotations   map[string]string
+		unexpectedHCPAnnotations []string
+	}{
+		{
+			name:                   "Autoscaling not needed, no annotation set",
+			autoscalingNeeded:      false,
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name:                     "Autoscaling needed, no annotation set",
+			autoscalingNeeded:        true,
+			existingHCPAnnotations:   nil,
+			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
+		},
+		{
+			name:              "Autoscaling not needed, annotation set",
+			autoscalingNeeded: false,
+			existingHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name:              "Autoscaling needed, annotation set",
+			autoscalingNeeded: true,
+			existingHCPAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.existingHCPAnnotations
+			err := reconcileHostedControlPlane(hcp, hc, test.autoscalingNeeded, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			for k, v := range test.expectedHCPAnnotations {
+				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
+			}
+			for _, k := range test.unexpectedHCPAnnotations {
+				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
+			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
+	tests := []struct {
+		name                     string
+		hcAnnotations            map[string]string
+		existingHCPAnnotations   map[string]string
+		expectedHCPAnnotations   map[string]string
+		unexpectedHCPAnnotations []string
+	}{
+		{
+			name:                   "No annotation set",
+			hcAnnotations:          nil,
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: nil,
+			unexpectedHCPAnnotations: []string{
+				hyperv1.RestartDateAnnotation,
+				previouslySyncedRestartDateAnnotation,
+			},
+		},
+		{
+			name: "Newly set restart annotation",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "01012024",
+			},
+			existingHCPAnnotations: nil,
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "01012024",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+		},
+		{
+			name: "Existing restart annotation (different value)",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "05012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "01012024",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "05012024",
+				previouslySyncedRestartDateAnnotation: "05012024",
+			},
+		},
+		{
+			name: "Previously applied restart annotation, different actual value",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "01012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+		},
+		{
+			name: "Previously applied restart annotation, new value",
+			hcAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation: "05012024",
+			},
+			existingHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "some other value",
+				previouslySyncedRestartDateAnnotation: "01012024",
+			},
+			expectedHCPAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:         "05012024",
+				previouslySyncedRestartDateAnnotation: "05012024",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hcp := &hyperv1.HostedControlPlane{}
+			hc.Annotations = test.hcAnnotations
+			hcp.Annotations = test.existingHCPAnnotations
+			err := reconcileHostedControlPlane(hcp, hc, true, func() (map[string]string, error) { return nil, nil })
+			g.Expect(err).ToNot(HaveOccurred())
+			for k, v := range test.expectedHCPAnnotations {
+				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
+			}
+			for _, k := range test.unexpectedHCPAnnotations {
+				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
+			}
+		})
+	}
+}
+
+func TestAnnotationsForCertRenewal(t *testing.T) {
+	tests := []struct {
+		name             string
+		shouldSkip       bool
+		hcpAnnotations   map[string]string
+		hashFromSecret   string
+		hashFromEndpoint string
+		expected         map[string]string
+	}{
+		{
+			name:             "should not check",
+			shouldSkip:       true,
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "67890",
+			expected:         nil,
+		},
+		{
+			name:             "no existing hash annotation on hcp, endpoint hash matches",
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "12345",
+			expected: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+		},
+		{
+			name:             "no existing hash annotation on hcp, endpoint hash does not match",
+			hashFromSecret:   "12345",
+			hashFromEndpoint: "67890",
+			expected: map[string]string{
+				kasServingCertHashAnnotation:  "12345",
+				hyperv1.RestartDateAnnotation: "CertHash:12345",
+			},
+		},
+		{
+			name:           "existing hash annotation, secret hash matches",
+			hashFromSecret: "12345",
+			hcpAnnotations: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+			expected: nil,
+		},
+		{
+			name:           "existing hash annotation, secret hash does not match",
+			hashFromSecret: "67890",
+			hcpAnnotations: map[string]string{
+				kasServingCertHashAnnotation: "12345",
+			},
+			expected: map[string]string{
+				kasServingCertHashAnnotation:  "67890",
+				hyperv1.RestartDateAnnotation: "CertHash:67890",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Annotations = test.hcpAnnotations
+			fn := annotationsForCertRenewal(
+				ctrl.Log,
+				hcp,
+				func() bool { return !test.shouldSkip },
+				func() (string, error) { return test.hashFromSecret, nil },
+				func() (string, error) { return test.hashFromEndpoint, nil },
+			)
+			result, err := fn()
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestShouldCheckForStaleCerts(t *testing.T) {
+	tests := []struct {
+		name           string
+		hcAnnotations  map[string]string
+		hcVersion      string
+		expectedResult bool
+	}{
+		{
+			name: "version older than 4.19",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.18.7",
+			expectedResult: true,
+		},
+		{
+			name: "ci version with 4.19",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.19.0-0.ci-2025-02-03-120046",
+			expectedResult: false,
+		},
+		{
+			name: "4.20",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation: "true",
+			},
+			hcVersion:      "4.20.0",
+			expectedResult: false,
+		},
+		{
+			name:           "version older than 4.19, never been available",
+			hcAnnotations:  nil,
+			hcVersion:      "4.17.4",
+			expectedResult: false,
+		},
+		{
+			name: "version older than 4.19, has been available, does not reconcile pki",
+			hcAnnotations: map[string]string{
+				hcmetrics.HasBeenAvailableAnnotation:       "true",
+				hyperv1.DisablePKIReconciliationAnnotation: "true",
+			},
+			hcVersion:      "4.16.20",
+			expectedResult: false,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hc := &hyperv1.HostedCluster{}
+			hc.Annotations = test.hcAnnotations
+			fn := shouldCheckForStaleCerts(hc, semver.MustParse(test.hcVersion))
+			result := fn()
+			g.Expect(result).To(Equal(test.expectedResult))
 		})
 	}
 }
@@ -632,7 +948,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 			expectedCAPICluster: &v1beta1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						HostedClusterAnnotation: "master/cluster1",
+						hyperutil.HostedClusterAnnotation: "master/cluster1",
 					},
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
@@ -690,7 +1006,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 			expectedCAPICluster: &v1beta1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						HostedClusterAnnotation: "master/cluster1",
+						hyperutil.HostedClusterAnnotation: "master/cluster1",
 					},
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
@@ -719,7 +1035,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				t.Fatalf("reconcileCAPICluster failed: %v", err)
 			}
 			if diff := cmp.Diff(tc.capiCluster, tc.expectedCAPICluster); diff != "" {
-				t.Errorf("reconciled CAPI cluster differs from expcted CAPI cluster: %s", diff)
+				t.Errorf("reconciled CAPI cluster differs from expected CAPI cluster: %s", diff)
 			}
 		})
 	}
@@ -891,6 +1207,35 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
+	manifests := []manifestlist.ManifestDescriptor{
+		{
+			Descriptor: distribution.Descriptor{
+				MediaType: ManifestListMediaType,
+				Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+			},
+			Platform: manifestlist.PlatformSpec{
+				Architecture: ArchitectureAMD64,
+				OS:           LinuxOS,
+			},
+		},
+		{
+			Descriptor: distribution.Descriptor{
+				MediaType: ManifestListMediaType,
+				Digest:    "sha256:70fb4524d21e1b6c08477eb5d1ca2cf282b3270b1d008f70dd7e1cf13d8ba4ce",
+			},
+			Platform: manifestlist.PlatformSpec{
+				Architecture: ArchitecturePPC64LE,
+				OS:           LinuxOS,
+			},
+		},
+	}
+	deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+		return &manifestlist.DeserializedManifestList{
+			ManifestList: manifestlist.ManifestList{
+				Manifests: manifests,
+			},
+		}, nil
+	}
 	hostedClusters := []*hyperv1.HostedCluster{
 		{
 			ObjectMeta: metav1.ObjectMeta{
@@ -929,6 +1274,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							NodePoolManagementARN:   "node-pool-management-arn",
 							ControlPlaneOperatorARN: "control-plane-operator-arn",
 						},
+						Region: "us-east-1",
 					},
 				},
 				Release: hyperv1.Release{
@@ -1075,7 +1421,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		),
 		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-			return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+			return &fakereleaseprovider.FakeReleaseProvider{},
+				&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					MediaType: ManifestListMediaType,
+					Result:    &dockerv1client.DockerImageConfig{},
+					Manifest:  fakeimagemetadataprovider.FakeManifest{},
+				}, nil
 		},
 		EnableEtcdRecovery: true,
 		now:                metav1.Now,
@@ -1091,7 +1442,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, hc := range hostedClusters {
 		t.Run(hc.Name, func(t *testing.T) {
-			_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+			ctx := context.WithValue(context.Background(), registryclient.DeserializeFuncName, deserializeFunc)
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
 			}
@@ -1101,13 +1453,17 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	for _, resource := range r.managedResources() {
 		resourceType := fmt.Sprintf("%T", resource)
 		switch resourceType {
-		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet":
+		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService":
 			// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
 			// but never create an Endpoints resource
 
 			// We only create a Job when etcd recovery is needed
 
 			// We don't create a StatefulSet but we watch them for etcd health check and recovery
+
+			// We watch NodePools but don't create them
+
+			// We watch AWSEndpointServices to propagate conditions to the HostedCluster
 			continue
 		}
 		watchedResources.Insert(resourceType)
@@ -1902,7 +2258,7 @@ func TestValidateReleaseImage(t *testing.T) {
 								"image-4.18.0": "4.18.0",
 							},
 						},
-						&fakeimagemetadataprovider.FakeImageMetadataProvider{
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 							Result: &dockerv1client.DockerImageConfig{},
 						},
 						nil
@@ -2038,7 +2394,8 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
 			if len(previousClusterID) > 0 {
@@ -2244,7 +2601,7 @@ func TestIsUpgradeable(t *testing.T) {
 							"image-4.14":   "4.15.0",
 						},
 					},
-					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
 					nil
@@ -2296,7 +2653,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 			}},
 		},
 		{
-			name: "Succcess, existing success condition transition timestamp stays",
+			name: "Success, existing success condition transition timestamp stays",
 			existingConditions: []metav1.Condition{{
 				Type:               string(hyperv1.ReconciliationSucceeded),
 				Status:             metav1.ConditionTrue,
@@ -2423,13 +2780,14 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 
 func TestIsProgressing(t *testing.T) {
 	tests := []struct {
-		name    string
-		hc      *hyperv1.HostedCluster
-		want    bool
-		wantErr bool
+		name       string
+		hc         *hyperv1.HostedCluster
+		withDigest string
+		want       bool
+		wantErr    bool
 	}{
 		{
-			name: "stable at relase",
+			name: "stable at release",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Release: hyperv1.Release{
@@ -2452,6 +2810,30 @@ func TestIsProgressing(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "stable at release with digest",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.2",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   "release-1.2@sha12345",
+							Version: "1.2.0",
+						},
+					},
+				},
+			},
+			withDigest: "release-1.2@sha12345",
+			want:       false,
+			wantErr:    false,
+		},
+		{
 			name: "cluster is rolling out",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
@@ -2465,6 +2847,30 @@ func TestIsProgressing(t *testing.T) {
 			},
 			want:    true,
 			wantErr: false,
+		},
+		{
+			name: "cluster is upgrading with digest",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "release-1.3",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{
+							Image:   "release-1.2@sha12345",
+							Version: "1.2.0",
+						},
+					},
+				},
+			},
+			withDigest: "release-1.3@sha67890",
+			want:       true,
+			wantErr:    false,
 		},
 		{
 			name: "cluster is upgrading",
@@ -2601,7 +3007,7 @@ func TestIsProgressing(t *testing.T) {
 							"release-1.3": "1.3.0",
 						},
 					},
-					&fakeimagemetadataprovider.FakeImageMetadataProvider{
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
 						Result: &dockerv1client.DockerImageConfig{},
 					},
 					nil
@@ -2617,7 +3023,9 @@ func TestIsProgressing(t *testing.T) {
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
-			got, err := isProgressing(tt.hc, releaseImage)
+			got, err := isProgressing(tt.hc, releaseImage, func() (string, error) {
+				return tt.withDigest, nil
+			})
 			if (err != nil) != tt.wantErr {
 				t.Errorf("isProgressing() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -2840,7 +3248,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 	}{
 		{
 			name:    "given an IPv6 defined AdvertiseAddress overlapped with ClusterNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -2855,7 +3263,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 defined AdvertiseAddress overlapped with MachineNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2870,7 +3278,7 @@ func TestCheckAdvertiseAddressOverlapping(t *testing.T) {
 		},
 		{
 			name:    "given a not valid AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.2.1.2")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.2.1.2")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2911,7 +3319,7 @@ func TestFindAdvertiseAddress(t *testing.T) {
 	}{
 		{
 			name:             "given a defined AdvertiseAddress, should be the result and IPv4",
-			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			resultAdvAddress: "192.168.1.1",
 		},
@@ -2922,24 +3330,24 @@ func TestFindAdvertiseAddress(t *testing.T) {
 		},
 		{
 			name:             "given an IPv6 hc with defined AdvertiseAddress, it should return that address",
-			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:               &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			resultAdvAddress: "fd03::1",
 		},
 		{
-			name:             "given an IPv6 hc wihtout AdvertiseAddress, it return IPv6 default address",
+			name:             "given an IPv6 hc without AdvertiseAddress, it return IPv6 default address",
 			cn:               []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			resultAdvAddress: config.DefaultAdvertiseIPv6Address,
 		},
 		{
 			name:    "given an invalid IPv4 AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1222")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1222")},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			wantErr: true,
 		},
 		{
 			name:    "given an invalid IPv6 AdvertiseAddress, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::4444444")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::4444444")},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			wantErr: true,
 		},
@@ -2981,7 +3389,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 	}{
 		{
 			name:    "given an IPv6 clusterNetwork and an IPv4 ServiceNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -2989,7 +3397,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv6 and IPv4 Advertise Address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -2997,7 +3405,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv6 and defining Advertise Address, it should success",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3005,7 +3413,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 clusterNetwork and an IPv6 ServiceNetwork, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3013,7 +3421,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv4 and defining IPv6 Advertise Address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -3021,7 +3429,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "on IPv4 and defining Advertise Address, it should success",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.0.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
@@ -3043,7 +3451,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv4 invalid advertise address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("192.168.1.1.2")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("192.168.1.1.2")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
@@ -3051,7 +3459,7 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 		},
 		{
 			name:    "given an IPv6 invalid advertise address, it should fail",
-			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: pointer.String("fd03::1::32")},
+			aa:      &hyperv1.APIServerNetworking{AdvertiseAddress: ptr.To("fd03::1::32")},
 			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
 			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd03::/64")}},
 			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
@@ -3199,7 +3607,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3241,7 +3657,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3276,7 +3700,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3313,7 +3745,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3351,7 +3791,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3393,7 +3841,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3427,7 +3883,15 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					},
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							AdvertiseAddress: pointer.String("1.2.3.4"),
+							AdvertiseAddress: ptr.To("1.2.3.4"),
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
 						},
 					},
 				},
@@ -3471,7 +3935,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+					return &fakereleaseprovider.FakeReleaseProvider{}, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
 				},
 				now: metav1.Now,
 			}

@@ -3,18 +3,9 @@ package oapi
 import (
 	"fmt"
 	"path"
+	"strings"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-
-	policyv1 "k8s.io/api/policy/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -22,6 +13,16 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -40,6 +41,11 @@ var (
 			oauthVolumeEtcdClientCert().Name:  "/etc/kubernetes/certs/etcd-client",
 			common.VolumeTotalClientCA().Name: "/etc/kubernetes/certs/client-ca",
 		},
+		oauthKonnectivityProxyContainer().Name: {
+			oauthVolumeKubeconfig().Name:            "/etc/kubernetes/secrets/kubeconfig",
+			oauthVolumeKonnectivityProxyCert().Name: "/etc/konnectivity/proxy-client",
+			oauthVolumeKonnectivityProxyCA().Name:   "/etc/konnectivity/proxy-ca",
+		},
 	}
 	oauthAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
 		oauthContainerMain().Name: {
@@ -50,13 +56,22 @@ var (
 
 func openShiftOAuthAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-oauth-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-oauth-apiserver",
+		"app":                              "openshift-oauth-apiserver",
+		hyperv1.ControlPlaneComponentLabel: "openshift-oauth-apiserver",
 	}
 }
 
-func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, auditConfig *corev1.ConfigMap, p *OAuthDeploymentParams, platformType hyperv1.PlatformType) error {
+func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment,
+	ownerRef config.OwnerRef,
+	auditConfig *corev1.ConfigMap,
+	p *OAuthDeploymentParams,
+	platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
+
+	etcdHost, err := util.HostFromURL(p.EtcdURL)
+	if err != nil {
+		return err
+	}
 
 	// preserve existing resource requirements for main oauth apiserver container
 	mainContainer := util.FindContainer(oauthContainerMain().Name, deployment.Spec.Template.Spec.Containers)
@@ -92,10 +107,11 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 	deployment.Spec.Template.Annotations[oapiAuditConfigHashAnnotation] = auditConfigHash
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken:  pointer.Bool(false),
-		TerminationGracePeriodSeconds: pointer.Int64(120),
+		AutomountServiceAccountToken:  ptr.To(false),
+		TerminationGracePeriodSeconds: ptr.To[int64](120),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(p, etcdHost)),
+			util.BuildContainer(oauthKonnectivityProxyContainer(), buildOAuthKonnectivityProxyContainer(p.KonnectivityProxyImage)),
 		},
 		Volumes: []corev1.Volume{
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
@@ -106,6 +122,8 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment, ownerRef c
 			util.BuildVolume(oauthVolumeServingCert(), buildOAuthVolumeServingCert),
 			util.BuildVolume(oauthVolumeEtcdClientCert(), buildOAuthVolumeEtcdClientCert),
 			util.BuildVolume(common.VolumeTotalClientCA(), common.BuildVolumeTotalClientCA),
+			util.BuildVolume(oauthVolumeKonnectivityProxyCert(), buildOAuthVolumeKonnectivityProxyCert),
+			util.BuildVolume(oauthVolumeKonnectivityProxyCA(), buildOAuthVolumeKonnectivityProxyCA),
 		},
 	}
 
@@ -147,7 +165,13 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container) {
+func oauthKonnectivityProxyContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "konnectivity-proxy",
+	}
+}
+
+func buildOAuthContainerMain(p *OAuthDeploymentParams, etcdHost string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		cpath := func(volume, file string) string {
 			return path.Join(oauthVolumeMounts.Path(c.Name, volume), file)
@@ -199,6 +223,41 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams) func(c *corev1.Container)
 				corev1.ResourceCPU:    resource.MustParse("10m"),
 			},
 		}
+		c.Env = append(c.Env, []corev1.EnvVar{
+			{
+				Name:  "HTTP_PROXY",
+				Value: "socks5://127.0.0.1:8090",
+			},
+			{
+				Name:  "HTTPS_PROXY",
+				Value: "socks5://127.0.0.1:8090",
+			},
+			{
+				Name: "NO_PROXY",
+				Value: strings.Join([]string{
+					manifests.KubeAPIServerService("").Name,
+					etcdHost,
+					config.AuditWebhookService,
+				}, ","),
+			},
+		}...)
+	}
+}
+
+func buildOAuthKonnectivityProxyContainer(image string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Image = image
+		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
+		c.Args = []string{"run", "--resolve-from-guest-cluster-dns=true"}
+		c.Env = []corev1.EnvVar{{
+			Name:  "KUBECONFIG",
+			Value: fmt.Sprintf("%s/kubeconfig", volumeMounts.Path(c.Name, oauthVolumeKubeconfig().Name)),
+		}}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
+		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
 	}
 }
 
@@ -232,7 +291,7 @@ func oauthVolumeKubeconfig() *corev1.Volume {
 func buildOAuthVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCA() *corev1.Volume {
@@ -255,7 +314,7 @@ func oauthVolumeServingCert() *corev1.Volume {
 func buildOAuthVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.OpenShiftOAuthAPIServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func oauthVolumeEtcdClientCert() *corev1.Volume {
@@ -297,10 +356,33 @@ func oauthAuditWebhookConfigFile() string {
 	return path.Join(cfgDir, hyperv1.AuditWebhookKubeconfigKey)
 }
 
+func oauthVolumeKonnectivityProxyCert() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oauth-konnectivity-proxy-cert",
+	}
+}
+
+func oauthVolumeKonnectivityProxyCA() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "oauth-konnectivity-proxy-ca",
+	}
+}
+
+func buildOAuthVolumeKonnectivityProxyCert(v *corev1.Volume) {
+	v.Secret = &corev1.SecretVolumeSource{}
+	v.Secret.SecretName = manifests.KonnectivityClientSecret("").Name
+	v.Secret.DefaultMode = ptr.To[int32](0640)
+}
+
+func buildOAuthVolumeKonnectivityProxyCA(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
+	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
+}
+
 func buildOAuthVolumeEtcdClientCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.EtcdClientSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func ReconcileOpenShiftOAuthAPIServerPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, p *OAuthDeploymentParams) error {

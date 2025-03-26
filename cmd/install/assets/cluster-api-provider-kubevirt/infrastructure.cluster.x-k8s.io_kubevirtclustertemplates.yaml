@@ -54,12 +54,10 @@ spec:
                       ObjectMeta is metadata that all persisted resources must have, which includes all objects
                       users must create. This is a copy of customizable fields from metav1.ObjectMeta.
 
-
                       ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template` and `MachineSet.Template`,
                       which are not top-level Kubernetes objects. Given that metav1.ObjectMeta has lots of special cases
                       and read-only fields which end up in the generated CRD validation, having it as a subset simplifies
                       the API and some issues that can impact user experience.
-
 
                       During the [upgrade to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
                       for v1alpha2, we noticed a failure would occur running Cluster API test suite against the new CRDs,
@@ -67,12 +65,10 @@ spec:
                       The investigation showed that `controller-tools@v2` behaves differently than its previous version
                       when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1) package.
 
-
                       In more details, we found that embedded (non-top level) types that embedded `metav1.ObjectMeta`
                       had validation properties, including for `creationTimestamp` (metav1.Time).
                       The `metav1.Time` type specifies a custom json marshaller that, when IsZero() is true, returns `null`
                       which breaks validation because the field isn't marked as nullable.
-
 
                       In future versions, controller-tools@v2 might allow overriding the type and validation for embedded
                       types. When that happens, this hack should be revisited.
@@ -81,7 +77,7 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Annotations is an unstructured key value map stored with a resource that may be
+                          annotations is an unstructured key value map stored with a resource that may be
                           set by external tools to store and retrieve arbitrary metadata. They are not
                           queryable and should be preserved when modifying objects.
                           More info: http://kubernetes.io/docs/user-guide/annotations
@@ -161,7 +157,6 @@ spec:
                               the event) or if no container name is specified "spec.containers[2]" (container with
                               index 2 in this pod). This syntax is chosen only to have some well-defined way of
                               referencing a part of an object.
-                              TODO: this design is not final and this field is subject to change in the future.
                             type: string
                           kind:
                             description: |-
@@ -212,7 +207,6 @@ spec:
                                   the event) or if no container name is specified "spec.containers[2]" (container with
                                   index 2 in this pod). This syntax is chosen only to have some well-defined way of
                                   referencing a part of an object.
-                                  TODO: this design is not final and this field is subject to change in the future.
                                 type: string
                               kind:
                                 description: |-

@@ -7,7 +7,8 @@ theme:
   - content.code.annotate
 plugins:
 - search
-- mermaid2
+- mermaid2:
+    version: 11.2.0
 - glightbox:
     touchNavigation: true
     loop: false
@@ -25,7 +26,7 @@ repo_url: https://github.com/openshift/hypershift
 edit_uri: edit/main/docs/content
 repo_name: openshift/hypershift
 extra_javascript:
-  - https://unpkg.com/mermaid@9.2.2/dist/mermaid.min.js
+  - https://unpkg.com/mermaid@11.2.0/dist/mermaid.min.js
 markdown_extensions:
 - toc:
     toc_depth: "2-3"
@@ -55,6 +56,7 @@ nav:
 - 'Getting started': getting-started.md
 - 'How-to guides':
   - how-to/index.md
+  - how-to/feature-gates.md
   - how-to/cluster-configuration.md
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
@@ -85,15 +87,16 @@ nav:
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
+    - how-to/aws/shared-vpc.md
     - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
         - how-to/aws/troubleshooting/debug-nodes.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
-    - how-to/azure/create-azure-cluster.md
     - how-to/azure/create-azure-cluster-with-options.md
     - how-to/azure/create-azure-cluster_on_aks.md
+    - how-to/azure/scheduler.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
@@ -116,9 +119,16 @@ nav:
     - how-to/kubevirt/configuring-network.md
     - how-to/kubevirt/performance-tuning.md
     - how-to/kubevirt/external-infrastructure.md
+    - how-to/kubevirt/gpu-devices.md
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
   - 'OpenStack':
-    - how-to/openstack/create-openstack-cluster.md
+    - how-to/openstack/index.md
+    - how-to/openstack/prerequisites.md
+    - how-to/openstack/hostedcluster.md
+    - how-to/openstack/az.md
+    - how-to/openstack/additional-ports.md
+    - how-to/openstack/performance-tuning.md
+    - how-to/openstack/destroy.md
   - 'None':
     - how-to/none/create-none-cluster.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
@@ -239,10 +249,9 @@ nav:
         - 'Watching the Data Plane': labs/Dual/watching/watching-dp.md
 - 'Recipes':
   - recipes/index.md
-  - 'Agent':
-    - 'Expose Data Plane Ingress via MetalLB': recipes/agent/exposing-dataplane-with-metallb.md
-  - 'None':
-    - 'Expose Data Plane Ingress via MetalLB': recipes/none/exposing-dataplane-with-metallb.md
+  - 'Common':
+    - 'Expose Data Plane Ingress via MetalLB': recipes/common/exposing-dataplane-with-metallb.md
+    - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
 - 'Reference':
   - reference/index.md
   - reference/goals-and-design-invariants.md
@@ -255,6 +264,7 @@ nav:
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
+    - 'Shared Ingress in Azure Red Hat OpenShift': reference/aro/shared-ingress.md
   - 'Manifests':
     - reference/manifests/index.md
     - 'IBM Cloud':
@@ -263,6 +273,9 @@ nav:
       - '4.11': reference/manifests/ibmcloud/4.11.md
       - '4.12': reference/manifests/ibmcloud/4.12.md
       - '4.13': reference/manifests/ibmcloud/4.13.md
+  - 'Openshift behaviour deviations':
+    - reference/ocp-behaviour-deviations/index.md
+    - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/multi-platform-support.md

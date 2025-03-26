@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: node-tuning-operator
+spec:
+  endpoints:
+  - metricRelabelings:
+    - action: keep
+      regex: nto_profile_calculated_total
+      sourceLabels:
+      - __name__
+    path: /metrics
+    scheme: https
+    targetPort: 60000
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: metrics-client
+      keySecret:
+        key: tls.key
+        name: metrics-client
+      serverName: node-tuning-operator.clusters-mraee-karpenter.svc
+  selector:
+    matchLabels:
+      name: node-tuning-operator

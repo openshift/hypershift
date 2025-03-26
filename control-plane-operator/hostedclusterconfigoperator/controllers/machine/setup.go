@@ -7,11 +7,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/support/upsert"
+
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -48,9 +50,9 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Setup")
 	kubevirtScheme := runtime.NewScheme()
-	corev1.AddToScheme(kubevirtScheme)
-	kubevirtv1.AddToScheme(kubevirtScheme)
-	discoveryv1.AddToScheme(kubevirtScheme)
+	_ = corev1.AddToScheme(kubevirtScheme)
+	_ = kubevirtv1.AddToScheme(kubevirtScheme)
+	_ = discoveryv1.AddToScheme(kubevirtScheme)
 
 	kubevirtHttpClient, err := rest.HTTPClientFor(opts.KubevirtInfraConfig)
 	if err != nil {
@@ -84,13 +86,12 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed building kubevirt infra cache: %w", err)
 	}
 	// if kubevirt infra config is not used, it is being set the same as the mgmt config
-	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
+	kubevirtInfraClientRestConfig := opts.KubevirtInfraConfig
+	kubevirtInfraClientRestConfig.WarningHandler = rest.NoWarnings{}
+	kubevirtInfraClient, err := client.New(kubevirtInfraClientRestConfig, client.Options{
 		Scheme: kubevirtScheme,
 		Mapper: kubevirtMapper,
 		Cache:  &client.CacheOptions{Reader: kubevirtInfraCache},
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
@@ -109,7 +110,9 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &capiv1.Machine{}, &handler.EnqueueRequestForObject{})); err != nil {
 		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
-	go kubevirtInfraCache.Start(ctx)
+	go func() {
+		_ = kubevirtInfraCache.Start(ctx)
+	}()
 	allNodes := func(watchContext context.Context, obj client.Object) []reconcile.Request {
 		machineList := &capiv1.MachineList{}
 		if err := r.client.List(watchContext, machineList); err != nil {

@@ -1,15 +1,17 @@
 package mcs
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/util"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) error {
@@ -75,7 +77,7 @@ var (
 )
 
 func init() {
-	mcfgv1.AddToScheme(machineConfigPoolScheme)
+	_ = mcfgv1.AddToScheme(machineConfigPoolScheme)
 }
 
 func serializeConfigPool(obj client.Object) (string, error) {

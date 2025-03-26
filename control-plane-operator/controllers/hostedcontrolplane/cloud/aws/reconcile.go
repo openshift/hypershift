@@ -3,8 +3,6 @@ package aws
 import (
 	"fmt"
 
-	k8sutilspointer "k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -12,9 +10,11 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
@@ -23,7 +23,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, deploymentConfig config.DeploymentConfig, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, deploymentConfig config.DeploymentConfig, serviceAccountName string, releaseImageProvider imageprovider.ReleaseImageProvider) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
@@ -41,7 +41,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 				},
 				Volumes:                      []corev1.Volume{},
 				ServiceAccountName:           serviceAccountName,
-				AutomountServiceAccountToken: k8sutilspointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 			},
 		},
 	}
@@ -133,6 +133,6 @@ func ccmLabels() map[string]string {
 
 func additionalLabels() map[string]string {
 	return map[string]string{
-		hyperv1.ControlPlaneComponent: "cloud-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "cloud-controller-manager",
 	}
 }

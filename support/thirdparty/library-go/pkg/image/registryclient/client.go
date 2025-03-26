@@ -12,18 +12,17 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
-	"golang.org/x/time/rate"
-
+	"github.com/distribution/reference"
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/schema1"
-	"github.com/docker/distribution/reference"
 	"github.com/docker/distribution/registry/api/errcode"
 	registryclient "github.com/docker/distribution/registry/client"
 	"github.com/docker/distribution/registry/client/auth"
 	"github.com/docker/distribution/registry/client/auth/challenge"
 	"github.com/docker/distribution/registry/client/transport"
 	"github.com/opencontainers/go-digest"
+	"golang.org/x/net/context"
+	"golang.org/x/time/rate"
 )
 
 // RepositoryRetriever fetches a Docker distribution.Repository.
@@ -247,7 +246,9 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	versions := auth.APIVersions(resp, "Docker-Distribution-API-Version")
 	if len(versions) == 0 {
@@ -264,7 +265,10 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 	}
 
-	c.Challenges.AddResponse(resp)
+	err = c.Challenges.AddResponse(resp)
+	if err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }
@@ -347,8 +351,6 @@ func (c *Context) scopes(repoName string) []auth.Scope {
 func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, repoName string) http.RoundTripper {
 	return c.cachedTransport(t, c.scopes(repoName))
 }
-
-var nowFn = time.Now
 
 type retryRepository struct {
 	distribution.Repository

@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cluster-policy-controller
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cluster-policy-controller
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        component.hypershift.openshift.io/config-hash: 640be845
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: cluster-policy-controller
+        hypershift.openshift.io/control-plane-component: cluster-policy-controller
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: cluster-policy-controller
+                hypershift.openshift.io/control-plane-component: cluster-policy-controller
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: cluster-policy-controller
+                hypershift.openshift.io/control-plane-component: cluster-policy-controller
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - start
+        - --config
+        - /etc/kubernetes/config/config.yaml
+        - --kubeconfig
+        - /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --namespace=openshift-kube-controller-manager
+        command:
+        - cluster-policy-controller
+        env:
+        - name: POD_NAMESPACE
+          value: openshift-kube-controller-manager
+        image: cluster-policy-controller
+        imagePullPolicy: IfNotPresent
+        name: cluster-policy-controller
+        resources:
+          requests:
+            cpu: 10m
+            memory: 200Mi
+        volumeMounts:
+        - mountPath: /etc/kubernetes/client-ca
+          name: client-ca
+        - mountPath: /etc/kubernetes/config
+          name: config
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/certs
+          name: serving-cert
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:6443/readyz
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+      priorityClassName: hypershift-control-plane
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: cluster-policy-controller-config
+        name: config
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: cluster-policy-controller-cert
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: client-ca
+        name: client-ca
+status: {}

@@ -5,17 +5,19 @@ import (
 	"fmt"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/spf13/cobra"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 type DestroyBastionOpts struct {
@@ -44,14 +46,14 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "The region to use for creating the bastion")
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 
-	cmd.MarkFlagRequired("aws-creds")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 		if err := opts.Run(cmd.Context(), logger); err != nil {

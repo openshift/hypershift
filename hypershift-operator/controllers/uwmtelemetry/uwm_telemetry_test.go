@@ -7,13 +7,17 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/monitoring"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/upsert"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -207,7 +211,8 @@ prometheus:
 					"config.yaml": test.initial,
 				}
 			}
-			reconcileUWMConfigContent(cm, nil)
+			err := reconcileUWMConfigContent(cm, nil)
+			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(cm.Data["config.yaml"]).To(Equal(test.expected))
 		})
 	}

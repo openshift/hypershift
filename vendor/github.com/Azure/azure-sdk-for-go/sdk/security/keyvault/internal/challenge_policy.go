@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/internal/errorinfo"
 )
 
 const challengeMatchError = `challenge resource "%s" doesn't match the requested domain. Set DisableChallengeResourceVerification to true in your client options to disable. See https://aka.ms/azsdk/blog/vault-uri for more information`
@@ -31,9 +31,12 @@ type KeyVaultChallengePolicyOptions struct {
 type keyVaultAuthorizer struct {
 	// tro is the policy's authentication parameters. These are discovered from an authentication challenge
 	// elicited ahead of the first client request.
+	//
+	// Protected by troLock.
 	tro policy.TokenRequestOptions
-	// TODO: move into tro once it has a tenant field (https://github.com/Azure/azure-sdk-for-go/issues/19841)
-	tenantID                string
+	// Lock protecting tro in case there are multiple concurrent initial requests.
+	troLock sync.RWMutex
+
 	verifyChallengeResource bool
 }
 
@@ -58,7 +61,8 @@ func NewKeyVaultChallengePolicy(cred azcore.TokenCredential, opts *KeyVaultChall
 }
 
 func (k *keyVaultAuthorizer) authorize(req *policy.Request, authNZ func(policy.TokenRequestOptions) error) error {
-	if len(k.tro.Scopes) == 0 || k.tenantID == "" {
+	tro := k.getTokenRequestOptions()
+	if len(tro.Scopes) == 0 || tro.TenantID == "" {
 		if body := req.Body(); body != nil {
 			// We don't know the scope or tenant ID because we haven't seen a challenge yet. We elicit one now by sending
 			// the request without authorization, first removing its body, if any. authorizeOnChallenge will reattach the
@@ -73,7 +77,7 @@ func (k *keyVaultAuthorizer) authorize(req *policy.Request, authNZ func(policy.T
 		return nil
 	}
 	// else we know the auth parameters and can authorize the request as normal
-	return authNZ(k.tro)
+	return authNZ(tro)
 }
 
 func (k *keyVaultAuthorizer) authorizeOnChallenge(req *policy.Request, res *http.Response, authNZ func(policy.TokenRequestOptions) error) error {
@@ -90,7 +94,7 @@ func (k *keyVaultAuthorizer) authorizeOnChallenge(req *policy.Request, res *http
 		}
 	}
 	// authenticate with the parameters supplied by Key Vault, authorize the request, send it again
-	return authNZ(k.tro)
+	return authNZ(k.getTokenRequestOptions())
 }
 
 // parses Tenant ID from auth challenge
@@ -105,29 +109,11 @@ func parseTenant(url string) string {
 	return tenant
 }
 
-type challengePolicyError struct {
-	err error
-}
-
-func (c *challengePolicyError) Error() string {
-	return c.err.Error()
-}
-
-func (*challengePolicyError) NonRetriable() {
-	// marker method
-}
-
-func (c *challengePolicyError) Unwrap() error {
-	return c.err
-}
-
-var _ errorinfo.NonRetriable = (*challengePolicyError)(nil)
-
 // updateTokenRequestOptions parses authentication parameters from Key Vault's challenge
 func (k *keyVaultAuthorizer) updateTokenRequestOptions(resp *http.Response, req *http.Request) error {
 	authHeader := resp.Header.Get("WWW-Authenticate")
 	if authHeader == "" {
-		return &challengePolicyError{err: errors.New("response has no WWW-Authenticate header for challenge authentication")}
+		return errors.New("response has no WWW-Authenticate header for challenge authentication")
 	}
 
 	// Strip down to auth and resource
@@ -147,7 +133,6 @@ func (k *keyVaultAuthorizer) updateTokenRequestOptions(resp *http.Response, req 
 		}
 	}
 
-	k.tenantID = parseTenant(vals["authorization"])
 	scope := ""
 	if v, ok := vals["scope"]; ok {
 		scope = v
@@ -155,21 +140,40 @@ func (k *keyVaultAuthorizer) updateTokenRequestOptions(resp *http.Response, req 
 		scope = v
 	}
 	if scope == "" {
-		return &challengePolicyError{err: errors.New("could not find a valid resource in the WWW-Authenticate header")}
+		return errors.New("could not find a valid resource in the WWW-Authenticate header")
 	}
 	if k.verifyChallengeResource {
 		// the challenge resource's host must match the requested vault's host
 		parsed, err := url.Parse(scope)
 		if err != nil {
-			return &challengePolicyError{err: fmt.Errorf(`invalid challenge resource "%s": %v`, scope, err)}
+			return fmt.Errorf("invalid challenge resource %q: %v", scope, err)
 		}
 		if !strings.HasSuffix(req.URL.Host, "."+parsed.Host) {
-			return &challengePolicyError{err: fmt.Errorf(challengeMatchError, scope)}
+			return fmt.Errorf(challengeMatchError, scope)
 		}
 	}
 	if !strings.HasSuffix(scope, "/.default") {
 		scope += "/.default"
 	}
-	k.tro.Scopes = []string{scope}
+	k.setTokenRequestOptions(policy.TokenRequestOptions{
+		TenantID: parseTenant(vals["authorization"]),
+		Scopes:   []string{scope},
+	})
 	return nil
+}
+
+// Returns a (possibly-zero) copy of TokenRequestOptions.
+//
+// The returned value's Scopes and other fields must not be modified.
+func (k *keyVaultAuthorizer) getTokenRequestOptions() policy.TokenRequestOptions {
+	k.troLock.RLock()
+	defer k.troLock.RUnlock()
+	return k.tro // Copy.
+}
+
+// After calling this function, tro.Scopes and other fields must not be modified.
+func (k *keyVaultAuthorizer) setTokenRequestOptions(tro policy.TokenRequestOptions) {
+	k.troLock.Lock()
+	defer k.troLock.Unlock()
+	k.tro = tro // Copy.
 }

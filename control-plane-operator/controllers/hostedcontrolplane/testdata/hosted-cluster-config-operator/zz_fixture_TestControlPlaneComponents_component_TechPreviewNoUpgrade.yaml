@@ -1,0 +1,34 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: hosted-cluster-config-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: hosted-cluster-config-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: hosted-cluster-config-operator Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: hosted-cluster-config-operator
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: hosted-cluster-config-operator
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: hosted-cluster-config-operator
+  - group: ""
+    kind: ServiceAccount
+    name: hosted-cluster-config-operator
+  version: 4.18.0

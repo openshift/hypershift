@@ -6,11 +6,16 @@ import (
 	"fmt"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
+
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
+
 	"github.com/go-logr/logr"
 )
 
@@ -18,7 +23,25 @@ type policyBinding struct {
 	name            string
 	serviceAccounts []string
 	policy          string
+	allowAssumeRole bool
 }
+
+type sharedVPCPolicyBinding struct {
+	name         string
+	policy       string
+	allowedRoles []string
+}
+
+const allowAssumeRolePolicy = `{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": "sts:AssumeRole",
+			"Resource": "*"
+        }
+    ]
+}`
 
 var (
 	imageRegistryPermPolicy = policyBinding{
@@ -188,6 +211,222 @@ var (
 }`,
 	}
 
+	//   {
+	// 	"Action": [
+	// 	  "*"
+	// 	],
+	// 	"Resource": [
+	// 	  "*"
+	// 	],
+	// 	"Effect": "Allow"
+	//   }
+	karpenterPolicy = policyBinding{
+		name:            "karpenter",
+		serviceAccounts: []string{"system:serviceaccount:kube-system:karpenter"},
+		policy: `{
+			"Version": "2012-10-17",
+			"Statement": [
+			  {
+				"Sid": "AllowScopedEC2InstanceAccessActions",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*::image/*",
+					"arn:*:ec2:*::snapshot/*",
+					"arn:*:ec2:*:*:security-group/*",
+					"arn:*:ec2:*:*:subnet/*"
+				],
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet"
+				]
+			  },
+			  {
+				"Sid": "AllowScopedEC2LaunchTemplateAccessActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:ec2:*:*:launch-template/*",
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet"
+				]
+			  },
+			  {
+				"Sid": "AllowScopedEC2InstanceActionsWithTags",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:fleet/*",
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:volume/*",
+					"arn:*:ec2:*:*:network-interface/*",
+					"arn:*:ec2:*:*:launch-template/*",
+					"arn:*:ec2:*:*:spot-instances-request/*"
+				],
+				"Action": [
+					"ec2:RunInstances",
+					"ec2:CreateFleet",
+					"ec2:CreateLaunchTemplate"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:RequestTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedResourceCreationTagging",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:fleet/*",
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:volume/*",
+					"arn:*:ec2:*:*:network-interface/*",
+					"arn:*:ec2:*:*:launch-template/*",
+					"arn:*:ec2:*:*:spot-instances-request/*"
+				],
+				"Action": "ec2:CreateTags",
+				"Condition": {
+					"StringEquals": {
+					"ec2:CreateAction": [
+						"RunInstances",
+						"CreateFleet",
+						"CreateLaunchTemplate"
+					]
+					},
+					"StringLike": {
+					"aws:RequestTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedResourceTagging",
+				"Effect": "Allow",
+				"Resource": "arn:*:ec2:*:*:instance/*",
+				"Action": "ec2:CreateTags",
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedDeletion",
+				"Effect": "Allow",
+				"Resource": [
+					"arn:*:ec2:*:*:instance/*",
+					"arn:*:ec2:*:*:launch-template/*"
+				],
+				"Action": [
+					"ec2:TerminateInstances",
+					"ec2:DeleteLaunchTemplate"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+					}
+				}
+			  },
+			{
+				"Sid": "AllowRegionalReadActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": [
+					"ec2:DescribeImages",
+					"ec2:DescribeInstances",
+					"ec2:DescribeInstanceTypeOfferings",
+					"ec2:DescribeInstanceTypes",
+					"ec2:DescribeLaunchTemplates",
+					"ec2:DescribeSecurityGroups",
+					"ec2:DescribeSpotPriceHistory",
+					"ec2:DescribeSubnets"
+				]
+			  },
+			  {
+				"Sid": "AllowSSMReadActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:ssm:*::parameter/aws/service/*",
+				"Action": "ssm:GetParameter"
+			  },
+			  {
+				"Sid": "AllowPricingReadActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": "pricing:GetProducts"
+			  },
+			  {
+				"Sid": "AllowInterruptionQueueActions",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": [
+					"sqs:DeleteMessage",
+					"sqs:GetQueueUrl",
+					"sqs:ReceiveMessage"
+				]
+			  },
+			  {
+				"Sid": "AllowPassingInstanceRole",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:role/*",
+				"Action": "iam:PassRole",
+				"Condition": {
+					"StringEquals": {
+					"iam:PassedToService": [
+						"ec2.amazonaws.com",
+						"ec2.amazonaws.com.cn"
+					]
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedInstanceProfileCreationActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:CreateInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			{
+				"Sid": "AllowScopedInstanceProfileTagActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:TagInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*",
+					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowScopedInstanceProfileActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": [
+					"iam:AddRoleToInstanceProfile",
+					"iam:RemoveRoleFromInstanceProfile",
+					"iam:DeleteInstanceProfile"
+				],
+				"Condition": {
+					"StringLike": {
+					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*"
+					}
+				}
+			  },
+			  {
+				"Sid": "AllowInstanceProfileReadActions",
+				"Effect": "Allow",
+				"Resource": "arn:*:iam::*:instance-profile/*",
+				"Action": "iam:GetInstanceProfile"
+			  }
+			]
+		  }`,
+	}
+
 	nodePoolPolicy = policyBinding{
 		name:            "node-pool",
 		serviceAccounts: []string{"system:serviceaccount:kube-system:capa-controller-manager"},
@@ -325,77 +564,198 @@ var (
 	}
 )
 
-func ingressPermPolicy(publicZone, privateZone string) policyBinding {
+func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBinding {
 	publicZone = ensureHostedZonePrefix(publicZone)
 	privateZone = ensureHostedZonePrefix(privateZone)
+
+	var policy string
+	if sharedVPC {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeLoadBalancers",
+						"tag:GetResources",
+						"route53:ListHostedZones"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": [
+						"arn:aws:route53:::%s"
+					]
+				}
+			]
+		}`, publicZone)
+	} else {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeLoadBalancers",
+						"tag:GetResources",
+						"route53:ListHostedZones"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": [
+						"arn:aws:route53:::%s",
+						"arn:aws:route53:::%s"
+					]
+				}
+			]
+		}`, publicZone, privateZone)
+	}
+
 	return policyBinding{
 		name:            "openshift-ingress",
 		serviceAccounts: []string{"system:serviceaccount:openshift-ingress-operator:ingress-operator"},
-		policy: fmt.Sprintf(`{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"elasticloadbalancing:DescribeLoadBalancers",
-				"tag:GetResources",
-				"route53:ListHostedZones"
-			],
-			"Resource": "*"
-		},
-		{
-			"Effect": "Allow",
-			"Action": [
-				"route53:ChangeResourceRecordSets"
-			],
-			"Resource": [
-				"arn:aws:route53:::%s",
-				"arn:aws:route53:::%s"
-			]
-		}
-	]
-}`, publicZone, privateZone),
+		policy:          policy,
+		allowAssumeRole: sharedVPC,
 	}
 }
 
-func controlPlaneOperatorPolicy(hostedZone string) policyBinding {
+func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding {
 	hostedZone = ensureHostedZonePrefix(hostedZone)
+	var policy string
+	if sharedVPC {
+		policy = `{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+					    "ec2:DescribeVpcEndpoints",
+						"ec2:CreateTags",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs"
+					],
+					"Resource": "*"
+				}
+			]
+		}`
+	} else {
+		policy = fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"ec2:CreateVpcEndpoint",
+						"ec2:DescribeVpcEndpoints",
+						"ec2:ModifyVpcEndpoint",
+						"ec2:DeleteVpcEndpoints",
+						"ec2:CreateTags",
+						"route53:ListHostedZones",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs"
+					],
+					"Resource": "*"
+				},
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets",
+						"route53:ListResourceRecordSets"
+					],
+					"Resource": "arn:aws:route53:::%s"
+				}
+			]
+		}`, hostedZone)
+	}
 	return policyBinding{
 		name:            "control-plane-operator",
 		serviceAccounts: []string{"system:serviceaccount:kube-system:control-plane-operator"},
-		policy: fmt.Sprintf(`{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Effect": "Allow",
-			"Action": [
-				"ec2:CreateVpcEndpoint",
-				"ec2:DescribeVpcEndpoints",
-				"ec2:ModifyVpcEndpoint",
-				"ec2:DeleteVpcEndpoints",
-				"ec2:CreateTags",
-				"route53:ListHostedZones",
-				"ec2:CreateSecurityGroup",
-				"ec2:AuthorizeSecurityGroupIngress",
-				"ec2:AuthorizeSecurityGroupEgress",
-				"ec2:DeleteSecurityGroup",
-				"ec2:RevokeSecurityGroupIngress",
-				"ec2:RevokeSecurityGroupEgress",
-				"ec2:DescribeSecurityGroups",
-				"ec2:DescribeVpcs"
-			],
-			"Resource": "*"
-		},
-		{
-			"Effect": "Allow",
-			"Action": [
+		policy:          policy,
+		allowAssumeRole: sharedVPC,
+	}
+}
+
+func sharedVPCRoute53Role(allowedRoles []string) sharedVPCPolicyBinding {
+	policy := `{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "route53:ListHostedZones",
+                "route53:ListHostedZonesByName",
+                "route53:ChangeTagsForResource",
+                "route53:GetAccountLimit",
+                "route53:GetChange",
+                "route53:GetHostedZone",
+                "route53:ListTagsForResource",
+                "route53:UpdateHostedZoneComment",
+                "tag:GetResources",
+                "tag:UntagResources",
 				"route53:ChangeResourceRecordSets",
 				"route53:ListResourceRecordSets"
-			],
-			"Resource": "arn:aws:route53:::%s"
-		}
-	]
-}`, hostedZone),
+            ],
+            "Resource": "*"
+        }
+    ]
+}`
+	return sharedVPCPolicyBinding{
+		name:         "shared-vpc-route53",
+		policy:       policy,
+		allowedRoles: allowedRoles,
+	}
+}
+
+func sharedVPCEndpointRole(controlPlaneRoleARN string) sharedVPCPolicyBinding {
+	policy := `{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"ec2:CreateVpcEndpoint",
+						"ec2:DescribeVpcEndpoints",
+						"ec2:ModifyVpcEndpoint",
+						"ec2:DeleteVpcEndpoints",
+						"ec2:CreateTags",
+						"ec2:CreateSecurityGroup",
+						"ec2:AuthorizeSecurityGroupIngress",
+						"ec2:AuthorizeSecurityGroupEgress",
+						"ec2:DeleteSecurityGroup",
+						"ec2:RevokeSecurityGroupIngress",
+						"ec2:RevokeSecurityGroupEgress",
+						"ec2:DescribeSecurityGroups",
+						"ec2:DescribeVpcs"
+					],
+					"Resource": "*"
+				}
+			]
+		}`
+	return sharedVPCPolicyBinding{
+		name:         "shared-vpc-endpoint",
+		policy:       policy,
+		allowedRoles: []string{controlPlaneRoleARN},
 	}
 }
 
@@ -435,7 +795,7 @@ func DefaultProfileName(infraID string) string {
 
 // inputs: none
 // outputs rsa keypair
-func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger, sharedVPC bool) (*CreateIAMOutput, error) {
 	var providerName string
 	var providerARN string
 	if o.IssuerURL == "" {
@@ -478,21 +838,27 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 	// TODO: The policies and secrets for these roles can be extracted from the
 	// release payload, avoiding this current hardcoding.
 	bindings := map[*string]policyBinding{
-		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID),
+		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID, sharedVPC),
 		&output.Roles.ImageRegistryARN:        imageRegistryPermPolicy,
 		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
 		&output.Roles.KubeCloudControllerARN:  cloudControllerPolicy,
 		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
-		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID),
+		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
 	}
+
+	if o.CreateKarpenterRoleARN {
+		bindings[&output.KarpenterRoleARN] = karpenterPolicy
+
+	}
+
 	if len(o.KMSKeyARN) > 0 {
 		bindings[&output.KMSProviderRoleARN] = kmsProviderPolicy(o.KMSKeyARN)
 	}
 
 	for into, binding := range bindings {
 		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
-		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, logger)
+		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, binding.allowAssumeRole, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
 		}
@@ -547,12 +913,13 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI, logger 
 }
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
-func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, logger logr.Logger) (string, error) {
+func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, allowAssume bool, logger logr.Logger) (string, error) {
 	createIAMRoleOpts := CreateIAMRoleOptions{
 		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, name),
 		TrustPolicy:       trustPolicy,
 		PermissionsPolicy: permPolicy,
 		additionalIAMTags: o.additionalIAMTags,
+		AllowAssume:       allowAssume,
 	}
 
 	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), logger, client)
@@ -663,6 +1030,7 @@ type CreateIAMRoleOptions struct {
 	RoleName          string
 	TrustPolicy       string
 	PermissionsPolicy string
+	AllowAssume       bool
 
 	additionalIAMTags []*iam.Tag
 }
@@ -701,6 +1069,49 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, l
 	}
 	logger.Info("Added/Updated role policy", "name", rolePolicyName)
 
+	if o.AllowAssume {
+		rolePolicyName = fmt.Sprintf("%s-assume", o.RoleName)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(rolePolicyName),
+			PolicyDocument: aws.String(allowAssumeRolePolicy),
+			RoleName:       aws.String(o.RoleName),
+		})
+		if err != nil {
+			return "", err
+		}
+		logger.Info("Added/Updated role policy", "name", rolePolicyName)
+	}
+
+	return arn, nil
+}
+
+func (o *CreateIAMOptions) CreateSharedVPCEndpointRole(iamClient iamiface.IAMAPI, logger logr.Logger, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(iamClient, logger, sharedVPCEndpointRole(controlPlaneRole))
+}
+
+func (o *CreateIAMOptions) CreateSharedVPCRoute53Role(iamClient iamiface.IAMAPI, logger logr.Logger, ingressRole, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(iamClient, logger, sharedVPCRoute53Role([]string{ingressRole, controlPlaneRole}))
+}
+
+func (o *CreateIAMOptions) createSharedVPCRole(iamClient iamiface.IAMAPI, logger logr.Logger, binding sharedVPCPolicyBinding) (string, error) {
+	trustPolicy := sharedVPCRoleTrustPolicy(binding.allowedRoles)
+	backoff := wait.Backoff{
+		Steps:    10,
+		Duration: 10 * time.Second,
+		Factor:   1.0,
+		Jitter:   0.1,
+	}
+	var arn string
+	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+		var err error
+		arn, err = o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, false, logger)
+		if err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
+		return "", err
+	}
 	return arn, nil
 }
 
@@ -803,4 +1214,31 @@ func oidcTrustPolicy(providerARN, providerName string, serviceAccounts ...string
 		panic(fmt.Sprintf("failed to execute oidcTrustPolicyTemplate: %v", err))
 	}
 	return b.String()
+}
+
+func sharedVPCRoleTrustPolicy(trustedRoles []string) string {
+	var allowedString string
+	switch len(trustedRoles) {
+	case 1:
+		allowedString = fmt.Sprintf("%q", trustedRoles[0])
+	case 2:
+		allowedString = fmt.Sprintf("[ %q, %q ]", trustedRoles[0], trustedRoles[1])
+	default:
+		panic("not supported")
+	}
+
+	policy := `{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+	  "Sid": "Statement1",
+	  "Effect": "Allow",
+	  "Principal": {
+	  	"AWS": %s
+	  },
+	  "Action": "sts:AssumeRole"
+	}
+  ]
+}`
+	return fmt.Sprintf(policy, allowedString)
 }

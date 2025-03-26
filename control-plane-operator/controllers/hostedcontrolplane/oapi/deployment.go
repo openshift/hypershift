@@ -2,12 +2,20 @@ package oapi
 
 import (
 	"fmt"
-	"net/url"
 	"path"
 	"strings"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -15,13 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
-
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -35,7 +36,8 @@ const (
 
 	konnectivityHTTPSProxyPort = 8090
 
-	certsTrustPath = "/etc/pki/tls/certs"
+	certsTrustPath         = "/etc/pki/tls/certs"
+	managedTrustBundlePath = "managed-trust-bundle.crt"
 )
 
 var (
@@ -77,8 +79,8 @@ var (
 
 func openShiftAPIServerLabels() map[string]string {
 	return map[string]string{
-		"app":                         "openshift-apiserver",
-		hyperv1.ControlPlaneComponent: "openshift-apiserver",
+		"app":                              "openshift-apiserver",
+		hyperv1.ControlPlaneComponentLabel: "openshift-apiserver",
 	}
 }
 
@@ -136,9 +138,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
-	etcdUrlData, err := url.Parse(etcdURL)
+	etcdHost, err := util.HostFromURL(etcdURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse etcd url: %w", err)
+		return err
 	}
 	if deployment.Spec.Template.Annotations == nil {
 		deployment.Spec.Template.Annotations = map[string]string{}
@@ -149,7 +151,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	deployment.Spec.Template.Spec.InitContainers = []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))}
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
-		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort, internalOAuthDisable)),
+		util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdHost, defaultOAPIPort, internalOAuthDisable)),
 		util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage, proxyConfig, noProxy)),
 	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume{
@@ -164,6 +166,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 		util.BuildVolume(oasVolumeEtcdClientCert(), buildOASVolumeEtcdClientCert),
 		util.BuildVolume(oasVolumeKonnectivityProxyCert(), buildOASVolumeKonnectivityProxyCert),
 		util.BuildVolume(oasVolumeKonnectivityProxyCA(), buildOASVolumeKonnectivityProxyCA),
+		util.BuildVolume(oasVolumeProxyManagedTrustBundle(), buildOASVolumeProxyManagedTrustBundle),
 		util.BuildVolume(oasTrustAnchorVolume(), func(v *corev1.Volume) { v.EmptyDir = &corev1.EmptyDirVolumeSource{} }),
 		util.BuildVolume(pullSecretVolume(), func(v *corev1.Volume) {
 			v.Secret = &corev1.SecretVolumeSource{
@@ -367,11 +370,22 @@ func buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage string, prox
 			Value: "/etc/kubernetes/secrets/kubeconfig/kubeconfig",
 		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      oasVolumeProxyManagedTrustBundle().Name,
+			MountPath: path.Join(certsTrustPath, managedTrustBundlePath),
+			SubPath:   managedTrustBundlePath,
+		})
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 
 func buildOASContainerMain(image string, etcdHostname string, port int32, internalOAuthDisable bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
+		noProxy := []string{
+			manifests.KubeAPIServerService("").Name,
+			etcdHostname,
+			config.AuditWebhookService,
+		}
 		cpath := func(volume, file string) string {
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
 		}
@@ -402,7 +416,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32, intern
 			},
 			{
 				Name:  "NO_PROXY",
-				Value: fmt.Sprintf("%s,%s", manifests.KubeAPIServerService("").Name, etcdHostname),
+				Value: strings.Join(noProxy, ","),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -540,6 +554,26 @@ func oasVolumeKonnectivityProxyCA() *corev1.Volume {
 func oasTrustAnchorVolume() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "oas-trust-anchor",
+	}
+}
+
+func oasVolumeProxyManagedTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "managed-trust-bundle",
+	}
+}
+
+func buildOASVolumeProxyManagedTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		Optional: ptr.To(true),
+	}
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
+	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
+	v.ConfigMap.Items = []corev1.KeyToPath{
+		{
+			Key:  certs.UserCABundleMapKey,
+			Path: managedTrustBundlePath,
+		},
 	}
 }
 

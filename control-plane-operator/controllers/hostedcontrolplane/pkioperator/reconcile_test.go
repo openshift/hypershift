@@ -4,15 +4,15 @@ import (
 	"testing"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
@@ -23,7 +23,7 @@ func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 		Spec: hypershiftv1beta1.HostedControlPlaneSpec{
@@ -31,7 +31,7 @@ func TestReconcileControlPlanePKIOperatorDeployment(t *testing.T) {
 			IssuerURL:    "https://www.example.com",
 			Networking: hypershiftv1beta1.ClusterNetworking{
 				APIServer: &hypershiftv1beta1.APIServerNetworking{
-					Port: pointer.Int32(1234),
+					Port: ptr.To[int32](1234),
 				},
 			},
 		},
@@ -56,7 +56,7 @@ func TestReconcileControlPlanePKIOperatorRole(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 	}
@@ -79,7 +79,7 @@ func TestReconcileControlPlanePKIOperatorRoleBinding(t *testing.T) {
 			UID:       "test-uid",
 			Annotations: map[string]string{
 				hypershiftv1beta1.ControlPlanePriorityClass: "whatever",
-				hyperv1.RestartDateAnnotation:               "sometime",
+				hypershiftv1beta1.RestartDateAnnotation:     "sometime",
 			},
 		},
 	}

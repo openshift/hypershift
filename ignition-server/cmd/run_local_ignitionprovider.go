@@ -12,12 +12,15 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
 	corev1 "k8s.io/api/core/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 type RunLocalIgnitionProviderOptions struct {
@@ -50,7 +53,7 @@ func NewRunLocalIgnitionProviderCommand() *cobra.Command {
 			<-sigs
 			cancel()
 		}()
-		ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 			o.EncodeTime = zapcore.RFC3339TimeEncoder
 		})))
 		return opts.Run(ctx)
@@ -92,15 +95,20 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		return fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: map[string][]string{},
+	}
+
 	p := &controllers.LocalIgnitionProvider{
-		Client:              cl,
-		ReleaseProvider:     &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
-		CloudProvider:       "",
-		Namespace:           o.Namespace,
-		WorkDir:             o.WorkDir,
-		PreserveOutput:      true,
-		ImageFileCache:      imageFileCache,
-		FeatureGateManifest: o.FeatureGateManifest,
+		Client:                cl,
+		ReleaseProvider:       &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{},
+		ImageMetadataProvider: imageMetaDataProvider,
+		CloudProvider:         "",
+		Namespace:             o.Namespace,
+		WorkDir:               o.WorkDir,
+		PreserveOutput:        true,
+		ImageFileCache:        imageFileCache,
+		FeatureGateManifest:   o.FeatureGateManifest,
 	}
 
 	payload, err := p.GetPayload(ctx, o.Image, config.String(), "", "", "")

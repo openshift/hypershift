@@ -6,8 +6,10 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+
 	corev1 "k8s.io/api/core/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 )
 
@@ -130,7 +132,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	awsMachineTemplateSpec := &capiaws.AWSMachineTemplateSpec{
 		Template: capiaws.AWSMachineTemplateResource{
 			Spec: capiaws.AWSMachineSpec{
-				UncompressedUserData: k8sutilspointer.Bool(true),
+				UncompressedUserData: ptr.To(true),
 				CloudInit: capiaws.CloudInit{
 					InsecureSkipSecretsManager: true,
 					SecureSecretsBackend:       "secrets-manager",
@@ -138,7 +140,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 				IAMInstanceProfile: instanceProfile,
 				InstanceType:       instanceType,
 				AMI: capiaws.AMIReference{
-					ID: k8sutilspointer.String(ami),
+					ID: ptr.To(ami),
 				},
 				AdditionalSecurityGroups: securityGroups,
 				Subnet:                   subnet,
@@ -148,6 +150,9 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 				Tenancy:                  tenancy,
 			},
 		},
+	}
+	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
 	}
 
 	return awsMachineTemplateSpec, nil

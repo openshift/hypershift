@@ -4,19 +4,20 @@ import (
 	"encoding/json"
 	"strings"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
-	osinv1 "github.com/openshift/api/osin/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -84,7 +85,7 @@ type ConfigOverride struct {
 	Challenge *bool               `json:"challenge,omitempty"`
 }
 
-func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
+func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, host string, port int32, setDefaultSecurityContext bool) *OAuthServerParams {
 	p := &OAuthServerParams{
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ExternalAPIHost:         hcp.Status.ControlPlaneEndpoint.Host,
@@ -95,7 +96,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
-		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name},
+		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService},
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -164,7 +165,11 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 			SuccessThreshold: 1,
 		},
 	}
-	p.DeploymentConfig.SetRequestServingDefaults(hcp, oauthServerLabels, nil)
+	replicas := ptr.To(2)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		replicas = ptr.To(1)
+	}
+	p.DeploymentConfig.SetRequestServingDefaults(hcp, oauthServerLabels, replicas)
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	p.OauthConfigOverrides = map[string]*ConfigOverride{}

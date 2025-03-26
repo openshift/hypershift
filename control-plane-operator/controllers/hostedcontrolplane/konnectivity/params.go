@@ -1,13 +1,13 @@
 package konnectivity
 
 import (
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
@@ -22,7 +22,7 @@ type KonnectivityParams struct {
 	AgentDeamonSetConfig   config.DeploymentConfig
 }
 
-func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
+func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAddress string, externalPort int32, setDefaultSecurityContext bool) *KonnectivityParams {
 	p := &KonnectivityParams{
 		KonnectivityAgentImage: releaseImageProvider.GetImage("apiserver-network-proxy"),
 		OwnerRef:               config.OwnerRefFrom(hcp),
@@ -49,11 +49,42 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 6,
+			SuccessThreshold: 1,
+		},
+	}
+
+	p.AgentDeploymentConfig.ReadinessProbes = config.ReadinessProbes{
+		konnectivityAgentContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "readyz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		},
+	}
+
+	p.AgentDeploymentConfig.StartupProbes = config.StartupProbes{
+		konnectivityAgentContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    5,
+			FailureThreshold: 60,
+			SuccessThreshold: 1,
 		},
 	}
 
@@ -79,11 +110,42 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider
 					Path:   "healthz",
 				},
 			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      30,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 6,
+			SuccessThreshold: 1,
+		},
+	}
+
+	p.AgentDeamonSetConfig.ReadinessProbes = config.ReadinessProbes{
+		konnectivityAgentContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "readyz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		},
+	}
+
+	p.AgentDeamonSetConfig.StartupProbes = config.StartupProbes{
+		konnectivityAgentContainer().Name: {
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    5,
+			FailureThreshold: 60,
+			SuccessThreshold: 1,
 		},
 	}
 

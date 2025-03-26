@@ -2,23 +2,29 @@ package ingressoperator
 
 import (
 	"fmt"
+	"path"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
@@ -28,24 +34,31 @@ const (
 	konnectivityProxyContainerName = "konnectivity-proxy"
 	ingressOperatorMetricsPort     = 60000
 	konnectivityProxyPort          = 8090
+
+	managedTrustBundlePath = "managed-trust-bundle.crt"
+	certsTrustPath         = "/etc/pki/tls/certs"
 )
 
 type Params struct {
-	IngressOperatorImage    string
-	IngressCanaryImage      string
-	HAProxyRouterImage      string
-	KubeRBACProxyImage      string
-	ReleaseVersion          string
-	TokenMinterImage        string
-	AvailabilityProberImage string
-	ProxyImage              string
-	Platform                hyperv1.PlatformType
-	DeploymentConfig        config.DeploymentConfig
-	ProxyConfig             *configv1.ProxySpec
-	NoProxy                 string
+	IngressOperatorImage     string
+	IngressCanaryImage       string
+	HAProxyRouterImage       string
+	KubeRBACProxyImage       string
+	ReleaseVersion           string
+	TokenMinterImage         string
+	AvailabilityProberImage  string
+	ProxyImage               string
+	Platform                 hyperv1.PlatformType
+	DeploymentConfig         config.DeploymentConfig
+	ProxyConfig              *configv1.ProxySpec
+	NoProxy                  string
+	AzureClientID            string
+	AzureTenantID            string
+	AzureCertificateName     string
+	AzureCredentialsFilepath string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, platform hyperv1.PlatformType) Params {
 	p := Params{
 		IngressOperatorImage:    releaseImageProvider.GetImage("cluster-ingress-operator"),
 		IngressCanaryImage:      userReleaseImageProvider.GetImage("cluster-ingress-operator"),
@@ -56,6 +69,12 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
 		Platform:                platform,
 	}
+	if azureutil.IsAroHCP() {
+		p.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID
+		p.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CertificateName
+		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName
+	}
+
 	if hcp.Spec.Configuration != nil {
 		p.ProxyConfig = hcp.Spec.Configuration.Proxy
 		p.NoProxy = proxy.DefaultNoProxy(hcp)
@@ -71,6 +90,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 }
 
 func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyperv1.PlatformType) {
+	// Initialize resource requests
 	ingressOpResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
 			corev1.ResourceMemory: resource.MustParse("80Mi"),
@@ -96,9 +116,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		dep.Spec.Template.Labels = map[string]string{}
 	}
 	dep.Spec.Template.Labels = map[string]string{
-		"name":                        operatorName,
-		"app":                         operatorName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             operatorName,
+		"app":                              operatorName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 
 	dep.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
@@ -150,6 +170,21 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		{Name: "admin-kubeconfig", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "service-network-admin-kubeconfig", DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "konnectivity-proxy-cert", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: manifests.KonnectivityClientSecret("").Name, DefaultMode: ptr.To[int32](0640)}}},
 		{Name: "konnectivity-proxy-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{Name: manifests.KonnectivityCAConfigMap("").Name}, DefaultMode: ptr.To[int32](0640)}}},
+		{Name: "managed-trust-bundle",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: manifests.TrustedCABundleConfigMap("").Name},
+					DefaultMode:          ptr.To[int32](0640),
+					Items: []corev1.KeyToPath{
+						{
+							Key:  certs.UserCABundleMapKey,
+							Path: managedTrustBundlePath,
+						},
+					},
+					Optional: ptr.To(true),
+				},
+			},
+		},
 	}
 
 	if params.Platform == hyperv1.AWSPlatform {
@@ -199,6 +234,29 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 		},
 	)
 
+	// For managed Azure deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHCP() {
+		dep.Spec.Template.Spec.Containers[0].Env = append(dep.Spec.Template.Spec.Containers[0].Env,
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName, params.AzureCredentialsFilepath)...)
+
+		if dep.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			dep.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		dep.Spec.Template.Spec.Containers[0].VolumeMounts = append(dep.Spec.Template.Spec.Containers[0].VolumeMounts,
+			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureIngressSecretStoreVolumeName),
+		)
+
+		if dep.Spec.Template.Spec.Volumes == nil {
+			dep.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		dep.Spec.Template.Spec.Volumes = append(dep.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureIngressSecretStoreVolumeName, config.ManagedAzureIngressSecretStoreProviderClassName),
+		)
+	}
+
 	params.DeploymentConfig.ApplyTo(dep)
 }
 
@@ -225,6 +283,7 @@ func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *c
 			{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
 			{Name: "konnectivity-proxy-cert", MountPath: "/etc/konnectivity/proxy-client"},
 			{Name: "konnectivity-proxy-ca", MountPath: "/etc/konnectivity/proxy-ca"},
+			{Name: "managed-trust-bundle", MountPath: path.Join(certsTrustPath, managedTrustBundlePath), SubPath: managedTrustBundlePath},
 		},
 	}
 	if proxyConfig != nil {

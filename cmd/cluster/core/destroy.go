@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -18,8 +18,11 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -43,13 +46,15 @@ type DestroyOptions struct {
 }
 
 type AWSPlatformDestroyOptions struct {
-	Credentials         awsutil.AWSCredentialsOptions
-	BaseDomain          string
-	BaseDomainPrefix    string
-	PreserveIAM         bool
-	Region              string
-	PostDeleteAction    func()
-	AwsInfraGracePeriod time.Duration
+	Credentials                  awsutil.AWSCredentialsOptions
+	BaseDomain                   string
+	BaseDomainPrefix             string
+	PreserveIAM                  bool
+	Region                       string
+	PostDeleteAction             func()
+	AwsInfraGracePeriod          time.Duration
+	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 }
 
 type AzurePlatformDestroyOptions struct {

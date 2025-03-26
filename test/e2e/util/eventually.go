@@ -8,15 +8,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func defaultOptions() *EventuallyOptions {
@@ -149,7 +152,7 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 						matches = matches || matcher.Matches(condition)
 					}
 					if matches {
-						t.Logf(condition.String())
+						t.Logf("%s", condition.String())
 					}
 				}
 			}
@@ -173,7 +176,7 @@ func evaluatePredicates[T any](object T, predicates []Predicate[T]) ([]predicate
 			return nil, err
 		}
 		if !done && len(reason) == 0 {
-			panic(fmt.Sprintf("programmer error: predicate returned false with no message"))
+			panic("programmer error: predicate returned false with no message")
 		}
 		results[i] = predicateResult{done: done, reason: reason}
 	}
@@ -329,7 +332,7 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 							matches = matches || matcher.Matches(condition)
 						}
 						if matches {
-							t.Logf(condition.String())
+							t.Logf("%s", condition.String())
 						}
 					}
 				}

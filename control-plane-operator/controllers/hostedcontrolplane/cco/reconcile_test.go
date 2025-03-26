@@ -9,8 +9,9 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileDeployment(t *testing.T) {
@@ -24,7 +25,7 @@ func TestReconcileDeployment(t *testing.T) {
 			IssuerURL:    "https://www.example.com",
 			Networking: hyperv1.ClusterNetworking{
 				APIServer: &hyperv1.APIServerNetworking{
-					Port: pointer.Int32(1234),
+					Port: ptr.To[int32](1234),
 				},
 			},
 		},

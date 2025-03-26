@@ -5,12 +5,13 @@ import (
 	"hash/fnv"
 	"strings"
 
-	routev1 "github.com/openshift/api/route/v1"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	"k8s.io/apimachinery/pkg/util/validation"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const HCPRouteLabel = "hypershift.openshift.io/hosted-control-plane"

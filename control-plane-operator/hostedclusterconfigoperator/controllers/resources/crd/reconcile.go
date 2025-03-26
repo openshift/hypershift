@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )

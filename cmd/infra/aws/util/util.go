@@ -3,16 +3,19 @@ package util
 import (
 	"errors"
 	"fmt"
+	"net"
 	"time"
 
-	"k8s.io/utils/ptr"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/openshift/hypershift/cmd/util"
+
+	"k8s.io/utils/ptr"
+
 	"github.com/spf13/pflag"
 )
 
@@ -45,7 +48,11 @@ func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
 	opts.BindProductFlags(flags)
 
 	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
-	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
+	_ = flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
+}
+
+func (opts *AWSCredentialsOptions) BindVPCOwnerFlags(flags *pflag.FlagSet) {
+	flags.StringVar(&opts.AWSCredentialsFile, "vpc-owner-aws-creds", opts.AWSCredentialsFile, "Path to VPC owner AWS credentials file")
 }
 
 func (opts *AWSCredentialsOptions) BindProductFlags(flags *pflag.FlagSet) {
@@ -119,4 +126,18 @@ func NewConfig() *aws.Config {
 		MinThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
+}
+
+func ValidateVPCCIDR(in string) error {
+	if in == "" {
+		return nil
+	}
+	_, network, err := net.ParseCIDR(in)
+	if err != nil {
+		return fmt.Errorf("invalid CIDR (%s): %w", in, err)
+	}
+	if ones, _ := network.Mask.Size(); ones != 16 {
+		return fmt.Errorf("only /16 size VPC CIDR supported (%s)", in)
+	}
+	return nil
 }

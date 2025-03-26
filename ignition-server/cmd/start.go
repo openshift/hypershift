@@ -20,10 +20,9 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
 	corev1 "k8s.io/api/core/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -33,6 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 const namespaceEnvVariableName = "MY_NAMESPACE"
@@ -149,6 +152,10 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		return nil, fmt.Errorf("unable to create image file cache: %w", err)
 	}
 
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
+	}
+
 	if err = (&controllers.TokenSecretReconciler{
 		Client:       mgr.GetClient(),
 		PayloadStore: payloadStore,
@@ -163,12 +170,13 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 				},
 				OpenShiftImageRegistryOverrides: util.ConvertImageRegistryOverrideStringToMap(os.Getenv("OPENSHIFT_IMG_OVERRIDES")),
 			},
-			Client:              mgr.GetClient(),
-			Namespace:           os.Getenv(namespaceEnvVariableName),
-			CloudProvider:       cloudProvider,
-			WorkDir:             cacheDir,
-			ImageFileCache:      imageFileCache,
-			FeatureGateManifest: featureGateManifest,
+			Client:                mgr.GetClient(),
+			Namespace:             os.Getenv(namespaceEnvVariableName),
+			CloudProvider:         cloudProvider,
+			WorkDir:               cacheDir,
+			ImageFileCache:        imageFileCache,
+			FeatureGateManifest:   featureGateManifest,
+			ImageMetadataProvider: imageMetaDataProvider,
 		},
 	}).SetupWithManager(ctx, mgr); err != nil {
 		return nil, fmt.Errorf("unable to create controller: %w", err)
@@ -178,7 +186,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 }
 
 func run(ctx context.Context, opts Options) error {
-	logger := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	logger := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 	ctrl.SetLogger(logger)
@@ -196,7 +204,12 @@ func run(ctx context.Context, opts Options) error {
 	if err := mgr.Add(certWatcher); err != nil {
 		return fmt.Errorf("failed to add certWatcher to manager: %w", err)
 	}
-	go mgr.Start(ctx)
+	go func() {
+		err := mgr.Start(ctx)
+		if err != nil {
+			logger.Error(err, "failed to start manager")
+		}
+	}()
 
 	mgr.GetLogger().Info("Using opts", "opts", fmt.Sprintf("%+v", opts))
 	eventRecorder := mgr.GetEventRecorderFor("ignition-server")
@@ -254,7 +267,7 @@ func run(ctx context.Context, opts Options) error {
 
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write(value.Payload)
+		_, _ = w.Write(value.Payload)
 
 		eventRecorder.Event(tokenSecret, corev1.EventTypeNormal, "GetPayload", "")
 		getRequestsPerNodePool.WithLabelValues(r.Header.Get("NodePool")).Inc()

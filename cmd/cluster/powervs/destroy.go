@@ -7,13 +7,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/spf13/cobra"
-
-	"k8s.io/apimachinery/pkg/util/errors"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/spf13/cobra"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -38,18 +38,15 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPCRegion, "vpc-region", opts.PowerVSPlatform.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.VPC, "vpc", "", "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudInstanceID, "cloud-instance-id", "", "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
-	cmd.Flags().StringVar(&opts.PowerVSPlatform.CloudConnection, "cloud-connection", "", "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	cmd.Flags().BoolVar(&opts.PowerVSPlatform.Debug, "debug", opts.PowerVSPlatform.Debug, "Enabling this will print PowerVS API Request & Response logs")
-	cmd.Flags().BoolVar(&opts.PowerVSPlatform.PER, "power-edge-router", opts.PowerVSPlatform.PER, "Enabling this flag ensures that the Power Edge router that was used to create the cluster is cleaned up")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.TransitGatewayLocation, "transit-gateway-location", opts.PowerVSPlatform.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	cmd.Flags().StringVar(&opts.PowerVSPlatform.TransitGateway, "transit-gateway", opts.PowerVSPlatform.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	logger := log.Log
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -107,8 +104,8 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if o.PowerVSPlatform.ResourceGroup == "" {
 		inputErrors = append(inputErrors, fmt.Errorf("resource group is required"))
 	}
-	if o.PowerVSPlatform.PER && o.PowerVSPlatform.TransitGatewayLocation == "" {
-		inputErrors = append(inputErrors, fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled"))
+	if o.PowerVSPlatform.TransitGatewayLocation == "" {
+		inputErrors = append(inputErrors, fmt.Errorf("transit gateway location is required"))
 	}
 
 	if err := errors.NewAggregate(inputErrors); err != nil {
@@ -132,9 +129,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		VPCRegion:              o.PowerVSPlatform.VPCRegion,
 		VPC:                    o.PowerVSPlatform.VPC,
 		CloudInstanceID:        o.PowerVSPlatform.CloudInstanceID,
-		CloudConnection:        o.PowerVSPlatform.CloudConnection,
 		Debug:                  o.PowerVSPlatform.Debug,
-		PER:                    o.PowerVSPlatform.PER,
 		TransitGatewayLocation: o.PowerVSPlatform.TransitGatewayLocation,
 		TransitGateway:         o.PowerVSPlatform.TransitGateway,
 	}).Run(ctx, o.Log)

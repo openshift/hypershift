@@ -21,8 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/errors"
 
+	capoerrors "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional"
 )
 
@@ -33,13 +33,78 @@ const (
 	IPClaimMachineFinalizer = "openstackmachine.infrastructure.cluster.x-k8s.io/ip-claim"
 )
 
+// SchedulerHintValueType is the type that represents allowed values for the Type field.
+// +kubebuilder:validation:Enum=Bool;String;Number
+type SchedulerHintValueType string
+
+// Constants representing the allowed types for SchedulerHintAdditionalValue.
+const (
+	SchedulerHintTypeBool   SchedulerHintValueType = "Bool"
+	SchedulerHintTypeString SchedulerHintValueType = "String"
+	SchedulerHintTypeNumber SchedulerHintValueType = "Number"
+)
+
+// SchedulerHintAdditionalValue represents the value of a scheduler hint property.
+// The value can be of various types: Bool, String, or Number.
+// The Type field indicates the type of the value being used.
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'Bool' ? has(self.bool) : !has(self.bool)",message="bool is required when type is Bool, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'Number' ? has(self.number) : !has(self.number)",message="number is required when type is Number, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'String' ? has(self.string) : !has(self.string)",message="string is required when type is String, and forbidden otherwise"
+// +union.
+type SchedulerHintAdditionalValue struct {
+	// Type represents the type of the value.
+	// Valid values are Bool, String, and Number.
+	// +kubebuilder:validation:Required
+	// +unionDiscriminator
+	Type SchedulerHintValueType `json:"type"`
+
+	// Bool is the boolean value of the scheduler hint, used when Type is "Bool".
+	// This field is required if type is 'Bool', and must not be set otherwise.
+	// +unionMember,optional
+	Bool *bool `json:"bool,omitempty"`
+
+	// Number is the integer value of the scheduler hint, used when Type is "Number".
+	// This field is required if type is 'Number', and must not be set otherwise.
+	// +unionMember,optional
+	Number *int `json:"number,omitempty"`
+
+	// String is the string value of the scheduler hint, used when Type is "String".
+	// This field is required if type is 'String', and must not be set otherwise.
+	// +unionMember,optional
+	// +kubebuilder:validation:MinLength:=1
+	// +kubebuilder:validation:MaxLength:=255
+	String *string `json:"string,omitempty"`
+}
+
+// SchedulerHintAdditionalProperty represents a single additional property for a scheduler hint.
+// It includes a Name to identify the property and a Value that can be of various types.
+type SchedulerHintAdditionalProperty struct {
+	// Name is the name of the scheduler hint property.
+	// It is a unique identifier for the property.
+	// +kubebuilder:validation:MinLength:=1
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Value is the value of the scheduler hint property, which can be of various types
+	// (e.g., bool, string, int). The type is indicated by the Value.Type field.
+	// +kubebuilder:validation:Required
+	Value SchedulerHintAdditionalValue `json:"value"`
+}
+
 // OpenStackMachineSpec defines the desired state of OpenStackMachine.
+// +kubebuilder:validation:XValidation:message="at least one of flavor or flavorID must be set",rule=(has(self.flavor) || has(self.flavorID))
 type OpenStackMachineSpec struct {
 	// ProviderID is the unique identifier as specified by the cloud provider.
 	ProviderID *string `json:"providerID,omitempty"`
 
 	// The flavor reference for the flavor for your server instance.
-	Flavor string `json:"flavor"`
+	// +kubebuilder:validation:MinLength=1
+	Flavor *string `json:"flavor,omitempty"`
+
+	// FlavorID allows flavors to be specified by ID.  This field takes precedence
+	// over Flavor.
+	// +kubebuilder:validation:MinLength=1
+	FlavorID *string `json:"flavorID,omitempty"`
 
 	// The image to use for your server instance.
 	// If the rootVolume is specified, this will be used when creating the root volume.
@@ -98,6 +163,14 @@ type OpenStackMachineSpec struct {
 	// will be assigned to the OpenStackMachine.
 	// +optional
 	FloatingIPPoolRef *corev1.TypedLocalObjectReference `json:"floatingIPPoolRef,omitempty"`
+
+	// SchedulerHintAdditionalProperties are arbitrary key/value pairs that provide additional hints
+	// to the OpenStack scheduler. These hints can influence how instances are placed on the infrastructure,
+	// such as specifying certain host aggregates or availability zones.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	SchedulerHintAdditionalProperties []SchedulerHintAdditionalProperty `json:"schedulerHintAdditionalProperties,omitempty"`
 }
 
 type ServerMetadata struct {
@@ -126,6 +199,8 @@ type OpenStackMachineStatus struct {
 	Addresses []corev1.NodeAddress `json:"addresses,omitempty"`
 
 	// InstanceState is the state of the OpenStack instance for this machine.
+	// This field is not set anymore by the OpenStackMachine controller.
+	// Instead, it's set by the OpenStackServer controller.
 	// +optional
 	InstanceState *InstanceState `json:"instanceState,omitempty"`
 
@@ -138,7 +213,7 @@ type OpenStackMachineStatus struct {
 	// +optional
 	Resources *MachineResources `json:"resources,omitempty"`
 
-	FailureReason *errors.MachineStatusError `json:"failureReason,omitempty"`
+	FailureReason *capoerrors.DeprecatedCAPIMachineStatusError `json:"failureReason,omitempty"`
 
 	// FailureMessage will be set in the event that there is a terminal problem
 	// reconciling the Machine and will contain a more verbose string suitable
@@ -163,13 +238,11 @@ type OpenStackMachineStatus struct {
 }
 
 // +genclient
-// +genclient:Namespaced
 // +kubebuilder:object:root=true
 // +kubebuilder:storageversion
 // +kubebuilder:resource:path=openstackmachines,scope=Namespaced,categories=cluster-api,shortName=osm
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this OpenStackMachine belongs"
-// +kubebuilder:printcolumn:name="InstanceState",type="string",JSONPath=".status.instanceState",description="OpenStack instance state"
 // +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Machine ready status"
 // +kubebuilder:printcolumn:name="ProviderID",type="string",JSONPath=".spec.providerID",description="OpenStack instance ID"
 // +kubebuilder:printcolumn:name="Machine",type="string",JSONPath=".metadata.ownerReferences[?(@.kind==\"Machine\")].name",description="Machine object which owns with this OpenStackMachine"
@@ -204,9 +277,19 @@ func (r *OpenStackMachine) SetConditions(conditions clusterv1.Conditions) {
 }
 
 // SetFailure sets the OpenStackMachine status failure reason and failure message.
-func (r *OpenStackMachine) SetFailure(failureReason errors.MachineStatusError, failureMessage error) {
+func (r *OpenStackMachine) SetFailure(failureReason capoerrors.DeprecatedCAPIMachineStatusError, failureMessage error) {
 	r.Status.FailureReason = &failureReason
 	r.Status.FailureMessage = ptr.To(failureMessage.Error())
+}
+
+var _ IdentityRefProvider = &OpenStackMachine{}
+
+// GetIdentifyRef returns the object's namespace and IdentityRef if it has an IdentityRef, or nulls if it does not.
+func (r *OpenStackMachine) GetIdentityRef() (*string, *OpenStackIdentityReference) {
+	if r.Spec.IdentityRef != nil {
+		return &r.Namespace, r.Spec.IdentityRef
+	}
+	return nil, nil
 }
 
 func init() {

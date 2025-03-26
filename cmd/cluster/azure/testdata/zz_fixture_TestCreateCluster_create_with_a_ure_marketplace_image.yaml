@@ -38,13 +38,37 @@ spec:
   olmCatalogPlacement: management
   platform:
     azure:
-      credentials:
-        name: bryans-cluster-cloud-credentials
       location: fakeLocation
+      managedIdentities:
+        controlPlane:
+          cloudProvider:
+            objectEncoding: utf-8
+          controlPlaneOperator:
+            objectEncoding: utf-8
+          disk:
+            objectEncoding: utf-8
+          file:
+            objectEncoding: utf-8
+          imageRegistry:
+            objectEncoding: utf-8
+          ingress:
+            objectEncoding: utf-8
+          managedIdentitiesKeyVault:
+            name: ""
+            tenantID: ""
+          network:
+            objectEncoding: utf-8
+          nodePoolManagement:
+            objectEncoding: utf-8
+        dataPlane:
+          diskMSIClientID: ""
+          fileMSIClientID: ""
+          imageRegistryMSIClientID: ""
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
       subscriptionID: fakeSubscriptionID
+      tenantID: fakeTenantID
       vnetID: fakeVNetID
     type: Azure
   pullSecret:
@@ -91,19 +115,19 @@ spec:
   nodeVolumeDetachTimeout: 0s
   platform:
     azure:
-      diskSizeGB: 120
-      diskStorageAccountType: Standard_LRS
-      enableEphemeralOSDisk: true
       image:
-        azureImageType: AzureMarketplace
         azureMarketplace:
           offer: aro4
           publisher: azureopenshift
           sku: aro_414
           version: 414.92.2024021
-      machineIdentityID: fakeMachineIdentityID
+        type: AzureMarketplace
+      osDisk:
+        diskStorageAccountType: Standard_LRS
+        persistence: Ephemeral
+        sizeGiB: 120
       subnetID: fakeSubnetID
-      vmsize: Standard_DS2_v2
+      vmSize: Standard_DS2_v2
     type: Azure
   release:
     image: fake-release-image

@@ -9,16 +9,16 @@ import (
 	"text/template"
 
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/spf13/cobra"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -34,14 +34,14 @@ func main() {
 		Use:   "setup",
 		Short: "Provides test setup commands",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
 	cmd.AddCommand(monitoringCommand())
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,6 +119,7 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	podSpec.Volumes = append(podSpec.Volumes,
 		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
 		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
 	)
 
 	podSpec.Containers = append(podSpec.Containers,
@@ -145,6 +147,12 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
+
+	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+		Name:      config.ManagedAzureKMSSecretStoreVolumeName,
+		MountPath: config.ManagedAzureCertificateMountPath,
+		ReadOnly:  true,
+	})
 
 	return nil
 }

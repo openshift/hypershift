@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	"go.etcd.io/etcd/api/v3/etcdserverpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	v3membership "go.etcd.io/etcd/server/v3/etcdserver/api/membership"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type fakeEtcdClient struct {
@@ -116,15 +117,12 @@ func (f *fakeEtcdClient) MemberHealth(ctx context.Context) (memberHealth, error)
 		// if WithClusterHealth is not passed we default to all healthy
 		case f.opts.healthyMember == 0 && f.opts.unhealthyMember == 0:
 			healthCheck.Healthy = true
-			break
 		case f.opts.healthyMember > 0 && healthy < f.opts.healthyMember:
 			healthCheck.Healthy = true
 			healthy++
-			break
 		case f.opts.unhealthyMember > 0 && unhealthy < f.opts.unhealthyMember:
 			healthCheck.Healthy = false
 			unhealthy++
-			break
 		}
 		memberHealth = append(memberHealth, healthCheck)
 	}
@@ -193,7 +191,7 @@ func NewFakeEtcdClient(members []*etcdserverpb.Member, opts ...FakeClientOption)
 		// validate WithClusterHealth
 		case fcOpts.healthyMember > 0 || fcOpts.unhealthyMember > 0:
 			if fcOpts.healthyMember+fcOpts.unhealthyMember != len(members) {
-				return nil, fmt.Errorf("WithClusterHealth count must equal the numer of members: have %d, want %d ", fcOpts.unhealthyMember+fcOpts.healthyMember, len(members))
+				return nil, fmt.Errorf("WithClusterHealth count must equal the number of members: have %d, want %d ", fcOpts.unhealthyMember+fcOpts.healthyMember, len(members))
 			}
 		}
 		fakeEtcdClient.opts = fcOpts
@@ -203,7 +201,6 @@ func NewFakeEtcdClient(members []*etcdserverpb.Member, opts ...FakeClientOption)
 }
 
 type FakeClientOptions struct {
-	client          *clientv3.Client
 	unhealthyMember int
 	healthyMember   int
 	status          []*clientv3.StatusResponse

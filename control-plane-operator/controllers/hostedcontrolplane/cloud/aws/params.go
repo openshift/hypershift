@@ -1,13 +1,13 @@
 package aws
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/config"
+	"k8s.io/utils/ptr"
 )
 
 type AWSParams struct {
@@ -35,7 +35,6 @@ func NewAWSParams(hcp *hyperv1.HostedControlPlane) *AWSParams {
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), pointer.Int(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -49,6 +48,7 @@ func NewAWSParams(hcp *hyperv1.HostedControlPlane) *AWSParams {
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return p

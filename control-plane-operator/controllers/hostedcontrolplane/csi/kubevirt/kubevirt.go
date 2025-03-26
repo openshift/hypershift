@@ -8,7 +8,6 @@ import (
 	"io"
 	"strings"
 
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
@@ -18,15 +17,19 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/yaml"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	sigyaml "sigs.k8s.io/yaml"
+
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 )
 
 //go:embed files/*
@@ -209,30 +212,30 @@ func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPla
 	return nil
 }
 
-func reconcileController(controller *appsv1.Deployment, componentImages map[string]string, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
+func reconcileController(controller *appsv1.Deployment, releaseImageProvider imageprovider.ReleaseImageProvider, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
 	controller.Spec = *controllerDeployment.Spec.DeepCopy()
 
-	csiDriverImage, exists := componentImages["kubevirt-csi-driver"]
+	csiDriverImage, exists := releaseImageProvider.ImageExist("kubevirt-csi-driver")
 	if !exists {
 		return fmt.Errorf("unable to detect kubevirt-csi-driver image from release payload")
 	}
 
-	csiProvisionerImage, exists := componentImages["csi-external-provisioner"]
+	csiProvisionerImage, exists := releaseImageProvider.ImageExist("csi-external-provisioner")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-provisioner image from release payload")
 	}
 
-	csiAttacherImage, exists := componentImages["csi-external-attacher"]
+	csiAttacherImage, exists := releaseImageProvider.ImageExist("csi-external-attacher")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-attacher image from release payload")
 	}
 
-	csiLivenessProbeImage, exists := componentImages["csi-livenessprobe"]
+	csiLivenessProbeImage, exists := releaseImageProvider.ImageExist("csi-livenessprobe")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-livenessprobe image from release payload")
 	}
 
-	csiExternalSnapshotterImage, exists := componentImages["csi-external-snapshotter"]
+	csiExternalSnapshotterImage, exists := releaseImageProvider.ImageExist("csi-external-snapshotter")
 	if !exists {
 		return fmt.Errorf("unable to detect csi-external-snapshotter image from release payload")
 	}
@@ -363,8 +366,8 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 }
 
 func reconcileDefaultTenantCSIDriverResource(csiDriver *storagev1.CSIDriver) error {
-	csiDriver.Spec.AttachRequired = utilpointer.Bool(true)
-	csiDriver.Spec.PodInfoOnMount = utilpointer.Bool(true)
+	csiDriver.Spec.AttachRequired = ptr.To(true)
+	csiDriver.Spec.PodInfoOnMount = ptr.To(true)
 	fsPolicy := storagev1.ReadWriteOnceWithFSTypeFSGroupPolicy
 	csiDriver.Spec.FSGroupPolicy = &fsPolicy
 	return nil
@@ -596,7 +599,7 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 
 // ReconcileInfra reconciles the csi driver controller on the underlying infra/Mgmt cluster
 // that is hosting the KubeVirt VMs.
-func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider *imageprovider.ReleaseImageProvider) error {
+func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider imageprovider.ReleaseImageProvider) error {
 
 	// Do not install kubevirt-csi if the storage driver is set to NONE
 	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
@@ -606,7 +609,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 	deploymentConfig := &config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 
 	infraNamespace := hcp.Namespace
 
@@ -662,7 +665,7 @@ func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx
 
 	controller := manifests.KubevirtCSIDriverController(infraNamespace)
 	_, err = createOrUpdate(ctx, client, controller, func() error {
-		return reconcileController(controller, releaseImageProvider.ComponentImages(), deploymentConfig, hcp)
+		return reconcileController(controller, releaseImageProvider, deploymentConfig, hcp)
 	})
 	if err != nil {
 		return err

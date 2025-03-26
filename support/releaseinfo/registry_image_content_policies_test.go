@@ -2,10 +2,12 @@ package releaseinfo
 
 import (
 	"context"
+	"os"
 	"sync"
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	imagev1 "github.com/openshift/api/image/v1"
 )
 
@@ -13,7 +15,7 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 	g := NewWithT(t)
 
 	// Create mock resources.
-	mirroredReleaseImage := "mirrored-release-image"
+	mirroredReleaseImage := "quay.io/openshift-release-dev/ocp-release:4.16.13-x86_64"
 	canonicalReleaseImage := "canonical-release-image"
 	releaseImage := &ReleaseImage{
 		ImageStream:    &imagev1.ImageStream{},
@@ -38,8 +40,12 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 		lock: sync.Mutex{},
 	}
 
+	pullSecret, err := os.ReadFile("../../hack/dev/fakePullSecret.json")
+	if err != nil {
+		t.Fatalf("failed to read manifests file: %v", err)
+	}
 	// Call the Lookup method and validate GetMirroredReleaseImage.
-	_, err := provider.Lookup(context.Background(), canonicalReleaseImage, []byte("test-pull-secret"))
+	_, err = provider.Lookup(context.Background(), canonicalReleaseImage, pullSecret)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(provider.GetMirroredReleaseImage()).To(Equal(mirroredReleaseImage))
 }

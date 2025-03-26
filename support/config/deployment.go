@@ -5,14 +5,15 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -41,6 +42,7 @@ type DeploymentConfig struct {
 	SetDefaultSecurityContext bool
 	LivenessProbes            LivenessProbes
 	ReadinessProbes           ReadinessProbes
+	StartupProbes             StartupProbes
 	Resources                 ResourcesSpec
 	DebugDeployments          sets.String
 	ResourceRequestOverrides  ResourceOverrides
@@ -77,17 +79,24 @@ func (c *DeploymentConfig) SetReleaseImageAnnotation(releaseImage string) {
 
 func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	if c.DebugDeployments != nil && c.DebugDeployments.Has(deployment.Name) {
-		deployment.Spec.Replicas = pointer.Int32(0)
+		deployment.Spec.Replicas = ptr.To[int32](0)
 	} else {
-		deployment.Spec.Replicas = pointer.Int32(int32(c.Replicas))
+		deployment.Spec.Replicas = ptr.To(int32(c.Replicas))
 	}
-	// there are two standard cases currently with hypershift: HA mode where there are 3 replicas spread across
-	// zones and then non ha with one replica. When only 3 zones are available you need to be able to set maxUnavailable
-	// in order to progress the rollout. However, you do not want to set that in the single replica case because it will
-	// result in downtime.
+	// there are three standard cases currently with hypershift: HA mode where there are 3 replicas spread across
+	// zones, HA mode with 2 replicas, and then non ha with one replica. When only 3 zones are available you need
+	// to be able to set maxUnavailable in order to progress the rollout. However, you do not want to set that in
+	// the single replica case because it will result in downtime.
 	if c.Replicas > 1 {
-		maxSurge := intstr.FromInt(0)
-		maxUnavailable := intstr.FromInt(1)
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(0)
+		if val, ok := c.AdditionalLabels[hyperv1.RequestServingComponentLabel]; ok && val == "true" {
+			maxUnavailable = intstr.FromInt(1)
+		}
+		if c.Replicas > 2 {
+			maxSurge = intstr.FromInt(0)
+			maxUnavailable = intstr.FromInt(1)
+		}
 		if deployment.Spec.Strategy.RollingUpdate == nil {
 			deployment.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
 			deployment.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
@@ -97,12 +106,12 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	}
 
 	// set revision history limit
-	deployment.Spec.RevisionHistoryLimit = pointer.Int32(int32(c.RevisionHistoryLimit))
+	deployment.Spec.RevisionHistoryLimit = ptr.To(int32(c.RevisionHistoryLimit))
 
 	// set default security context for pod
 	if c.SetDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: pointer.Int64(DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
 		}
 	}
 
@@ -135,6 +144,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	c.SecurityContexts.ApplyTo(&deployment.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&deployment.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&deployment.Spec.Template.Spec)
 	c.Resources.ApplyTo(&deployment.Spec.Template.Spec)
 	c.ResourceRequestOverrides.ApplyRequestsTo(deployment.Name, &deployment.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&deployment.Spec.Template.ObjectMeta)
@@ -147,21 +157,35 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 	c.SecurityContexts.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&daemonset.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.Resources.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.ResourceRequestOverrides.ApplyRequestsTo(daemonset.Name, &daemonset.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
-	sts.Spec.Replicas = pointer.Int32(int32(c.Replicas))
+	sts.Spec.Replicas = ptr.To(int32(c.Replicas))
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
 	c.SecurityContexts.ApplyTo(&sts.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.ReadinessProbes.ApplyTo(&sts.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&sts.Spec.Template.Spec)
 	c.Resources.ApplyTo(&sts.Spec.Template.Spec)
 	c.ResourceRequestOverrides.ApplyRequestsTo(sts.Name, &sts.Spec.Template.Spec)
 	c.AdditionalAnnotations.ApplyTo(&sts.Spec.Template.ObjectMeta)
+}
+
+func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
+	c.Scheduling.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.SecurityContexts.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.LivenessProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.ReadinessProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.Resources.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(cronJob.Name, &cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.AdditionalLabels.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta)
+	c.AdditionalAnnotations.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta)
 }
 
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {
@@ -173,7 +197,7 @@ func colocationLabelValue(hcp *hyperv1.HostedControlPlane) string {
 }
 
 // SetMultizoneSpread sets PodAntiAffinity with corev1.LabelTopologyZone as the topology key for a given set of labels.
-// This is useful to e.g ensure pods are spread across availavility zones.
+// This is useful to e.g ensure pods are spread across availability zones.
 // If required is true, the rule is set as RequiredDuringSchedulingIgnoredDuringExecution, otherwise it is set as
 // PreferredDuringSchedulingIgnoredDuringExecution.
 func (c *DeploymentConfig) SetMultizoneSpread(labels map[string]string, required bool) {
@@ -401,7 +425,24 @@ func (c *DeploymentConfig) setReplicas(availability hyperv1.AvailabilityPolicy) 
 	}
 }
 
-// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their sheduling
+func DefaultReplicas(hcp *hyperv1.HostedControlPlane, isRequestServingComponent bool) int {
+	isolateAsRequestServing := false
+	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+		isolateAsRequestServing = isRequestServingComponent
+	}
+
+	switch hcp.Spec.ControllerAvailabilityPolicy {
+	case hyperv1.HighlyAvailable:
+		if isolateAsRequestServing {
+			return 2
+		}
+		return 3
+	default:
+		return 1
+	}
+}
+
+// SetRequestServingDefaults wraps the call to SetDefaults. It is meant to be invoked by request serving components so that their scheduling
 // attributes can be modified accordingly.
 func (c *DeploymentConfig) SetRequestServingDefaults(hcp *hyperv1.HostedControlPlane, multiZoneSpreadLabels map[string]string, replicas *int) {
 	if hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
@@ -433,6 +474,13 @@ func (c *DeploymentConfig) SetDefaults(hcp *hyperv1.HostedControlPlane, multiZon
 	c.setLocation(hcp, multiZoneSpreadLabels)
 	// TODO (alberto): make this private, atm is needed for the konnectivity agent daemonset.
 	c.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
+
+	if c.AdditionalLabels == nil {
+		c.AdditionalLabels = map[string]string{}
+	}
+	for key, value := range hcp.Spec.Labels {
+		c.AdditionalLabels[key] = value
+	}
 }
 
 func resourceRequestOverrides(hcp *hyperv1.HostedControlPlane) ResourceOverrides {

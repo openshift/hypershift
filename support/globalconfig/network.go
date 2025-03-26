@@ -3,11 +3,12 @@ package globalconfig
 import (
 	"fmt"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -32,7 +33,7 @@ func ReconcileNetworkConfig(cfg *configv1.Network, hcp *hyperv1.HostedControlPla
 	for _, entry := range hcp.Spec.Networking.ClusterNetwork {
 		hostPrefix := uint32(entry.HostPrefix)
 		if hostPrefix == 0 {
-			ipv4, err := util.IsIPv4(entry.CIDR.String())
+			ipv4, err := util.IsIPv4CIDR(entry.CIDR.String())
 			if err != nil {
 				return fmt.Errorf("the CIDR %s included in the cluster network spec is not valid: %w", entry.CIDR.String(), err)
 			}

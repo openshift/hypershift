@@ -7,21 +7,26 @@ import (
 	"strings"
 	"time"
 
-	"github.com/clarketm/json"
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/google/uuid"
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/clarketm/json"
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/google/uuid"
 )
 
 const (
@@ -60,6 +65,7 @@ type userData struct {
 	caCert                 []byte
 	ignitionServerEndpoint string
 	proxy                  *configv1.Proxy
+	ami                    string
 }
 
 // NewToken is the contract to create a new Token struct.
@@ -96,7 +102,9 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	// This inconsistency was introduced by https://github.com/openshift/hypershift/pull/3795
 	// See reconcileTokenSecret and https://github.com/openshift/hypershift/pull/4057 for more info on how this is used.
 	// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
-	hcConfigurationHash, err := supportutil.HashStruct(configGenerator.hostedCluster.Spec.Configuration)
+
+	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	hcConfigurationHash, err := backwardcompat.GetBackwardCompatibleConfigHash(configGenerator.hostedCluster.Spec.Configuration)
 	if err != nil {
 		return nil, fmt.Errorf("failed to hash HostedCluster configuration: %w", err)
 	}
@@ -124,10 +132,19 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, configGenerator.hostedCluster)
 
+	ami := ""
+	if configGenerator.hostedCluster.Spec.Platform.AWS != nil {
+		ami, err = defaultNodePoolAMI(configGenerator.hostedCluster.Spec.Platform.AWS.Region, configGenerator.nodePool.Spec.Arch, configGenerator.releaseImage)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	token.userData = &userData{
 		ignitionServerEndpoint: ignEndpoint,
 		caCert:                 caCert,
 		proxy:                  proxy,
+		ami:                    ami,
 	}
 
 	return token, nil
@@ -277,7 +294,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// The token secret controller updates expired token IDs for token Secrets.
 	// When that happens the NodePool controller reconciles the userData Secret with the new token ID.
 	// Therefore, this secret is mutable.
-	tokenSecret.Immutable = k8sutilspointer.Bool(false)
+	tokenSecret.Immutable = ptr.To(false)
 	if tokenSecret.Annotations == nil {
 		tokenSecret.Annotations = make(map[string]string)
 	}
@@ -318,7 +335,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	}
 	// TODO (alberto): Only apply this on creation and change the hash generation to only use triggering upgrade fields.
 	// We let this change to happen inplace now as the tokenSecret and the mcs config use the whole spec.Config for the comparing hash.
-	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would missmatch forever.
+	// Otherwise if something which does not trigger a new token generation from spec.Config changes, like .IDP, both hashes would mismatch forever.
 	tokenSecret.Data[TokenSecretHCConfigurationHashKey] = t.globalConfigHash
 
 	return nil
@@ -329,12 +346,25 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
 	// Therefore, this secret is mutable.
-	userDataSecret.Immutable = k8sutilspointer.Bool(false)
+	userDataSecret.Immutable = ptr.To(false)
 
 	if userDataSecret.Annotations == nil {
 		userDataSecret.Annotations = make(map[string]string)
 	}
 	userDataSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
+	if userDataSecret.Labels == nil {
+		userDataSecret.Labels = make(map[string]string)
+	}
+
+	if t.hostedCluster.Spec.AutoNode != nil && t.hostedCluster.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+		t.hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+		// TODO(alberto): prevent nodePool name collisions adding prefix to karpenter NodePool.
+		if t.nodePool.GetName() == "karpenter" {
+			userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
+			userDataSecret.Labels["hypershift.openshift.io/ami"] = t.userData.ami
+		}
+
+	}
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))
@@ -358,7 +388,7 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 				TLS: ignitionapi.TLS{
 					CertificateAuthorities: []ignitionapi.Resource{
 						{
-							Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+							Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 						},
 					},
 				},
@@ -366,19 +396,19 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 			Config: ignitionapi.IgnitionConfig{
 				Merge: []ignitionapi.Resource{
 					{
-						Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", endpoint)),
+						Source: ptr.To(fmt.Sprintf("https://%s/ignition", endpoint)),
 						HTTPHeaders: []ignitionapi.HTTPHeader{
 							{
 								Name:  "Authorization",
-								Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
+								Value: ptr.To(fmt.Sprintf("Bearer %s", encodedToken)),
 							},
 							{
 								Name:  "NodePool",
-								Value: k8sutilspointer.String(client.ObjectKeyFromObject(nodePool).String()),
+								Value: ptr.To(client.ObjectKeyFromObject(nodePool).String()),
 							},
 							{
 								Name:  "TargetConfigVersionHash",
-								Value: k8sutilspointer.String(targetConfigVersionHash),
+								Value: ptr.To(targetConfigVersionHash),
 							},
 						},
 					},
@@ -387,10 +417,10 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 		},
 	}
 	if proxy.Status.HTTPProxy != "" {
-		cfg.Ignition.Proxy.HTTPProxy = k8sutilspointer.String(proxy.Status.HTTPProxy)
+		cfg.Ignition.Proxy.HTTPProxy = ptr.To(proxy.Status.HTTPProxy)
 	}
 	if proxy.Status.HTTPSProxy != "" {
-		cfg.Ignition.Proxy.HTTPSProxy = k8sutilspointer.String(proxy.Status.HTTPSProxy)
+		cfg.Ignition.Proxy.HTTPSProxy = ptr.To(proxy.Status.HTTPSProxy)
 	}
 	if proxy.Status.NoProxy != "" {
 		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {

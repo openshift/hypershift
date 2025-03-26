@@ -3,13 +3,6 @@ package cco
 import (
 	"path"
 
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
@@ -17,6 +10,13 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -26,8 +26,8 @@ const (
 
 func selectorLabels() map[string]string {
 	return map[string]string{
-		"app":                         "cloud-credential-operator",
-		hyperv1.ControlPlaneComponent: "cloud-credential-operator",
+		"app":                              "cloud-credential-operator",
+		hyperv1.ControlPlaneComponentLabel: "cloud-credential-operator",
 	}
 }
 
@@ -52,7 +52,7 @@ type Params struct {
 	config.OwnerRef
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
 		operatorImage:           releaseImageProvider.GetImage("cloud-credential-operator"),
 		kubeRbacProxyImage:      releaseImageProvider.GetImage("kube-rbac-proxy"),
@@ -60,7 +60,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		releaseVersion:          version,
 		issuerURL:               hcp.Spec.IssuerURL,
 		OwnerRef:                config.OwnerRefFrom(hcp),
-		apiPort:                 pointer.Int32(util.KASPodPort(hcp)),
+		apiPort:                 ptr.To(util.KASPodPort(hcp)),
 		deploymentConfig: config.DeploymentConfig{
 			Scheduling: config.Scheduling{
 				PriorityClass: config.DefaultPriorityClass,
@@ -80,7 +80,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), pointer.Int(1))
+	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), ptr.To(1))
 	params.deploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
 	return params
 }
@@ -99,7 +99,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params, platformT
 				Labels: selectorLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(containerMain(), buildMainContainer(params.operatorImage, params.releaseVersion)),
 				},
@@ -152,7 +152,7 @@ func buildMainContainer(image, releaseVersion string) func(*corev1.Container) {
 		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.SecurityContext = &corev1.SecurityContext{
 			Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-			AllowPrivilegeEscalation: pointer.Bool(false),
+			AllowPrivilegeEscalation: ptr.To(false),
 		}
 	}
 }
@@ -166,6 +166,6 @@ func volumeServiceAccountKubeconfig() *corev1.Volume {
 func buildVolumeServiceAccountKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.CloudCredentialOperatorKubeconfig("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }

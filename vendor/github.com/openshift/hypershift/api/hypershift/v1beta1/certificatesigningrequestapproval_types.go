@@ -24,8 +24,7 @@ type CertificateSigningRequestApprovalSpec struct{}
 // CertificateSigningRequestApprovalStatus defines the observed state of CertificateSigningRequestApproval
 type CertificateSigningRequestApprovalStatus struct{}
 
-// +kubebuilder:object:root=true
-
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // CertificateSigningRequestApprovalList contains a list of CertificateSigningRequestApprovals.
 type CertificateSigningRequestApprovalList struct {
 	metav1.TypeMeta `json:",inline"`

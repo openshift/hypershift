@@ -47,14 +47,18 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	Etcd                             *EtcdSpecApplyConfiguration                          `json:"etcd,omitempty"`
 	Configuration                    *ClusterConfigurationApplyConfiguration              `json:"configuration,omitempty"`
+	OperatorConfiguration            *OperatorConfigurationApplyConfiguration             `json:"operatorConfiguration,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
 	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
 	PausedUntil                      *string                                              `json:"pausedUntil,omitempty"`
 	OLMCatalogPlacement              *hypershiftv1beta1.OLMCatalogPlacement               `json:"olmCatalogPlacement,omitempty"`
 	Autoscaling                      *ClusterAutoscalingApplyConfiguration                `json:"autoscaling,omitempty"`
+	AutoNode                         *AutoNodeApplyConfiguration                          `json:"autoNode,omitempty"`
 	NodeSelector                     map[string]string                                    `json:"nodeSelector,omitempty"`
 	Tolerations                      []corev1.Toleration                                  `json:"tolerations,omitempty"`
+	Labels                           map[string]string                                    `json:"labels,omitempty"`
+	Capabilities                     *CapabilitiesApplyConfiguration                      `json:"capabilities,omitempty"`
 }
 
 // HostedControlPlaneSpecApplyConfiguration constructs an declarative configuration of the HostedControlPlaneSpec type for use with
@@ -236,6 +240,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithConfiguration(value *Clus
 	return b
 }
 
+// WithOperatorConfiguration sets the OperatorConfiguration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OperatorConfiguration field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithOperatorConfiguration(value *OperatorConfigurationApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.OperatorConfiguration = value
+	return b
+}
+
 // WithImageContentSources adds the given value to the ImageContentSources field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the ImageContentSources field.
@@ -289,6 +301,14 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithAutoscaling(value *Cluste
 	return b
 }
 
+// WithAutoNode sets the AutoNode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutoNode field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithAutoNode(value *AutoNodeApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.AutoNode = value
+	return b
+}
+
 // WithNodeSelector puts the entries into the NodeSelector field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, the entries provided by each call will be put on the NodeSelector field,
@@ -310,5 +330,27 @@ func (b *HostedControlPlaneSpecApplyConfiguration) WithTolerations(values ...cor
 	for i := range values {
 		b.Tolerations = append(b.Tolerations, values[i])
 	}
+	return b
+}
+
+// WithLabels puts the entries into the Labels field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the Labels field,
+// overwriting an existing map entries in Labels field with the same key.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithLabels(entries map[string]string) *HostedControlPlaneSpecApplyConfiguration {
+	if b.Labels == nil && len(entries) > 0 {
+		b.Labels = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.Labels[k] = v
+	}
+	return b
+}
+
+// WithCapabilities sets the Capabilities field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Capabilities field is set to the value of the last call.
+func (b *HostedControlPlaneSpecApplyConfiguration) WithCapabilities(value *CapabilitiesApplyConfiguration) *HostedControlPlaneSpecApplyConfiguration {
+	b.Capabilities = value
 	return b
 }

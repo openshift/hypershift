@@ -8,10 +8,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blang/semver"
 	imageapi "github.com/openshift/api/image/v1"
+
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+
+	"github.com/blang/semver"
 )
 
 // Provider knows how to find the release image metadata for an image referred
@@ -303,7 +305,7 @@ func (v ComponentVersion) String() string {
 // labels removed, but prerelease segments are preserved.
 type ComponentVersions map[string]ComponentVersion
 
-// OrderedKeys returns the keys in this map in lexigraphic order.
+// OrderedKeys returns the keys in this map in lexicographic order.
 func (v ComponentVersions) OrderedKeys() []string {
 	keys := make([]string, 0, len(v))
 	for k := range v {

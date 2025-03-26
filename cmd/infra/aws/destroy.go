@@ -6,6 +6,10 @@ import (
 	"strings"
 	"time"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -14,21 +18,20 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
+	"github.com/aws/aws-sdk-go/service/ram"
+	"github.com/aws/aws-sdk-go/service/ram/ramiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type DestroyInfraOptions struct {
@@ -49,6 +52,9 @@ type DestroyInfraOptions struct {
 	ControlPlaneOperatorCredentialsFile         string
 	NodePoolCredentialsFile                     string
 	OpenshiftImageRegistryCredentialsFile       string
+
+	VPCOwnerCredentialsOpts      awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
 }
 
 type DelegatedAWSCredentialOptions struct {
@@ -77,7 +83,6 @@ func BindOptions(opts *DelegatedAWSCredentialOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ControlPlaneOperatorCredentialsFile, "aws-creds.control-plane-operator", opts.ControlPlaneOperatorCredentialsFile, "Path to an AWS credentials file for the control-plane-operator")
 	flags.StringVar(&opts.NodePoolCredentialsFile, "aws-creds.node-pool", opts.NodePoolCredentialsFile, "Path to an AWS credentials file for the node-pool")
 	flags.StringVar(&opts.OpenshiftImageRegistryCredentialsFile, "aws-creds.openshift-image-registry", opts.OpenshiftImageRegistryCredentialsFile, "Path to an AWS credentials file for the openshift-image-registry")
-
 }
 
 func (o *DelegatedAWSCredentialOptions) Validate() error {
@@ -135,11 +140,13 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	cmd.Flags().StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. se 'none' for an empty prefix")
 	cmd.Flags().DurationVar(&opts.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
+	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, destroy private hosted zones in cluster account")
 
 	BindOptions(opts.AWSCredentialsOpts, cmd.Flags())
+	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("base-domain")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
@@ -188,11 +195,12 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 }
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
-	var ec2Client ec2iface.EC2API
+	var ec2Client, vpcOwnerEC2Client ec2iface.EC2API
 	var elbClient elbiface.ELBAPI
 	var elbv2Client elbv2iface.ELBV2API
-	var route53Client route53iface.Route53API
+	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client route53iface.Route53API
 	var s3Client s3iface.S3API
+	var ramClient ramiface.RAMAPI
 	if o.AWSCredentialsOpts.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.AWSCredentialsOpts.STSCredentialsFile != "" {
 		awsSession, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSession("cli-destroy-infra", o.CredentialsSecretData, o.Region)
 		if err != nil {
@@ -200,11 +208,36 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		}
 		awsConfig := awsutil.NewConfig()
 		ec2Client = ec2.New(awsSession, awsConfig)
+		vpcOwnerEC2Client = ec2Client
 		elbClient = elb.New(awsSession, awsConfig)
 		elbv2Client = elbv2.New(awsSession, awsConfig)
-		route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
+		clusterRoute53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
 		s3Client = s3.New(awsSession, awsConfig)
+
+		if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
+			vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession("cli-destroy-infra", nil, o.Region)
+			if err != nil {
+				return err
+			}
+			vpcOwnerEC2Client = ec2.New(vpcOwnerAWSSession, awsConfig)
+			vpcOwnerRoute53Client = route53.New(vpcOwnerAWSSession, awsutil.NewAWSRoute53Config())
+
+			ramClient = ram.New(vpcOwnerAWSSession, awsConfig)
+		}
+
+		listRoute53Client = clusterRoute53Client
+		recordsRoute53Client = clusterRoute53Client
+		if vpcOwnerRoute53Client != nil {
+			listRoute53Client = vpcOwnerRoute53Client
+			if !o.PrivateZonesInClusterAccount {
+				recordsRoute53Client = vpcOwnerRoute53Client
+			}
+		}
+
 	} else {
+		if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
+			return fmt.Errorf("delegating client is not supported for shared vpc infrastructure")
+		}
 		delegatingClent, err := NewDelegatingClient(
 			o.AWSEbsCsiDriverControllerCredentialsFile,
 			o.CloudControllerCredentialsFile,
@@ -219,21 +252,23 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		ec2Client = delegatingClent.EC2API
 		elbClient = delegatingClent.ELBAPI
 		elbv2Client = delegatingClent.ELBV2API
-		route53Client = delegatingClent.Route53API
+		listRoute53Client = delegatingClent.Route53API
+		recordsRoute53Client = delegatingClent.Route53API
 		s3Client = delegatingClent.S3API
 	}
 
 	errs := o.destroyInstances(ctx, ec2Client)
-	errs = append(errs, o.DestroyInternetGateways(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyDNS(ctx, route53Client)...)
+	errs = append(errs, o.DestroyInternetGateways(ctx, vpcOwnerEC2Client)...)
+	errs = append(errs, o.DestroyDNS(ctx, recordsRoute53Client)...)
 	errs = append(errs, o.DestroyS3Buckets(ctx, s3Client)...)
-	errs = append(errs, o.DestroyVPCEndpointServices(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, elbClient, elbv2Client, route53Client)...)
+	errs = append(errs, o.DestroyVPCEndpointServices(ctx, vpcOwnerEC2Client)...)
+	errs = append(errs, o.DestroyVPCs(ctx, ec2Client, vpcOwnerEC2Client, elbClient, elbv2Client, listRoute53Client, recordsRoute53Client, ramClient)...)
 	if err := utilerrors.NewAggregate(errs); err != nil {
 		return err
 	}
 	errs = append(errs, o.DestroyEIPs(ctx, ec2Client)...)
-	errs = append(errs, o.DestroyDHCPOptions(ctx, ec2Client)...)
+	errs = append(errs, o.DestroyEIPs(ctx, vpcOwnerEC2Client)...)
+	errs = append(errs, o.DestroyDHCPOptions(ctx, vpcOwnerEC2Client)...)
 
 	return utilerrors.NewAggregate(errs)
 }
@@ -257,7 +292,6 @@ func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3ifa
 			if err != nil {
 				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
 					o.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
-					err = nil
 				} else {
 					errs = append(errs, err)
 				}
@@ -406,7 +440,7 @@ func (o *DestroyInfraOptions) DestroyVPCEndpointServices(ctx context.Context, cl
 
 		endpointConnections, err := client.DescribeVpcEndpointConnections(&ec2.DescribeVpcEndpointConnectionsInput{Filters: []*ec2.Filter{{Name: aws.String("service-id"), Values: aws.StringSlice(ids)}}})
 		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to list endpoint conncetions: %w", err))
+			errs = append(errs, fmt.Errorf("failed to list endpoint connections: %w", err))
 			return false
 		}
 		endpointConnectionsByServiceID := map[*string][]*string{}
@@ -688,28 +722,44 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2iface.EC2API, elbclient elbiface.ELBAPI, elbv2client elbv2iface.ELBV2API, route53client route53iface.Route53API) []error {
+func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context,
+	ec2client ec2iface.EC2API,
+	vpcOwnerEC2Client ec2iface.EC2API,
+	elbclient elbiface.ELBAPI,
+	elbv2client elbv2iface.ELBV2API,
+	route53listClient route53iface.Route53API,
+	route53client route53iface.Route53API,
+	ramClient ramiface.RAMAPI) []error {
 	var errs []error
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {
 		for _, vpc := range out.Vpcs {
 			var childErrs []error
+
+			// First, destroy resources that exist in cluster account (in the case vpc is shared)
 			childErrs = append(childErrs, o.DestroyV1ELBs(ctx, elbclient, vpc.VpcId)...)
 			childErrs = append(childErrs, o.DestroyV2ELBs(ctx, elbv2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyVPCEndpoints(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyPrivateZones(ctx, route53client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyRouteTables(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyNATGateways(ctx, ec2client, vpc.VpcId)...)
-			if len(childErrs) > 0 {
-				errs = append(errs, childErrs...)
-				continue
-			}
 			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroySubnets(ctx, ec2client, vpc.VpcId)...)
+
+			if ramClient != nil {
+				// Delete the VPC share
+				childErrs = append(childErrs, o.DestroyVPCShare(ctx, ramClient)...)
+			}
+
+			childErrs = append(childErrs, o.DestroyVPCEndpoints(ctx, vpcOwnerEC2Client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyPrivateZones(ctx, route53listClient, route53client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyRouteTables(ctx, vpcOwnerEC2Client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyNATGateways(ctx, vpcOwnerEC2Client, vpc.VpcId)...)
 			if len(childErrs) > 0 {
 				errs = append(errs, childErrs...)
 				continue
 			}
-			_, err := ec2client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
+			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, vpcOwnerEC2Client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroySubnets(ctx, vpcOwnerEC2Client, vpc.VpcId)...)
+			if len(childErrs) > 0 {
+				errs = append(errs, childErrs...)
+				continue
+			}
+			_, err := vpcOwnerEC2Client.DeleteVpcWithContext(ctx, &ec2.DeleteVpcInput{
 				VpcId: vpc.VpcId,
 			})
 			if err != nil {
@@ -720,13 +770,40 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context, ec2client ec2ifac
 		}
 		return true
 	}
-	err := ec2client.DescribeVpcsPagesWithContext(ctx,
+	err := vpcOwnerEC2Client.DescribeVpcsPagesWithContext(ctx,
 		&ec2.DescribeVpcsInput{Filters: o.ec2Filters()},
 		deleteVPC)
 
 	if err != nil {
 		errs = append(errs, err)
 	}
+	return errs
+}
+
+func (o *DestroyInfraOptions) DestroyVPCShare(ctx context.Context, client ramiface.RAMAPI) []error {
+	result, err := client.GetResourceSharesWithContext(ctx, &ram.GetResourceSharesInput{
+		ResourceOwner: aws.String("SELF"),
+		TagFilters: []*ram.TagFilter{
+			{
+				TagKey:    aws.String(clusterTag(o.InfraID)),
+				TagValues: []*string{aws.String(clusterTagValue)},
+			},
+		},
+	})
+	if err != nil {
+		return []error{err}
+	}
+
+	var errs []error
+	for _, share := range result.ResourceShares {
+		if _, err := client.DeleteResourceShareWithContext(ctx, &ram.DeleteResourceShareInput{
+			ResourceShareArn: share.ResourceShareArn,
+		}); err != nil {
+			errs = append(errs, err)
+		}
+		o.Log.Info("Deleted VPC resource share", "arn", aws.StringValue(share.ResourceShareArn))
+	}
+
 	return errs
 }
 

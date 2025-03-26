@@ -3,8 +3,6 @@ package openstack
 import (
 	"fmt"
 
-	k8sutilspointer "k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -15,6 +13,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -27,7 +26,7 @@ func ReconcileCCMServiceAccount(sa *corev1.ServiceAccount, ownerRef config.Owner
 	return nil
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider *imageprovider.ReleaseImageProvider, hasCACert bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, p *OpenStackParams, serviceAccountName string, releaseImageProvider imageprovider.ReleaseImageProvider, hasCACert bool) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: ccmLabels(),
@@ -45,7 +44,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedContr
 				},
 				Volumes:                      []corev1.Volume{},
 				ServiceAccountName:           serviceAccountName,
-				AutomountServiceAccountToken: k8sutilspointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 			},
 		},
 	}
@@ -90,7 +89,7 @@ func addCACert(deployment *appsv1.Deployment) {
 	ccmContainer := &deployment.Spec.Template.Spec.Containers[0]
 	ccmContainer.VolumeMounts = append(ccmContainer.VolumeMounts, corev1.VolumeMount{
 		Name:      ccmCloudCA().Name,
-		MountPath: CaDir,
+		MountPath: CADir,
 		ReadOnly:  true,
 	})
 }
@@ -117,7 +116,7 @@ func buildCCMContainer(controllerManagerImage, infraID string) func(c *corev1.Co
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "CLOUD_CONFIG",
-				Value: CloudConfigDir + "/" + CredentialsFile,
+				Value: CloudConfigDir + "/" + CloudConfigKey,
 			},
 			{
 				Name:  "OCP_INFRASTRUCTURE_NAME",
@@ -155,8 +154,8 @@ func buildCCMCloudConfig(v *corev1.Volume) {
 		LocalObjectReference: corev1.LocalObjectReference{Name: manifests.OpenStackProviderConfig("").Name},
 		Items: []corev1.KeyToPath{
 			{
-				Key:  CredentialsFile,
-				Path: CredentialsFile,
+				Key:  CloudConfigKey,
+				Path: CloudConfigKey,
 			},
 		},
 	}

@@ -71,12 +71,12 @@ spec:
             description: MachinePoolSpec defines the desired state of MachinePool.
             properties:
               clusterName:
-                description: ClusterName is the name of the Cluster this object belongs
+                description: clusterName is the name of the Cluster this object belongs
                   to.
                 minLength: 1
                 type: string
               failureDomains:
-                description: FailureDomains is the list of failure domains this MachinePool
+                description: failureDomains is the list of failure domains this MachinePool
                   should be attached to.
                 items:
                   type: string
@@ -87,12 +87,11 @@ spec:
                   be ready.
                   Defaults to 0 (machine instance will be considered available as soon as it
                   is ready)
-                  NOTE: No logic is implemented for this field and it currently has no behaviour.
                 format: int32
                 type: integer
               providerIDList:
                 description: |-
-                  ProviderIDList are the identification IDs of machine instances provided by the provider.
+                  providerIDList are the identification IDs of machine instances provided by the provider.
                   This field must match the provider IDs as seen on the node objects corresponding to a machine pool's machine instances.
                 items:
                   type: string
@@ -104,7 +103,7 @@ spec:
                 format: int32
                 type: integer
               template:
-                description: Template describes the machines that will be created.
+                description: template describes the machines that will be created.
                 properties:
                   metadata:
                     description: |-
@@ -115,7 +114,7 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Annotations is an unstructured key value map stored with a resource that may be
+                          annotations is an unstructured key value map stored with a resource that may be
                           set by external tools to store and retrieve arbitrary metadata. They are not
                           queryable and should be preserved when modifying objects.
                           More info: http://kubernetes.io/docs/user-guide/annotations
@@ -137,12 +136,12 @@ spec:
                     properties:
                       bootstrap:
                         description: |-
-                          Bootstrap is a reference to a local struct which encapsulates
+                          bootstrap is a reference to a local struct which encapsulates
                           fields to configure the Machine’s bootstrapping mechanism.
                         properties:
                           configRef:
                             description: |-
-                              ConfigRef is a reference to a bootstrap provider-specific resource
+                              configRef is a reference to a bootstrap provider-specific resource
                               that holds configuration details. The reference is optional to
                               allow users/operators to specify Bootstrap.DataSecretName without
                               the need of a controller.
@@ -159,7 +158,6 @@ spec:
                                   the event) or if no container name is specified "spec.containers[2]" (container with
                                   index 2 in this pod). This syntax is chosen only to have some well-defined way of
                                   referencing a part of an object.
-                                  TODO: this design is not final and this field is subject to change in the future.
                                 type: string
                               kind:
                                 description: |-
@@ -190,23 +188,23 @@ spec:
                             x-kubernetes-map-type: atomic
                           dataSecretName:
                             description: |-
-                              DataSecretName is the name of the secret that stores the bootstrap data script.
+                              dataSecretName is the name of the secret that stores the bootstrap data script.
                               If nil, the Machine should remain in the Pending state.
                             type: string
                         type: object
                       clusterName:
-                        description: ClusterName is the name of the Cluster this object
+                        description: clusterName is the name of the Cluster this object
                           belongs to.
                         minLength: 1
                         type: string
                       failureDomain:
                         description: |-
-                          FailureDomain is the failure domain the machine will be created in.
+                          failureDomain is the failure domain the machine will be created in.
                           Must match a key in the FailureDomains map stored on the cluster object.
                         type: string
                       infrastructureRef:
                         description: |-
-                          InfrastructureRef is a required reference to a custom resource
+                          infrastructureRef is a required reference to a custom resource
                           offered by an infrastructure provider.
                         properties:
                           apiVersion:
@@ -221,7 +219,6 @@ spec:
                               the event) or if no container name is specified "spec.containers[2]" (container with
                               index 2 in this pod). This syntax is chosen only to have some well-defined way of
                               referencing a part of an object.
-                              TODO: this design is not final and this field is subject to change in the future.
                             type: string
                           kind:
                             description: |-
@@ -252,24 +249,24 @@ spec:
                         x-kubernetes-map-type: atomic
                       nodeDeletionTimeout:
                         description: |-
-                          NodeDeletionTimeout defines how long the controller will attempt to delete the Node that the Machine
+                          nodeDeletionTimeout defines how long the controller will attempt to delete the Node that the Machine
                           hosts after the Machine is marked for deletion. A duration of 0 will retry deletion indefinitely.
                           Defaults to 10 seconds.
                         type: string
                       nodeDrainTimeout:
                         description: |-
-                          NodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
+                          nodeDrainTimeout is the total amount of time that the controller will spend on draining a node.
                           The default value is 0, meaning that the node can be drained without any time limitations.
                           NOTE: NodeDrainTimeout is different from `kubectl drain --timeout`
                         type: string
                       nodeVolumeDetachTimeout:
                         description: |-
-                          NodeVolumeDetachTimeout is the total amount of time that the controller will spend on waiting for all volumes
+                          nodeVolumeDetachTimeout is the total amount of time that the controller will spend on waiting for all volumes
                           to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
                         type: string
                       providerID:
                         description: |-
-                          ProviderID is the identification ID of the machine provided by the provider.
+                          providerID is the identification ID of the machine provided by the provider.
                           This field must match the provider ID as seen on the node object corresponding to this machine.
                           This field is required by higher level consumers of cluster-api. Example use case is cluster autoscaler
                           with cluster-api as provider. Clean-up logic in the autoscaler compares machines to nodes to find out
@@ -280,9 +277,46 @@ spec:
                           This field will be set by the actuators and consumed by higher level entities like autoscaler that will
                           be interfacing with cluster-api as generic provider.
                         type: string
+                      readinessGates:
+                        description: |-
+                          readinessGates specifies additional conditions to include when evaluating Machine Ready condition.
+
+                          This field can be used e.g. by Cluster API control plane providers to extend the semantic of the
+                          Ready condition for the Machine they control, like the kubeadm control provider adding ReadinessGates
+                          for the APIServerPodHealthy, SchedulerPodHealthy conditions, etc.
+
+                          Another example are external controllers, e.g. responsible to install special software/hardware on the Machines;
+                          they can include the status of those components with a new condition and add this condition to ReadinessGates.
+
+                          NOTE: This field is considered only for computing v1beta2 conditions.
+                          NOTE: In case readinessGates conditions start with the APIServer, ControllerManager, Scheduler prefix, and all those
+                          readiness gates condition are reporting the same message, when computing the Machine's Ready condition those
+                          readinessGates will be replaced by a single entry reporting "Control plane components: " + message.
+                          This helps to improve readability of conditions bubbling up to the Machine's owner resource / to the Cluster).
+                        items:
+                          description: MachineReadinessGate contains the type of a
+                            Machine condition to be used as a readiness gate.
+                          properties:
+                            conditionType:
+                              description: |-
+                                conditionType refers to a positive polarity condition (status true means good) with matching type in the Machine's condition list.
+                                If the conditions doesn't exist, it will be treated as unknown.
+                                Note: Both Cluster API conditions or conditions added by 3rd party controllers can be used as readiness gates.
+                              maxLength: 316
+                              minLength: 1
+                              pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                              type: string
+                          required:
+                          - conditionType
+                          type: object
+                        maxItems: 32
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - conditionType
+                        x-kubernetes-list-type: map
                       version:
                         description: |-
-                          Version defines the desired Kubernetes version.
+                          version defines the desired Kubernetes version.
                           This field is meant to be optionally used by bootstrap providers.
                         type: string
                     required:
@@ -304,10 +338,10 @@ spec:
                 format: int32
                 type: integer
               bootstrapReady:
-                description: BootstrapReady is the state of the bootstrap provider.
+                description: bootstrapReady is the state of the bootstrap provider.
                 type: boolean
               conditions:
-                description: Conditions define the current service state of the MachinePool.
+                description: conditions define the current service state of the MachinePool.
                 items:
                   description: Condition defines an observation of a Cluster API resource
                     operational state.
@@ -328,20 +362,20 @@ spec:
                       description: |-
                         The reason for the condition's last transition in CamelCase.
                         The specific API may choose whether or not this field is considered a guaranteed API.
-                        This field may not be empty.
+                        This field may be empty.
                       type: string
                     severity:
                       description: |-
-                        Severity provides an explicit classification of Reason code, so the users or machines can immediately
+                        severity provides an explicit classification of Reason code, so the users or machines can immediately
                         understand the current situation and act accordingly.
                         The Severity field MUST be set only when Status=False.
                       type: string
                     status:
-                      description: Status of the condition, one of True, False, Unknown.
+                      description: status of the condition, one of True, False, Unknown.
                       type: string
                     type:
                       description: |-
-                        Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
                         Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
                       type: string
@@ -353,40 +387,28 @@ spec:
                 type: array
               failureMessage:
                 description: |-
-                  FailureMessage indicates that there is a problem reconciling the state,
+                  failureMessage indicates that there is a problem reconciling the state,
                   and will be set to a descriptive error message.
+
+                  Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                 type: string
               failureReason:
                 description: |-
-                  FailureReason indicates that there is a problem reconciling the state, and
+                  failureReason indicates that there is a problem reconciling the state, and
                   will be set to a token value suitable for programmatic interpretation.
+
+                  Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                 type: string
               infrastructureReady:
-                description: InfrastructureReady is the state of the infrastructure
+                description: infrastructureReady is the state of the infrastructure
                   provider.
                 type: boolean
               nodeRefs:
-                description: NodeRefs will point to the corresponding Nodes if it
+                description: nodeRefs will point to the corresponding Nodes if it
                   they exist.
                 items:
-                  description: |-
-                    ObjectReference contains enough information to let you inspect or modify the referred object.
-                    ---
-                    New uses of this type are discouraged because of difficulty describing its usage when embedded in APIs.
-                     1. Ignored fields.  It includes many fields which are not generally honored.  For instance, ResourceVersion and FieldPath are both very rarely valid in actual usage.
-                     2. Invalid usage help.  It is impossible to add specific help for individual usage.  In most embedded usages, there are particular
-                        restrictions like, "must refer only to types A and B" or "UID not honored" or "name must be restricted".
-                        Those cannot be well described when embedded.
-                     3. Inconsistent validation.  Because the usages are different, the validation rules are different by usage, which makes it hard for users to predict what will happen.
-                     4. The fields are both imprecise and overly precise.  Kind is not a precise mapping to a URL. This can produce ambiguity
-                        during interpretation and require a REST mapping.  In most cases, the dependency is on the group,resource tuple
-                        and the version of the actual struct is irrelevant.
-                     5. We cannot easily change it.  Because this type is embedded in many locations, updates to this type
-                        will affect numerous schemas.  Don't make new APIs embed an underspecified API type they do not control.
-
-
-                    Instead of using this type, create a locally provided and used type that is well-focused on your reference.
-                    For example, ServiceReferences for admission registration: https://github.com/kubernetes/api/blob/release-1.17/admissionregistration/v1/types.go#L533 .
+                  description: ObjectReference contains enough information to let
+                    you inspect or modify the referred object.
                   properties:
                     apiVersion:
                       description: API version of the referent.
@@ -400,7 +422,6 @@ spec:
                         the event) or if no container name is specified "spec.containers[2]" (container with
                         index 2 in this pod). This syntax is chosen only to have some well-defined way of
                         referencing a part of an object.
-                        TODO: this design is not final and this field is subject to change in the future.
                       type: string
                     kind:
                       description: |-
@@ -431,13 +452,13 @@ spec:
                   x-kubernetes-map-type: atomic
                 type: array
               observedGeneration:
-                description: ObservedGeneration is the latest generation observed
+                description: observedGeneration is the latest generation observed
                   by the controller.
                 format: int64
                 type: integer
               phase:
                 description: |-
-                  Phase represents the current phase of cluster actuation.
+                  phase represents the current phase of cluster actuation.
                   E.g. Pending, Running, Terminating, Failed etc.
                 type: string
               readyReplicas:
@@ -447,7 +468,7 @@ spec:
                 format: int32
                 type: integer
               replicas:
-                description: Replicas is the most recently observed number of replicas.
+                description: replicas is the most recently observed number of replicas.
                 format: int32
                 type: integer
               unavailableReplicas:
@@ -457,8 +478,98 @@ spec:
                   the machine pool to have 100% available capacity. They may either
                   be machine instances that are running but not yet available or machine instances
                   that still have not been created.
+
+                  Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                 format: int32
                 type: integer
+              v1beta2:
+                description: v1beta2 groups all the fields that will be added or modified
+                  in MachinePool's status with the V1Beta2 version.
+                properties:
+                  availableReplicas:
+                    description: availableReplicas is the number of available replicas
+                      for this MachinePool. A machine is considered available when
+                      Machine's Available condition is true.
+                    format: int32
+                    type: integer
+                  conditions:
+                    description: |-
+                      conditions represents the observations of a MachinePool's current state.
+                      Known condition types are Available, BootstrapConfigReady, InfrastructureReady, MachinesReady, MachinesUpToDate,
+                      ScalingUp, ScalingDown, Remediating, Deleting, Paused.
+                    items:
+                      description: Condition contains details for one aspect of the
+                        current state of this API Resource.
+                      properties:
+                        lastTransitionTime:
+                          description: |-
+                            lastTransitionTime is the last time the condition transitioned from one status to another.
+                            This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                          format: date-time
+                          type: string
+                        message:
+                          description: |-
+                            message is a human readable message indicating details about the transition.
+                            This may be an empty string.
+                          maxLength: 32768
+                          type: string
+                        observedGeneration:
+                          description: |-
+                            observedGeneration represents the .metadata.generation that the condition was set based upon.
+                            For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                            with respect to the current state of the instance.
+                          format: int64
+                          minimum: 0
+                          type: integer
+                        reason:
+                          description: |-
+                            reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                            Producers of specific condition types may define expected values and meanings for this field,
+                            and whether the values are considered a guaranteed API.
+                            The value should be a CamelCase string.
+                            This field may not be empty.
+                          maxLength: 1024
+                          minLength: 1
+                          pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                          type: string
+                        status:
+                          description: status of the condition, one of True, False,
+                            Unknown.
+                          enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                          type: string
+                        type:
+                          description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                          maxLength: 316
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                          type: string
+                      required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                      type: object
+                    maxItems: 32
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - type
+                    x-kubernetes-list-type: map
+                  readyReplicas:
+                    description: readyReplicas is the number of ready replicas for
+                      this MachinePool. A machine is considered ready when Machine's
+                      Ready condition is true.
+                    format: int32
+                    type: integer
+                  upToDateReplicas:
+                    description: upToDateReplicas is the number of up-to-date replicas
+                      targeted by this MachinePool. A machine is considered up-to-date
+                      when Machine's UpToDate condition is true.
+                    format: int32
+                    type: integer
+                type: object
             type: object
         type: object
     served: true

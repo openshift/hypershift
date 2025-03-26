@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/errors"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+
+	"k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/spf13/cobra"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -32,8 +33,10 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSPlatform.BaseDomainPrefix, "base-domain-prefix", opts.AWSPlatform.BaseDomainPrefix, "Cluster's base domain prefix; inferred from the hosted cluster by default")
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
+	cmd.Flags().BoolVar(&opts.AWSPlatform.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.AWSPlatform.PrivateZonesInClusterAccount, "In shared VPC infrastructure, delete private hosted zones in cluster account")
 
 	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
+	opts.AWSPlatform.VPCOwnerCredentials.BindVPCOwnerFlags(cmd.Flags())
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -74,15 +77,17 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 
 	o.Log.Info("Destroying infrastructure", "infraID", infraID)
 	destroyInfraOpts := awsinfra.DestroyInfraOptions{
-		Region:                region,
-		InfraID:               infraID,
-		AWSCredentialsOpts:    &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.Credentials},
-		Name:                  o.Name,
-		BaseDomain:            baseDomain,
-		BaseDomainPrefix:      baseDomainPrefix,
-		AwsInfraGracePeriod:   o.AWSPlatform.AwsInfraGracePeriod,
-		Log:                   o.Log,
-		CredentialsSecretData: secretData,
+		Region:                       region,
+		InfraID:                      infraID,
+		AWSCredentialsOpts:           &awsinfra.DelegatedAWSCredentialOptions{AWSCredentialsOpts: &o.AWSPlatform.Credentials},
+		Name:                         o.Name,
+		BaseDomain:                   baseDomain,
+		BaseDomainPrefix:             baseDomainPrefix,
+		AwsInfraGracePeriod:          o.AWSPlatform.AwsInfraGracePeriod,
+		Log:                          o.Log,
+		CredentialsSecretData:        secretData,
+		VPCOwnerCredentialsOpts:      o.AWSPlatform.VPCOwnerCredentials,
+		PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
 	}
 	if err := destroyInfraOpts.Run(ctx); err != nil {
 		return fmt.Errorf("failed to destroy infrastructure: %w", err)
@@ -91,11 +96,13 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 	if !o.AWSPlatform.PreserveIAM {
 		o.Log.Info("Destroying IAM", "infraID", infraID)
 		destroyOpts := awsinfra.DestroyIAMOptions{
-			Region:                region,
-			AWSCredentialsOpts:    o.AWSPlatform.Credentials,
-			InfraID:               infraID,
-			Log:                   o.Log,
-			CredentialsSecretData: secretData,
+			Region:                       region,
+			AWSCredentialsOpts:           o.AWSPlatform.Credentials,
+			InfraID:                      infraID,
+			Log:                          o.Log,
+			CredentialsSecretData:        secretData,
+			VPCOwnerCredentialsOpts:      o.AWSPlatform.VPCOwnerCredentials,
+			PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

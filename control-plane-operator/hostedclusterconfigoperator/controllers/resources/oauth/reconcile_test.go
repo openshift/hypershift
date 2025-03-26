@@ -1,13 +1,13 @@
 package oauth
 
 import (
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-
 	"testing"
 
-	rbacv1 "k8s.io/api/rbac/v1"
-
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
+	rbacv1 "k8s.io/api/rbac/v1"
 )
 
 func TestReconcileOauthServingCertRole(t *testing.T) {

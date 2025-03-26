@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +21,8 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
 
@@ -140,6 +142,8 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, platform hyperv1
 				"get",
 				"list",
 				"watch",
+				"patch",
+				"update",
 			},
 		},
 		{
@@ -261,8 +265,8 @@ var (
 		},
 	}
 	hccLabels = map[string]string{
-		"app":                         hostedClusterConfigOperatorName,
-		hyperv1.ControlPlaneComponent: hostedClusterConfigOperatorName,
+		"app":                              hostedClusterConfigOperatorName,
+		hyperv1.ControlPlaneComponentLabel: hostedClusterConfigOperatorName,
 	}
 )
 
@@ -438,6 +442,14 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 				},
 			)
 		}
+		if len(os.Getenv("MANAGED_SERVICE")) > 0 {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  "MANAGED_SERVICE",
+					Value: os.Getenv("MANAGED_SERVICE"),
+				})
+		}
+
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -445,19 +457,19 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 func buildHCCVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.HCCOKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
 func buildHCCVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 }
 
 func buildHCCClusterSignerCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
-	v.ConfigMap.DefaultMode = pointer.Int32(0640)
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
 	v.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 }
 

@@ -3,6 +3,7 @@ package conditions
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	support "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,8 +40,12 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 
 		conditions[hyperv1.ValidAWSIdentityProvider] = metav1.ConditionTrue
 		conditions[hyperv1.AWSDefaultSecurityGroupCreated] = metav1.ConditionTrue
-		conditions[hyperv1.AWSEndpointAvailable] = metav1.ConditionTrue
-		conditions[hyperv1.AWSEndpointServiceAvailable] = metav1.ConditionTrue
+		if hostedCluster.Spec.Platform.AWS != nil {
+			if hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.Private || hostedCluster.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate {
+				conditions[hyperv1.AWSEndpointAvailable] = metav1.ConditionTrue
+				conditions[hyperv1.AWSEndpointServiceAvailable] = metav1.ConditionTrue
+			}
+		}
 		if hostedCluster.Spec.SecretEncryption == nil || hostedCluster.Spec.SecretEncryption.KMS == nil || hostedCluster.Spec.SecretEncryption.KMS.AWS == nil {
 			// AWS KMS is not configured
 			conditions[hyperv1.ValidAWSKMSConfig] = metav1.ConditionUnknown

@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cluster-autoscaler
+  namespace: HCP_NAMESPACE
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cluster-autoscaler
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: cluster-autoscaler
+    spec:
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --expander=priority,least-waste
+        - --cloud-provider=clusterapi
+        - --node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)
+        - --kubeconfig=/mnt/kubeconfig/target-kubeconfig
+        - --clusterapi-cloud-config-authoritative
+        - --skip-nodes-with-local-storage=false
+        - --alsologtostderr
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-renew-deadline=107s
+        - --balance-similar-node-groups=true
+        - --v=4
+        - --balancing-ignore-label=hypershift.openshift.io/nodePool
+        - --balancing-ignore-label=topology.ebs.csi.aws.com/zone
+        - --balancing-ignore-label=topology.disk.csi.azure.com/zone
+        - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
+        - --balancing-ignore-label=vpc-block-csi-driver-labels
+        command:
+        - /usr/bin/cluster-autoscaler
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cluster-autoscaler # image name in the payload
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /health-check
+            port: 8085
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: cluster-autoscaler
+        ports:
+        - containerPort: 8085
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /health-check
+            port: 8085
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /mnt/kubeconfig
+          name: kubeconfig
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: cluster-autoscaler
+      serviceAccountName: cluster-autoscaler
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          items:
+          - key: value
+            path: target-kubeconfig
+          secretName: <cluster_name>-kubeconfig

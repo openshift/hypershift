@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 const (
@@ -38,7 +40,7 @@ const (
 type BootImage interface {
 	// CacheImage creates a PVC to cache the node image.
 	CacheImage(context.Context, client.Client, *hyperv1.NodePool, string) error
-	getDVSourceForVMTemplate() *v1beta1.DataVolumeSource
+	getDVSourceForVMTemplate() (*v1beta1.DataVolumeSource, error)
 	String() string
 }
 
@@ -71,13 +73,13 @@ func (bootImage) CacheImage(_ context.Context, _ client.Client, _ *hyperv1.NodeP
 	return nil // no implementation
 }
 
-func (bi bootImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
+func (bi bootImage) getDVSourceForVMTemplate() (*v1beta1.DataVolumeSource, error) {
 	if bi.isHTTP {
 		return &v1beta1.DataVolumeSource{
 			HTTP: &v1beta1.DataVolumeSourceHTTP{
 				URL: bi.name,
 			},
-		}
+		}, nil
 	}
 
 	pullMethod := v1beta1.RegistryPullNode
@@ -86,7 +88,7 @@ func (bi bootImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
 			URL:        &bi.name,
 			PullMethod: &pullMethod,
 		},
-	}
+	}, nil
 }
 
 // cachedBootImage is the implementation of the BootImage interface for QCOW images
@@ -98,7 +100,7 @@ type cachedBootImage struct {
 	isHTTP    bool
 }
 
-func newCachedBootImage(name, hash, namespace string, isHTTP bool) *cachedBootImage {
+func newCachedBootImage(name, hash, namespace string, isHTTP bool, nodePool *hyperv1.NodePool) *cachedBootImage {
 	cbi := &cachedBootImage{
 		hash:      hash,
 		namespace: namespace,
@@ -109,6 +111,16 @@ func newCachedBootImage(name, hash, namespace string, isHTTP bool) *cachedBootIm
 		cbi.name = name
 	} else {
 		cbi.name = containerImagePrefix + name
+	}
+
+	// default to the current cached image. This will be updated
+	// later on if it is out of date.
+	if nodePool != nil &&
+		nodePool.Status.Platform != nil &&
+		nodePool.Status.Platform.KubeVirt != nil &&
+		len(nodePool.Status.Platform.KubeVirt.CacheName) > 0 {
+
+		cbi.dvName = nodePool.Status.Platform.KubeVirt.CacheName
 	}
 
 	return cbi
@@ -202,13 +214,18 @@ func (qi *cachedBootImage) createDVForCache(ctx context.Context, cl client.Clien
 	return dv, nil
 }
 
-func (qi *cachedBootImage) getDVSourceForVMTemplate() *v1beta1.DataVolumeSource {
+func (qi *cachedBootImage) getDVSourceForVMTemplate() (*v1beta1.DataVolumeSource, error) {
+
+	if qi.dvName == "" {
+		return nil, fmt.Errorf("no boot image source found for kubevirt machine")
+	}
+
 	return &v1beta1.DataVolumeSource{
 		PVC: &v1beta1.DataVolumeSourcePVC{
 			Namespace: qi.namespace,
 			Name:      qi.dvName,
 		},
-	}
+	}, nil
 }
 
 func (qi *cachedBootImage) GetCacheName() string {
@@ -233,7 +250,7 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 			},
 		},
 		Spec: v1beta1.DataVolumeSpec{
-			Preallocation: pointer.Bool(true),
+			Preallocation: ptr.To(true),
 		},
 	}
 
@@ -256,7 +273,7 @@ func (qi *cachedBootImage) buildDVForCache(nodePool *hyperv1.NodePool, uid strin
 	if kvPlatform.RootVolume != nil && kvPlatform.RootVolume.Persistent != nil {
 		storageSpec := &v1beta1.StorageSpec{}
 		if kvPlatform.RootVolume.Persistent.Size != nil {
-			storageSpec.Resources = corev1.ResourceRequirements{
+			storageSpec.Resources = corev1.VolumeResourceRequirements{
 				Requests: map[corev1.ResourceName]apiresource.Quantity{
 					corev1.ResourceStorage: *kvPlatform.RootVolume.Persistent.Size,
 				},

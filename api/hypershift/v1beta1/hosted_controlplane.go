@@ -96,7 +96,7 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControllerAvailabilityPolicy is immutable"
-	// +kubebuilder:default:="SingleReplica"
+	// +kubebuilder:default:="HighlyAvailable"
 	ControllerAvailabilityPolicy AvailabilityPolicy `json:"controllerAvailabilityPolicy,omitempty"`
 
 	// InfrastructureAvailabilityPolicy specifies the availability policy applied
@@ -117,6 +117,8 @@ type HostedControlPlaneSpec struct {
 
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
+	// +kubebuilder:validation:MaxItems=6
+	// +kubebuilder:validation:MinItems=4
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// AuditWebhook contains metadata for configuring an audit webhook
@@ -136,6 +138,12 @@ type HostedControlPlaneSpec struct {
 	// https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
 	// +kubebuilder:validation:Optional
 	Configuration *ClusterConfiguration `json:"configuration,omitempty"`
+
+	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
+	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
 	// ImageContentSources lists sources/repositories for the release-image content.
 	// +optional
@@ -173,18 +181,43 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
+	// autoNode specifies the configuration for the autoNode feature.
+	// +openshift:enable:FeatureGate=AutoNodeKarpenter
+	AutoNode *AutoNode `json:"autoNode,omitempty"`
+
 	// NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// Tolerations when specified, define what custome tolerations are added to the hcp pods.
+	// Tolerations when specified, define what custom tolerations are added to the hcp pods.
 	//
 	// +optional
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
+	// labels when specified, define what custom labels are added to the hcp pods.
+	// Changing this day 2 will cause a rollout of all hcp pods.
+	// Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+	// Valid values are those in https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set
+	//
+	// -kubebuilder:validation:XValidation:rule=`self.all(key, size(key) <= 317 && key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))`, message="label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (_), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)"
+	// -kubebuilder:validation:XValidation:rule=`self.all(key, size(self[key]) <= 63 && self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))`, message="label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (_) or dots (.), and begin and end with an alphanumeric character"
+	// TODO: key/value validations break cost budget for <=4.17. We should figure why and enable it back.
+	// +kubebuilder:validation:MaxProperties=20
+	// +optional
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// capabilities allows for disabling optional components at cluster install time.
+	// This field is optional and once set cannot be changed.
+	// +immutable
+	// +optional
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 
-// AvailabilityPolicy specifies a high level availability policy for components.
+// availabilityPolicy specifies a high level availability policy for components.
+// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
 type AvailabilityPolicy string
 
 const (
@@ -313,8 +346,8 @@ type APIEndpoint struct {
 	Port int32 `json:"port"`
 }
 
-// +kubebuilder:object:root=true
 // HostedControlPlaneList contains a list of HostedControlPlanes.
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type HostedControlPlaneList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

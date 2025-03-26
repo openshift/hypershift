@@ -106,6 +106,7 @@ spec:
       - args:
         - run
         - --serving-port=8092
+        - --connect-directly-to-cloud-apis
         command:
         - /usr/bin/control-plane-operator
         - konnectivity-https-proxy
@@ -122,11 +123,14 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /etc/pki/tls/certs/managed-trust-bundle.crt
+          name: managed-trust-bundle
+          subPath: managed-trust-bundle.crt
       - args:
         - -c
         - "\nset -o errexit\nset -o nounset\nset -o pipefail\n\nfunction cleanup()
-          {\n\tkill -- -$$\n\twait\n}\ntrap cleanup SIGTERM\n\n/usr/bin/tail -c+1
-          -F /var/run/kubernetes/audit.log &\nwait $!\n"
+          {\n\tpkill -P $$$\n\twait\n\texit\n}\ntrap cleanup SIGTERM\n\n/usr/bin/tail
+          -c+1 -F /var/run/kubernetes/audit.log &\nwait $!\n"
         command:
         - /bin/bash
         image: oauthImage
@@ -193,6 +197,14 @@ spec:
           defaultMode: 416
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - configMap:
+          defaultMode: 416
+          items:
+          - key: ca-bundle.crt
+            path: managed-trust-bundle.crt
+          name: trusted-ca-bundle-managed
+          optional: true
+        name: managed-trust-bundle
       - name: oauth-audit-webhook
         secret:
           secretName: test-webhook-audit-secret

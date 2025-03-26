@@ -93,7 +93,6 @@ spec:
                   - PublicCloud: "AzurePublicCloud"
                   - USGovernmentCloud: "AzureUSGovernmentCloud"
 
-
                   Note that values other than the default must also be accompanied by corresponding changes to the
                   aso-controller-settings Secret to configure ASO to refer to the non-Public cloud. ASO currently does
                   not support referring to multiple different clouds in a single installation. The following fields must
@@ -102,9 +101,7 @@ spec:
                   - AZURE_RESOURCE_MANAGER_ENDPOINT
                   - AZURE_RESOURCE_MANAGER_AUDIENCE
 
-
                   See the [ASO docs] for more details.
-
 
                   [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/
                 type: string
@@ -307,7 +304,7 @@ spec:
                             - node
                             - control-plane
                             - bastion
-                            - all
+                            - cluster
                             type: string
                           routeTable:
                             description: RouteTable defines the route table that should
@@ -551,6 +548,11 @@ spec:
                       type: object
                     type: array
                 type: object
+              controlPlaneEnabled:
+                default: true
+                description: ControlPlaneEnabled enables control plane components
+                  in the cluster.
+                type: boolean
               controlPlaneEndpoint:
                 description: |-
                   ControlPlaneEndpoint represents the endpoint used to communicate with the control plane. It is not recommended to set
@@ -592,11 +594,11 @@ spec:
                     attributes:
                       additionalProperties:
                         type: string
-                      description: Attributes is a free form map of attributes an
+                      description: attributes is a free form map of attributes an
                         infrastructure provider might use or require.
                       type: object
                     controlPlane:
-                      description: ControlPlane determines if this failure domain
+                      description: controlPlane determines if this failure domain
                         is suitable for use by control plane machines.
                       type: boolean
                   type: object
@@ -622,7 +624,6 @@ spec:
                       the event) or if no container name is specified "spec.containers[2]" (container with
                       index 2 in this pod). This syntax is chosen only to have some well-defined way of
                       referencing a part of an object.
-                      TODO: this design is not final and this field is subject to change in the future.
                     type: string
                   kind:
                     description: |-
@@ -1057,7 +1058,7 @@ spec:
                           - node
                           - control-plane
                           - bastion
-                          - all
+                          - cluster
                           type: string
                         routeTable:
                           description: RouteTable defines the route table that should
@@ -1353,20 +1354,20 @@ spec:
                       description: |-
                         The reason for the condition's last transition in CamelCase.
                         The specific API may choose whether or not this field is considered a guaranteed API.
-                        This field may not be empty.
+                        This field may be empty.
                       type: string
                     severity:
                       description: |-
-                        Severity provides an explicit classification of Reason code, so the users or machines can immediately
+                        severity provides an explicit classification of Reason code, so the users or machines can immediately
                         understand the current situation and act accordingly.
                         The Severity field MUST be set only when Status=False.
                       type: string
                     status:
-                      description: Status of the condition, one of True, False, Unknown.
+                      description: status of the condition, one of True, False, Unknown.
                       type: string
                     type:
                       description: |-
-                        Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
                         Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
                       type: string
@@ -1385,11 +1386,11 @@ spec:
                     attributes:
                       additionalProperties:
                         type: string
-                      description: Attributes is a free form map of attributes an
+                      description: attributes is a free form map of attributes an
                         infrastructure provider might use or require.
                       type: object
                     controlPlane:
-                      description: ControlPlane determines if this failure domain
+                      description: controlPlane determines if this failure domain
                         is suitable for use by control plane machines.
                       type: boolean
                   type: object

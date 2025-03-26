@@ -2,6 +2,7 @@ package rbac
 
 import (
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 )
 
@@ -627,6 +628,92 @@ func ReconcileUserOAuthClusterRole(r *rbacv1.ClusterRole) error {
 			APIGroups: []string{"oauth.openshift.io"},
 			Resources: []string{"useroauthaccesstokens"},
 			Verbs:     []string{"get", "list", "watch", "delete"},
+		},
+	}
+	return nil
+}
+
+func ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"secrets"},
+			Verbs:     []string{"get"},
+		},
+		{
+			APIGroups: []string{""},
+			Resources: []string{"nodes"},
+			Verbs: []string{
+				"get",
+				"list",
+				"patch",
+				"update",
+				"watch",
+			},
+		},
+		{
+			APIGroups: []string{"storage.k8s.io"},
+			Resources: []string{"csinodes"},
+			Verbs:     []string{"get"},
+		},
+	}
+	return nil
+}
+
+func ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "azure-disk-csi-driver-node-sa",
+			Namespace: "openshift-cluster-csi-drivers",
+		},
+	}
+	return nil
+}
+
+func ReconcileAzureFileCSIDriverNodeServiceAccountClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"secrets"},
+			Verbs:     []string{"get"},
+		},
+	}
+	return nil
+}
+
+func ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "azure-file-csi-driver-node-sa",
+			Namespace: "openshift-cluster-csi-drivers",
 		},
 	}
 	return nil

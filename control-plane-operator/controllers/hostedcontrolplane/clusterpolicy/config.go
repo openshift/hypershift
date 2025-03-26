@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"path"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+
+	configv1 "github.com/openshift/api/config/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 	bindPort  = 10357
 )
 
-func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string) error {
+func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -33,7 +34,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 			return fmt.Errorf("unable to decode existing cluster policy controller configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, minTLSVersion, cipherSuites); err != nil {
+	if err := reconcileConfig(config, minTLSVersion, cipherSuites, featureGates); err != nil {
 		return err
 	}
 	buf := &bytes.Buffer{}
@@ -44,7 +45,7 @@ func ReconcileClusterPolicyControllerConfig(cm *corev1.ConfigMap, ownerRef confi
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLSVersion string, cipherSuites []string, featureGates []string) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(cpcContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -67,5 +68,8 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, minTLS
 			CipherSuites:  cipherSuites,
 		},
 	}
+
+	cfg.FeatureGates = featureGates
+
 	return nil
 }

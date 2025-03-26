@@ -1,11 +1,14 @@
 package nodepool
 
 import (
-	"k8s.io/utils/ptr"
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	"k8s.io/utils/ptr"
+
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 )
@@ -37,10 +40,12 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								Type:    hyperv1.ImageID,
 								ImageID: ptr.To("testImageID"),
 							},
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
 						},
 					},
 				},
@@ -58,7 +63,6 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							Marketplace:    nil,
 							ComputeGallery: nil,
 						},
-						Identity:                   "",
 						UserAssignedIdentities:     nil,
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
@@ -110,11 +114,12 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								Type:    hyperv1.ImageID,
 								ImageID: ptr.To("testImageID"),
 							},
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							MachineIdentityID:      "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
 						},
 					},
 				},
@@ -132,12 +137,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							Marketplace:    nil,
 							ComputeGallery: nil,
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -186,18 +186,19 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 						Azure: &hyperv1.AzureNodePoolPlatform{
 							Image: hyperv1.AzureVMImage{
 								Type: hyperv1.AzureMarketplace,
-								AzureMarketplace: &hyperv1.MarketplaceImage{
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 									Publisher: "testPublisher",
 									Offer:     "testOffer",
 									SKU:       "testSKU",
 									Version:   "testVersion",
 								},
 							},
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							MachineIdentityID:      "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+							},
 						},
 					},
 				},
@@ -220,12 +221,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -272,26 +268,27 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
-							AvailabilityZone:    "eastus",
-							DiskEncryptionSetID: "testDES_ID",
+							AvailabilityZone: "1",
 							Image: hyperv1.AzureVMImage{
 								Type: hyperv1.AzureMarketplace,
-								AzureMarketplace: &hyperv1.MarketplaceImage{
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 									Publisher: "testPublisher",
 									Offer:     "testOffer",
 									SKU:       "testSKU",
 									Version:   "testVersion",
 								},
 							},
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							EnableEphemeralOSDisk:  true,
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								EncryptionSetID:        "testDES_ID",
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+								Persistence:            hyperv1.EphemeralDiskPersistence,
+							},
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "Managed",
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -302,7 +299,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 					Spec: capiazure.AzureMachineSpec{
 						ProviderID:    nil,
 						VMSize:        "Standard_D2_v2",
-						FailureDomain: ptr.To("eastus"),
+						FailureDomain: ptr.To("1"),
 						Image: &capiazure.Image{
 							Marketplace: &capiazure.AzureMarketplaceImage{
 								ImagePlan: capiazure.ImagePlan{
@@ -314,12 +311,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -370,26 +362,29 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
-							DiskEncryptionSetID: "testDES_ID",
 							Image: hyperv1.AzureVMImage{
 								Type: hyperv1.AzureMarketplace,
-								AzureMarketplace: &hyperv1.MarketplaceImage{
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 									Publisher: "testPublisher",
 									Offer:     "testOffer",
 									SKU:       "testSKU",
 									Version:   "testVersion",
 								},
 							},
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							EnableEphemeralOSDisk:  true,
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								EncryptionSetID:        "testDES_ID",
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+								Persistence:            hyperv1.EphemeralDiskPersistence,
+							},
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
-							MachineIdentityID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
 						},
 					},
 				},
@@ -412,12 +407,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 								ThirdPartyImage: false,
 							},
 						},
-						Identity: "UserAssigned",
-						UserAssignedIdentities: []capiazure.UserAssignedIdentity{
-							{
-								ProviderID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.ManagedIdentity/userAssignedIdentities/testIdentity",
-							},
-						},
+						Identity:                   "",
 						SystemAssignedIdentityRole: nil,
 						RoleAssignmentName:         "",
 						OSDisk: capiazure.OSDisk{
@@ -470,15 +460,20 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
-							DiskEncryptionSetID:    "testDES_ID",
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							EnableEphemeralOSDisk:  true,
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/testSubnetName",
+							VMSize:   "Standard_D2_v2",
+
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								EncryptionSetID:        "testDES_ID",
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+								Persistence:            hyperv1.EphemeralDiskPersistence,
+							},
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
 						},
 					},
@@ -494,15 +489,19 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
-							DiskEncryptionSetID:    "testDES_ID",
-							SubnetID:               "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/",
-							VMSize:                 "Standard_D2_v2",
-							DiskSizeGB:             30,
-							DiskStorageAccountType: "Standard_LRS",
-							EnableEphemeralOSDisk:  true,
+							SubnetID: "/subscriptions/testSubscriptionID/resourceGroups/testResourceGroupName/providers/Microsoft.Network/virtualNetworks/testVnetName/subnets/",
+							VMSize:   "Standard_D2_v2",
+							OSDisk: hyperv1.AzureNodePoolOSDisk{
+								EncryptionSetID:        "testDES_ID",
+								SizeGiB:                30,
+								DiskStorageAccountType: "Standard_LRS",
+								Persistence:            hyperv1.EphemeralDiskPersistence,
+							},
 							Diagnostics: &hyperv1.Diagnostics{
 								StorageAccountType: "UserManaged",
-								StorageAccountURI:  "www.test.com",
+								UserManaged: &hyperv1.UserManagedDiagnostics{
+									StorageAccountURI: "www.test.com",
+								},
 							},
 						},
 					},

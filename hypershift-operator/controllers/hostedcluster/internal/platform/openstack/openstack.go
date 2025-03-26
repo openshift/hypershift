@@ -5,39 +5,48 @@ import (
 	"fmt"
 	"os"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/support/images"
+	"github.com/openshift/hypershift/support/openstackutil"
 	"github.com/openshift/hypershift/support/upsert"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
+	"github.com/blang/semver"
 )
 
 const (
-	defaultCIDRBlock  = "10.0.0.0/16"
 	sgRuleDescription = "Managed by the Hypershift Control Plane Operator"
+
+	// OpenStackResourceControllerLogLevel is the log level for OpenStack resource controller running
+	// alongside the Cluster API provider for OpenStack. The log level is set to 4 (info) by default.
+	// until we have a better way to control the log level.
+	// See https://github.com/k-orc/openstack-resource-controller/issues/156
+	OpenStackResourceControllerLogLevel = "4"
 )
 
 type OpenStack struct {
 	capiProviderImage string
+	orcImage          string
+	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string) *OpenStack {
+func New(capiProviderImage string, orcImage string, payloadVersion *semver.Version) *OpenStack {
 	return &OpenStack{
 		capiProviderImage: capiProviderImage,
+		orcImage:          orcImage,
+		payloadVersion:    payloadVersion,
 	}
 }
 
@@ -54,9 +63,15 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 		return nil, fmt.Errorf("failed to reconcile OpenStack CAPI cluster, empty OpenStack platform spec")
 	}
 
-	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference(openStackPlatform.IdentityRef)
+	openStackCluster.Spec.IdentityRef = capo.OpenStackIdentityReference{
+		Name:      openStackPlatform.IdentityRef.Name,
+		CloudName: openStackPlatform.IdentityRef.CloudName,
+	}
 	if _, err := createOrUpdate(ctx, client, openStackCluster, func() error {
-		reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec, apiEndpoint)
+		err := reconcileOpenStackClusterSpec(hcluster, &openStackCluster.Spec, apiEndpoint)
+		if err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -64,22 +79,17 @@ func (a OpenStack) ReconcileCAPIInfraCR(ctx context.Context, client client.Clien
 	return openStackCluster, nil
 }
 
-func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) {
+func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClusterSpec *capo.OpenStackClusterSpec, apiEndpoint hyperv1.APIEndpoint) error {
+	machineNetworks := hcluster.Spec.Networking.MachineNetwork
+	if len(machineNetworks) == 0 {
+		return fmt.Errorf("failed to reconcile OpenStackClusterSpec, empty machine networks")
+	}
+
 	openStackPlatform := hcluster.Spec.Platform.OpenStack
 
 	openStackClusterSpec.ControlPlaneEndpoint = &capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
-	}
-
-	var machineNetworks []hyperv1.MachineNetworkEntry
-	// If no MachineNetwork is provided, use a default CIDR block.
-	// Note: The default is required for now because there is no CLI option to set the MachineNetwork.
-	// See https://github.com/openshift/hypershift/pull/4287
-	if len(hcluster.Spec.Networking.MachineNetwork) == 0 {
-		machineNetworks = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR(defaultCIDRBlock)}}
-	} else {
-		machineNetworks = hcluster.Spec.Networking.MachineNetwork
 	}
 
 	if len(openStackPlatform.Subnets) > 0 {
@@ -98,7 +108,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 					CIDR:                subnetFilter.CIDR,
 					IPv6AddressMode:     subnetFilter.IPv6AddressMode,
 					IPv6RAMode:          subnetFilter.IPv6RAMode,
-					FilterByNeutronTags: createCAPOFilterTags(subnetFilter.Tags, subnetFilter.TagsAny, subnetFilter.NotTags, subnetFilter.NotTagsAny),
+					FilterByNeutronTags: openstackutil.CreateCAPOFilterTags(subnetFilter.Tags, subnetFilter.TagsAny, subnetFilter.NotTags, subnetFilter.NotTagsAny),
 				}
 			}
 		}
@@ -128,7 +138,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 				Name:                routerFilter.Name,
 				Description:         routerFilter.Description,
 				ProjectID:           routerFilter.ProjectID,
-				FilterByNeutronTags: createCAPOFilterTags(routerFilter.Tags, routerFilter.TagsAny, routerFilter.NotTags, routerFilter.NotTagsAny),
+				FilterByNeutronTags: openstackutil.CreateCAPOFilterTags(routerFilter.Tags, routerFilter.TagsAny, routerFilter.NotTags, routerFilter.NotTagsAny),
 			}
 
 		}
@@ -136,7 +146,7 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.Network != nil {
 		openStackClusterSpec.Network = &capo.NetworkParam{ID: openStackPlatform.Network.ID}
 		if openStackPlatform.Network.Filter != nil {
-			openStackClusterSpec.Network.Filter = createCAPONetworkFilter(openStackPlatform.Network.Filter)
+			openStackClusterSpec.Network.Filter = openstackutil.CreateCAPONetworkFilter(openStackPlatform.Network.Filter)
 		}
 	}
 	if openStackPlatform.NetworkMTU != nil {
@@ -145,56 +155,44 @@ func reconcileOpenStackClusterSpec(hcluster *hyperv1.HostedCluster, openStackClu
 	if openStackPlatform.ExternalNetwork != nil {
 		openStackClusterSpec.ExternalNetwork = &capo.NetworkParam{ID: openStackPlatform.ExternalNetwork.ID}
 		if openStackPlatform.ExternalNetwork.Filter != nil {
-			openStackClusterSpec.ExternalNetwork.Filter = createCAPONetworkFilter(openStackPlatform.ExternalNetwork.Filter)
+			openStackClusterSpec.ExternalNetwork.Filter = openstackutil.CreateCAPONetworkFilter(openStackPlatform.ExternalNetwork.Filter)
 		}
 	}
 	if openStackPlatform.DisableExternalNetwork != nil {
 		openStackClusterSpec.DisableExternalNetwork = openStackPlatform.DisableExternalNetwork
 	}
-	openStackClusterSpec.DisableAPIServerFloatingIP = k8sutilspointer.BoolPtr(true)
+	openStackClusterSpec.DisableAPIServerFloatingIP = ptr.To(true)
 	openStackClusterSpec.ManagedSecurityGroups = &capo.ManagedSecurityGroups{
 		AllNodesSecurityGroupRules: defaultWorkerSecurityGroupRules(machineNetworksToStrings(machineNetworks)),
 	}
-	openStackClusterSpec.Tags = openStackPlatform.Tags
-}
 
-func convertHypershiftTagToCAPOTag(tags []hyperv1.NeutronTag) []capo.NeutronTag {
-	var capoTags []capo.NeutronTag
-	for i := range tags {
-		capoTags = append(capoTags, capo.NeutronTag(tags[i]))
-	}
-	return capoTags
-}
+	// Users are permitted to specify additional tags to be applied to the OpenStack resources
+	// but the default tag will be compliant with the OpenShift Cluster ID.
+	openStackClusterSpec.Tags = []string{"openshiftClusterID=" + hcluster.Spec.InfraID}
+	openStackClusterSpec.Tags = append(openStackClusterSpec.Tags, openStackPlatform.Tags...)
 
-func createCAPOFilterTags(tags, tagsAny, NotTags, NotTagsAny []hyperv1.NeutronTag) capo.FilterByNeutronTags {
-	return capo.FilterByNeutronTags{
-		Tags:       convertHypershiftTagToCAPOTag(tags),
-		TagsAny:    convertHypershiftTagToCAPOTag(tagsAny),
-		NotTags:    convertHypershiftTagToCAPOTag(NotTags),
-		NotTagsAny: convertHypershiftTagToCAPOTag(NotTagsAny),
-	}
-}
-
-func createCAPONetworkFilter(filter *hyperv1.NetworkFilter) *capo.NetworkFilter {
-	return &capo.NetworkFilter{
-		Name:                filter.Name,
-		Description:         filter.Description,
-		ProjectID:           filter.ProjectID,
-		FilterByNeutronTags: createCAPOFilterTags(filter.Tags, filter.TagsAny, filter.NotTags, filter.NotTagsAny),
-	}
+	return nil
 }
 
 func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	image := a.capiProviderImage
+	capoImage := a.capiProviderImage
 	if envImage := os.Getenv(images.OpenStackCAPIProviderEnvVar); len(envImage) > 0 {
-		image = envImage
+		capoImage = envImage
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIOpenStackProviderImage]; ok {
-		image = override
+		capoImage = override
 	}
+	orcImage := a.orcImage
+	if envImage := os.Getenv(images.OpenStackResourceControllerEnvVar); len(envImage) > 0 {
+		orcImage = envImage
+	}
+	if override, ok := hcluster.Annotations[hyperv1.OpenStackResourceControllerImage]; ok {
+		orcImage = override
+	}
+	allowPrivilegeEscalation := false
 	defaultMode := int32(0640)
-	return &appsv1.DeploymentSpec{
-		Replicas: k8sutilspointer.Int32(1),
+	deploymentSpec := appsv1.DeploymentSpec{
+		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				Volumes: []corev1.Volume{
@@ -210,13 +208,12 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 				},
 				Containers: []corev1.Container{{
 					Name:            "manager",
-					Image:           image,
+					Image:           capoImage,
 					ImagePullPolicy: corev1.PullIfNotPresent,
 					Command:         []string{"/manager"},
 					Args: []string{
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect",
-						"--metrics-bind-addr=127.0.0.1:8080",
 						"--v=2",
 					},
 					Resources: corev1.ResourceRequirements{
@@ -266,7 +263,78 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 						},
 					},
 				}},
-			}}}, nil
+			}},
+	}
+
+	// Add the ORC manager container if the payload version is 4.19 or later
+	// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
+	if a.payloadVersion != nil && a.payloadVersion.Major == 4 && a.payloadVersion.Minor > 18 {
+		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
+			Name:            "orc-manager",
+			Image:           orcImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/manager"},
+			Args: []string{
+				"--namespace=$(MY_NAMESPACE)",
+				"--leader-elect",
+				"--health-probe-bind-address=:8081",
+				// Workaround until we address better logging in ORC:
+				// https://github.com/k-orc/openstack-resource-controller/issues/156
+				"--zap-log-level=" + OpenStackResourceControllerLogLevel,
+			},
+			SecurityContext: &corev1.SecurityContext{
+				AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+				Capabilities: &corev1.Capabilities{
+					Drop: []corev1.Capability{
+						"ALL",
+					},
+				},
+			},
+			LivenessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/healthz",
+						Port: intstr.FromInt(8081),
+					},
+				},
+				InitialDelaySeconds: 15,
+				PeriodSeconds:       20,
+			},
+			ReadinessProbe: &corev1.Probe{
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Path: "/readyz",
+						Port: intstr.FromInt(8081),
+					},
+				},
+				InitialDelaySeconds: 5,
+				PeriodSeconds:       10,
+			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("500m"),
+					corev1.ResourceMemory: resource.MustParse("128Mi"),
+				},
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("64Mi"),
+				},
+			},
+			Env: []corev1.EnvVar{
+				{
+					Name: "MY_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+			},
+		},
+		)
+	}
+
+	return &deploymentSpec, nil
 }
 
 func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
@@ -275,24 +343,43 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 	}
 
 	// Sync CNCC secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "cloud-network-config-controller-creds"); err != nil {
+		return err
+	}
+	// Sync Cinder CSI driver secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "openstack-cloud-credentials"); err != nil {
+		return err
+	}
+
+	// Sync Manila CSI driver secret
+	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "manila-cloud-credentials"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secret.
+func (a OpenStack) reconcileOpenStackCredentialsSecret(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace, name string) error {
 	credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcluster.Namespace, Name: hcluster.Spec.Platform.OpenStack.IdentityRef.Name}}
 	if err := c.Get(ctx, client.ObjectKeyFromObject(credentialsSecret), credentialsSecret); err != nil {
 		return fmt.Errorf("failed to get OpenStack credentials secret: %w", err)
 	}
+
 	caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
-	cloudNetworkConfigCreds := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"},
+	credsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: name},
 		Data:       map[string][]byte{},
 	}
-	cloudNetworkConfigCreds.Data[openstack.CloudsSecretKey] = credentialsSecret.Data[openstack.CloudsSecretKey]
+	credsSecret.Data[openstack.CloudsSecretKey] = credentialsSecret.Data[openstack.CloudsSecretKey]
 	if caCertData != nil {
-		cloudNetworkConfigCreds.Data[openstack.CABundleKey] = caCertData
+		credsSecret.Data[openstack.CABundleKey] = caCertData
 	}
 
-	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
-		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack.ExternalNetwork.ID, cloudNetworkConfigCreds, hcluster.Spec.Platform.OpenStack.IdentityRef.CloudName, credentialsSecret, caCertData)
+	if _, err := createOrUpdate(ctx, c, credsSecret, func() error {
+		return openstack.ReconcileCloudConfigSecret(hcluster.Spec.Platform.OpenStack, credsSecret, credentialsSecret, caCertData, hcluster.Spec.Networking.MachineNetwork)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile OpenStack cloud config: %w", err)
+		return fmt.Errorf("failed to reconcile OpenStack cloud config for %s: %w", name, err)
 	}
 
 	return nil
@@ -338,6 +425,13 @@ func (a OpenStack) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 			Resources: []string{"ipaddresses", "ipaddresses/status"},
 			Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 		},
+		// We deploy ORC in the same namespace as the CAPI provider, so we need to create the
+		// necessary RBAC policy rules for ORC to manage the OpenStack resources.
+		{
+			APIGroups: []string{"openstack.k-orc.cloud"},
+			Resources: []string{"images", "images/status"},
+			Verbs:     []string{rbacv1.VerbAll},
+		},
 	}
 }
 
@@ -361,32 +455,32 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 		machineCIDRInboundRules := []capo.SecurityGroupRuleSpec{
 			{
 				Name:     "esp-ingress",
-				Protocol: k8sutilspointer.String("esp"),
+				Protocol: ptr.To("esp"),
 			},
 			{
 				Name:     "icmp-ingress",
-				Protocol: k8sutilspointer.String("icmp"),
+				Protocol: ptr.To("icmp"),
 			},
 			{
 				Name:         "router-ingress",
-				Protocol:     k8sutilspointer.String("tcp"),
-				PortRangeMin: k8sutilspointer.Int(1936),
-				PortRangeMax: k8sutilspointer.Int(1936),
+				Protocol:     ptr.To("tcp"),
+				PortRangeMin: ptr.To(1936),
+				PortRangeMax: ptr.To(1936),
 			},
 			{
 				Name:         "ssh-ingress",
-				Protocol:     k8sutilspointer.String("tcp"),
-				PortRangeMin: k8sutilspointer.Int(22),
-				PortRangeMax: k8sutilspointer.Int(22),
+				Protocol:     ptr.To("tcp"),
+				PortRangeMin: ptr.To(22),
+				PortRangeMax: ptr.To(22),
 			},
 			{
 				Name:     "vrrp-ingress",
-				Protocol: k8sutilspointer.String("vrrp"),
+				Protocol: ptr.To("vrrp"),
 			},
 		}
 
 		for i, rule := range machineCIDRInboundRules {
-			rule.RemoteIPPrefix = k8sutilspointer.String(machineCIDR)
+			rule.RemoteIPPrefix = ptr.To(machineCIDR)
 			machineCIDRInboundRules[i] = rule
 		}
 
@@ -397,64 +491,64 @@ func defaultWorkerSecurityGroupRules(machineCIDRs []string) []capo.SecurityGroup
 	allIngressRules := []capo.SecurityGroupRuleSpec{
 		{
 			Name:         "http-ingress",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(80),
-			PortRangeMax: k8sutilspointer.Int(80),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(80),
+			PortRangeMax: ptr.To(80),
 		},
 		{
 			Name:         "https-ingress",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(443),
-			PortRangeMax: k8sutilspointer.Int(443),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(443),
+			PortRangeMax: ptr.To(443),
 		},
 		{
 			Name:         "geneve-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(6081),
-			PortRangeMax: k8sutilspointer.Int(6081),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(6081),
+			PortRangeMax: ptr.To(6081),
 		},
 		{
 			Name:         "ike-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(500),
-			PortRangeMax: k8sutilspointer.Int(500),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(500),
+			PortRangeMax: ptr.To(500),
 		},
 		{
 			Name:         "ike-nat-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(4500),
-			PortRangeMax: k8sutilspointer.Int(4500),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(4500),
+			PortRangeMax: ptr.To(4500),
 		},
 		{
 			Name:         "internal-ingress-tcp",
-			Protocol:     k8sutilspointer.String("tcp"),
-			PortRangeMin: k8sutilspointer.Int(9000),
-			PortRangeMax: k8sutilspointer.Int(9999),
+			Protocol:     ptr.To("tcp"),
+			PortRangeMin: ptr.To(9000),
+			PortRangeMax: ptr.To(9999),
 		},
 		{
 			Name:         "internal-ingress-udp",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(9000),
-			PortRangeMax: k8sutilspointer.Int(9999),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(9000),
+			PortRangeMax: ptr.To(9999),
 		},
 		{
 			Name:         "vxlan-ingress",
-			Protocol:     k8sutilspointer.String("udp"),
-			PortRangeMin: k8sutilspointer.Int(4789),
-			PortRangeMax: k8sutilspointer.Int(4789),
+			Protocol:     ptr.To("udp"),
+			PortRangeMin: ptr.To(4789),
+			PortRangeMax: ptr.To(4789),
 		},
 	}
 	for i, rule := range allIngressRules {
-		rule.RemoteIPPrefix = k8sutilspointer.String("0.0.0.0/0")
+		rule.RemoteIPPrefix = ptr.To("0.0.0.0/0")
 		allIngressRules[i] = rule
 	}
 	ingressRules = append(ingressRules, allIngressRules...)
 
 	// Common attributes for all rules
 	for i, rule := range ingressRules {
-		rule.Description = k8sutilspointer.String(sgRuleDescription)
+		rule.Description = ptr.To(sgRuleDescription)
 		rule.Direction = "ingress"
-		rule.EtherType = k8sutilspointer.String("IPv4")
+		rule.EtherType = ptr.To("IPv4")
 		ingressRules[i] = rule
 	}
 

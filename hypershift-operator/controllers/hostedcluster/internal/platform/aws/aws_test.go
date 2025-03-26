@@ -3,11 +3,14 @@ package aws
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileAWSCluster(t *testing.T) {
@@ -82,11 +85,11 @@ func TestReconcileAWSCluster(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := reconcileAWSCluster(tc.initialAWSCluster, tc.hostedCluster, hyperv1.APIEndpoint{}); err != nil {
+			if err := reconcileAWSCluster(tc.initialAWSCluster, tc.hostedCluster, hyperv1.APIEndpoint{}, nil); err != nil {
 				t.Fatalf("reconcileAWSCluster failed: %v", err)
 			}
 			if diff := cmp.Diff(tc.initialAWSCluster, tc.expectedAWSCluster); diff != "" {
-				t.Errorf("reconciled AWS cluster differs from expcted AWS cluster: %s", diff)
+				t.Errorf("reconciled AWS cluster differs from expected AWS cluster: %s", diff)
 			}
 		})
 	}
@@ -147,6 +150,63 @@ func TestValidCredentials(t *testing.T) {
 			result := ValidCredentials(&hc)
 			if tc.expectedResult != result {
 				t.Errorf("ValidCredentials returned %v, expected %v", result, tc.expectedResult)
+			}
+		})
+	}
+}
+
+func TestBuildAWSWebIdentityCredentials(t *testing.T) {
+	type args struct {
+		roleArn string
+		region  string
+	}
+	type test struct {
+		name    string
+		args    args
+		wantErr bool
+		want    string
+	}
+	tests := []test{
+		{
+			name: "should fail if the role ARN is empty",
+			args: args{
+				roleArn: "",
+				region:  "us-east-1",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "should fail if the region is empty",
+			wantErr: true,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "",
+			},
+		},
+		{
+			name:    "should succeed and return the creds template populated with role arn and region otherwise",
+			wantErr: false,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "us-east-1",
+			},
+			want: `[default]
+role_arn = arn:aws:iam::123456789012:role/some-role
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = us-east-1
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creds, err := buildAWSWebIdentityCredentials(tt.args.roleArn, tt.args.region)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("buildAWSWebIdentityCredentials err = %v, wantErr = %v", err, tt.wantErr)
+				return
+			}
+			if creds != tt.want {
+				t.Errorf("expected creds:\n%s, but got:\n%s", tt.want, creds)
 			}
 		})
 	}

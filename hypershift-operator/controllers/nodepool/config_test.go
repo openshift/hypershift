@@ -9,18 +9,24 @@ import (
 	"io"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	imageapi "github.com/openshift/api/image/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	imageapi "github.com/openshift/api/image/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // coreConfigMaps is a fake list of configMaps to match default expectation of 3.
@@ -108,6 +114,17 @@ spec:
   kernelType: ""
   osImageURL: ""
 `
+	globalConfig := hyperv1.ClusterConfiguration{
+		Authentication: &configv1.AuthenticationSpec{},
+		Image:          &configv1.ImageSpec{},
+		Proxy:          &configv1.ProxySpec{},
+	}
+	// Validating against this ensure that if marshaling of the config APIs ever produces a different output
+	// because new fields are added, this test will fail.
+	expectedGlobalConfigString := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+
 	hostedCluster := &hyperv1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -118,23 +135,34 @@ spec:
 			PullSecret: corev1.LocalObjectReference{
 				Name: "pull-secret",
 			},
+			Configuration: &globalConfig,
 		},
 	}
 
 	testCases := []struct {
-		name                 string
-		nodePool             *hyperv1.NodePool
-		releaseImage         *releaseinfo.ReleaseImage
-		hostedCluster        *hyperv1.HostedCluster
-		config               []crclient.Object
-		expectedMCORawConfig string
-		client               bool
-		error                error
+		name                       string
+		nodePool                   *hyperv1.NodePool
+		releaseImage               *releaseinfo.ReleaseImage
+		hostedCluster              *hyperv1.HostedCluster
+		config                     []crclient.Object
+		expectedMCORawConfig       string
+		client                     bool
+		expectedHash               string
+		expectedHashWithoutVersion string
+		error                      error
 	}{
 		{
-			name:          "When all input is given it should not return an error",
-			nodePool:      &hyperv1.NodePool{},
-			releaseImage:  &releaseinfo.ReleaseImage{},
+			name:                       "When all input is given it should not return an error",
+			expectedHash:               "e1d8d58e",
+			expectedHashWithoutVersion: "0db5756d",
+			nodePool:                   &hyperv1.NodePool{},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
 			hostedCluster: hostedCluster,
 			client:        true,
 			error:         nil,
@@ -156,7 +184,9 @@ spec:
 			error:         fmt.Errorf("release image can't be nil"),
 		},
 		{
-			name: "When nodepool has configs it should populate mcoRawConfig ",
+			name:                       "When nodepool has configs it should populate mcoRawConfig ",
+			expectedHash:               "801aff6a",
+			expectedHashWithoutVersion: "fef02451",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -181,10 +211,16 @@ spec:
 				},
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
-			releaseImage:         &releaseinfo.ReleaseImage{},
-			hostedCluster:        hostedCluster,
-			client:               true,
-			error:                nil,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
+			hostedCluster: hostedCluster,
+			client:        true,
+			error:         nil,
 		},
 		{
 			name: "When nodepool has invalid config it should fail ",
@@ -207,7 +243,9 @@ spec:
 			error:                fmt.Errorf("configmaps \"does-not-exist\" not found"),
 		},
 		{
-			name: "When additionalTrustBundle is specified it should be included in rolloutConfig",
+			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
+			expectedHash:               "dc74976e",
+			expectedHashWithoutVersion: "71375893",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -232,9 +270,15 @@ spec:
 				},
 			},
 			expectedMCORawConfig: machineConfigDefaulted,
-			releaseImage:         &releaseinfo.ReleaseImage{},
-			client:               true,
-			error:                nil,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "latest",
+					},
+				},
+			},
+			client: true,
+			error:  nil,
 			hostedCluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test",
@@ -279,6 +323,15 @@ spec:
 			if tc.hostedCluster.Spec.AdditionalTrustBundle != nil {
 				g.Expect(cg.additionalTrustBundleName).To(Equal("additional-trust-bundle"))
 			}
+
+			if tc.hostedCluster.Spec.Configuration != nil {
+				if diff := cmp.Diff(cg.globalConfig, expectedGlobalConfigString); diff != "" {
+					t.Errorf("actual config differs from expected: %s", diff)
+				}
+			}
+
+			g.Expect(cg.Hash()).To(Equal(tc.expectedHash))
+			g.Expect(cg.HashWithoutVersion()).To(Equal(tc.expectedHashWithoutVersion))
 		})
 	}
 }
@@ -532,7 +585,7 @@ func TestHashWithoutVersion(t *testing.T) {
 			expected:                  "935c3492",
 		},
 		{
-			// TODO(alberto): This was left unconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
+			// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 			// This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 			name:                      "A different globalConfig should NOT change the hash",
 			mcoRawConfig:              baseCaseMCORawConfig,
@@ -1684,6 +1737,79 @@ spec:
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(output).To(MatchYAML(tc.expectedOutput))
 
+		})
+	}
+}
+
+func TestGlobalConfigString(t *testing.T) {
+	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
+{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+`
+
+	testCases := []struct {
+		name           string
+		globalConfig   *hyperv1.ClusterConfiguration
+		expectedOutput string
+	}{
+		// Expected behaviour for backward compatibility for empty values is:
+		// return serialized string with empty values for AdditionalTrustedCA and RegistrySources and drop everything else even if it doesn't have a omitempty tag in the API.
+		{
+			name:           "When Empty GlobalConfig it should return serialized string honouring backward compatibility expectation (see code comment)",
+			globalConfig:   &hyperv1.ClusterConfiguration{},
+			expectedOutput: expectedGlobalConfigStringWhenEmpty,
+		},
+		{
+			name: "When GlobalConfig is set with empty structs it should return serialized string honouring backward compatibility expectation (see code comment)",
+			globalConfig: &hyperv1.ClusterConfiguration{
+				APIServer:      &configv1.APIServerSpec{},
+				Authentication: &configv1.AuthenticationSpec{},
+				FeatureGate:    &configv1.FeatureGateSpec{},
+				Image:          &configv1.ImageSpec{},
+				Proxy:          &configv1.ProxySpec{},
+			},
+			expectedOutput: expectedGlobalConfigStringWhenEmpty,
+		},
+		{
+			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honour backward compatibility expectation (see code comment)",
+			globalConfig: &hyperv1.ClusterConfiguration{
+				APIServer:      &configv1.APIServerSpec{},
+				Authentication: &configv1.AuthenticationSpec{},
+				FeatureGate:    &configv1.FeatureGateSpec{},
+				Image: &configv1.ImageSpec{
+					AllowedRegistriesForImport: []configv1.RegistryLocation{},
+					ExternalRegistryHostnames:  []string{"external registry"},
+					AdditionalTrustedCA:        configv1.ConfigMapNameReference{},
+					RegistrySources:            configv1.RegistrySources{},
+				},
+				Proxy: &configv1.ProxySpec{
+					HTTPProxy:          "proxy",
+					HTTPSProxy:         "",
+					NoProxy:            "noProxy",
+					ReadinessEndpoints: []string{},
+					TrustedCA:          configv1.ConfigMapNameReference{},
+				},
+			},
+			expectedOutput: expectedGlobalConfigStringWithValues,
+		},
+	}
+
+	for _, tc := range testCases {
+		hcluster := &hyperv1.HostedCluster{
+			Spec: hyperv1.HostedClusterSpec{
+				Configuration: tc.globalConfig,
+			},
+		}
+
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			output, err := globalConfigString(hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
+			if diff := cmp.Diff(output, tc.expectedOutput); diff != "" {
+				t.Errorf("actual config differs from expected: %s", diff)
+			}
 		})
 	}
 }

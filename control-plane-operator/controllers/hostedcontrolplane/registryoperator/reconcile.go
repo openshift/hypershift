@@ -5,22 +5,24 @@ import (
 	"path"
 	"text/template"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
@@ -97,17 +99,21 @@ var (
 )
 
 type Params struct {
-	operatorImage    string
-	tokenMinterImage string
-	platform         hyperv1.PlatformType
-	issuerURL        string
-	releaseVersion   string
-	registryImage    string
-	prunerImage      string
-	deploymentConfig config.DeploymentConfig
+	operatorImage            string
+	tokenMinterImage         string
+	platform                 hyperv1.PlatformType
+	issuerURL                string
+	releaseVersion           string
+	registryImage            string
+	prunerImage              string
+	deploymentConfig         config.DeploymentConfig
+	AzureClientID            string
+	AzureTenantID            string
+	AzureCertificateName     string
+	AzureCredentialsFilepath string
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	params := Params{
 		operatorImage:    releaseImageProvider.GetImage("cluster-image-registry-operator"),
 		tokenMinterImage: releaseImageProvider.GetImage("token-minter"),
@@ -143,11 +149,18 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			},
 		},
 	}
+
+	if azureutil.IsAroHCP() {
+		params.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
+		params.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName
+		params.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName
+	}
+
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		params.deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), pointer.Int(1))
+	params.deploymentConfig.SetDefaults(hcp, selectorLabels(), ptr.To(1))
 	params.deploymentConfig.SetReleaseImageAnnotation(util.HCPControlPlaneReleaseImage(hcp))
 	return params
 }
@@ -165,7 +178,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				Labels: selectorLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					util.BuildContainer(containerMain(), buildMainContainer(params.operatorImage, params.registryImage, params.prunerImage, params.releaseVersion)),
 					util.BuildContainer(containerClientTokenMinter(), buildClientTokenMinter(params.tokenMinterImage, params.issuerURL)),
@@ -191,6 +204,28 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 				Name:      volumeWebIdentityToken().Name,
 				MountPath: "/var/run/secrets/openshift/serviceaccount",
 			},
+		)
+	}
+	// For managed azure deployments, we pass environment variables so we authenticate with Azure API through certificate
+	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
+	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
+	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	if azureutil.IsAroHCP() {
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName, params.AzureCredentialsFilepath)...)
+
+		if deployment.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
+		}
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName),
+		)
+
+		if deployment.Spec.Template.Spec.Volumes == nil {
+			deployment.Spec.Template.Spec.Volumes = []corev1.Volume{}
+		}
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName, config.ManagedAzureImageRegistrySecretStoreProviderClassName),
 		)
 	}
 
@@ -353,7 +388,7 @@ func volumeServingCert() *corev1.Volume {
 func buildVolumeServingCert(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.ImageRegistryOperatorServingCert("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -366,7 +401,7 @@ func volumeAdminKubeconfig() *corev1.Volume {
 func buildVolumeAdminKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KASServiceKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -379,7 +414,7 @@ func volumeCABundle() *corev1.Volume {
 func buildVolumeCABundle(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.RootCASecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -404,16 +439,14 @@ func ReconcilePodMonitor(pm *prometheusoperatorv1.PodMonitor, clusterID string, 
 			Port:     "metrics",
 			Path:     "/metrics",
 			Scheme:   "https",
-			TLSConfig: &prometheusoperatorv1.PodMetricsEndpointTLSConfig{
-				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: metricsHostname,
-					CA: prometheusoperatorv1.SecretOrConfigMap{
-						ConfigMap: &corev1.ConfigMapKeySelector{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: manifests.RootCAConfigMap(pm.Namespace).Name,
-							},
-							Key: certs.CASignerCertMapKey,
+			TLSConfig: &prometheusoperatorv1.SafeTLSConfig{
+				ServerName: ptr.To(metricsHostname),
+				CA: prometheusoperatorv1.SecretOrConfigMap{
+					ConfigMap: &corev1.ConfigMapKeySelector{
+						LocalObjectReference: corev1.LocalObjectReference{
+							Name: manifests.RootCAConfigMap(pm.Namespace).Name,
 						},
+						Key: certs.CASignerCertMapKey,
 					},
 				},
 			},

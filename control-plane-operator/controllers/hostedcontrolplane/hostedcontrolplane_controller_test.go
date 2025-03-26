@@ -6,30 +6,45 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
+	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	"github.com/openshift/hypershift/support/api"
+	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/testutil"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
+	routev1 "github.com/openshift/api/route/v1"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/go-logr/zapr"
-	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
-	imagev1 "github.com/openshift/api/image/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/api"
-	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
-	"github.com/openshift/hypershift/support/testutil"
-	"github.com/openshift/hypershift/support/util"
-	"go.uber.org/zap/zaptest"
+
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +54,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -50,7 +66,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/yaml"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap/zaptest"
 )
 
 type fakeEC2Client struct {
@@ -226,8 +243,8 @@ func TestReconcileAPIServerService(t *testing.T) {
 		APIVersion:         "hypershift.openshift.io/v1beta1",
 		Kind:               "HostedControlPlane",
 		Name:               "test",
-		Controller:         pointer.Bool(true),
-		BlockOwnerDeletion: pointer.Bool(true),
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
 	}
 	kasPublicService := func(m ...func(*corev1.Service)) corev1.Service {
 		svc := corev1.Service{
@@ -558,10 +575,10 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 		},
 		"contains all optional parameters": {
 			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        pointer.Int32(100),
-				MaxPodGracePeriod:    pointer.Int32(300),
+				MaxNodesTotal:        ptr.To[int32](100),
+				MaxPodGracePeriod:    ptr.To[int32](300),
 				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: pointer.Int32(-5),
+				PodPriorityThreshold: ptr.To[int32](-5),
 			},
 			ExpectedArgs: []string{
 				"--cloud-provider=clusterapi",
@@ -632,7 +649,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -672,7 +689,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      1,
@@ -718,7 +735,7 @@ func TestEtcdRestoredCondition(t *testing.T) {
 					Namespace: "thens",
 				},
 				Spec: appsv1.StatefulSetSpec{
-					Replicas: pointer.Int32(3),
+					Replicas: ptr.To[int32](3),
 				},
 				Status: appsv1.StatefulSetStatus{
 					Replicas:      3,
@@ -967,7 +984,7 @@ func TestEventHandling(t *testing.T) {
 		Build(),
 	}
 
-	readyInfraStatus := InfrastructureStatus{
+	readyInfraStatus := infra.InfrastructureStatus{
 		APIHost:          "foo",
 		APIPort:          1,
 		OAuthHost:        "foo",
@@ -985,7 +1002,7 @@ func TestEventHandling(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
-		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
 		ec2Client: &fakeEC2Client{},
@@ -1043,11 +1060,11 @@ func (t *createTrackingClient) Create(ctx context.Context, o client.Object, opts
 
 type createTrackingWorkqueue struct {
 	items []reconcile.Request
-	workqueue.RateLimitingInterface
+	workqueue.TypedRateLimitingInterface[reconcile.Request]
 }
 
-func (c *createTrackingWorkqueue) Add(item interface{}) {
-	c.items = append(c.items, item.(reconcile.Request))
+func (c *createTrackingWorkqueue) Add(item reconcile.Request) {
+	c.items = append(c.items, item)
 }
 
 func TestReconcileRouter(t *testing.T) {
@@ -1055,10 +1072,13 @@ func TestReconcileRouter(t *testing.T) {
 
 	const namespace = "test"
 	routerCfg := manifests.RouterConfigurationConfigMap(namespace)
-	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+	err := ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
 	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
+	if err != nil {
+		t.Fatalf("%s", err.Error())
+	}
 
 	testCases := []struct {
 		name                         string
@@ -1078,7 +1098,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1103,7 +1123,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1129,7 +1149,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1158,7 +1178,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1182,7 +1202,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1212,7 +1232,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1242,7 +1262,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1260,6 +1280,16 @@ func TestReconcileRouter(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			apiServerService := hyperv1.ServicePublishingStrategyMapping{
+				Service: hyperv1.APIServer,
+			}
+			if tc.exposeAPIServerThroughRouter {
+				apiServerService.Type = hyperv1.Route
+				apiServerService.Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: "example.com",
+				}
+			}
+
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1272,6 +1302,7 @@ func TestReconcileRouter(t *testing.T) {
 							EndpointAccess: tc.endpointAccess,
 						},
 					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{apiServerService},
 				},
 			}
 
@@ -1284,8 +1315,16 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
-			if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate, tc.exposeAPIServerThroughRouter, "privateRouterHost", "publicRouterHost"); err != nil {
-				t.Fatalf("reconcileRouter failed: %v", err)
+			if useHCPRouter(hcp) {
+				if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate); err != nil {
+					t.Fatalf("reconcileRouter failed: %v", err)
+				}
+				if err := r.admitHCPManagedRoutes(ctx, hcp, "privateRouterHost", "publicRouterHost"); err != nil {
+					t.Fatalf("admitHCPManagedRoutes failed: %v", err)
+				}
+				if err := r.cleanupOldRouterResources(ctx, hcp); err != nil {
+					t.Fatalf("cleanupOldRouterResources failed: %v", err)
+				}
 			}
 
 			var deployments appsv1.DeploymentList
@@ -1320,8 +1359,8 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
-		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (InfrastructureStatus, error) {
-			return InfrastructureStatus{}, nil
+		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
+			return infra.InfrastructureStatus{}, nil
 		},
 		ec2Client: &fakeEC2Client{},
 	}
@@ -1380,7 +1419,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 		expectedServices             []corev1.Service
 	}{
 		{
-			name:                         "Public HCP gets public LB ony",
+			name:                         "Public HCP gets public LB only",
 			endpointAccess:               hyperv1.Public,
 			exposeAPIServerThroughRouter: true,
 			expectedServices: []corev1.Service{
@@ -1571,4 +1610,269 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
+// This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
+func TestControlPlaneComponents(t *testing.T) {
+	reconciler := &HostedControlPlaneReconciler{
+		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+	reconciler.registerComponents()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+			Labels: map[string]string{
+				"cluster.x-k8s.io/cluster-name": "cluster_name",
+			},
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				FeatureGate: &configv1.FeatureGateSpec{},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR("10.132.0.0/14"),
+					},
+				},
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+				Azure: &hyperv1.AzurePlatformSpec{
+					SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
+					SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
+					VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+				},
+				OpenStack: &hyperv1.OpenStackPlatformSpec{
+					IdentityRef: hyperv1.OpenStackIdentityReference{
+						Name: "fake-cloud-credentials-secret",
+					},
+				},
+				PowerVS: &hyperv1.PowerVSPlatformSpec{
+					VPC: &hyperv1.PowerVSVPC{},
+				},
+			},
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+		},
+	}
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                  context.Background(),
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{
+						"io.openshift.release": "4.16.10",
+					},
+				},
+			},
+			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		HCP:                    hcp,
+		SkipPredicate:          true,
+		SkipCertificateSigning: true,
+	}
+	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
+		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
+		// This needs to be defined here, to avoid loopDetector reporting a no-op update, as changing the featureset will actually cause an update.
+		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
+
+		for _, component := range reconciler.components {
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
+			if err != nil {
+				t.Fatalf("failed to generate fake objects: %v", err)
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(fakeObjects...).
+				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+				Build()
+			cpContext.Client = fakeClient
+
+			// Reconcile multiple times to make sure multiple runs don't produce different results,
+			// and to check if resrouces are making a no-op update calls.
+			for range 2 {
+				if err := component.Reconcile(cpContext); err != nil {
+					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+				}
+			}
+
+			var deployments appsv1.DeploymentList
+			if err := fakeClient.List(context.Background(), &deployments); err != nil {
+				t.Fatalf("failed to list deployments: %v", err)
+			}
+
+			var statfulsets appsv1.StatefulSetList
+			if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
+				t.Fatalf("failed to list statfulsets: %v", err)
+			}
+
+			var cronJobs batchv1.CronJobList
+			if err := fakeClient.List(context.Background(), &cronJobs); err != nil {
+				t.Fatalf("failed to list cronJobs: %v", err)
+			}
+
+			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 {
+				t.Fatalf("expected one of deployment, statefulSet or cronJob to exist for component %s", component.Name())
+			}
+
+			var workload client.Object
+			if len(deployments.Items) > 0 {
+				workload = &deployments.Items[0]
+			} else if len(statfulsets.Items) > 0 {
+				workload = &statfulsets.Items[0]
+			} else {
+				workload = &cronJobs.Items[0]
+			}
+
+			yaml, err := util.SerializeResource(workload, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var suffix = ""
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
+
+			controlPaneComponent := &hyperv1.ControlPlaneComponent{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      component.Name(),
+					Namespace: hcp.Namespace,
+				},
+			}
+			if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+				t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
+			}
+
+			// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+			for i := range controlPaneComponent.Status.Conditions {
+				controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+			}
+
+			yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			suffix = "_component"
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_component_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
+		}
+
+		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+			t.Fatalf("update loop detected: %v", err)
+		}
+	}
+
+}
+
+func componentsFakeObjects(namespace string) ([]client.Object, error) {
+	rootCA := manifests.RootCASecret(namespace)
+	rootCA.Data = map[string][]byte{
+		certs.CASignerCertMapKey: []byte("fake"),
+	}
+	authenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(namespace)
+	authenticatorCertSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	bootsrapCertSecret := manifests.KASMachineBootstrapClientCertSecret(namespace)
+	bootsrapCertSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	adminCertSecert := manifests.SystemAdminClientCertSecret(namespace)
+	adminCertSecert.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+	hccoCertSecert := manifests.HCCOClientCertSecret(namespace)
+	hccoCertSecert.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+
+	azureCredentialsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-credential-information",
+			Namespace: "hcp-namespace",
+		},
+	}
+
+	cloudCredsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "fake-cloud-credentials-secret",
+			Namespace: namespace,
+		},
+	}
+
+	csrSigner := manifests.CSRSignerCASecret(namespace)
+	csrSigner.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
+
+	return []client.Object{
+		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
+		manifests.KubeControllerManagerClientCertSecret(namespace),
+		manifests.KubeSchedulerClientCertSecret(namespace),
+		azureCredentialsSecret,
+		cloudCredsSecret,
+		csrSigner,
+	}, nil
+}
+
+func componentsFakeDependencies(componentName string, namespace string) []client.Object {
+	var fakeComponents []client.Object
+
+	// we need this to exist for components to reconcile
+	fakeComponentTemplate := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+		},
+		Status: hyperv1.ControlPlaneComponentStatus{
+			Version: testutil.FakeImageProvider().Version(),
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.ControlPlaneComponentAvailable),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+	}
+
+	// all components depend on KAS and KAS depends on etcd.
+	if componentName == kasv2.ComponentName {
+		fakeComponentTemplate.Name = etcdv2.ComponentName
+	} else {
+		fakeComponentTemplate.Name = kasv2.ComponentName
+	}
+	fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+
+	if componentName != oapiv2.ComponentName {
+		fakeComponentTemplate.Name = oapiv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+	}
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "hcp-namespace"},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{}`),
+		},
+	}
+
+	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
+
+	return fakeComponents
 }

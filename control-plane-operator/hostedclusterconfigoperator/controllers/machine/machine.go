@@ -9,17 +9,20 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
-	kubevirtv1 "kubevirt.io/api/core/v1"
+	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 const (
@@ -130,7 +133,7 @@ func (r *reconciler) reconcileKubevirtPassthroughService(ctx context.Context, hc
 		ports = append(ports, discoveryv1.EndpointPort{
 			Name:     &port.Name,
 			Protocol: &port.Protocol,
-			Port:     pointer.Int32(int32(port.TargetPort.IntValue())),
+			Port:     ptr.To(int32(port.TargetPort.IntValue())),
 		})
 	}
 
@@ -165,7 +168,7 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 	}
 	result, err := r.CreateOrUpdate(ctx, r.kubevirtInfraClient, endpointSlice, func() error {
 		if len(endpointSlice.OwnerReferences) == 0 {
-			// Machine infra ref is the KubevirtMachine wich has the same name
+			// Machine infra ref is the KubevirtMachine which has the same name
 			// as the kubevirt VirtualMachine CRD, but the namespace ca
 			// can be different if kubevirt infra cluster is external
 			vmKey := client.ObjectKey{
@@ -249,14 +252,14 @@ func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.C
 func machinePhaseToEndpointConditions(machine *capiv1.Machine) discoveryv1.EndpointConditions {
 	if machine.Status.GetTypedPhase() == capiv1.MachinePhaseRunning {
 		return discoveryv1.EndpointConditions{
-			Ready:       pointer.Bool(true),
-			Serving:     pointer.Bool(true),
-			Terminating: pointer.Bool(false),
+			Ready:       ptr.To(true),
+			Serving:     ptr.To(true),
+			Terminating: ptr.To(false),
 		}
 	}
 	return discoveryv1.EndpointConditions{
-		Ready:       pointer.Bool(false),
-		Serving:     pointer.Bool(false),
-		Terminating: pointer.Bool(false),
+		Ready:       ptr.To(false),
+		Serving:     ptr.To(false),
+		Terminating: ptr.To(false),
 	}
 }

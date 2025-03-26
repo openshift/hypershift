@@ -8,8 +8,6 @@ import (
 	_ "embed"
 	"testing"
 
-	. "github.com/onsi/gomega"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -72,6 +70,10 @@ func (mc *NTOMachineConfigRolloutTest) Setup(t *testing.T) {
 	if globalOpts.Platform == hyperv1.KubevirtPlatform {
 		t.Skip("test is being skipped for KubeVirt platform until https://issues.redhat.com/browse/CNV-38196 is addressed")
 	}
+
+	if globalOpts.Platform == hyperv1.OpenStackPlatform {
+		t.Skip("test is being skipped for OpenStack platform until https://issues.redhat.com/browse/OSASINFRA-3566 is addressed")
+	}
 }
 
 func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -96,8 +98,6 @@ func (mc *NTOMachineConfigRolloutTest) BuildNodePoolManifest(defaultNodepool hyp
 }
 
 func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
-	g := NewWithT(t)
-
 	ctx := mc.ctx
 
 	tuningConfigConfigMap := &corev1.ConfigMap{
@@ -130,9 +130,9 @@ func (mc *NTOMachineConfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePo
 		}
 	}
 
+	e2eutil.WaitForNodePoolConfigUpdateComplete(t, ctx, mc.mgmtClient, &nodePool)
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
 	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
-	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
 	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mc.mgmtClient, mc.hostedCluster)

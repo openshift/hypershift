@@ -4,18 +4,18 @@ import (
 	"fmt"
 	"path"
 
-	"k8s.io/utils/pointer"
-
-	configv1 "github.com/openshift/api/config/v1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -52,12 +52,12 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 				Labels: labels,
 			},
 			Spec: corev1.PodSpec{
-				// Default is not the default, it means that the kubelets will re-use the hosts DNS resolver
+				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
 				DNSPolicy:                    corev1.DNSDefault,
 				HostNetwork:                  true,
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				SecurityContext: &corev1.PodSecurityContext{
-					RunAsUser: pointer.Int64(1000),
+					RunAsUser: ptr.To[int64](1000),
 				},
 				Containers: []corev1.Container{
 					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port, proxy)),
@@ -161,13 +161,13 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 func buildKonnectivityVolumeWorkerAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
 func buildKonnectivityVolumeCACert(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }

@@ -4,15 +4,17 @@ import (
 	"context"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 
-	corev1 "k8s.io/api/core/v1"
-
 	imagev1 "github.com/openshift/api/image/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -23,6 +25,7 @@ type FakeReleaseProvider struct {
 	Version string
 	// Allows image-based versioning
 	ImageVersion map[string]string
+	Components   map[string]string
 }
 
 func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
@@ -49,6 +52,10 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 					},
 					{
 						Name: util.AvailabilityProberImageName,
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: haproxy.HAProxyRouterImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},
 				},
@@ -87,6 +94,14 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 			},
 		},
 	}
+
+	for name, image := range f.Components {
+		releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+			Name: name,
+			From: &corev1.ObjectReference{Name: image},
+		})
+	}
+
 	if len(f.ImageVersion) == 0 {
 		if f.Version != "" {
 			releaseImage.ImageStream.Name = f.Version

@@ -2,11 +2,12 @@ package aws
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -14,8 +15,11 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/util"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
@@ -23,26 +27,32 @@ import (
 )
 
 type RawCreateOptions struct {
-	Credentials                 awsutil.AWSCredentialsOptions
-	CredentialSecretName        string
-	AdditionalTags              []string
-	IAMJSON                     string
-	InstanceType                string
-	IssuerURL                   string
-	PrivateZoneID               string
-	PublicZoneID                string
-	Region                      string
-	RootVolumeIOPS              int64
-	RootVolumeSize              int64
-	RootVolumeType              string
-	RootVolumeEncryptionKey     string
-	EndpointAccess              string
-	Zones                       []string
-	EtcdKMSKeyARN               string
-	EnableProxy                 bool
-	ProxyVPCEndpointServiceName string
-	SingleNATGateway            bool
-	MultiArch                   bool
+	Credentials                  awsutil.AWSCredentialsOptions
+	CredentialSecretName         string
+	AdditionalTags               []string
+	IAMJSON                      string
+	InstanceType                 string
+	IssuerURL                    string
+	PrivateZoneID                string
+	PublicZoneID                 string
+	Region                       string
+	RootVolumeIOPS               int64
+	RootVolumeSize               int64
+	RootVolumeType               string
+	RootVolumeEncryptionKey      string
+	EndpointAccess               string
+	Zones                        []string
+	EtcdKMSKeyARN                string
+	EnableProxy                  bool
+	EnableSecureProxy            bool
+	ProxyVPCEndpointServiceName  string
+	SingleNATGateway             bool
+	MultiArch                    bool
+	VPCCIDR                      string
+	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount bool
+	PublicOnly                   bool
+	AutoNode                     bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -60,6 +70,10 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, err
 	}
 
+	if o.EnableProxy && o.EnableSecureProxy {
+		return nil, errors.New("use --enable-proxy or --enable-secure-proxy but not both")
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -75,6 +89,7 @@ type completedCreateOptions struct {
 	iamInfo           *awsinfra.CreateIAMOutput
 	arch              string
 	externalDNSDomain string
+	namespace         string
 }
 
 type CreateOptions struct {
@@ -88,6 +103,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			ValidatedCreateOptions: o,
 			arch:                   opts.Arch,
 			externalDNSDomain:      opts.ExternalDNSDomain,
+			namespace:              opts.Namespace,
 		},
 	}
 
@@ -180,6 +196,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			*into = value
 		}
 	}
+
 	return output, nil
 }
 
@@ -234,12 +251,47 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			EndpointAccess: endpointAccess,
 		},
 	}
+	if o.AutoNode {
+		cluster.Spec.AutoNode = &hyperv1.AutoNode{
+			Provisioner: &hyperv1.ProvisionerConfig{
+				Name: hyperv1.ProvisionerKarpeneter,
+				Karpenter: &hyperv1.KarpenterConfig{
+					Platform: hyperv1.AWSPlatform,
+					AWS: &hyperv1.KarpenterAWSConfig{
+						RoleARN: o.iamInfo.KarpenterRoleARN,
+					},
+				},
+			},
+		}
+	}
 
-	if o.infra.ProxyAddr != "" {
+	if o.iamInfo.SharedIngressRoleARN != "" && o.iamInfo.SharedControlPlaneRoleARN != "" {
+		cluster.Spec.Platform.AWS.SharedVPC = &hyperv1.AWSSharedVPC{
+			RolesRef: hyperv1.AWSSharedVPCRolesRef{
+				IngressARN:      o.iamInfo.SharedIngressRoleARN,
+				ControlPlaneARN: o.iamInfo.SharedControlPlaneRoleARN,
+			},
+			LocalZoneID: o.infra.LocalZoneID,
+		}
+		cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals = append(cluster.Spec.Platform.AWS.AdditionalAllowedPrincipals,
+			o.iamInfo.SharedControlPlaneRoleARN)
+	}
+
+	switch {
+	case o.infra.SecureProxyAddr != "":
+		cluster.Spec.Configuration.Proxy = &configv1.ProxySpec{
+			HTTPProxy:  o.infra.ProxyAddr,
+			HTTPSProxy: o.infra.SecureProxyAddr,
+		}
+	case o.infra.ProxyAddr != "":
 		cluster.Spec.Configuration.Proxy = &configv1.ProxySpec{
 			HTTPProxy:  o.infra.ProxyAddr,
 			HTTPSProxy: o.infra.ProxyAddr,
 		}
+
+	}
+	if cluster.Spec.Configuration.Proxy != nil && o.infra.ProxyCA != "" {
+		cluster.Spec.Configuration.Proxy.TrustedCA.Name = o.proxyCAConfigMapName()
 	}
 
 	if len(o.iamInfo.KMSProviderRoleARN) > 0 {
@@ -290,6 +342,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		}
 	}
 
+	if o.infra.PublicOnly {
+		if cluster.Annotations == nil {
+			cluster.Annotations = map[string]string{}
+		}
+		cluster.Annotations[hyperv1.AWSMachinePublicIPs] = "true"
+	}
+
 	return nil
 }
 
@@ -331,8 +390,35 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	return nodePools
 }
 
+func (o *CreateOptions) proxyCAConfigMapName() string {
+	return fmt.Sprintf("%s-proxy-ca", o.infra.Name)
+}
+
+func (o *CreateOptions) proxyPrivateSSHKeySecretName() string {
+	return fmt.Sprintf("%s-proxy-ssh-key", o.infra.Name)
+}
+
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	return nil, nil
+	var result []client.Object
+	if o.infra.ProxyCA != "" {
+		cm := util.ConfigMapResource(o.namespace, o.proxyCAConfigMapName())
+		cm.Data = map[string]string{
+			"ca-bundle.crt": o.infra.ProxyCA,
+		}
+		result = append(result, cm)
+	}
+	if len(o.infra.ProxyPrivateSSHKey) > 0 {
+		decodedKey, err := base64.StdEncoding.DecodeString(o.infra.ProxyPrivateSSHKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode proxy private ssh key: %w", err)
+		}
+		secret := util.SecretResource(o.namespace, o.proxyPrivateSSHKeySecretName())
+		secret.Data = map[string][]byte{
+			"privatekey": decodedKey,
+		}
+		result = append(result, secret)
+	}
+	return result, nil
 }
 
 func DefaultOptions() *RawCreateOptions {
@@ -360,11 +446,16 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	flags.StringVar(&opts.EndpointAccess, "endpoint-access", opts.EndpointAccess, "Access for control plane endpoints (Public, PublicAndPrivate, Private)")
 	flags.StringVar(&opts.EtcdKMSKeyARN, "kms-key-arn", opts.EtcdKMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
-	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If a proxy should be set up, rather than allowing direct internet access from the nodes")
+	flags.BoolVar(&opts.EnableProxy, "enable-proxy", opts.EnableProxy, "If true, a proxy should be set up, rather than allowing direct internet access from the nodes")
+	flags.BoolVar(&opts.EnableSecureProxy, "enable-secure-proxy", opts.EnableSecureProxy, "If true, a secure proxy should be set up, rather than allowing direct internet access from the nodes")
 	flags.StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
+	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support AutoNode feature.")
+	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
+	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
+	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
@@ -374,6 +465,7 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.IAMJSON, "iam-json", opts.IAMJSON, "Path to file containing IAM information for the cluster. If not specified, IAM will be created")
 	flags.BoolVar(&opts.SingleNATGateway, "single-nat-gateway", opts.SingleNATGateway, "If enabled, only a single NAT gateway is created, even if multiple zones are specified")
 	opts.Credentials.BindFlags(flags)
+	opts.VPCOwnerCredentials.BindVPCOwnerFlags(flags)
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
@@ -407,32 +499,39 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOptions) awsinfra.CreateInfraOptions {
 	return awsinfra.CreateInfraOptions{
-		Region:                      awsOpts.Region,
-		InfraID:                     opts.InfraID,
-		AWSCredentialsOpts:          awsOpts.Credentials,
-		Name:                        opts.Name,
-		BaseDomain:                  opts.BaseDomain,
-		BaseDomainPrefix:            opts.BaseDomainPrefix,
-		AdditionalTags:              awsOpts.AdditionalTags,
-		Zones:                       awsOpts.Zones,
-		EnableProxy:                 awsOpts.EnableProxy,
-		ProxyVPCEndpointServiceName: awsOpts.ProxyVPCEndpointServiceName,
-		SSHKeyFile:                  opts.SSHKeyFile,
-		SingleNATGateway:            awsOpts.SingleNATGateway,
+		Region:                       awsOpts.Region,
+		InfraID:                      opts.InfraID,
+		AWSCredentialsOpts:           awsOpts.Credentials,
+		Name:                         opts.Name,
+		BaseDomain:                   opts.BaseDomain,
+		BaseDomainPrefix:             opts.BaseDomainPrefix,
+		AdditionalTags:               awsOpts.AdditionalTags,
+		Zones:                        awsOpts.Zones,
+		EnableProxy:                  awsOpts.EnableProxy,
+		EnableSecureProxy:            awsOpts.EnableSecureProxy,
+		ProxyVPCEndpointServiceName:  awsOpts.ProxyVPCEndpointServiceName,
+		SingleNATGateway:             awsOpts.SingleNATGateway,
+		VPCCIDR:                      awsOpts.VPCCIDR,
+		VPCOwnerCredentialOpts:       awsOpts.VPCOwnerCredentials,
+		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
+		PublicOnly:                   awsOpts.PublicOnly,
 	}
 }
 
 func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInfraOutput) awsinfra.CreateIAMOptions {
 	return awsinfra.CreateIAMOptions{
-		Region:             awsOpts.Region,
-		AWSCredentialsOpts: awsOpts.Credentials,
-		InfraID:            infra.InfraID,
-		IssuerURL:          awsOpts.IssuerURL,
-		AdditionalTags:     awsOpts.AdditionalTags,
-		PrivateZoneID:      infra.PrivateZoneID,
-		PublicZoneID:       infra.PublicZoneID,
-		LocalZoneID:        infra.LocalZoneID,
-		KMSKeyARN:          awsOpts.EtcdKMSKeyARN,
+		Region:                       awsOpts.Region,
+		AWSCredentialsOpts:           awsOpts.Credentials,
+		InfraID:                      infra.InfraID,
+		IssuerURL:                    awsOpts.IssuerURL,
+		AdditionalTags:               awsOpts.AdditionalTags,
+		PrivateZoneID:                infra.PrivateZoneID,
+		PublicZoneID:                 infra.PublicZoneID,
+		LocalZoneID:                  infra.LocalZoneID,
+		KMSKeyARN:                    awsOpts.EtcdKMSKeyARN,
+		VPCOwnerCredentialsOpts:      awsOpts.VPCOwnerCredentials,
+		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
+		CreateKarpenterRoleARN:       awsOpts.AutoNode,
 	}
 }
 
@@ -457,5 +556,8 @@ func validateAWSOptions(ctx context.Context, opts *core.CreateOptions, awsOpts *
 		return err
 	}
 
+	if err := awsutil.ValidateVPCCIDR(awsOpts.VPCCIDR); err != nil {
+		return err
+	}
 	return nil
 }

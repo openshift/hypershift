@@ -24,6 +24,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/cluster-api/util/topology"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -53,7 +54,7 @@ var _ webhook.CustomDefaulter = &AzureMachineTemplate{}
 var _ webhook.CustomValidator = &AzureMachineTemplate{}
 
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *AzureMachineTemplate) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
 	t := obj.(*AzureMachineTemplate)
 	spec := t.Spec.Template.Spec
 
@@ -83,6 +84,10 @@ func (r *AzureMachineTemplate) ValidateCreate(ctx context.Context, obj runtime.O
 		if networkInterface.PrivateIPConfigs < 1 {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "networkInterfaces", "privateIPConfigs"), r.Spec.Template.Spec.NetworkInterfaces[i].PrivateIPConfigs, "networkInterface privateIPConfigs must be set to a minimum value of 1"))
 		}
+	}
+
+	if ptr.Deref(r.Spec.Template.Spec.DisableExtensionOperations, false) && len(r.Spec.Template.Spec.VMExtensions) > 0 {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("AzureMachineTemplate", "spec", "template", "spec", "vmExtensions"), "VMExtensions must be empty when DisableExtensionOperations is true"))
 	}
 
 	if len(allErrs) == 0 {
@@ -137,17 +142,16 @@ func (r *AzureMachineTemplate) ValidateUpdate(ctx context.Context, oldRaw runtim
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+func (r *AzureMachineTemplate) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
 	return nil, nil
 }
 
 // Default implements webhookutil.defaulter so a webhook will be registered for the type.
-func (r *AzureMachineTemplate) Default(ctx context.Context, obj runtime.Object) error {
+func (r *AzureMachineTemplate) Default(_ context.Context, obj runtime.Object) error {
 	t := obj.(*AzureMachineTemplate)
 	if err := t.Spec.Template.Spec.SetDefaultSSHPublicKey(); err != nil {
 		ctrl.Log.WithName("SetDefault").Error(err, "SetDefaultSSHPublicKey failed")
 	}
-	t.Spec.Template.Spec.SetDefaultCachingType()
 	t.Spec.Template.Spec.SetDataDisksDefaults()
 	t.Spec.Template.Spec.SetNetworkInterfacesDefaults()
 	return nil

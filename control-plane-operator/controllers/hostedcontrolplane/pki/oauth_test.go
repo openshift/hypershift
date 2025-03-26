@@ -3,13 +3,13 @@ package pki
 import (
 	"testing"
 
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
-
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileOAuthServerCert(t *testing.T) {
@@ -37,7 +37,7 @@ func TestReconcileOAuthServerCert(t *testing.T) {
 			Kind:       "Deployment",
 			Name:       "dummy",
 			UID:        types.UID("12345abcdef"),
-			Controller: pointer.Bool(true),
+			Controller: ptr.To(true),
 		},
 	}
 

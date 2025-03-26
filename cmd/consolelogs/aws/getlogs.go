@@ -8,16 +8,18 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/types"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+
+	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/spf13/cobra"
 )
 
 type ConsoleLogOpts struct {
@@ -45,8 +47,8 @@ func NewCommand() *cobra.Command {
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 
-	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("output-dir")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("output-dir")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

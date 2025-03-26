@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-
 	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestProcessPausedUntilField(t *testing.T) {
@@ -29,25 +30,25 @@ func TestProcessPausedUntilField(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field is later than time.Now then reconciliation is paused",
-			inputPausedField: pointer.String(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
+			inputPausedField: ptr.To(now.Add(4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   true,
 			expectedDuration: 4 * time.Hour,
 		},
 		{
 			name:             "if pausedUntil field is before time.Now then reconciliation is not paused",
-			inputPausedField: pointer.String(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
+			inputPausedField: ptr.To(now.Add(-4 * time.Hour).Format(time.RFC3339Nano)),
 			expectedPaused:   false,
 			expectedDuration: -(4 * time.Hour),
 		},
 		{
 			name:             "if pausedUntil field is true then reconciliation is paused",
-			inputPausedField: pointer.String("true"),
+			inputPausedField: ptr.To("true"),
 			expectedPaused:   true,
 			expectedDuration: time.Duration(0),
 		},
 		{
 			name:             "if pausedUntil field has an improper value then reconciliation is not paused",
-			inputPausedField: pointer.String("badValue"),
+			inputPausedField: ptr.To("badValue"),
 			expectedPaused:   false,
 			expectedDuration: time.Duration(0),
 			expectedError:    true,
@@ -66,8 +67,8 @@ func TestProcessPausedUntilField(t *testing.T) {
 
 func TestGenerateReconciliationPausedCondition(t *testing.T) {
 	fakeInputGeneration := int64(5)
-	fakeFutureDate := pointer.String(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
-	fakePastDate := pointer.String(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
+	fakeFutureDate := ptr.To(time.Now().Add(4 * time.Hour).Format(time.RFC3339))
+	fakePastDate := ptr.To(time.Now().Add(-4 * time.Hour).Format(time.RFC3339))
 	testsCases := []struct {
 		name              string
 		inputPausedField  *string
@@ -108,7 +109,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field is true then ReconciliationActive condition is false",
-			inputPausedField: pointer.String("true"),
+			inputPausedField: ptr.To("true"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
 				Status:             metav1.ConditionFalse,
@@ -119,7 +120,7 @@ func TestGenerateReconciliationPausedCondition(t *testing.T) {
 		},
 		{
 			name:             "if pausedUntil field has an improper value then ReconciliationActive condition is true with a reason indicating invalid value provided",
-			inputPausedField: pointer.String("badValue"),
+			inputPausedField: ptr.To("badValue"),
 			expectedCondition: metav1.Condition{
 				Type:               string(hyperv1.ReconciliationActive),
 				Status:             metav1.ConditionTrue,

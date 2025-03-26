@@ -12,24 +12,26 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
-
 	hyperapi "github.com/openshift/hypershift/support/api"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	etcdclient "go.etcd.io/etcd/client/v3"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/spf13/cobra"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	etcdclient "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -57,7 +59,7 @@ func NewRecoveryCommand() *cobra.Command {
 		Short:        "Commands to report on etcd status and recover member that is not functional",
 		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -66,8 +68,12 @@ func NewRecoveryCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.etcdClientKeyFile, "etcd-client-key", opts.etcdClientKeyFile, "etcd client cert key file.")
 	cmd.PersistentFlags().StringVar(&opts.etcdCAFile, "etcd-ca-cert", opts.etcdCAFile, "etcd trusted CA cert file.")
 	cmd.PersistentFlags().StringVar(&opts.namespace, "namespace", "", "namespace of etcd cluster")
-	_ = cmd.MarkFlagRequired("etcd-endpoints")
-	_ = cmd.MarkFlagRequired("namespace")
+
+	err := cmd.MarkPersistentFlagRequired("namespace")
+	if err != nil {
+		cmd.PrintErrf("error setting up namespace flag as required: %v\n", err)
+		os.Exit(1)
+	}
 
 	cmd.AddCommand(NewStatusCommand(&opts))
 	cmd.AddCommand(NewRunCommand(&opts))

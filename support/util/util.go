@@ -12,22 +12,30 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	"github.com/blang/semver"
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
 const (
@@ -39,6 +47,18 @@ const (
 	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
 	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
 )
+
+type JSONMapper func(jsonData []byte) []byte
+
+// NewOmitFieldIfEmptyJSONMapper is a JSONMapper that omits the given field
+// in case it was empty.
+func NewOmitFieldIfEmptyJSONMapper(field string) JSONMapper {
+	return func(data []byte) []byte {
+		stringData := string(data)
+		stringData = RemoveEmptyJSONField(stringData, field)
+		return []byte(stringData)
+	}
+}
 
 // ParseNamespacedName expects a string with the format "namespace/name"
 // and returns the proper types.NamespacedName.
@@ -62,7 +82,7 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 
 func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("error getting %T: %w", o, err)
@@ -82,6 +102,13 @@ func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Ob
 
 func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
 	return DeleteIfNeededWithOptions(ctx, c, o)
+}
+
+func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return hcluster.Spec.ControlPlaneRelease.Image
+	}
+	return hcluster.Spec.Release.Image
 }
 
 func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
@@ -199,6 +226,7 @@ func ResolveDNSHostname(ctx context.Context, hostName string) error {
 func InsecureHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true,
 			},
@@ -217,16 +245,44 @@ func HashSimple(o interface{}) string {
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
 // The struct is first marshalled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
-	hash := fnv.New32a()
+	return HashStructWithJSONMapper(data, nil)
+}
+
+// HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
+// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// JSON before computing the hash or nil if no transformation is needed.
+func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return "", err
 	}
-	_, err = hash.Write(jsonData)
+	if mapper != nil {
+		jsonData = mapper(jsonData)
+	}
+	return HashBytes(jsonData)
+}
+
+// HashBytes takes a byte array and returns a 32-bit FNV-1a hashed version of the byte array as a string
+func HashBytes(data []byte) (string, error) {
+	hash := fnv.New32a()
+	_, err := hash.Write(data)
 	if err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%08x", hash.Sum32()), nil
+}
+
+// RemoveEmptyJSONField removes a field from a given JSON if it's empty regardless of its position
+func RemoveEmptyJSONField(stringData string, field string) string {
+	pattern := fmt.Sprintf(`,?\s*"%s":\s*""`, regexp.QuoteMeta(field)) // Safely interpolate
+	re := regexp.MustCompile(pattern)
+	// Replace occurrences
+	stringData = re.ReplaceAllString(stringData, "")
+
+	// Trim any remaining leading or trailing commas to keep JSON valid
+	stringData = regexp.MustCompile(`\s*,\s*}`).ReplaceAllString(stringData, "}")
+	stringData = regexp.MustCompile(`{\s*,\s*`).ReplaceAllString(stringData, "{")
+	return stringData
 }
 
 // ConvertRegistryOverridesToCommandLineFlag converts a map of registry sources and their mirrors into a string
@@ -291,19 +347,28 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 	return imageRegistryOverrides
 }
 
-// IsIPv4 function parse the CIDR and get the IPNet struct if the IPNet.IP cannot be converted to 4bytes format,
-// the function returns nil, if it's an IPv6 it will return nil.
-func IsIPv4(cidr string) (bool, error) {
-	_, ipnet, err := net.ParseCIDR(cidr)
+// IsIPv4CIDR checks if the input string is an IPv4 CIDR.
+func IsIPv4CIDR(input string) (bool, error) {
+	_, ipnet, err := net.ParseCIDR(input)
 	if err != nil {
-		return false, fmt.Errorf("error validating the incoming CIDR %s: %v", cidr, err)
+		return false, fmt.Errorf("error parsing input '%s': not a valid CIDR", input)
 	}
-
 	if ipnet.IP.To4() != nil {
 		return true, nil
-	} else {
-		return false, nil
 	}
+	return false, nil
+}
+
+// IsIPv4Address checks if the input string is an IPv4 address.
+func IsIPv4Address(input string) (bool, error) {
+	ip := net.ParseIP(input)
+	if ip == nil {
+		return false, fmt.Errorf("error parsing input '%s': not a valid IP address", input)
+	}
+	if ip.To4() != nil {
+		return true, nil
+	}
+	return false, nil
 }
 
 // FirstUsableIP returns the first usable IP in both, IPv4 and IPv6 stacks.
@@ -338,7 +403,7 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	// TODO: cewong - reenable when we fix loadbalancer subnet annotation
+	// TODO: cewong - re-enable when we fix loadbalancer subnet annotation
 	/*
 		if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
 			return
@@ -398,7 +463,7 @@ func DetermineHostedClusterPayloadArch(ctx context.Context, c client.Client, hc 
 		return "", fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes)
+	isMultiArchReleaseImage, err := registryclient.IsMultiArchManifestList(ctx, hc.Spec.Release.Image, pullSecretBytes, imageMetadataProvider)
 	if err != nil {
 		return "", fmt.Errorf("failed to determine if release image multi-arch: %w", err)
 	}
@@ -458,21 +523,13 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
 	hostedClusterName := ""
 	nodePoolName := ""
-	switch obj.(type) {
+	switch obj := obj.(type) {
 	case *hyperv1.HostedCluster:
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return ""
-		}
-		if hc.GetAnnotations() != nil {
-			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
+		if obj.GetAnnotations() != nil {
+			return obj.GetAnnotations()[HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
-		np, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return ""
-		}
-		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
@@ -527,4 +584,101 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 	}
 
 	return pullSecretBytes, nil
+}
+
+// GetControlPlaneOperatorImage resolves the appropriate control plane operator
+// image based on the following order of precedence (from most to least
+// preferred):
+//
+//  1. The image specified by the ControlPlaneOperatorImageAnnotation on the
+//     HostedCluster resource itself
+//  2. The hypershift image specified in the release payload indicated by the
+//     HostedCluster's release field
+//  3. The hypershift-operator's own image for release versions 4.9 and 4.10
+//  4. The registry.ci.openshift.org/hypershift/hypershift:4.8 image for release
+//     version 4.8
+//
+// If no image can be found according to these rules, an error is returned.
+func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+		return val, nil
+	}
+	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
+	if err != nil {
+		return "", err
+	}
+	version, err := semver.Parse(releaseInfo.Version())
+	if err != nil {
+		return "", err
+	}
+	if controlplaneoperatoroverrides.IsOverridesEnabled() {
+		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		if overrideImage != "" {
+			return overrideImage, nil
+		}
+	}
+
+	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
+		return hypershiftImage, nil
+	}
+
+	if version.Minor < 9 {
+		return "", fmt.Errorf("unsupported release image with version %s", version.String())
+	}
+	return hypershiftOperatorImage, nil
+}
+
+// GetControlPlaneOperatorImageLabels resolves the appropriate control plane
+// operator image labels based on the following order of precedence (from most
+// to least preferred):
+//
+//  1. The labels specified by the ControlPlaneOperatorImageLabelsAnnotation on the
+//     HostedCluster resource itself
+//  2. The image labels in the medata of the image as resolved by GetControlPlaneOperatorImage
+func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneOperatorImage string, pullSecret []byte, imageMetadataProvider ImageMetadataProvider) (map[string]string, error) {
+	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation]; ok {
+		annotatedLabels := map[string]string{}
+		rawLabels := strings.Split(val, ",")
+		for i, rawLabel := range rawLabels {
+			parts := strings.Split(rawLabel, "=")
+			if len(parts) != 2 {
+				return nil, fmt.Errorf("hosted cluster %s/%s annotation %d malformed: label %s not in key=value form", hc.Namespace, hc.Name, i, rawLabel)
+			}
+			annotatedLabels[parts[0]] = parts[1]
+		}
+		return annotatedLabels, nil
+	}
+
+	controlPlaneOperatorImageMetadata, err := imageMetadataProvider.ImageMetadata(ctx, controlPlaneOperatorImage, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up image metadata for %s: %w", controlPlaneOperatorImage, err)
+	}
+
+	return ImageLabels(controlPlaneOperatorImageMetadata), nil
+}
+
+var (
+	hasPortRegex = regexp.MustCompile(`:\d{1,5}$`)
+)
+
+func HostFromURL(addr string) (string, error) {
+	parsedURL, err := url.Parse(addr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL(%s): %w", addr, err)
+	}
+	hostPort := parsedURL.Host
+	if hostPort == "" {
+		return "", fmt.Errorf("missing host/port name in URL(%s)", addr)
+	}
+	if !hasPortRegex.MatchString(hostPort) {
+		return hostPort, nil
+	}
+	hostName, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return "", fmt.Errorf("failed to split host/port from (%s): %w", hostPort, err)
+	}
+	if hostName == "" {
+		return "", fmt.Errorf("missing host name in URL(%s)", addr)
+	}
+	return hostName, nil
 }

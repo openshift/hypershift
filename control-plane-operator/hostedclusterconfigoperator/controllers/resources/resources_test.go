@@ -8,24 +8,31 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	appsv1 "k8s.io/api/apps/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
-	configv1 "github.com/openshift/api/config/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	supportutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
+
+	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/utils/ptr"
+
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -61,13 +68,17 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
+	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameMirror),
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameICSP),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameInfra),
+	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameNTOMirroredConfigs),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameConfig)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
+	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
 
 	fakeOperatorHub(),
 }
@@ -121,8 +132,9 @@ var cpObjects = []client.Object{
 // be included in the list of initial objects.  Error injection is suppressed
 // for the initial objects.
 func TestReconcileErrorHandling(t *testing.T) {
-
 	// get initial number of creates with no get errors
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+
 	var totalCreates int
 	{
 		fakeClient := &testClient{
@@ -140,6 +152,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
 		if err != nil {
@@ -163,8 +176,9 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, _ = r.Reconcile(context.Background(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
 			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 		}
@@ -179,6 +193,9 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	ctx := context.Background()
+	pullSecret := fakePullSecret()
+
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
 
 	testCases := []struct {
 		name                string
@@ -256,7 +273,7 @@ func TestReconcileOLM(t *testing.T) {
 		Build()
 	hcCLient := fake.NewClientBuilder().
 		WithScheme(api.Scheme).
-		WithObjects(rootCA).
+		WithObjects(rootCA, pullSecret).
 		Build()
 
 	r := &reconciler{
@@ -264,14 +281,15 @@ func TestReconcileOLM(t *testing.T) {
 		cpClient:               cpClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 		rootCA:                 "fake",
+		ImageMetaDataProvider:  &imageMetaDataProvider,
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
-			errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
@@ -291,6 +309,8 @@ func fakeHCP() *hyperv1.HostedControlPlane {
 	hcp := manifests.HostedControlPlane("bar", "foo")
 	hcp.Status.ControlPlaneEndpoint.Host = "server"
 	hcp.Status.ControlPlaneEndpoint.Port = 1234
+	hcp.Spec.PullSecret = corev1.LocalObjectReference{Name: "pull-secret"}
+	hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64"
 	return hcp
 }
 
@@ -306,7 +326,14 @@ func fakeIngressCert() *corev1.Secret {
 func fakePullSecret() *corev1.Secret {
 	s := manifests.PullSecret("bar")
 	s.Data = map[string][]byte{
-		corev1.DockerConfigJsonKey: []byte("data"),
+		corev1.DockerConfigJsonKey: []byte(`{
+		"auths": {
+			"registry.redhat.io/redhat/": {
+				"auth": "dXNlcm5hbWU6cGFzc3dvcmQ=",
+				"email": "user@example.com"
+			}
+		}
+	}`),
 	}
 	return s
 }
@@ -409,20 +436,12 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
 
-	annotatedOauthDeployment := &appsv1.Deployment{
-		ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
-	}
-	annotatedOauthDeployment.Spec.Template.Annotations = map[string]string{
-		SecretHashAnnotation: "fake-hash",
-	}
-
 	tests := map[string]struct {
 		inputHCP                                 *hyperv1.HostedControlPlane
 		inputObjects                             []client.Object
-		expectedOauthServerAnnotations           []string
 		expectKubeadminPasswordHashSecretToExist bool
 	}{
-		"when kubeadminPasswordSecret exists the oauth server is annotated and the hash secret is created": {
+		"when kubeadminPasswordSecret exists the hash secret is created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -440,12 +459,9 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
-			expectedOauthServerAnnotations: []string{
-				SecretHashAnnotation,
-			},
 			expectKubeadminPasswordHashSecretToExist: true,
 		},
-		"when kubeadminPasswordSecret doesn't exist the oauth server is not annotated and the hash secret is not created": {
+		"when kubeadminPasswordSecret doesn't exist the hash secret is not created": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testHCPName,
@@ -457,20 +473,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 					ObjectMeta: manifests.OAuthDeployment(testNamespace).ObjectMeta,
 				},
 			},
-			expectedOauthServerAnnotations:           nil,
-			expectKubeadminPasswordHashSecretToExist: false,
-		},
-		"when kubeadminPasswordSecret doesn't exist the oauth server SecretHashAnnotation annotation is deleted and the hash secret is not created": {
-			inputHCP: &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testHCPName,
-					Namespace: testNamespace,
-				},
-			},
-			inputObjects: []client.Object{
-				annotatedOauthDeployment,
-			},
-			expectedOauthServerAnnotations:           nil,
 			expectKubeadminPasswordHashSecretToExist: false,
 		},
 	}
@@ -499,13 +501,6 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(context.TODO(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
-			if test.expectedOauthServerAnnotations == nil {
-				g.Expect(actualOauthDeployment.Spec.Template.Annotations).To(BeNil())
-			} else {
-				for _, annotation := range test.expectedOauthServerAnnotations {
-					g.Expect(len(actualOauthDeployment.Spec.Template.Annotations[annotation]) > 0).To(BeTrue())
-				}
-			}
 		})
 	}
 }
@@ -936,7 +931,7 @@ func TestReconcileClusterVersion(t *testing.T) {
 			Channel: "fast",
 			DesiredUpdate: &configv1.Update{
 				Version: "4.12.5",
-				Image:   "exmple.com/imagens/image:latest",
+				Image:   "example.com/imagens/image:latest",
 				Force:   true,
 			},
 			Upstream:  configv1.URL("https://upstream.example.com"),
@@ -958,6 +953,84 @@ func TestReconcileClusterVersion(t *testing.T) {
 	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
 	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
 	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
+}
+
+func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ClusterID: "test-cluster-id",
+			Capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			},
+		},
+	}
+	testOverrides := []configv1.ComponentOverride{
+		{
+			Kind:      "Pod",
+			Group:     "",
+			Name:      "test",
+			Namespace: "default",
+			Unmanaged: true,
+		},
+	}
+	clusterVersion := &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: "some-other-id",
+			Capabilities: &configv1.ClusterVersionCapabilitiesSpec{
+				AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+					"foo",
+					"bar",
+				},
+			},
+			Channel: "fast",
+			DesiredUpdate: &configv1.Update{
+				Version: "4.12.5",
+				Image:   "example.com/imagens/image:latest",
+				Force:   true,
+			},
+			Upstream:  configv1.URL("https://upstream.example.com"),
+			Overrides: testOverrides,
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+	g := NewWithT(t)
+	r := &reconciler{
+		client:                 fakeClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+	err := r.reconcileClusterVersion(context.Background(), hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
+		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
+		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+			configv1.ClusterVersionCapabilityBuild,
+			configv1.ClusterVersionCapabilityCSISnapshot,
+			configv1.ClusterVersionCapabilityCloudControllerManager,
+			configv1.ClusterVersionCapabilityCloudCredential,
+			configv1.ClusterVersionCapabilityConsole,
+			configv1.ClusterVersionCapabilityDeploymentConfig,
+			// configv1.ClusterVersionCapabilityImageRegistry,
+			configv1.ClusterVersionCapabilityIngress,
+			configv1.ClusterVersionCapabilityInsights,
+			configv1.ClusterVersionCapabilityMachineAPI,
+			configv1.ClusterVersionCapabilityNodeTuning,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+			configv1.ClusterVersionCapabilityStorage,
+			configv1.ClusterVersionCapabilityBaremetal,
+			configv1.ClusterVersionCapabilityMarketplace,
+			configv1.ClusterVersionCapabilityOpenShiftSamples,
+		},
+	}
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 }
 
 func TestReconcileImageContentPolicyType(t *testing.T) {
@@ -1046,7 +1119,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Networking: hyperv1.ClusterNetworking{
 						APIServer: &hyperv1.APIServerNetworking{
-							Port: ptr.To(int32(443)),
+							Port: ptr.To[int32](443),
 						},
 					},
 				},
@@ -1086,5 +1159,163 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 		})
+	}
+}
+
+func TestReconcileKubeletConfig(t *testing.T) {
+	hcpNamespace := "hostedcontrolplane-namespace"
+	hcNamespace := "openshift-config-managed"
+	npName1 := "nodepool-test1"
+	npName2 := "nodepool-test2"
+	kubeletConfig1 := `
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: set-max-pods
+    spec:
+      kubeletConfig:
+        maxPods: 100
+`
+	testCases := []struct {
+		name                           string
+		hostedControlPlaneObjects      []client.Object
+		existHostedControlPlaneObjects []client.Object
+		expectedHostedClusterObjects   []client.Object
+	}{
+		{
+			name: "copy kubelet config from control plane NS",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+		{
+			name: "some CM already exist and some are not, expect HCCO to catch up",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+		{
+			name: "CM need to be deleted",
+			hostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+			},
+			existHostedControlPlaneObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+			expectedHostedClusterObjects: []client.Object{
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			cpFakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlaneObjects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existHostedControlPlaneObjects...).Build()
+			r := &reconciler{
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				client:                 fakeClient,
+				cpClient:               cpFakeClient,
+			}
+			g.Expect(r.reconcileKubeletConfig(context.TODO())).To(Succeed())
+			for _, obj := range tc.expectedHostedClusterObjects {
+				g.Expect(r.client.Get(context.TODO(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+			}
+			listOpts := []client.ListOption{
+				client.InNamespace(hcNamespace),
+				client.MatchingLabels{
+					nodepool.KubeletConfigConfigMapLabel: "true",
+				},
+			}
+			cmList := &corev1.ConfigMapList{}
+			g.Expect(r.client.List(context.TODO(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
+			expectedLen := len(tc.expectedHostedClusterObjects)
+			g.Expect(cmList.Items).To(HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
+		})
+	}
+}
+
+func TestBuildAWSWebIdentityCredentials(t *testing.T) {
+	type args struct {
+		roleArn string
+		region  string
+	}
+	type test struct {
+		name    string
+		args    args
+		wantErr bool
+		want    string
+	}
+	tests := []test{
+		{
+			name: "should fail if the role ARN is empty",
+			args: args{
+				roleArn: "",
+				region:  "us-east-1",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "should fail if the region is empty",
+			wantErr: true,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "",
+			},
+		},
+		{
+			name:    "should succeed and return the creds template populated with role arn and region otherwise",
+			wantErr: false,
+			args: args{
+				roleArn: "arn:aws:iam::123456789012:role/some-role",
+				region:  "us-east-1",
+			},
+			want: `[default]
+role_arn = arn:aws:iam::123456789012:role/some-role
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = us-east-1
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			creds, err := buildAWSWebIdentityCredentials(tt.args.roleArn, tt.args.region)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("buildAWSWebIdentityCredentials err = %v, wantErr = %v", err, tt.wantErr)
+				return
+			}
+			if creds != tt.want {
+				t.Errorf("expected creds:\n%s, but got:\n%s", tt.want, creds)
+			}
+		})
+	}
+}
+
+func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				nodepool.KubeletConfigConfigMapLabel: "true",
+			},
+		},
+		Data: map[string]string{
+			"config": data,
+		},
 	}
 }

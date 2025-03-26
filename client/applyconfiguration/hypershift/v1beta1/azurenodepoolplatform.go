@@ -20,17 +20,13 @@ package v1beta1
 // AzureNodePoolPlatformApplyConfiguration represents an declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
-	VMSize                 *string                         `json:"vmsize,omitempty"`
-	Image                  *AzureVMImageApplyConfiguration `json:"image,omitempty"`
-	DiskSizeGB             *int32                          `json:"diskSizeGB,omitempty"`
-	DiskStorageAccountType *string                         `json:"diskStorageAccountType,omitempty"`
-	AvailabilityZone       *string                         `json:"availabilityZone,omitempty"`
-	EncryptionAtHost       *string                         `json:"encryptionAtHost,omitempty"`
-	DiskEncryptionSetID    *string                         `json:"diskEncryptionSetID,omitempty"`
-	EnableEphemeralOSDisk  *bool                           `json:"enableEphemeralOSDisk,omitempty"`
-	SubnetID               *string                         `json:"subnetID,omitempty"`
-	Diagnostics            *DiagnosticsApplyConfiguration  `json:"diagnostics,omitempty"`
-	MachineIdentityID      *string                         `json:"machineIdentityID,omitempty"`
+	VMSize           *string                                `json:"vmSize,omitempty"`
+	Image            *AzureVMImageApplyConfiguration        `json:"image,omitempty"`
+	OSDisk           *AzureNodePoolOSDiskApplyConfiguration `json:"osDisk,omitempty"`
+	AvailabilityZone *string                                `json:"availabilityZone,omitempty"`
+	EncryptionAtHost *string                                `json:"encryptionAtHost,omitempty"`
+	SubnetID         *string                                `json:"subnetID,omitempty"`
+	Diagnostics      *DiagnosticsApplyConfiguration         `json:"diagnostics,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
@@ -55,19 +51,11 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithImage(value *AzureVMImageA
 	return b
 }
 
-// WithDiskSizeGB sets the DiskSizeGB field in the declarative configuration to the given value
+// WithOSDisk sets the OSDisk field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DiskSizeGB field is set to the value of the last call.
-func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskSizeGB(value int32) *AzureNodePoolPlatformApplyConfiguration {
-	b.DiskSizeGB = &value
-	return b
-}
-
-// WithDiskStorageAccountType sets the DiskStorageAccountType field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DiskStorageAccountType field is set to the value of the last call.
-func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskStorageAccountType(value string) *AzureNodePoolPlatformApplyConfiguration {
-	b.DiskStorageAccountType = &value
+// If called multiple times, the OSDisk field is set to the value of the last call.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithOSDisk(value *AzureNodePoolOSDiskApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
+	b.OSDisk = value
 	return b
 }
 
@@ -87,22 +75,6 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithEncryptionAtHost(value str
 	return b
 }
 
-// WithDiskEncryptionSetID sets the DiskEncryptionSetID field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DiskEncryptionSetID field is set to the value of the last call.
-func (b *AzureNodePoolPlatformApplyConfiguration) WithDiskEncryptionSetID(value string) *AzureNodePoolPlatformApplyConfiguration {
-	b.DiskEncryptionSetID = &value
-	return b
-}
-
-// WithEnableEphemeralOSDisk sets the EnableEphemeralOSDisk field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the EnableEphemeralOSDisk field is set to the value of the last call.
-func (b *AzureNodePoolPlatformApplyConfiguration) WithEnableEphemeralOSDisk(value bool) *AzureNodePoolPlatformApplyConfiguration {
-	b.EnableEphemeralOSDisk = &value
-	return b
-}
-
 // WithSubnetID sets the SubnetID field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the SubnetID field is set to the value of the last call.
@@ -116,13 +88,5 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *Az
 // If called multiple times, the Diagnostics field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
 	b.Diagnostics = value
-	return b
-}
-
-// WithMachineIdentityID sets the MachineIdentityID field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the MachineIdentityID field is set to the value of the last call.
-func (b *AzureNodePoolPlatformApplyConfiguration) WithMachineIdentityID(value string) *AzureNodePoolPlatformApplyConfiguration {
-	b.MachineIdentityID = &value
 	return b
 }

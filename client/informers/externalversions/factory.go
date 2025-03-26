@@ -26,6 +26,7 @@ import (
 	certificates "github.com/openshift/hypershift/client/informers/externalversions/certificates"
 	hypershift "github.com/openshift/hypershift/client/informers/externalversions/hypershift"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
+	karpenter "github.com/openshift/hypershift/client/informers/externalversions/karpenter"
 	scheduling "github.com/openshift/hypershift/client/informers/externalversions/scheduling"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -256,6 +257,7 @@ type SharedInformerFactory interface {
 
 	Certificates() certificates.Interface
 	Hypershift() hypershift.Interface
+	Karpenter() karpenter.Interface
 	Scheduling() scheduling.Interface
 }
 
@@ -265,6 +267,10 @@ func (f *sharedInformerFactory) Certificates() certificates.Interface {
 
 func (f *sharedInformerFactory) Hypershift() hypershift.Interface {
 	return hypershift.New(f, f.namespace, f.tweakListOptions)
+}
+
+func (f *sharedInformerFactory) Karpenter() karpenter.Interface {
+	return karpenter.New(f, f.namespace, f.tweakListOptions)
 }
 
 func (f *sharedInformerFactory) Scheduling() scheduling.Interface {

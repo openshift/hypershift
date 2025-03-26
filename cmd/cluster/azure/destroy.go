@@ -13,8 +13,10 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/spf13/cobra"
+
 	"k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/spf13/cobra"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
@@ -98,11 +100,12 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 }
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
-	return (&azureinfra.DestroyInfraOptions{
+	destroyInfraOptions := &azureinfra.DestroyInfraOptions{
 		Name:              o.Name,
 		Location:          o.AzurePlatform.Location,
 		InfraID:           o.InfraID,
 		CredentialsFile:   o.AzurePlatform.CredentialsFile,
 		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
-	}).Run(ctx, o.Log)
+	}
+	return destroyInfraOptions.Run(ctx, o.Log)
 }

@@ -11,8 +11,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/gomega"
-
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -24,7 +22,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/yaml"
@@ -79,8 +77,6 @@ func (mc *NodePoolMachineconfigRolloutTest) BuildNodePoolManifest(defaultNodepoo
 }
 
 func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
-	g := NewWithT(t)
-
 	// MachineConfig Actions
 	ignitionConfig := ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
@@ -89,7 +85,7 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		Storage: ignitionapi.Storage{
 			Files: []ignitionapi.File{{
 				Node:          ignitionapi.Node{Path: "/etc/custom-config"},
-				FileEmbedded1: ignitionapi.FileEmbedded1{Contents: ignitionapi.Resource{Source: utilpointer.String("data:,content%0A")}},
+				FileEmbedded1: ignitionapi.FileEmbedded1{Contents: ignitionapi.Resource{Source: ptr.To("data:,content%0A")}},
 			}},
 		},
 	}
@@ -141,9 +137,9 @@ func (mc *NodePoolMachineconfigRolloutTest) Run(t *testing.T, nodePool hyperv1.N
 		t.Fatalf("failed to create %s DaemonSet in guestcluster: %v", ds.Name, err)
 	}
 
+	e2eutil.WaitForNodePoolConfigUpdateComplete(t, ctx, mc.mgmtClient, &nodePool)
 	eventuallyDaemonSetRollsOut(t, ctx, mc.hostedClusterClient, len(nodes), np, ds)
-	g.Expect(nodePool.Status.Replicas).To(BeEquivalentTo(len(nodes)))
-
+	e2eutil.WaitForReadyNodesByNodePool(t, ctx, mc.hostedClusterClient, &nodePool, mc.hostedCluster.Spec.Platform.Type)
 	e2eutil.EnsureNoCrashingPods(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(t, ctx, mc.mgmtClient, mc.hostedCluster)
 	e2eutil.EnsureHCPContainersHaveResourceRequests(t, ctx, mc.mgmtClient, mc.hostedCluster)
@@ -171,24 +167,23 @@ func eventuallyDaemonSetRollsOut(t *testing.T, ctx context.Context, client crcli
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			list := &corev1.PodList{}
 			err := client.List(ctx, list, crclient.InNamespace(ds.Namespace), crclient.MatchingLabels(ds.Spec.Selector.MatchLabels))
-			pods := make([]*corev1.Pod, len(list.Items))
+			readyPods := []*corev1.Pod{}
 			for i := range list.Items {
-				pods[i] = &list.Items[i]
+				pod := &list.Items[i]
+				for _, condition := range pod.Status.Conditions {
+					if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+						readyPods = append(readyPods, pod)
+						break
+					}
+				}
 			}
-			return pods, err
+			return readyPods, err
 		},
 		[]e2eutil.Predicate[[]*corev1.Pod]{
-			func(pods []*corev1.Pod) (done bool, reasons string, err error) {
-				want, got := expectedCount, len(pods)
+			func(readyPods []*corev1.Pod) (done bool, reasons string, err error) {
+				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d Pods, got %d", want, got), nil
 			},
-		},
-		[]e2eutil.Predicate[*corev1.Pod]{
-			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
-				Type:   string(corev1.PodReady),
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithTimeout(timeout),
+		}, nil, e2eutil.WithTimeout(timeout),
 	)
 }

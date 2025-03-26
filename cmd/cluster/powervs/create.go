@@ -12,11 +12,14 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	powervsinfra "github.com/openshift/hypershift/cmd/infra/powervs"
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -41,7 +44,6 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Region, "region", opts.Region, "IBM Cloud region. Default is us-south")
 	flags.StringVar(&opts.Zone, "zone", opts.Zone, "IBM Cloud zone. Default is us-south")
 	flags.StringVar(&opts.CloudInstanceID, "cloud-instance-id", opts.CloudInstanceID, "IBM Cloud PowerVS Service Instance ID. Use this flag to reuse an existing PowerVS Service Instance resource for cluster's infra")
-	flags.StringVar(&opts.CloudConnection, "cloud-connection", opts.CloudConnection, "Cloud Connection in given zone. Use this flag to reuse an existing Cloud Connection resource for cluster's infra")
 	flags.StringVar(&opts.VPCRegion, "vpc-region", opts.VPCRegion, "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	flags.StringVar(&opts.VPC, "vpc", opts.VPC, "IBM Cloud VPC Name. Use this flag to reuse an existing VPC resource for cluster's infra")
 	flags.StringVar(&opts.SysType, "sys-type", opts.SysType, "System type used to host the instance(e.g: s922, e980, e880). Default is s922")
@@ -50,7 +52,6 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.Int32Var(&opts.Memory, "memory", opts.Memory, "Amount of memory allocated (in GB). Default is 32")
 	flags.BoolVar(&opts.Debug, "debug", opts.Debug, "Enabling this will print PowerVS API Request & Response logs")
 	flags.BoolVar(&opts.RecreateSecrets, "recreate-secrets", opts.RecreateSecrets, "Enabling this flag will recreate creds mentioned https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec here. This is required when rerunning 'hypershift create cluster powervs' or 'hypershift create infra powervs' commands, since API key once created cannot be retrieved again. Please make sure that cluster name used is unique across different management clusters before using this flag")
-	flags.BoolVar(&opts.PER, "power-edge-router", opts.PER, "Enabling this flag will utilize Power Edge Router solution via transit gateway instead of cloud connection to create a connection between PowerVS and VPC")
 	flags.BoolVar(&opts.TransitGatewayGlobalRouting, "transit-gateway-global-routing", opts.TransitGatewayGlobalRouting, "Enabling this flag chooses global routing mode when creating transit gateway")
 	flags.StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	flags.StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
@@ -66,9 +67,6 @@ type RawCreateOptions struct {
 	// CloudInstanceID of the existing PowerVS service instance
 	// Set this field when reusing existing resources from IBM Cloud
 	CloudInstanceID string
-	// CloudConnection is name of the existing cloud connection
-	// Set this field when reusing existing resources from IBM Cloud
-	CloudConnection string
 	// VPCRegion to use in IBM Cloud
 	// Set this field when reusing existing resources from IBM Cloud
 	VPCRegion string
@@ -80,14 +78,11 @@ type RawCreateOptions struct {
 	// This is required since cannot recover the secret once its created
 	// Can be used during rerun
 	RecreateSecrets bool
-	// PER flag is to choose Power Edge Router via Transit Gateway instead of using cloud connections to connect VPC
-	PER bool
 	// TransitGatewayLocation to use in Transit gateway service in IBM Cloud
 	TransitGatewayLocation string
 	// TransitGateway is name of the existing Transit gateway instance
 	// Set this field when reusing existing resources from IBM Cloud
 	TransitGateway string
-
 	// TransitGatewayGlobalRouting flag is to choose global routing while creating transit gateway
 	// If set to false, local routing will be chosen.
 	// Default Value: false
@@ -121,12 +116,8 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 	if o.ResourceGroup == "" && opts.InfrastructureJSON == "" {
 		return nil, fmt.Errorf("resource-group flag is required if infra-json is not provided")
 	}
-
-	if o.PER && o.TransitGatewayLocation == "" {
-		return nil, fmt.Errorf("transit gateway location is required if use-power-edge-router flag is enabled")
-	}
-	if o.TransitGatewayGlobalRouting && !o.PER {
-		return nil, fmt.Errorf("power-edge-router flag to be enabled for global-routing to get configured")
+	if o.TransitGatewayLocation == "" {
+		return nil, fmt.Errorf("transit gateway location is required for creating transit gateway")
 	}
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
@@ -188,13 +179,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			Region:            o.Region,
 			Zone:              o.Zone,
 			CISInstanceCRN:    o.infra.CISCRN,
-			ServiceInstanceID: o.CloudInstanceID,
+			ServiceInstanceID: o.infra.CloudInstanceID,
 			Subnet: &hyperv1.PowerVSResourceReference{
 				Name: &o.infra.DHCPSubnet,
 				ID:   &o.infra.DHCPSubnetID,
 			},
 			VPC: &hyperv1.PowerVSVPC{
-				Name:   o.VPC,
+				Name:   o.infra.VPCName,
 				Region: o.VPCRegion,
 				Subnet: o.infra.VPCSubnetName,
 			},
@@ -258,15 +249,14 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	powerVsOpts := DefaultOptions()
 	BindOptions(powerVsOpts, cmd.Flags())
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkPersistentFlagRequired("pull-secret")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
 	// these options are only for development and testing purpose,
 	// can use these to reuse the existing resources, so hiding it.
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("cloud-connection")
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -297,12 +287,10 @@ func CreateInfraOptions(powerVSOpts *ValidatedCreateOptions, opts *core.CreateOp
 			Region:                      powerVSOpts.Region,
 			Zone:                        powerVSOpts.Zone,
 			CloudInstanceID:             powerVSOpts.CloudInstanceID,
-			CloudConnection:             powerVSOpts.CloudConnection,
 			VPCRegion:                   powerVSOpts.VPCRegion,
 			VPC:                         powerVSOpts.VPC,
 			Debug:                       powerVSOpts.Debug,
 			RecreateSecrets:             powerVSOpts.RecreateSecrets,
-			PER:                         powerVSOpts.PER,
 			TransitGatewayLocation:      powerVSOpts.TransitGatewayLocation,
 			TransitGateway:              powerVSOpts.TransitGateway,
 			TransitGatewayGlobalRouting: powerVSOpts.TransitGatewayGlobalRouting,

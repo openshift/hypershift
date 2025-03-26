@@ -6,8 +6,10 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
-	"github.com/spf13/cobra"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
 )
 
 type AWSPlatformCreateOptions struct {

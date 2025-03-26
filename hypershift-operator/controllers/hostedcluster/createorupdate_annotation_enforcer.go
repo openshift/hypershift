@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -26,7 +28,7 @@ func createOrUpdateWithAnnotationFactory(upstream upsert.CreateOrUpdateProvider)
 				if annotations == nil {
 					annotations = map[string]string{}
 				}
-				annotations[HostedClusterAnnotation] = req.String()
+				annotations[util.HostedClusterAnnotation] = req.String()
 				obj.SetAnnotations(annotations)
 				return nil
 			}

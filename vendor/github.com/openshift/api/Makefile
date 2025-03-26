@@ -4,7 +4,7 @@ all: build
 update: update-codegen-crds
 
 RUNTIME ?= podman
-RUNTIME_IMAGE_NAME ?= registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.22-openshift-4.17
+RUNTIME_IMAGE_NAME ?= registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.23-openshift-4.19
 
 EXCLUDE_DIRS := _output/ dependencymagnet/ hack/ third_party/ tls/ tools/ vendor/ tests/
 GO_PACKAGES :=$(addsuffix ...,$(addprefix ./,$(filter-out $(EXCLUDE_DIRS), $(wildcard */))))
@@ -27,15 +27,35 @@ test-unit:
 ##################################################################################
 
 # Ensure update-scripts are run before crd-gen so updates to Godoc are included in CRDs.
+# Run update-payload-crds after update-codegen-crds to copy any newly created crds
 .PHONY: update-codegen-crds
 update-codegen-crds: update-scripts
 	hack/update-codegen-crds.sh
+	hack/update-payload-crds.sh
 
 #####################
 #
 # END: Update Codegen
 #
 #####################
+
+# When not otherwise set, diff/lint against the local master branch
+PULL_BASE_SHA ?= master
+
+.PHONY: lint
+lint:
+	hack/golangci-lint.sh run --new-from-rev=${PULL_BASE_SHA} ${EXTRA_ARGS}
+
+.PHONY: lint-fix
+lint-fix: EXTRA_ARGS=--fix
+lint-fix: lint
+
+# Ignore the exit code of the fix lint, it will always error as there are unfixed issues
+# that cannot be fixed from historic commits.
+.PHONY: verify-lint-fix
+verify-lint-fix:
+	make lint-fix 2>/dev/null || true
+	git diff --exit-code
 
 .PHONY: verify-scripts
 verify-scripts:
@@ -51,10 +71,9 @@ verify-scripts:
 	bash -x hack/verify-prerelease-lifecycle-gen.sh
 	hack/verify-payload-crds.sh
 	hack/verify-payload-featuregates.sh
-	hack/verify-promoted-features-pass-tests.sh
 
 .PHONY: verify
-verify: verify-scripts verify-crd-schema verify-codegen-crds
+verify: verify-scripts lint verify-crd-schema verify-codegen-crds
 
 .PHONY: verify-codegen-crds
 verify-codegen-crds:
@@ -63,6 +82,10 @@ verify-codegen-crds:
 .PHONY: verify-crd-schema
 verify-crd-schema:
 	bash -x hack/verify-crd-schema-checker.sh
+
+.PHONY: verify-feature-promotion
+verify-feature-promotion:
+	hack/verify-promoted-features-pass-tests.sh
 
 .PHONY: verify-%
 verify-%:
@@ -79,7 +102,7 @@ verify-%:
 ################################################################################################
 
 .PHONY: update-scripts
-update-scripts: update-compatibility update-openapi update-deepcopy update-protobuf update-swagger-docs tests-vendor update-prerelease-lifecycle-gen update-payload-crds update-payload-featuregates
+update-scripts: update-compatibility update-openapi update-deepcopy update-protobuf update-swagger-docs tests-vendor update-prerelease-lifecycle-gen update-payload-featuregates
 
 .PHONY: update-compatibility
 update-compatibility:

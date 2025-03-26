@@ -7,12 +7,13 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	hyperutil "github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func ReconcileServiceAccount(sa *corev1.ServiceAccount, ownerRef config.OwnerRef) error {
@@ -38,9 +39,9 @@ func ReconcileDeployment(
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					"name":                        "control-plane-pki-operator",
-					"app":                         "control-plane-pki-operator",
-					hyperv1.ControlPlaneComponent: "control-plane-pki-operator",
+					"name":                             "control-plane-pki-operator",
+					"app":                              "control-plane-pki-operator",
+					hyperv1.ControlPlaneComponentLabel: "control-plane-pki-operator",
 				},
 			},
 			Spec: corev1.PodSpec{
@@ -120,7 +121,7 @@ func ReconcileDeployment(
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
-	deploymentConfig.SetDefaults(hcp, nil, k8sutilspointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 	deploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 

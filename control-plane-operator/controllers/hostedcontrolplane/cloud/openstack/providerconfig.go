@@ -2,14 +2,17 @@ package openstack
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
 	CloudConfigDir      = "/etc/openstack/config"
 	CloudCredentialsDir = "/etc/openstack/secret"
-	CredentialsFile     = "cloud.conf"
-	CaDir               = "/etc/pki/ca-trust/extracted/pem"
+	CloudConfigKey      = "cloud.conf"
+	CADir               = "/etc/pki/ca-trust/extracted/pem"
 	CABundleKey         = "ca-bundle.pem"
 	Provider            = "openstack"
 	CloudsSecretKey     = "clouds.yaml"
@@ -19,48 +22,58 @@ const (
 // ReconcileCloudConfigSecret reconciles the cloud config secret.
 // For some controllers (e.g. Manila CSI, CNCC, etc), the cloud config needs to be stored in a secret.
 // In the hosted cluster config operator, we create the secrets needed by these controllers.
-func ReconcileCloudConfigSecret(externalNetworkID *string, secret *corev1.Secret, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, secret *corev1.Secret, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		secret.Data[CABundleKey] = caCertData
 	}
-	secret.Data[CredentialsFile] = []byte(config)
+	secret.Data[CloudConfigKey] = []byte(config)
 
 	return nil
 }
 
 // ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
 // In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(externalNetworkID *string, cm *corev1.ConfigMap, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) error {
+func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, cm *corev1.ConfigMap, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	config := getCloudConfig(externalNetworkID, cloudName, credentialsSecret, caCertData)
+	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
 	if caCertData != nil {
 		cm.Data[CABundleKey] = string(caCertData)
 	}
-	cm.Data[CredentialsFile] = config
+	cm.Data[CloudConfigKey] = config
 
 	return nil
 }
 
 // getCloudConfig returns the cloud config.
-func getCloudConfig(externalNetworkID *string, cloudName string, credentialsSecret *corev1.Secret, caCertData []byte) string {
-	config := string(credentialsSecret.Data[CredentialsFile])
+func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) string {
+	config := string(credentialsSecret.Data[CloudConfigKey])
 	config += "[Global]\n"
 	config += "use-clouds = true\n"
-	config += "clouds-file=" + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
-	config += "cloud=" + cloudName + "\n"
+	config += "clouds-file = " + CloudCredentialsDir + "/" + CloudsSecretKey + "\n"
+	config += "cloud = " + platformSpec.IdentityRef.CloudName + "\n"
+	// This takes priority over the 'cacert' value in 'clouds.yaml' and we therefore
+	// unset that when creating the initial secret.
 	if caCertData != nil {
-		config += "ca-file=" + CaDir + "/" + CABundleKey + "\n"
+		config += "ca-file = " + CADir + "/" + CABundleKey + "\n"
 	}
-	config += "\n[LoadBalancer]\nmax-shared-lb = 1\nmanage-security-groups = true\n"
-	if externalNetworkID != nil && *externalNetworkID != "" {
-		config += "floating-network-id = " + *externalNetworkID + "\n"
+	config += "\n"
+	config += "[LoadBalancer]\n"
+	config += "max-shared-lb = 1\n"
+	config += "manage-security-groups = true\n"
+	if platformSpec.ExternalNetwork != nil {
+		externalNetworkID := ptr.Deref(platformSpec.ExternalNetwork.ID, "")
+		if externalNetworkID != "" {
+			config += "floating-network-id = " + externalNetworkID + "\n"
+		}
 	}
+	config += "\n[Networking]\n"
+	config += "address-sort-order = " + util.MachineNetworksToList(machineNetwork) + "\n"
 
 	return config
 }

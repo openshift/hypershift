@@ -5,15 +5,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/cmd/util"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
+
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -62,7 +65,7 @@ func (o *CreateInfraOptions) createVPC(l logr.Logger, client ec2iface.EC2API) (s
 	}
 	if len(vpcID) == 0 {
 		createResult, err := client.CreateVpc(&ec2.CreateVpcInput{
-			CidrBlock:         aws.String(DefaultCIDRBlock),
+			CidrBlock:         aws.String(o.VPCCIDR),
 			TagSpecifications: o.ec2TagSpecifications("vpc", vpcName),
 		})
 		if err != nil {
@@ -90,6 +93,16 @@ func (o *CreateInfraOptions) createVPC(l logr.Logger, client ec2iface.EC2API) (s
 	}
 	l.Info("Enabled DNS hostnames on VPC", "id", vpcID)
 	return vpcID, nil
+}
+
+func (o *CreateInfraOptions) deleteVPC(l logr.Logger, client ec2iface.EC2API, vpcID string) error {
+	if _, err := client.DeleteVpc(&ec2.DeleteVpcInput{
+		VpcId: aws.String(vpcID),
+	}); err != nil {
+		return fmt.Errorf("failed to delete VPC %s: %w", vpcID, err)
+	}
+	l.Info("deleted VPC", "id", vpcID)
+	return nil
 }
 
 func (o *CreateInfraOptions) existingVPC(client ec2iface.EC2API, vpcName string) (string, error) {
@@ -205,14 +218,29 @@ func (o *CreateInfraOptions) existingDHCPOptions(client ec2iface.EC2API) (string
 }
 
 func (o *CreateInfraOptions) CreatePrivateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), tagNameSubnetInternalELB)
+	karpenterDiscoveryTag := []*ec2.Tag{
+		{
+			Key:   ptr.To("karpenter.sh/discovery"),
+			Value: ptr.To(o.InfraID),
+		},
+	}
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-private-%s", o.InfraID, zone), tagNameSubnetInternalELB, karpenterDiscoveryTag)
 }
 
 func (o *CreateInfraOptions) CreatePublicSubnet(l logr.Logger, client ec2iface.EC2API, vpcID string, zone string, cidr string) (string, error) {
-	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB)
+	karpenterDiscoveryTag := []*ec2.Tag{}
+	if o.PublicOnly {
+		karpenterDiscoveryTag = []*ec2.Tag{
+			{
+				Key:   ptr.To("karpenter.sh/discovery"),
+				Value: ptr.To(o.InfraID),
+			},
+		}
+	}
+	return o.CreateSubnet(l, client, vpcID, zone, cidr, fmt.Sprintf("%s-public-%s", o.InfraID, zone), tagNameSubnetPublicELB, karpenterDiscoveryTag)
 }
 
-func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string) (string, error) {
+func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API, vpcID, zone, cidr, name, scopeTag string, additionalTags []*ec2.Tag) (string, error) {
 	subnetID, err := o.existingSubnet(client, name)
 	if err != nil {
 		return "", err
@@ -221,11 +249,15 @@ func (o *CreateInfraOptions) CreateSubnet(l logr.Logger, client ec2iface.EC2API,
 		l.Info("Found existing subnet", "name", name, "id", subnetID)
 		return subnetID, nil
 	}
+
 	tagSpec := o.ec2TagSpecifications("subnet", name)
 	tagSpec[0].Tags = append(tagSpec[0].Tags, &ec2.Tag{
 		Key:   aws.String(scopeTag),
 		Value: aws.String("1"),
 	})
+	if additionalTags != nil {
+		tagSpec[0].Tags = append(tagSpec[0].Tags, additionalTags...)
+	}
 
 	result, err := client.CreateSubnet(&ec2.CreateSubnetInput{
 		AvailabilityZone:  aws.String(zone),
@@ -416,7 +448,7 @@ func (o *CreateInfraOptions) CreatePrivateRouteTable(l logr.Logger, client ec2if
 	}
 
 	// Everything below this is only needed if direct internet access is used
-	if o.EnableProxy {
+	if o.EnableProxy || o.EnableSecureProxy {
 		return aws.StringValue(routeTable.RouteTableId), nil
 	}
 

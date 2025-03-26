@@ -6,25 +6,28 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	"go.uber.org/zap/zaptest"
-	corev1 "k8s.io/api/core/v1"
-	apiresource "k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/pointer"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
+
+	corev1 "k8s.io/api/core/v1"
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
+
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"github.com/google/go-cmp/cmp"
+	"go.uber.org/zap/zaptest"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 const (
@@ -583,8 +586,17 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			}
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
-			bootImage.dvName = bootImageNamePrefix + "12345"
+			np := &hyperv1.NodePool{
+				Status: hyperv1.NodePoolStatus{
+					Platform: &hyperv1.NodePoolPlatformStatus{
+						KubeVirt: &hyperv1.KubeVirtNodePoolStatus{
+							CacheName: bootImageNamePrefix + "12345",
+						},
+					},
+				},
+			}
+
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, np)
 			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
@@ -721,7 +733,7 @@ func TestCacheImage(t *testing.T) {
 			_ = v1beta1.AddToScheme(scheme)
 			cl := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.existingResources...).Build()
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			err := bootImage.CacheImage(ctx, cl, tc.nodePool, infraId)
 
 			if tc.errExpected != (err != nil) {
@@ -1117,7 +1129,7 @@ func TestJsonPatch(t *testing.T) {
 
 			g.Expect(PlatformValidation(tc.nodePool)).To(Succeed())
 
-			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false)
+			bootImage := newCachedBootImage(bootImageName, imageHash, hostedClusterNamespace, false, nil)
 			bootImage.dvName = bootImageNamePrefix + "12345"
 			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -1248,7 +1260,7 @@ func memoryTmpltOpt(memory string) nodeTemplateOption {
 
 func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 	storage := &v1beta1.StorageSpec{
-		Resources: corev1.ResourceRequirements{
+		Resources: corev1.VolumeResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceStorage: apiresource.MustParse(volumeSize),
 			},
@@ -1264,7 +1276,7 @@ func storageTmpltOpt(volumeSize string) nodeTemplateOption {
 
 func networkInterfaceMultiQueueTmpltOpt() nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
-		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = pointer.Bool(true)
+		template.Spec.Template.Spec.Domain.Devices.NetworkInterfaceMultiQueue = ptr.To(true)
 	}
 }
 

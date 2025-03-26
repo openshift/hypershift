@@ -12,16 +12,17 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-
 	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func etcdContainer() *corev1.Container {
@@ -76,7 +77,7 @@ func ReconcileStatefulSet(ss *appsv1.StatefulSet, p *EtcdParams) error {
 	ss.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: etcdPodSelector(),
 	}
-	ss.Spec.Replicas = pointer.Int32(int32(p.DeploymentConfig.Replicas))
+	ss.Spec.Replicas = ptr.To(int32(p.DeploymentConfig.Replicas))
 	ss.Spec.PodManagementPolicy = appsv1.ParallelPodManagement
 	ss.Spec.VolumeClaimTemplates = []corev1.PersistentVolumeClaim{
 		{
@@ -190,7 +191,7 @@ func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "RESTORE_URL_ETCD",
-				Value: p.StorageSpec.RestoreSnapshotURL[0], // RestoreSnapshotURL can only hve 1 entry
+				Value: p.StorageSpec.RestoreSnapshotURL[0], // RestoreSnapshotURL can only have 1 entry
 			},
 		}
 		c.Image = p.EtcdImage
@@ -665,7 +666,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			Scheme: "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "etcd-client",
+					ServerName: ptr.To("etcd-client"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

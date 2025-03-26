@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -15,16 +14,21 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
+	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 // NOTE: The hypershift-operator does not deploy the ignition-server for HostedClusters with versions 4.11 and higher.
@@ -176,8 +180,8 @@ func ReconcileIgnitionServer(ctx context.Context,
 	}
 
 	ignitionServerLabels := map[string]string{
-		"app":                         ignitionserver.ResourceName,
-		hyperv1.ControlPlaneComponent: ignitionserver.ResourceName,
+		"app":                              ignitionserver.ResourceName,
+		hyperv1.ControlPlaneComponentLabel: ignitionserver.ResourceName,
 		// Intentionally adding hcp label to preserve existing 4.9 and 4.10 reconciliation behavior.
 		"hypershift.openshift.io/hosted-control-plane": hcp.Namespace,
 	}
@@ -507,7 +511,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 			},
 			Spec: corev1.PodSpec{
 				ServiceAccountName:            ignitionserver.ServiceAccount("").Name,
-				TerminationGracePeriodSeconds: utilpointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -520,7 +524,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  servingCertSecretName,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -610,7 +614,7 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -682,7 +686,7 @@ haproxy -f /tmp/haproxy.conf
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
-						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: utilpointer.Bool(true)},
+						SecurityContext: &corev1.SecurityContext{AllowPrivilegeEscalation: ptr.To(true)},
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "serving-cert",
@@ -702,7 +706,7 @@ haproxy -f /tmp/haproxy.conf
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  ignitionserver.IgnitionServingCertSecret("").Name,
-								DefaultMode: utilpointer.Int32(0640),
+								DefaultMode: ptr.To[int32](0640),
 							},
 						},
 					},
@@ -728,7 +732,7 @@ haproxy -f /tmp/haproxy.conf
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: utilpointer.Int64(config.DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 		}
 	}
 
@@ -738,7 +742,7 @@ haproxy -f /tmp/haproxy.conf
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	deploymentConfig.ApplyTo(deployment)
 
 	return nil

@@ -10,10 +10,12 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"golang.org/x/crypto/ssh"
 
 	"k8s.io/utils/ptr"
+
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
@@ -30,9 +32,9 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 	azureMachineTemplate := &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
 		VMSize: nodePool.Spec.Platform.Azure.VMSize,
 		OSDisk: capiazure.OSDisk{
-			DiskSizeGB: ptr.To(nodePool.Spec.Platform.Azure.DiskSizeGB),
+			DiskSizeGB: ptr.To(nodePool.Spec.Platform.Azure.OSDisk.SizeGiB),
 			ManagedDisk: &capiazure.ManagedDiskParameters{
-				StorageAccountType: nodePool.Spec.Platform.Azure.DiskStorageAccountType,
+				StorageAccountType: string(nodePool.Spec.Platform.Azure.OSDisk.DiskStorageAccountType),
 			},
 		},
 		NetworkInterfaces: []capiazure.NetworkInterface{{
@@ -59,16 +61,9 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
-	if nodePool.Spec.Platform.Azure.MachineIdentityID != "" {
-		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
-		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{{
-			ProviderID: nodePool.Spec.Platform.Azure.MachineIdentityID,
-		}}
-	}
-
-	if nodePool.Spec.Platform.Azure.DiskEncryptionSetID != "" {
+	if nodePool.Spec.Platform.Azure.OSDisk.EncryptionSetID != "" {
 		azureMachineTemplate.Template.Spec.OSDisk.ManagedDisk.DiskEncryptionSet = &capiazure.DiskEncryptionSetParameters{
-			ID: nodePool.Spec.Platform.Azure.DiskEncryptionSetID,
+			ID: nodePool.Spec.Platform.Azure.OSDisk.EncryptionSetID,
 		}
 	}
 
@@ -78,7 +73,7 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
-	if nodePool.Spec.Platform.Azure.EnableEphemeralOSDisk {
+	if nodePool.Spec.Platform.Azure.OSDisk.Persistence == hyperv1.EphemeralDiskPersistence {
 		// This is set to "None" if not explicitly set - https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/f44d953844de58e4b6fe8f51d88b0bf75a04e9ec/api/v1beta1/azuremachine_default.go#L54
 		// "VMs and VM Scale Set Instances using an ephemeral OS disk support only Readonly caching."
 		azureMachineTemplate.Template.Spec.OSDisk.CachingType = "ReadOnly"
@@ -93,7 +88,7 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 		if nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountType == "UserManaged" {
 			azureMachineTemplate.Template.Spec.Diagnostics.Boot.UserManaged = &capiazure.UserManagedBootDiagnostics{
-				StorageAccountURI: nodePool.Spec.Platform.Azure.Diagnostics.StorageAccountURI,
+				StorageAccountURI: nodePool.Spec.Platform.Azure.Diagnostics.UserManaged.StorageAccountURI,
 			}
 		}
 	}
@@ -119,5 +114,5 @@ func failureDomain(nodepool *hyperv1.NodePool) *string {
 	if nodepool.Spec.Platform.Azure.AvailabilityZone == "" {
 		return nil
 	}
-	return ptr.To(nodepool.Spec.Platform.Azure.AvailabilityZone)
+	return ptr.To(fmt.Sprintf("%v", nodepool.Spec.Platform.Azure.AvailabilityZone))
 }

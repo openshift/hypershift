@@ -5,18 +5,17 @@ import (
 	"fmt"
 	"path"
 
-	"k8s.io/utils/pointer"
-
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -34,8 +33,8 @@ var (
 
 func konnectivityAgentLabels() map[string]string {
 	return map[string]string{
-		"app":                         konnectivityAgentName,
-		hyperv1.ControlPlaneComponent: konnectivityAgentName,
+		"app":                              konnectivityAgentName,
+		hyperv1.ControlPlaneComponentLabel: konnectivityAgentName,
 	}
 }
 
@@ -69,7 +68,7 @@ func konnectivityVolumeAgentCerts() *corev1.Volume {
 func buildKonnectivityVolumeAgentCerts(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KonnectivityAgentSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -89,7 +88,7 @@ func ReconcileAgentDeployment(deployment *appsv1.Deployment, ownerRef config.Own
 			Labels: konnectivityAgentLabels(),
 		},
 		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: pointer.Bool(false),
+			AutomountServiceAccountToken: ptr.To(false),
 			Containers: []corev1.Container{
 				util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityAgentContainer(image, ips)),
 			},
@@ -108,11 +107,11 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
 	}
 	var agentIDs bytes.Buffer
-	seperator := ""
+	separator := ""
 	for i, ip := range ips {
-		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", seperator, ip))
+		agentIDs.WriteString(fmt.Sprintf("%sipv4=%s", separator, ip))
 		if i == 0 {
-			seperator = "&"
+			separator = "&"
 		}
 	}
 	return func(c *corev1.Container) {

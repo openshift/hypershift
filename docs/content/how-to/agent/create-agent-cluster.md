@@ -155,7 +155,7 @@ export BASEDOMAIN="krnl.es"
 export PULL_SECRET_FILE=$PWD/pull-secret
 export OCP_RELEASE=4.11.5-x86_64
 export MACHINE_CIDR=192.168.122.0/24
-# Typically the namespace is created by the hypershift-operator 
+# Typically the namespace is created by the hypershift-operator
 # but agent cluster creation generates a capi-provider role that
 # needs the namespace to already exist
 oc create ns ${HOSTED_CONTROL_PLANE_NAMESPACE}
@@ -207,7 +207,7 @@ redhat-operators-catalog-d66b5c965-qwhn7         1/1     Running   0          2m
 
 ## Create an InfraEnv
 
-An InfraEnv is a enviroment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
+An InfraEnv is a environment to which hosts booting the live ISO can join as Agents.  In this case, the Agents will be created in the
 same namespace as our HostedControlPlane.
 
 ~~~sh
@@ -238,7 +238,7 @@ You can add Agents by manually configuring the machine to boot with the live ISO
 
 ### Manual
 
-The live ISO may be downloaded and used to boot a node (bare-metal or VM). 
+The live ISO may be downloaded and used to boot a node (bare-metal or VM).
 
 On boot, the node will communicate with the assisted-service and register as an Agent in the same namespace as the InfraEnv.
 
@@ -385,9 +385,9 @@ As you can see it was auto-approved. We will repeat this with another two nodes.
 oc -n ${HOSTED_CONTROL_PLANE_NAMESPACE} get agent
 
 NAME                                   CLUSTER   APPROVED   ROLE          STAGE
-4dac1ab2-7dd5-4894-a220-6a3473b67ee6             true       auto-assign   
-d9198891-39f4-4930-a679-65fb142b108b             true       auto-assign 
-da503cf1-a347-44f2-875c-4960ddb04091             true       auto-assign 
+4dac1ab2-7dd5-4894-a220-6a3473b67ee6             true       auto-assign  
+d9198891-39f4-4930-a679-65fb142b108b             true       auto-assign
+da503cf1-a347-44f2-875c-4960ddb04091             true       auto-assign
 ~~~
 
 ## Accessing the HostedCluster
@@ -427,8 +427,8 @@ The ClusterAPI Agent provider will pick two agents randomly that will get assign
 oc -n ${HOSTED_CONTROL_PLANE_NAMESPACE} get agent
 
 NAME                                   CLUSTER         APPROVED   ROLE          STAGE
-4dac1ab2-7dd5-4894-a220-6a3473b67ee6   hypercluster1   true       auto-assign   
-d9198891-39f4-4930-a679-65fb142b108b                   true       auto-assign   
+4dac1ab2-7dd5-4894-a220-6a3473b67ee6   hypercluster1   true       auto-assign  
+d9198891-39f4-4930-a679-65fb142b108b                   true       auto-assign  
 da503cf1-a347-44f2-875c-4960ddb04091   hypercluster1   true       auto-assign
 
 oc -n ${HOSTED_CONTROL_PLANE_NAMESPACE} get agent -o jsonpath='{range .items[*]}BMH: {@.metadata.labels.agent-install\.openshift\.io/bmh} Agent: {@.metadata.name} State: {@.status.debugInfo.state}{"\n"}{end}'
@@ -470,25 +470,25 @@ clusterversion.config.openshift.io/version             False       True         
 
 NAME                                                                           VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
 clusteroperator.config.openshift.io/console                                    4.11.5    False       False         False      11m     RouteHealthAvailable: failed to GET route (https://console-openshift-console.apps.hypercluster1.domain.com): Get "https://console-openshift-console.apps.hypercluster1.domain.com": dial tcp 10.19.3.29:443: connect: connection refused
-clusteroperator.config.openshift.io/csi-snapshot-controller                    4.11.5    True        False         False      10m     
-clusteroperator.config.openshift.io/dns                                        4.11.5    True        False         False      9m16s   
-clusteroperator.config.openshift.io/image-registry                             4.11.5    True        False         False      9m5s    
+clusteroperator.config.openshift.io/csi-snapshot-controller                    4.11.5    True        False         False      10m  
+clusteroperator.config.openshift.io/dns                                        4.11.5    True        False         False      9m16s  
+clusteroperator.config.openshift.io/image-registry                             4.11.5    True        False         False      9m5s  
 clusteroperator.config.openshift.io/ingress                                    4.11.5    True        False         True       39m     The "default" ingress controller reports Degraded=True: DegradedConditions: One or more other status conditions indicate a degraded state: CanaryChecksSucceeding=False (CanaryChecksRepetitiveFailures: Canary route checks for the default ingress controller are failing)
-clusteroperator.config.openshift.io/insights                                   4.11.5    True        False         False      11m     
-clusteroperator.config.openshift.io/kube-apiserver                             4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/kube-controller-manager                    4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/kube-scheduler                             4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/kube-storage-version-migrator              4.11.5    True        False         False      10m     
-clusteroperator.config.openshift.io/monitoring                                 4.11.5    True        False         False      7m38s   
-clusteroperator.config.openshift.io/network                                    4.11.5    True        False         False      11m     
-clusteroperator.config.openshift.io/openshift-apiserver                        4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/openshift-controller-manager               4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/openshift-samples                          4.11.5    True        False         False      8m54s   
-clusteroperator.config.openshift.io/operator-lifecycle-manager                 4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/operator-lifecycle-manager-catalog         4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/operator-lifecycle-manager-packageserver   4.11.5    True        False         False      40m     
-clusteroperator.config.openshift.io/service-ca                                 4.11.5    True        False         False      11m     
-clusteroperator.config.openshift.io/storage                                    4.11.5    True        False         False      11m 
+clusteroperator.config.openshift.io/insights                                   4.11.5    True        False         False      11m  
+clusteroperator.config.openshift.io/kube-apiserver                             4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/kube-controller-manager                    4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/kube-scheduler                             4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/kube-storage-version-migrator              4.11.5    True        False         False      10m  
+clusteroperator.config.openshift.io/monitoring                                 4.11.5    True        False         False      7m38s  
+clusteroperator.config.openshift.io/network                                    4.11.5    True        False         False      11m  
+clusteroperator.config.openshift.io/openshift-apiserver                        4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/openshift-controller-manager               4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/openshift-samples                          4.11.5    True        False         False      8m54s  
+clusteroperator.config.openshift.io/operator-lifecycle-manager                 4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/operator-lifecycle-manager-catalog         4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/operator-lifecycle-manager-packageserver   4.11.5    True        False         False      40m  
+clusteroperator.config.openshift.io/service-ca                                 4.11.5    True        False         False      11m  
+clusteroperator.config.openshift.io/storage                                    4.11.5    True        False         False      11m
 ~~~
 
 Let's fix the Ingress.
@@ -554,7 +554,7 @@ EOF
 
 #### Step 2 - Get the MetalLB Operator Configured
 
-We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2. 
+We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2.
 Since layer 2 mode relies on ARP and NDP, the IP address must be on the same subnet as the network used by the cluster nodes in order for the MetalLB to work.
 more information about metalLB configuration options is available [here](https://metallb.universe.tf/configuration/).
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
@@ -635,26 +635,26 @@ NAME                                         VERSION   AVAILABLE   PROGRESSING  
 clusterversion.config.openshift.io/version   4.11.5    True        False         3m32s   Cluster version is 4.11.5
 
 NAME                                                                           VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-clusteroperator.config.openshift.io/console                                    4.11.5    True        False         False      3m50s   
-clusteroperator.config.openshift.io/csi-snapshot-controller                    4.11.5    True        False         False      25m     
-clusteroperator.config.openshift.io/dns                                        4.11.5    True        False         False      23m     
-clusteroperator.config.openshift.io/image-registry                             4.11.5    True        False         False      23m     
-clusteroperator.config.openshift.io/ingress                                    4.11.5    True        False         False      53m     
-clusteroperator.config.openshift.io/insights                                   4.11.5    True        False         False      25m     
-clusteroperator.config.openshift.io/kube-apiserver                             4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/kube-controller-manager                    4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/kube-scheduler                             4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/kube-storage-version-migrator              4.11.5    True        False         False      25m     
-clusteroperator.config.openshift.io/monitoring                                 4.11.5    True        False         False      21m     
-clusteroperator.config.openshift.io/network                                    4.11.5    True        False         False      25m     
-clusteroperator.config.openshift.io/openshift-apiserver                        4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/openshift-controller-manager               4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/openshift-samples                          4.11.5    True        False         False      23m     
-clusteroperator.config.openshift.io/operator-lifecycle-manager                 4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/operator-lifecycle-manager-catalog         4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/operator-lifecycle-manager-packageserver   4.11.5    True        False         False      54m     
-clusteroperator.config.openshift.io/service-ca                                 4.11.5    True        False         False      25m     
-clusteroperator.config.openshift.io/storage                                    4.11.5    True        False         False      25m     
+clusteroperator.config.openshift.io/console                                    4.11.5    True        False         False      3m50s  
+clusteroperator.config.openshift.io/csi-snapshot-controller                    4.11.5    True        False         False      25m  
+clusteroperator.config.openshift.io/dns                                        4.11.5    True        False         False      23m  
+clusteroperator.config.openshift.io/image-registry                             4.11.5    True        False         False      23m  
+clusteroperator.config.openshift.io/ingress                                    4.11.5    True        False         False      53m  
+clusteroperator.config.openshift.io/insights                                   4.11.5    True        False         False      25m  
+clusteroperator.config.openshift.io/kube-apiserver                             4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/kube-controller-manager                    4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/kube-scheduler                             4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/kube-storage-version-migrator              4.11.5    True        False         False      25m  
+clusteroperator.config.openshift.io/monitoring                                 4.11.5    True        False         False      21m  
+clusteroperator.config.openshift.io/network                                    4.11.5    True        False         False      25m  
+clusteroperator.config.openshift.io/openshift-apiserver                        4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/openshift-controller-manager               4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/openshift-samples                          4.11.5    True        False         False      23m  
+clusteroperator.config.openshift.io/operator-lifecycle-manager                 4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/operator-lifecycle-manager-catalog         4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/operator-lifecycle-manager-packageserver   4.11.5    True        False         False      54m  
+clusteroperator.config.openshift.io/service-ca                                 4.11.5    True        False         False      25m  
+clusteroperator.config.openshift.io/storage                                    4.11.5    True        False         False      25m  
 ~~~
 
 ## Enabling Node Auto-Scaling for the Hosted Cluster

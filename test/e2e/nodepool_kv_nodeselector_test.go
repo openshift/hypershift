@@ -121,7 +121,7 @@ func (k KubeVirtNodeSelectorTest) BuildNodePoolManifest(defaultNodepool hyperv1.
 	}
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
-	nodePool.Spec.Replicas = ptr.To(int32(1))
+	nodePool.Spec.Replicas = ptr.To[int32](1)
 	nodePool.Spec.Platform.Kubevirt.NodeSelector = k.nodeSelector
 
 	return nodePool, nil

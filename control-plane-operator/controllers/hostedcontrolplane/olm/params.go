@@ -5,12 +5,13 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	"k8s.io/utils/pointer"
+
+	"k8s.io/utils/ptr"
 )
 
 var packageServerLabels = map[string]string{
-	"app":                         "packageserver",
-	hyperv1.ControlPlaneComponent: "packageserver",
+	"app":                              "packageserver",
+	hyperv1.ControlPlaneComponentLabel: "packageserver",
 }
 
 type OperatorLifecycleManagerParams struct {
@@ -31,7 +32,7 @@ type OperatorLifecycleManagerParams struct {
 	config.OwnerRef
 }
 
-func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
+func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, releaseVersion string, setDefaultSecurityContext bool) *OperatorLifecycleManagerParams {
 	params := &OperatorLifecycleManagerParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		OLMImage:                releaseImageProvider.GetImage("operator-lifecycle-manager"),
@@ -51,7 +52,7 @@ func NewOperatorLifecycleManagerParams(hcp *hyperv1.HostedControlPlane, releaseI
 		params.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
 	params.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	params.DeploymentConfig.SetDefaults(hcp, nil, pointer.Int(1))
+	params.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	params.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	params.PackageServerConfig = config.DeploymentConfig{

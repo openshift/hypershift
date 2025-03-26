@@ -7,19 +7,21 @@ import (
 	"math"
 	"time"
 
-	"github.com/go-logr/logr"
-	"go.etcd.io/etcd/api/v3/etcdserverpb"
-	clientv3 "go.etcd.io/etcd/client/v3"
+	"github.com/openshift/hypershift/pkg/etcdcli"
+	"github.com/openshift/hypershift/support/upsert"
+
+	"github.com/openshift/library-go/pkg/operator/events"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/clock"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
-	"github.com/openshift/hypershift/pkg/etcdcli"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/library-go/pkg/operator/events"
+	"github.com/go-logr/logr"
+	"go.etcd.io/etcd/api/v3/etcdserverpb"
+	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 const (
@@ -79,7 +81,7 @@ func (r *DefragController) SetupWithManager(ctx context.Context, mgr ctrl.Manage
 	endpointsFunc := func() ([]string, error) {
 		return r.etcdEndpoints(ctx)
 	}
-	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName))
+	r.etcdClient = etcdcli.NewEtcdClient(endpointsFunc, events.NewLoggingEventRecorder(r.ControllerName, clock.RealClock{}))
 
 	// Set this so that it will immediately requeue itself.
 	r.defragWaitDuration = minDefragWaitDuration
@@ -191,7 +193,7 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 				// Defrag can timeout if defragmentation takes longer than etcdcli.DefragDialTimeout.
 				r.log.Error(err, "DefragController Defragment Failed", "member", member.Name, "ID", member.ID)
 				errMsg := fmt.Sprintf("failed defrag on member: %s, memberID: %x: %v", member.Name, member.ID, err)
-				errs = append(errs, fmt.Errorf(errMsg))
+				errs = append(errs, fmt.Errorf("%s", errMsg))
 				continue
 			}
 

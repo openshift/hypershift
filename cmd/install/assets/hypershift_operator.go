@@ -3,10 +3,14 @@ package assets
 import (
 	_ "embed"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
@@ -14,6 +18,8 @@ import (
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -23,14 +29,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	cdicore "kubevirt.io/containerized-data-importer-api/pkg/apis/core"
-
-	configv1 "github.com/openshift/api/config/v1"
 )
 
 const (
@@ -347,6 +350,23 @@ func (o MonitoringDashboardTemplate) Build() *corev1.ConfigMap {
 	}
 }
 
+type TechPreviewFeatureGateConfig struct {
+	Namespace          string
+	TechPreviewEnabled string
+}
+
+func (o TechPreviewFeatureGateConfig) Build() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "feature-gate",
+			Namespace: o.Namespace,
+		},
+		Data: map[string]string{
+			"TechPreviewEnabled": o.TechPreviewEnabled,
+		},
+	}
+}
+
 type HyperShiftOperatorDeployment struct {
 	AdditionalTrustBundle                   *corev1.ConfigMap
 	OpenShiftTrustBundle                    *corev1.ConfigMap
@@ -378,6 +398,21 @@ type HyperShiftOperatorDeployment struct {
 	ManagedService                          string
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
+	EnableCPOOverrides                      bool
+	AROHCPKeyVaultUsersClientID             string
+	TechPreviewNoUpgrade                    bool
+	RegistryOverrides                       string
+}
+
+// String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
+func featureGateString() string {
+	featureGates := make([]string, 0)
+	for feature := range featuregate.MutableGates.GetAll() {
+		featureGates = append(featureGates, fmt.Sprintf("%s=true", feature))
+	}
+
+	sort.Strings(featureGates)
+	return strings.Join(featureGates, ",")
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -390,6 +425,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
+	}
+	if o.TechPreviewNoUpgrade {
+		args = append(args, fmt.Sprintf("--feature-gates=%s", featureGateString()))
+	}
+	if o.RegistryOverrides != "" {
+		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
 	}
 
 	var volumeMounts []corev1.VolumeMount
@@ -480,6 +521,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		})
 	}
 
+	if len(o.AROHCPKeyVaultUsersClientID) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+			Value: o.AROHCPKeyVaultUsersClientID,
+		})
+	}
+
 	if o.EnableSizeTagging {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "ENABLE_SIZE_TAGGING",
@@ -490,6 +538,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	if o.EnableEtcdRecovery {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  config.EnableEtcdRecoveryEnvVar,
+			Value: "1",
+		})
+	}
+
+	if o.EnableCPOOverrides {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  controlplaneoperatoroverrides.CPOOverridesEnvVar,
 			Value: "1",
 		})
 	}
@@ -633,7 +688,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
-								RunAsUser:              k8sutilspointer.Int64(1000),
+								RunAsUser:              ptr.To[int64](1000),
 								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
 								Privileged:             &privileged,
 							},
@@ -651,7 +706,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 										"ALL",
 									},
 								},
-								RunAsUser: k8sutilspointer.Int64(1000),
+								RunAsUser: ptr.To[int64](1000),
 								SeccompProfile: &corev1.SeccompProfile{
 									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
@@ -741,7 +796,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				ConfigMap: &corev1.ConfigMapVolumeSource{
 					LocalObjectReference: corev1.LocalObjectReference{Name: o.OpenShiftTrustBundle.Name},
 					Items:                []corev1.KeyToPath{{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"}},
-					Optional:             k8sutilspointer.Bool(true),
+					Optional:             ptr.To(true),
 				},
 			},
 		})
@@ -939,6 +994,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 
 type HyperShiftOperatorClusterRole struct {
 	EnableCVOManagementClusterMetricsAccess bool
+	ManagedService                          string
 }
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
@@ -1116,6 +1172,12 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"ipaddresses", "ipaddresses/status"},
 				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 			},
+			// This allows hypershift operator to grant RBAC permissions for ORC to the capi-provider.
+			{
+				APIGroups: []string{"openstack.k-orc.cloud"},
+				Resources: []string{"images", "images/status"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},
 				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},
@@ -1195,6 +1257,21 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				APIGroups: []string{"metrics.k8s.io"},
 				Resources: []string{"pods"},
 				Verbs:     []string{"get"},
+			})
+	}
+
+	if o.ManagedService == hyperv1.AroHCP {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+				Resources: []string{"secretproviderclasses"},
+				Verbs: []string{
+					"get",
+					"list",
+					"create",
+					"update",
+					"watch",
+				},
 			})
 	}
 	return role

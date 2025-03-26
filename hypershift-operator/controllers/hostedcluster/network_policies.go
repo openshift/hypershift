@@ -6,8 +6,6 @@ import (
 	"net"
 	"net/netip"
 
-	"github.com/blang/semver"
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
@@ -15,12 +13,19 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilsnet "k8s.io/utils/net"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -28,7 +33,7 @@ const (
 	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	// Reconcile openshift-ingress Network Policy
@@ -123,7 +128,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			// network policy is being set on centralized infra only, not on external infra
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileVirtLauncherNetworkPolicy(policy, hcluster, managementClusterNetwork)
+				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
@@ -151,6 +156,13 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
+				// Reconcile nodeport-ignition-proxy Network Policy
+				policy = networkpolicy.NodePortIgnitionProxyNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
+				}
 			}
 		case hyperv1.Konnectivity:
 			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
@@ -161,6 +173,15 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}); err != nil {
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
+
+				// Reconcile nodeport-konnectivity Network Policy when konnectivity is hosted in the kas pod
+				policy = networkpolicy.NodePortKonnectivityKASNetworkPolicy(controlPlaneNamespaceName)
+				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+					return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
+				}
+
 			}
 		}
 	}
@@ -357,6 +378,29 @@ func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
+func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(8443)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "ignition-server-proxy",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
 func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(9090)
 	protocol := corev1.ProtocolTCP
@@ -374,6 +418,29 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "ignition-server",
+		},
+	}
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+	return nil
+}
+
+func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+	port := intstr.FromInt(8091)
+	protocol := corev1.ProtocolTCP
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			From: []networkingv1.NetworkPolicyPeer{},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &port,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": "kube-apiserver",
 		},
 	}
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
@@ -450,7 +517,7 @@ func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedI
 	return blockedIPv4Networks, blockedIPv6Networks
 }
 
-func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
+func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
@@ -579,7 +646,8 @@ func reconcileVirtLauncherNetworkPolicy(policy *networkingv1.NetworkPolicy, hclu
 		} else if utilsnet.IsIPv6String(nodeAddress) {
 			prefixLength = 128
 		} else {
-			return fmt.Errorf("could not determine if %s is an IPv4 or IPv6 address", nodeAddress)
+			log.Info(fmt.Sprintf("could not determine if %s is an IPv4 or IPv6 address, skipping virt-launcher network policy for service %q", nodeAddress, hcService.Type))
+			continue
 		}
 		parsedNodeAddress, err := netip.ParseAddr(nodeAddress)
 		if err != nil {

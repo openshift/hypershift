@@ -7,17 +7,18 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-	corev1 "k8s.io/api/core/v1"
-	apiresource "k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/utils/pointer"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	"github.com/openshift/hypershift/cmd/cluster/kubevirt/params"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
+
+	corev1 "k8s.io/api/core/v1"
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func DefaultOptions() *RawKubevirtPlatformCreateOptions {
@@ -26,7 +27,7 @@ func DefaultOptions() *RawKubevirtPlatformCreateOptions {
 			Memory:               "4Gi",
 			Cores:                2,
 			RootVolumeSize:       32,
-			AttachDefaultNetwork: pointer.Bool(true),
+			AttachDefaultNetwork: ptr.To(true),
 		},
 		QoSClass:                   "Burstable",
 		NetworkInterfaceMultiQueue: string(hyperv1.MultiQueueEnable),
@@ -47,8 +48,8 @@ func bindCoreOptions(opts *RawKubevirtPlatformCreateOptions, flags *pflag.FlagSe
 	flags.StringVar(&opts.CacheStrategyType, "root-volume-cache-strategy", opts.CacheStrategyType, "Set the boot image caching strategy; Supported values:\n- \"None\": no caching (default).\n- \"PVC\": Cache into a PVC; only for QCOW image; ignored for container images")
 	flags.StringVar(&opts.NetworkInterfaceMultiQueue, "network-multiqueue", opts.NetworkInterfaceMultiQueue, `If "Enable", virtual network interfaces configured with a virtio bus will also enable the vhost multiqueue feature for network devices. supported values are "Enable" and "Disable"; default = "Enable"`)
 	flags.StringVar(&opts.QoSClass, "qos-class", opts.QoSClass, `If "Guaranteed", set the limit cpu and memory of the VirtualMachineInstance, to be the same as the requested cpu and memory; supported values: "Burstable" and "Guaranteed"`)
-	flags.StringArrayVar(&opts.AdditionalNetworks, "additional-network", opts.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, params.Supported(NetworkOpts{})))
-	flags.BoolVar(opts.AttachDefaultNetwork, "attach-default-network", *opts.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes. This can only be set if --additional-network is configured`)
+	flags.StringArrayVar(&opts.AdditionalNetworks, "additional-network", opts.AdditionalNetworks, fmt.Sprintf(`Specify additional network that should be attached to the nodes, the "name" field should point to a multus network attachment definition with the format "[namespace]/[name]", it can be specified multiple times to attach to multiple networks. Supported parameters: %s, example: "name:ns1/nad-foo`, cmdutil.Supported(NetworkOpts{})))
+	flags.BoolVar(opts.AttachDefaultNetwork, "attach-default-network", *opts.AttachDefaultNetwork, `Specify if the default pod network should be attached to the nodes, equal symbol should be used to pass boolean value: --attach-default-network=[true|false]. This can only be set if --additional-network is configured`)
 	flags.StringToStringVar(&opts.VmNodeSelector, "vm-node-selector", opts.VmNodeSelector, "A comma separated list of key=value pairs to use as the node selector for the KubeVirt VirtualMachines to be scheduled onto. (e.g. role=kubevirt,size=large)")
 	flags.StringArrayVar(&opts.HostDevices, "host-device-name", opts.HostDevices, "PCI device name to expose from the infra cluster to the guest cluster nodes. Can be specified multiple times for different device names. Example: <device-name>,count:3. count is optional and the default is 1.")
 }
@@ -169,7 +170,7 @@ func (o *ValidatedKubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCr
 	var additionalNetworks []hyperv1.KubevirtNetwork
 	for _, additionalNetworkOptsRaw := range o.AdditionalNetworks {
 		additionalNetworkOpts := NetworkOpts{}
-		if err := params.Map("additional-network", additionalNetworkOptsRaw, &additionalNetworkOpts); err != nil {
+		if err := cmdutil.Map("additional-network", additionalNetworkOptsRaw, &additionalNetworkOpts); err != nil {
 			return nil, err
 		}
 		additionalNetworks = append(additionalNetworks, hyperv1.KubevirtNetwork{

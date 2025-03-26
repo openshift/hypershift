@@ -7,14 +7,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 type AzureParams struct {
-	ClusterID        string                  `json:"clusterID"`
-	ClusterNetwork   string                  `json:"clusterNetwork"`
-	OwnerRef         *metav1.OwnerReference  `json:"ownerRef"`
-	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
+	ClusterID               string                  `json:"clusterID"`
+	ClusterNetwork          string                  `json:"clusterNetwork"`
+	OwnerRef                *metav1.OwnerReference  `json:"ownerRef"`
+	DeploymentConfig        config.DeploymentConfig `json:"deploymentConfig"`
+	TenantID                string                  `json:"tenantID"`
+	SecretProviderClassName string                  `json:"secretProviderClassName"`
 }
 
 func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
@@ -26,8 +28,8 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 		ClusterNetwork: hcp.Spec.Networking.ClusterNetwork[0].CIDR.String(),
 	}
 	p.OwnerRef = config.ControllerOwnerRef(hcp)
+	p.SecretProviderClassName = config.ManagedAzureCloudProviderSecretProviderClassName
 
-	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), pointer.Int(1))
 	p.DeploymentConfig.Resources = config.ResourcesSpec{
 		ccmContainer().Name: {
 			Requests: corev1.ResourceList{
@@ -41,6 +43,7 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
+	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
 
 	return p

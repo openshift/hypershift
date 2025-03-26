@@ -77,7 +77,7 @@ See: [OCPBUGS-29466](https://issues.redhat.com/browse/OCPBUGS-29466)
 ICSP (deprecated) and IDMS can coexists on the management cluster but due to a bug if at least one IDMS object exists on the management cluster, the HyperShift Operator will completely ignore all the ICSP.
 
 **Workaround:**
-If you have at least an IDMS object, explictly convert all the ICSPs to IDMSs:
+If you have at least an IDMS object, explicitly convert all the ICSPs to IDMSs:
 ```bash
 $ mkdir -p /tmp/idms
 $ mkdir -p /tmp/icsp
@@ -115,7 +115,7 @@ and in the logs of the hypershift operator:
 ```
 
 **Workaround:**
-Explictly use --annotations=hypershift.openshift.io/control-plane-operator-image=<controlPlaneOperatorImage> when creatng the hosted cluster.
+Explicitly use --annotations=hypershift.openshift.io/control-plane-operator-image=<controlPlaneOperatorImage> when creatng the hosted cluster.
 ```bash
 # this will sync with the release image used on the management cluster, replace if needed
 $ PAYLOADIMAGE=$(oc get clusterversion version -ojsonpath='{.status.desired.image}')
@@ -195,14 +195,14 @@ done
 See: [OCPBUGS-33951](https://issues.redhat.com/browse/OCPBUGS-33951)
 
 **Symptoms:**
-Even having the ICSP/IDMS well set in the Management cluster and working fine in that side, the HostedControlPlane deployment is not capable of extract the metadata release fromthe OCP payload images. Something like this log entry will show up in the ControlPlaneOperator or HypershiftOperator pod.
+Even having the ICSP/IDMS well set in the Management cluster and working fine in that side, the HostedControlPlane deployment is not capable of extract the metadata release from the OCP payload images. Something like this log entry will show up in the ControlPlaneOperator or HypershiftOperator pod.
 
 ```
 failed to lookup release image: failed to extract release metadata: failed to get repo setup: failed to create repository client for https://registry.sample.net: Get "https://registry.sample.net/v2/": tls: failed to verify certificate: x509: certificate signed by unknown authority
 ```
 
 **Root Cause**:
-Once the ICSP/IDMS are created in the Management cluster and they are only using in the "sources" side a root registry instead of pointing a registry namespace, the image-overrides are not filled with the explicit destination OCP Metadata and Release images, so the Hypeshift operator cannot infer the extact location of the images in the private registry.
+Once the ICSP/IDMS are created in the Management cluster and they are only using in the "sources" side a root registry instead of pointing a registry namespace, the image-overrides are not filled with the explicit destination OCP Metadata and Release images, so the Hypeshift operator cannot infer the exact location of the images in the private registry.
 
 This is a sample:
 

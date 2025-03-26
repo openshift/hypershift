@@ -1,0 +1,31 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: openshift-controller-manager
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: openshift-controller-manager Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: openshift-controller-manager Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: openshift-controller-manager-config
+  - group: ""
+    kind: Service
+    name: openshift-controller-manager
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+    name: openshift-controller-manager
+  version: 4.18.0

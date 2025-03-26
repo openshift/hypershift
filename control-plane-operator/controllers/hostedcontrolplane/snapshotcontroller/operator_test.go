@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -28,9 +29,8 @@ func TestReconcileOperatorDeployment(t *testing.T) {
 	}
 	images := map[string]string{
 		"cluster-csi-snapshot-controller-operator": "quay.io/openshift/cluster-csi-snapshot-controller-operator:latest",
-		"token-minter":                    "quay.io/openshift/token-minter:latest",
-		"csi-snapshot-controller":         "quay.io/openshift/csi-snapshot-controller:latest",
-		"csi-snapshot-validation-webhook": "quay.io/openshift/csi-snapshot-validation-webhook:latest",
+		"token-minter":            "quay.io/openshift/token-minter:latest",
+		"csi-snapshot-controller": "quay.io/openshift/csi-snapshot-controller:latest",
 	}
 	deployment := manifests.CSISnapshotControllerOperatorDeployment("test-namespace")
 	imageProvider := imageprovider.NewFromImages(images)

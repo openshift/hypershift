@@ -8,24 +8,29 @@ import (
 	"testing"
 	"time"
 
-	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
-	"github.com/google/uuid"
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
-	imageapi "github.com/openshift/api/image/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	imageapi "github.com/openshift/api/image/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	testingclock "k8s.io/utils/clock/testing"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/google/uuid"
 )
 
 func TestNewToken(t *testing.T) {
@@ -648,7 +653,7 @@ func TestTokenReconcile(t *testing.T) {
 						TLS: ignitionapi.TLS{
 							CertificateAuthorities: []ignitionapi.Resource{
 								{
-									Source: k8sutilspointer.String(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+									Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
 								},
 							},
 						},
@@ -656,27 +661,27 @@ func TestTokenReconcile(t *testing.T) {
 					Config: ignitionapi.IgnitionConfig{
 						Merge: []ignitionapi.Resource{
 							{
-								Source: k8sutilspointer.String(fmt.Sprintf("https://%s/ignition", tc.configGenerator.hostedCluster.Status.IgnitionEndpoint)),
+								Source: ptr.To(fmt.Sprintf("https://%s/ignition", tc.configGenerator.hostedCluster.Status.IgnitionEndpoint)),
 								HTTPHeaders: []ignitionapi.HTTPHeader{
 									{
 										Name:  "Authorization",
-										Value: k8sutilspointer.String(fmt.Sprintf("Bearer %s", encodedToken)),
+										Value: ptr.To(fmt.Sprintf("Bearer %s", encodedToken)),
 									},
 									{
 										Name:  "NodePool",
-										Value: k8sutilspointer.String(crclient.ObjectKeyFromObject(tc.configGenerator.nodePool).String()),
+										Value: ptr.To(crclient.ObjectKeyFromObject(tc.configGenerator.nodePool).String()),
 									},
 									{
 										Name:  "TargetConfigVersionHash",
-										Value: k8sutilspointer.String(token.Hash()),
+										Value: ptr.To(token.Hash()),
 									},
 								},
 							},
 						},
 					},
 					Proxy: ignitionapi.Proxy{
-						HTTPProxy:  k8sutilspointer.String(expectedProxyConfig.Spec.HTTPProxy),
-						HTTPSProxy: k8sutilspointer.String(expectedProxyConfig.Spec.HTTPSProxy),
+						HTTPProxy:  ptr.To(expectedProxyConfig.Spec.HTTPProxy),
+						HTTPSProxy: ptr.To(expectedProxyConfig.Spec.HTTPSProxy),
 						NoProxy: []ignitionapi.NoProxyItem{
 							".cluster.local", ".local", ".svc", "127.0.0.1", "localhost",
 						},

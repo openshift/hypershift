@@ -1,13 +1,24 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/api"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -15,18 +26,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 
-	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/util"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 var (
@@ -77,7 +82,6 @@ var (
 		"0000_50_operator-marketplace_11_service_monitor.yaml",
 		"0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml",
 		"0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml",
-		"0000_70_cluster-network-operator_02_rbac.yaml",
 		"0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml",
 		"0000_80_machine-config_01_containerruntimeconfigs.crd.yaml",
 		"0000_80_machine-config_01_kubeletconfigs.crd.yaml",
@@ -98,7 +102,7 @@ var (
 		// TODO: Remove when cluster-csi-snapshot-controller-operator stops shipping
 		// its ibm-cloud-managed deployment.
 		"0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml",
-		// Omited this file in order to allow the HCCO to create the resource. This allow us to reconcile and sync
+		// Omitted this file in order to allow the HCCO to create the resource. This allow us to reconcile and sync
 		// the HCP.Configuration.operatorhub with OperatorHub object in the HostedCluster. This will only occur once.
 		// From that point the HCCO will use the OperatorHub object in the HostedCluster as a source of truth.
 		"0000_03_marketplace-operator_02_operatorhub.cr.yaml",
@@ -109,14 +113,14 @@ func cvoLabels() map[string]string {
 	return map[string]string{
 		"app": "cluster-version-operator",
 		// value for compatibility with roks-toolkit clusters
-		"k8s-app":                     "cluster-version-operator",
-		hyperv1.ControlPlaneComponent: "cluster-version-operator",
+		"k8s-app":                          "cluster-version-operator",
+		hyperv1.ControlPlaneComponentLabel: "cluster-version-operator",
 	}
 }
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneImage, releaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -130,6 +134,35 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			MatchLabels: cvoLabels(),
 		}
 	}
+
+	// the ClusterVersion resource is created by the CVO bootstrap container.
+	// we marshal it to json as a means to validate its formatting, which protects
+	// us against easily preventable mistakes, such as typos.
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(clusterID),
+		},
+	}
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(caps),
+		}
+	}
+
+	clusterVersionJSON, err := json.Marshal(cv)
+	if err != nil {
+		return err
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: selector,
 		Template: corev1.PodTemplateSpec{
@@ -137,13 +170,13 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				Labels: cvoLabels(),
 			},
 			Spec: corev1.PodSpec{
-				AutomountServiceAccountToken: pointer.Bool(false),
+				AutomountServiceAccountToken: ptr.To(false),
 				InitContainers: []corev1.Container{
-					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(releaseImage, platformType, oauthEnabled)),
-					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
+					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(dataPlaneReleaseImage, platformType, oauthEnabled, featureSet)),
+					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterVersionJSON)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneImage, releaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -154,10 +187,10 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			},
 		},
 	}
-	deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(false)
+	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
 	if enableCVOManagementClusterMetricsAccess {
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.ClusterVersionOperatorServiceAccount("").Name
-		deployment.Spec.Template.Spec.AutomountServiceAccountToken = pointer.Bool(true)
+		deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(true)
 	}
 	deploymentConfig.ApplyTo(deployment)
 	util.AvailabilityProber(
@@ -189,25 +222,25 @@ func cvoContainerMain() *corev1.Container {
 	}
 }
 
-func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType, oauthEnabled bool) func(c *corev1.Container) {
+func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(platformType, oauthEnabled),
+			preparePayloadScript(platformType, oauthEnabled, featureSet),
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
 
-func buildCVOContainerBootstrap(image, clusterID string) func(*corev1.Container) {
+func buildCVOContainerBootstrap(image string, clusterVersionJSON []byte) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			cvoBootrapScript(clusterID),
+			cvoBootstrapScript(clusterVersionJSON),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -250,26 +283,57 @@ func ResourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 	}
 }
 
-func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) string {
+func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet) string {
 	payloadDir := volumeMounts.Path(cvoContainerPrepPayload().Name, cvoVolumePayload().Name)
 	var stmts []string
 
 	stmts = append(stmts,
 		fmt.Sprintf("cp -R /manifests %s/", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_deployment.yaml", payloadDir),
-		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_deployment.yaml", payloadDir),
+		fmt.Sprintf("rm -f %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
+
+	// NOTE: We would need part of the manifest.Include logic (https://github.com/openshift/library-go/blob/0064ad7bd060b9fd52f7840972c1d3e72186d0f0/pkg/manifest/manifest.go#L190-L196)
+	// to properly evaluate which CVO manifests to select based on featureset. In the absence of that logic, use simple filename filtering, which is not ideal
+	// but better than nothing.  Ideally, we filter based on the feature-set annotation in the manifests.
+	switch featureSet {
+	case configv1.Default, "":
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.CustomNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.DevPreviewNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.TechPreviewNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	}
+
 	for _, manifest := range manifestsToOmit {
 		if platformType == hyperv1.IBMCloudPlatform || platformType == hyperv1.PowerVSPlatform {
 			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {
 				continue
 			}
 		}
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", manifest)))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
 	if !oauthEnabled {
-		stmts = append(stmts, fmt.Sprintf("rm %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
+		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
 	toRemove := ResourcesToRemove(platformType)
 	if len(toRemove) > 0 {
@@ -301,47 +365,45 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) 
 			"    release.openshift.io/delete: \"true\"",
 		)
 	}
+	stmts = append(stmts, "EOF")
 	return strings.Join(stmts, "\n")
 }
 
-func cvoBootrapScript(clusterID string) string {
+func cvoBootstrapScript(clusterVersionJSON []byte) string {
 	payloadDir := volumeMounts.Path(cvoContainerBootstrap().Name, cvoVolumePayload().Name)
 	var scriptTemplate = `#!/bin/bash
 set -euo pipefail
-cat > /tmp/clusterversion.yaml <<EOF
-apiVersion: config.openshift.io/v1
-kind: ClusterVersion
-metadata:
-  name: version
-spec:
-  clusterID: %s
+MANIFEST_DIR=%s/manifests
+cat > /tmp/clusterversion.json <<EOF
+%s
 EOF
 oc get ns openshift-config &> /dev/null || oc create ns openshift-config
 oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
+oc apply -f ${MANIFEST_DIR}/0000_00_cluster-version-operator_01_clusterversions*
+oc apply -f /tmp/clusterversion.json
 while true; do
-  echo "Applying CVO bootstrap manifests"
-  if oc apply -f %s/manifests; then
+  echo "Applying CVO bootstrap manifests..."
+  if oc apply -f ${MANIFEST_DIR}; then
     echo "Bootstrap manifests applied successfully."
     break
   fi
   sleep 1
 done
-oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.yaml
 `
-	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
+	return fmt.Sprintf(scriptTemplate, payloadDir, string(clusterVersionJSON))
 }
 
-func buildCVOContainerMain(image, releaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
+func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
 	return func(c *corev1.Container) {
-		c.Image = image
+		c.Image = controlPlaneReleaseImage
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
 			"start",
 			"--release-image",
-			releaseImage,
+			dataPlaneReleaseImage,
 			"--enable-auto-update=false",
 			"--kubeconfig",
 			path.Join(volumeMounts.Path(c.Name, cvoVolumeKubeconfig().Name), kas.KubeconfigKey),
@@ -413,7 +475,7 @@ func buildCVOVolumeUpdatePayloads(v *corev1.Volume) {
 func buildCVOVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = manifests.KASServiceKubeconfigSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func buildCVOVolumePayload(v *corev1.Volume) {
@@ -430,7 +492,7 @@ func buildCVOVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.ClusterVersionOperatorServerCertSecret("").Name
 }
 
@@ -482,7 +544,7 @@ func ReconcileServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, ownerRef c
 			Scheme:     "https",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: "cluster-version-operator",
+					ServerName: ptr.To("cluster-version-operator"),
 					CA: prometheusoperatorv1.SecretOrConfigMap{
 						ConfigMap: &corev1.ConfigMapKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{

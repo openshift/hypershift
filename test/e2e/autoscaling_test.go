@@ -15,7 +15,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -95,7 +95,7 @@ func TestAutoscaling(t *testing.T) {
 		// Wait for one less node.
 		numNodes = numNodes - 1
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
 
 }
 
@@ -145,9 +145,9 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 					RestartPolicy: corev1.RestartPolicy("Never"),
 				},
 			},
-			BackoffLimit: pointer.Int32(4),
-			Completions:  pointer.Int32(njobs),
-			Parallelism:  pointer.Int32(njobs),
+			BackoffLimit: ptr.To[int32](4),
+			Completions:  ptr.To[int32](njobs),
+			Parallelism:  ptr.To[int32](njobs),
 		},
 	}
 	if nodeSelector != "" {

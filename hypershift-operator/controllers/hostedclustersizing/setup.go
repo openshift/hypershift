@@ -11,11 +11,13 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -46,7 +48,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 		if !errors.IsNotFound(err) {
 			return fmt.Errorf("failed to get sizing configuration: %w", err)
 		}
-		if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Create(ctx, defaultSizingConfig(), metav1.CreateOptions{}); err != nil {
+		if _, err := hypershiftClient.SchedulingV1alpha1().ClusterSizingConfigurations().Create(ctx, DefaultSizingConfig(), metav1.CreateOptions{}); err != nil {
 			return fmt.Errorf("failed to create sizing configuration: %w", err)
 		}
 	}
@@ -122,7 +124,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 			}}
 		})).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		}).Complete(newReconciler(
 		hypershiftClient, mgr.GetClient(), time.Now,
 		hypershiftOperatorImage, releaseProvider, imageMetadataProvider,
@@ -134,7 +136,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 		Named(ValidatingControllerName).
 		For(&schedulingv1alpha1.ClusterSizingConfiguration{}).
 		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second),
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		}).Complete(&validator{
 		client: hypershiftClient,
 		lister: mgr.GetClient(),
@@ -145,7 +147,7 @@ func SetupWithManager(ctx context.Context, mgr ctrl.Manager, hypershiftOperatorI
 	return nil
 }
 
-func defaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
+func DefaultSizingConfig() *schedulingv1alpha1.ClusterSizingConfiguration {
 	return &schedulingv1alpha1.ClusterSizingConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",

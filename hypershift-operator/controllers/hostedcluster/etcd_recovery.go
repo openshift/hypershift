@@ -6,6 +6,14 @@ import (
 	"fmt"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,16 +22,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
-	"github.com/openshift/hypershift/support/upsert"
-	hyperutil "github.com/openshift/hypershift/support/util"
 )
 
 type etcdJobStatus struct {
@@ -355,7 +356,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								SecretName:  cpomanifests.EtcdClientSecret("").Name,
-								DefaultMode: ptr.To(int32(420)),
+								DefaultMode: ptr.To[int32](420),
 							},
 						},
 					},
@@ -366,7 +367,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 								LocalObjectReference: corev1.LocalObjectReference{
 									Name: cpomanifests.EtcdSignerCAConfigMap("").Name,
 								},
-								DefaultMode: ptr.To(int32(420)),
+								DefaultMode: ptr.To[int32](420),
 							},
 						},
 					},

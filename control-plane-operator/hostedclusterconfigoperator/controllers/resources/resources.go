@@ -2,48 +2,12 @@ package resources
 
 import (
 	"context"
-	"crypto/md5"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
-	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	discoveryv1 "k8s.io/api/discovery/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
-	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"k8s.io/utils/ptr"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
-
-	"github.com/go-logr/logr"
-	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
-	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
-	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
-	operatorv1 "github.com/openshift/api/operator/v1"
-
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -51,8 +15,11 @@ import (
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
@@ -70,19 +37,66 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
+	"github.com/openshift/api/annotations"
+	configv1 "github.com/openshift/api/config/v1"
+	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
+
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/rest"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	"github.com/blang/semver"
+	"github.com/go-logr/logr"
+	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
 	ControllerName         = "resources"
-	SecretHashAnnotation   = "hypershift.openshift.io/kubeadmin-secret-hash"
 	ConfigNamespace        = "openshift-config"
 	ConfigManagedNamespace = "openshift-config-managed"
 	CloudProviderCMName    = "cloud-provider-config"
+	awsCredentialsTemplate = `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = %s
+`
 )
 
 var (
@@ -123,6 +137,7 @@ type reconciler struct {
 	oauthPort                 int32
 	versions                  map[string]string
 	operateOnReleaseImage     string
+	ImageMetaDataProvider     util.ImageMetadataProvider
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -139,24 +154,22 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to add to scheme: %w", err)
 	}
 
-	uncachedClient, err := client.New(opts.Manager.GetConfig(), client.Options{
+	uncachedClientRestConfig := opts.Manager.GetConfig()
+	uncachedClientRestConfig.WarningHandler = rest.NoWarnings{}
+	uncachedClient, err := client.New(uncachedClientRestConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create uncached client: %w", err)
 	}
 
 	// if kubevirt infra config is not used, it is being set the same as the mgmt config
-	kubevirtInfraClient, err := client.New(opts.KubevirtInfraConfig, client.Options{
+	kubevirtInfraClientRestConfig := opts.KubevirtInfraConfig
+	kubevirtInfraClientRestConfig.WarningHandler = rest.NoWarnings{}
+	kubevirtInfraClient, err := client.New(kubevirtInfraClientRestConfig, client.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Mapper: opts.Manager.GetRESTMapper(),
-		WarningHandler: client.WarningHandlerOptions{
-			SuppressWarnings: true,
-		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
@@ -180,6 +193,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		oauthPort:                 opts.OAuthPort,
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
+		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -223,6 +237,24 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	}
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
+	}
+	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
+	// and mirrors them to the hosted cluster so the operators on the hosted cluster
+	// could access the data in the mirrored ConfigMaps.
+	// This is driven by Telco customers that would like to use the NUMAResource-operator
+	// https://github.com/openshift-kni/numaresources-operator/tree/main
+	// on their hosted clusters.
+	// NUMAResource-operator needs access to the KubeletConfig
+	//  so it could run properly on the cluster.
+	p := predicate.NewPredicateFuncs(func(o client.Object) bool {
+		cm := o.(*corev1.ConfigMap)
+		if _, ok := cm.Labels[nodepool.KubeletConfigConfigMapLabel]; ok {
+			return true
+		}
+		return false
+	})
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.ConfigMap{}, eventHandler(), p)); err != nil {
+		return fmt.Errorf("failed to watch ConfigMap: %w", err)
 	}
 
 	return nil
@@ -328,39 +360,63 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	log.Info("reconciling registry config")
 	registryConfig := manifests.Registry()
-	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-		registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
-		return nil
-	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	var registryConfigExists bool
+	// Check if the registry config exists
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to get registry config: %w", err)
+		}
+	} else {
+		registryConfigExists = true
 	}
-	if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
-		log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
-		ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
-		if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
-			if ocmConfigMap.Data == nil {
-				// CPO has not created the configmap yet, wait for create
-				// This should not happen as we are started by the CPO after the configmap should be created
-				return nil
-			}
-			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-			if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-				err := util.DeserializeResource(configStr, config, api.Scheme)
+
+	// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
+	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
+	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
+	// exist at this point.
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
+			log.Info("skipping registry config to let CIRO bootstrap")
+		} else {
+			log.Info("reconciling registry config")
+			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
 				if err != nil {
-					return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+					return err
+				}
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+			}
+			// TODO(fmissi): remove this when Hypershift Capabilities becomes GA
+			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
+				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
+				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
+					if ocmConfigMap.Data == nil {
+						// CPO has not created the configmap yet, wait for create
+						// This should not happen as we are started by the CPO after the configmap should be created
+						return nil
+					}
+					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
+						err := util.DeserializeResource(configStr, config, api.Scheme)
+						if err != nil {
+							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
+						}
+					}
+					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+					configStr, err := util.SerializeResource(config, api.Scheme)
+					if err != nil {
+						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
+					}
+					ocmConfigMap.Data[ocm.ConfigKey] = configStr
+					return nil
+				}); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
 				}
 			}
-			config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
-			configStr, err := util.SerializeResource(config, api.Scheme)
-			if err != nil {
-				return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
-			}
-			ocmConfigMap.Data[ocm.ConfigKey] = configStr
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
 		}
 	}
 
@@ -396,6 +452,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "openshift-kube-apiserver-operator",
 			Name:      "kube-control-plane-signer",
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "kube-apiserver",
+			},
 		},
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, kubeControlPlaneSignerSecret, func() error {
@@ -410,6 +469,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ConfigManagedNamespace,
 			Name:      "kubelet-serving-ca",
+			Annotations: map[string]string{
+				annotations.OpenShiftComponent: "kube-controller-manager",
+			},
 		},
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, kubeletServingCAConfigMap, func() error {
@@ -491,15 +553,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 	// this allows users to disable data collection in sensitive environments
 	// solves https://issues.redhat.com/browse/OCPBUGS-12208
-	ensureExistsReconcilationStrategy := false
+	ensureExistsReconciliationStrategy := false
 	if _, exists := hcp.Annotations[hyperv1.EnsureExistsPullSecretReconciliation]; exists {
-		ensureExistsReconcilationStrategy = true
+		ensureExistsReconciliationStrategy = true
 	}
 	log.Info("reconciling pull secret")
 	for _, ns := range manifests.PullSecretTargetNamespaces() {
 		secret := manifests.PullSecret(ns)
 		if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-			if !ensureExistsReconcilationStrategy || len(secret.Data) == 0 {
+			if !ensureExistsReconciliationStrategy || len(secret.Data) == 0 {
 				secret.Data = pullSecret.Data
 				secret.Type = pullSecret.Type
 			}
@@ -512,6 +574,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling user cert CA bundle")
 	if err := r.reconcileUserCertCABundle(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile user cert CA bundle: %w", err))
+	}
+
+	log.Info("reconciling proxy CA bundle")
+	if err := r.reconcileProxyCABundle(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile proxy CA bundle: %w", err))
 	}
 
 	if util.HCPOAuthEnabled(hcp) {
@@ -581,7 +648,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling olm resources")
-	errs = append(errs, r.reconcileOLM(ctx, hcp)...)
+	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
+
+	log.Info("reconciling kubelet configs")
+	if err := r.reconcileKubeletConfig(ctx); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile kubelet config: %w", err))
+	}
 
 	if hostedcontrolplane.IsStorageAndCSIManaged(hcp) {
 		log.Info("reconciling storage resources")
@@ -892,7 +964,7 @@ type manifestReconciler interface {
 }
 
 func (r *reconciler) reconcileRBAC(ctx context.Context) error {
-	rbac := []manifestReconciler{
+	rbacReconciler := []manifestReconciler{
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CSRApproverClusterRole, reconcile: rbac.ReconcileCSRApproverClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.IngressToRouteControllerClusterRole, reconcile: rbac.ReconcileIngressToRouteControllerClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.NamespaceSecurityAllocationControllerClusterRole, reconcile: rbac.ReconcileNamespaceSecurityAllocationControllerClusterRole},
@@ -930,8 +1002,19 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.UserOAuthClusterRoleBinding, reconcile: rbac.ReconcileUserOAuthClusterRoleBinding},
 	}
+
+	if azureutil.IsAroHCP() {
+		rbacReconciler = append(rbacReconciler,
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureDiskCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureDiskCSIDriverNodeServiceAccountClusterRoleBinding},
+
+			manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRole, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRole},
+			manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.AzureFileCSIDriverNodeServiceAccountRoleBinding, reconcile: rbac.ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding},
+		)
+	}
+
 	var errs []error
-	for _, m := range rbac {
+	for _, m := range rbacReconciler {
 		if err := m.upsert(ctx, r.client, r.CreateOrUpdate); err != nil {
 			errs = append(errs, err)
 		}
@@ -945,7 +1028,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	p := ingress.NewIngressParams(hcp)
 	ingressController := manifests.IngressDefaultIngressController()
 	if _, err := r.CreateOrUpdate(ctx, r.client, ingressController, func() error {
-		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope)
+		return ingress.ReconcileDefaultIngressController(ingressController, p.IngressSubdomain, p.PlatformType, p.Replicas, p.IBMCloudUPI, p.IsPrivate, p.AWSNLB, p.LoadBalancerScope, p.LoadBalancerIP)
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile default ingress controller: %w", err))
 	}
@@ -1154,6 +1237,12 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
+		if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+			}
+		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
@@ -1271,7 +1360,7 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 		if apierrors.IsNotFound(err) {
 			// kubeAdminPasswordHash should not exist when a user specifies an explicit oauth config
 			// delete kubeAdminPasswordHash if it exist
-			return r.deleteKubeadminPasswordHashSecret(ctx, hcp)
+			return r.deleteKubeadminPasswordHashSecret(ctx)
 		}
 		return fmt.Errorf("failed to get kubeadmin password secret: %w", err)
 	}
@@ -1282,20 +1371,21 @@ func (r *reconciler) reconcileKubeadminPasswordHashSecret(ctx context.Context, h
 	}); err != nil {
 		return err
 	}
-	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.cpClient, oauthDeployment, func() error {
-		if oauthDeployment.Spec.Template.ObjectMeta.Annotations == nil {
-			oauthDeployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+
+	if _, err := r.CreateOrUpdate(ctx, r.cpClient, kubeadminPasswordSecret, func() error {
+		if kubeadminPasswordSecret.Annotations == nil {
+			kubeadminPasswordSecret.Annotations = map[string]string{}
 		}
-		oauthDeployment.Spec.Template.ObjectMeta.Annotations[SecretHashAnnotation] = secretHash(kubeadminPasswordHashSecret.Data["kubeadmin"])
+		kubeadminPasswordSecret.Annotations[cpoauth.KubeadminSecretHashAnnotation] = string(kubeadminPasswordHashSecret.Data["kubeadmin"])
 		return nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("failed to annotate kubeadmin-password secret in hcp namespace: %v", err)
 	}
+
 	return nil
 }
 
-func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context) error {
 	kubeadminPasswordHashSecret := manifests.KubeadminPasswordHashSecret()
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordHashSecret), kubeadminPasswordHashSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -1307,18 +1397,7 @@ func (r *reconciler) deleteKubeadminPasswordHashSecret(ctx context.Context, hcp 
 		}
 	}
 
-	oauthDeployment := manifests.OAuthDeployment(hcp.Namespace)
-	if _, err := r.CreateOrUpdate(ctx, r.cpClient, oauthDeployment, func() error {
-		delete(oauthDeployment.Spec.Template.ObjectMeta.Annotations, SecretHashAnnotation)
-		return nil
-	}); err != nil {
-		return err
-	}
 	return nil
-}
-
-func secretHash(data []byte) string {
-	return fmt.Sprintf("%x", md5.Sum(data))
 }
 
 func (r *reconciler) reconcileOAuthServingCertCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1352,16 +1431,47 @@ func (r *reconciler) reconcileUserCertCABundle(ctx context.Context, hcp *hyperv1
 	return nil
 }
 
-const awsCredentialsTemplate = `[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-sts_regional_endpoints = regional
-`
+func (r *reconciler) reconcileProxyCABundle(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	proxyCADestination := manifests.OpenShiftUserCABundle()
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+		cpProxyCA := &corev1.ConfigMap{}
+		cpProxyCA.Namespace = hcp.Namespace
+		cpProxyCA.Name = hcp.Spec.Configuration.Proxy.TrustedCA.Name
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpProxyCA), cpProxyCA); err != nil {
+			return fmt.Errorf("cannot get proxy CA bundle ConfigMap: %w", err)
+		}
+		if _, err := r.CreateOrUpdate(ctx, r.client, proxyCADestination, func() error {
+			proxyCADestination.Data = cpProxyCA.Data
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile the proxy CA bundle ConfigMap: %w", err)
+		}
+	} else {
+		if _, err := util.DeleteIfNeeded(ctx, r.client, proxyCADestination); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
+	if roleArn == "" {
+		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
+	}
+	if region == "" {
+		return "", fmt.Errorf("a region must be specified for cross-partition compatibility in AssumeRole credentials")
+	}
+	return fmt.Sprintf(awsCredentialsTemplate, roleArn, region), nil
+}
 
 func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) []error {
 	var errs []error
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		var region string
+		if hcp.Spec.Platform.AWS != nil {
+			region = hcp.Spec.Platform.AWS.Region
+		}
 		syncSecret := func(secret *corev1.Secret, arn string) error {
 			ns := &corev1.Namespace{}
 			err := r.client.Get(ctx, client.ObjectKey{Name: secret.Namespace}, ns)
@@ -1372,8 +1482,11 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 				}
 				return fmt.Errorf("failed to get secret namespace %s: %w", secret.Namespace, err)
 			}
+			credentials, err := buildAWSWebIdentityCredentials(arn, region)
+			if err != nil {
+				return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
+			}
 			if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-				credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 				secret.Data = map[string][]byte{"credentials": []byte(credentials)}
 				secret.Type = corev1.SecretTypeOpaque
 				return nil
@@ -1383,66 +1496,70 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			return nil
 		}
 		for arn, secret := range map[string]*corev1.Secret{
-			hcp.Spec.Platform.AWS.RolesRef.IngressARN:       manifests.AWSIngressCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.StorageARN:       manifests.AWSStorageCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN: manifests.AWSImageRegistryCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.IngressARN: manifests.AWSIngressCloudCredsSecret(),
+			hcp.Spec.Platform.AWS.RolesRef.StorageARN: manifests.AWSStorageCloudCredsSecret(),
 		} {
 			err := syncSecret(secret, arn)
 			if err != nil {
 				errs = append(errs, err)
 			}
 		}
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			err := syncSecret(
+				manifests.AWSImageRegistryCloudCredsSecret(),
+				hcp.Spec.Platform.AWS.RolesRef.ImageRegistryARN,
+			)
+			if err != nil {
+				errs = append(errs, err)
+			}
+		}
 	case hyperv1.AzurePlatform:
-		referenceCredentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.Azure.Credentials.Name}}
-		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(referenceCredentialsSecret), referenceCredentialsSecret); err != nil {
-			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
-		}
-
 		secretData := map[string][]byte{
-			"azure_client_id":       referenceCredentialsSecret.Data["AZURE_CLIENT_ID"],
-			"azure_client_secret":   referenceCredentialsSecret.Data["AZURE_CLIENT_SECRET"],
-			"azure_region":          []byte(hcp.Spec.Platform.Azure.Location),
-			"azure_resource_prefix": []byte(hcp.Name + "-" + hcp.Spec.InfraID),
-			"azure_resourcegroup":   []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
-			"azure_subscription_id": referenceCredentialsSecret.Data["AZURE_SUBSCRIPTION_ID"],
-			"azure_tenant_id":       referenceCredentialsSecret.Data["AZURE_TENANT_ID"],
+			"azure_federated_token_file": []byte("/var/run/secrets/openshift/serviceaccount/token"),
+			"azure_region":               []byte(hcp.Spec.Platform.Azure.Location),
+			"azure_resource_prefix":      []byte(hcp.Name + "-" + hcp.Spec.InfraID),
+			"azure_resourcegroup":        []byte(hcp.Spec.Platform.Azure.ResourceGroupName),
+			"azure_subscription_id":      []byte(hcp.Spec.Platform.Azure.SubscriptionID),
+			"azure_tenant_id":            []byte(hcp.Spec.Platform.Azure.TenantID),
 		}
 
+		// The ingress controller fails if this secret is not provided. The controller runs on the control plane side. In managed azure, we are
+		// overriding the Azure credentials authentication method to always use client certificate authentication. This secret is just created
+		// so that the ingress controller does not fail. The data in the secret is never used by the ingress controller due to the aforementioned
+		// override to use client certificate authentication.
 		ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
+			secretData["azure_client_id"] = []byte("fakeClientID")
 			ingressCredentialSecret.Data = secretData
 			return nil
 		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed tom reconcile guest cluster ingress operator secret: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster ingress operator secret: %w", err))
 		}
 
-		csiCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, csiCredentialSecret, func() error {
-			csiCredentialSecret.Data = secretData
+		azureDiskCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, azureDiskCSISecret, func() error {
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.DiskMSIClientID)
+			azureDiskCSISecret.Data = secretData
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
 		}
 
-		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
-			imageRegistrySecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
+				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
+				imageRegistrySecret.Data = secretData
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+			}
 		}
 
-		cloudNetworkConfigControllerSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cloud-network-config-controller", Name: "cloud-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, cloudNetworkConfigControllerSecret, func() error {
-			cloudNetworkConfigControllerSecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster cloud-network-config-controller secret: %w", err))
-		}
-
-		csiDriverSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, csiDriverSecret, func() error {
-			csiDriverSecret.Data = secretData
+		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
+		if _, err := r.CreateOrUpdate(ctx, r.client, azureFileCSISecret, func() error {
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.FileMSIClientID)
+			azureFileCSISecret.Data = secretData
 			return nil
 		}); err != nil {
 			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
@@ -1453,14 +1570,11 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			return []error{fmt.Errorf("failed to get cloud credentials secret in hcp namespace: %w", err)}
 		}
 		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
-		cloudName := hcp.Spec.Platform.OpenStack.IdentityRef.CloudName
-		externalNetworkID := hcp.Spec.Platform.OpenStack.ExternalNetwork.ID
-
 		errs = append(errs,
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, cloudName, caCertData),
-			r.reconcileOpenStackCredentialsSecret(ctx, externalNetworkID, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, cloudName, caCertData),
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 		)
 	case hyperv1.PowerVSPlatform:
 		createPowerVSSecret := func(srcSecret, destSecret *corev1.Secret) error {
@@ -1515,29 +1629,31 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			errs = append(errs, fmt.Errorf("failed to reconcile powervs storage cloud credentials secret %w", err))
 		}
 
-		var imageRegistryCredentials corev1.Secret
-		err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &imageRegistryCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get image registry operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err))
-			return errs
-		}
+		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+			var imageRegistryCredentials corev1.Secret
+			err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name}, &imageRegistryCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get image registry operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.ImageRegistryOperatorCloudCreds.Name, err))
+				return errs
+			}
 
-		imageRegistryInstallerCloudCredentials := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "openshift-image-registry",
-				Name:      "installer-cloud-credentials",
-			},
-		}
-		err = createPowerVSSecret(&imageRegistryCredentials, imageRegistryInstallerCloudCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
+			imageRegistryInstallerCloudCredentials := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "openshift-image-registry",
+					Name:      "installer-cloud-credentials",
+				},
+			}
+			err = createPowerVSSecret(&imageRegistryCredentials, imageRegistryInstallerCloudCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
+			}
 		}
 	}
 	return errs
 }
 
 // reconcileOpenStackCredentialsSecret is a wrapper used to reconcile the OpenStack cloud config secrets.
-func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, externalNetworkID *string, namespace, name string, credentialsSecret *corev1.Secret, cloudName string, caCertData []byte) error {
+func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, platformSpec *hyperv1.OpenStackPlatformSpec, namespace, name string, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -1546,7 +1662,7 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, ex
 		Data: credentialsSecret.Data,
 	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, secret, func() error {
-		return openstack.ReconcileCloudConfigSecret(externalNetworkID, secret, cloudName, credentialsSecret, caCertData)
+		return openstack.ReconcileCloudConfigSecret(platformSpec, secret, credentialsSecret, caCertData, machineNetwork)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -1568,7 +1684,7 @@ func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *conf
 	return nil
 }
 
-func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret) []error {
 	var errs []error
 
 	operatorHub := manifests.OperatorHub()
@@ -1597,7 +1713,10 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	p := olm.NewOperatorLifecycleManagerParams(hcp)
+	p, err := olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.ImageMetaDataProvider)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
+	}
 
 	// Check if the defaultSources are disabled
 	if err := r.client.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub); err != nil {
@@ -1626,8 +1745,12 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 			}
 		} else {
 			if _, err := r.CreateOrUpdate(ctx, r.client, cs, func() error {
-				catalog.reconcile(cs, p)
-				return nil
+				if p != nil {
+					catalog.reconcile(cs, p)
+					return nil
+				} else {
+					return fmt.Errorf("failed to get OperatorLifecycleManagerParams")
+				}
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile catalog source %s/%s: %w", cs.Namespace, cs.Name, err))
 			}
@@ -1757,7 +1880,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmCPC.Data == nil {
 				cmCPC.Data = map[string]string{}
 			}
-			cmCPC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmCPC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmCPC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}
@@ -1777,7 +1900,7 @@ func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.Host
 			if cmKCC.Data == nil {
 				cmKCC.Data = map[string]string{}
 			}
-			cmKCC.Data[openstack.CredentialsFile] = reference.Data[openstack.CredentialsFile]
+			cmKCC.Data[openstack.CloudConfigKey] = reference.Data[openstack.CloudConfigKey]
 			if reference.Data[openstack.CABundleKey] != "" {
 				cmKCC.Data[openstack.CABundleKey] = reference.Data[openstack.CABundleKey]
 			}
@@ -1925,18 +2048,20 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		return remaining, err
 	}
 	var errs []error
-	log.Info("Ensuring image registry storage is removed")
-	removed, err := r.ensureImageRegistryStorageRemoved(ctx)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	if !removed {
-		remaining.Insert("image-registry")
-	} else {
-		log.Info("Image registry is removed")
+	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		log.Info("Ensuring image registry storage is removed")
+		removed, err := r.ensureImageRegistryStorageRemoved(ctx)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !removed {
+			remaining.Insert("image-registry")
+		} else {
+			log.Info("Image registry is removed")
+		}
 	}
 	log.Info("Ensuring ingress controllers are removed")
-	removed, err = r.ensureIngressControllersRemoved(ctx, hcp)
+	removed, err := r.ensureIngressControllersRemoved(ctx, hcp)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -1988,7 +2113,7 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 		return fmt.Errorf("failed to list control plane services: %w", err)
 	}
 
-	// disallow all urls tageting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
+	// disallow all urls targeting services in the hcp namespace by default unless 'hypershift.openshift.io/allow-guest-webhooks' label is present.
 	disallowedUrls := make([]string, 0)
 	for _, svc := range cpServices.Items {
 		if _, exist := svc.Labels[hyperv1.AllowGuestWebhooksServiceLabel]; exist {
@@ -2033,6 +2158,73 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 	}
 
 	return errors.NewAggregate(errs)
+}
+
+// reconcileKubeletConfig Lists the KubeletConfig ConfigMaps from the controlPlane cluster
+// and copies them to the hosted cluster.
+// In addition, it deletes KubeletConfig ConfigMaps from the hosted cluster which are no longer relevant.
+// I.e., has been deleted from the controlPlane cluster.
+// IOW, it makes sure to synchronize the KubeletConfig ConfigMaps to be the same between the controlPlane cluster
+// and the hosted-cluster.
+func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	wantCMList := &corev1.ConfigMapList{}
+	if err := r.cpClient.List(ctx, wantCMList, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		Namespace:     r.hcpNamespace,
+	}); err != nil {
+		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from controlplane namespace %s: %w", r.hcpNamespace, err)
+	}
+	want := set.Set[string]{}
+	for _, cm := range wantCMList.Items {
+		want.Insert(cm.Name)
+	}
+	for _, cm := range wantCMList.Items {
+		hostedClusterCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cm.Name,
+				Namespace: ConfigManagedNamespace,
+			},
+		}
+		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
+			return mutateKubeletConfig(&cm, hostedClusterCM)
+		}); err != nil {
+			return fmt.Errorf("failed to reconciled KubeletConfig %s ConfigMap: %w", client.ObjectKeyFromObject(hostedClusterCM).String(), err)
+		} else {
+			log.Info("reconciled ConfigMap", "result", result)
+		}
+	}
+
+	haveCMList := &corev1.ConfigMapList{}
+	if err := r.client.List(ctx, haveCMList, &client.ListOptions{
+		LabelSelector: labels.SelectorFromSet(map[string]string{nodepool.KubeletConfigConfigMapLabel: "true"}),
+		Namespace:     ConfigManagedNamespace,
+	}); err != nil {
+		return fmt.Errorf("failed to list KubeletConfig ConfigMaps from hostedcluster namespace %s: %w", ConfigManagedNamespace, err)
+	}
+	for i := range haveCMList.Items {
+		cm := &haveCMList.Items[i]
+		if want.Has(cm.Name) {
+			continue
+		}
+		log.Info("delete mirror config ConfigMap", "config", client.ObjectKeyFromObject(cm).String())
+		if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+			return fmt.Errorf("failed to delete ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
+		}
+	}
+	return nil
+}
+
+func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
+	hostedClusterConfigMap.Immutable = ptr.To(true)
+	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
+		nodepool.KubeletConfigConfigMapLabel: "true",
+		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
+		nodepool.NTOMirroredConfigLabel:      "true",
+	})
+	hostedClusterConfigMap.Data = controlPlaneConfigMap.Data
+	return nil
 }
 
 func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
@@ -2411,8 +2603,18 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 		errs = append(errs, fmt.Errorf("failed to reconcile Storage : %w", err))
 	}
 
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		driver := manifests.ClusterCSIDriver(operatorv1.AWSEBSCSIDriver)
+	var driverNames []operatorv1.CSIDriverName
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		driverNames = []operatorv1.CSIDriverName{operatorv1.AWSEBSCSIDriver}
+	case hyperv1.OpenStackPlatform:
+		driverNames = []operatorv1.CSIDriverName{
+			operatorv1.CinderCSIDriver,
+			operatorv1.ManilaCSIDriver,
+		}
+	}
+	for _, driverName := range driverNames {
+		driver := manifests.ClusterCSIDriver(driverName)
 		if _, err := r.CreateOrUpdate(ctx, r.client, driver, func() error {
 			storage.ReconcileClusterCSIDriver(driver)
 			return nil
@@ -2602,4 +2804,14 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	}
 
 	return errs
+}
+
+// imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
+func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
+	switch platform {
+	case hyperv1.OpenStackPlatform:
+		return true
+	default:
+		return false
+	}
 }

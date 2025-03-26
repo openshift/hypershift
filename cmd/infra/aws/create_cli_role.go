@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/sts"
+
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
-
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/log"
 )
 
 const (
@@ -170,7 +171,7 @@ func NewCreateCLIRoleCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.RoleName, "name", opts.RoleName, "Role name")
 	cmd.Flags().StringToStringVarP(&opts.AdditionalTags, "additional-tags", "t", opts.AdditionalTags, "Additional tags to apply to the role created (e.g. 'key1=value1,key2=value2')")
 
-	cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
@@ -212,7 +213,7 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 		return err
 	}
 
-	fmt.Printf("Sucessfully created/updated role %s, arn: %s\n", o.RoleName, roleArn)
+	fmt.Printf("Successfully created/updated role %s, arn: %s\n", o.RoleName, roleArn)
 	return nil
 }
 

@@ -6,18 +6,18 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
-	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -36,8 +36,8 @@ var (
 	}
 	name   = "kube-scheduler"
 	labels = map[string]string{
-		"app":                         name,
-		hyperv1.ControlPlaneComponent: name,
+		"app":                              name,
+		hyperv1.ControlPlaneComponentLabel: name,
 	}
 
 	// The selector needs to be invariant for the lifecycle of the project as it's an immutable field,
@@ -80,7 +80,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			},
 		},
 		Spec: corev1.PodSpec{
-			AutomountServiceAccountToken: pointer.Bool(false),
+			AutomountServiceAccountToken: ptr.To(false),
 			Containers: []corev1.Container{
 				util.BuildContainer(schedulerContainerMain(), buildSchedulerContainerMain(image, deployment.Namespace, featureGates, policy, ciphers, tlsVersion, disableProfiling)),
 			},
@@ -171,6 +171,6 @@ func schedulerVolumeKubeconfig() *corev1.Volume {
 func buildSchedulerVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.SchedulerKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }

@@ -5,20 +5,22 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/openshift/hypershift/cmd/log"
-	supportconfig "github.com/openshift/hypershift/support/config"
-	"k8s.io/apimachinery/pkg/api/errors"
-
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/cmd/install/assets"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
+	routev1 "github.com/openshift/api/route/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -36,9 +38,12 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	r.Client = mgr.GetClient()
 
-	mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
+	err := mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
 		return []string{o.GetName()}
 	})
+	if err != nil {
+		return err
+	}
 
 	// A channel is used to generate an initial sync event.
 	// Afterwards, the controller syncs on HostedClusters.
@@ -136,7 +141,7 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 		svcsNameToIP[route.Namespace+route.Spec.To.Name] = svc.Spec.ClusterIP
 	}
 
-	// This enables traffic from the data plane via kuberntes.svc.
+	// This enables traffic from the data plane via kubernetes.svc.
 	svcList := &corev1.ServiceList{}
 	fieldSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "kube-apiserver"})
 	listOptions := &client.ListOptions{

@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/openshift/hypershift/support/util"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func InfrastructureConfig() *configv1.Infrastructure {
@@ -40,9 +40,10 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
 	infra.Status.Platform = configv1.PlatformType(platformType)
-	infra.Status.PlatformStatus = &configv1.PlatformStatus{
-		Type: configv1.PlatformType(platformType),
+	if infra.Status.PlatformStatus == nil {
+		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 	}
+	infra.Status.PlatformStatus.Type = configv1.PlatformType(platformType)
 
 	switch hcp.Spec.InfrastructureAvailabilityPolicy {
 	case hyperv1.HighlyAvailable:
@@ -53,10 +54,13 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 
 	switch platformType {
 	case hyperv1.AWSPlatform:
-		infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
-		infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{
-			Region: hcp.Spec.Platform.AWS.Region,
+		if infra.Spec.PlatformSpec.AWS == nil {
+			infra.Spec.PlatformSpec.AWS = &configv1.AWSPlatformSpec{}
 		}
+		if infra.Status.PlatformStatus.AWS == nil {
+			infra.Status.PlatformStatus.AWS = &configv1.AWSPlatformStatus{}
+		}
+		infra.Status.PlatformStatus.AWS.Region = hcp.Spec.Platform.AWS.Region
 		tags := []configv1.AWSResourceTag{}
 		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
 			// This breaks the AWS CSI driver as it ends up being used there as an extra tag
@@ -87,7 +91,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 		infra.Spec.PlatformSpec.OpenStack = &configv1.OpenStackPlatformSpec{}
 		// This ConfigMap is populated by the local ignition provider and given to MCO
 		infra.Spec.CloudConfig.Name = "cloud-provider-config"
-		infra.Spec.CloudConfig.Key = openstack.CredentialsFile
+		infra.Spec.CloudConfig.Key = openstack.CloudConfigKey
 		infra.Status.PlatformStatus.OpenStack = &configv1.OpenStackPlatformStatus{
 			CloudName:            "openstack",
 			LoadBalancer:         &configv1.OpenStackPlatformLoadBalancer{Type: configv1.LoadBalancerTypeUserManaged},

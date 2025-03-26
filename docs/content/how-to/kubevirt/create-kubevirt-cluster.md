@@ -12,7 +12,7 @@ Install an OCP cluster running on VMs within a management OCP cluster
 * The management OCP cluster must have default storage class. [Storage Configuration Documentation](https://docs.openshift.com/container-platform/4.12/post_installation_configuration/storage-configuration.html) Example of how to set a default storage class: `oc patch storageclass ocs-storagecluster-ceph-rbd -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'`
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
 * A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
-* A network MTU of 9000 or larger on the OCP cluster hosting the KubeVirt VMs is recommended for optimial network performance. Smaller MTU settings will work, but network latency and throughput of the hosted pods will be impacted. Multiqueue should only be enabled on NodePools when the MTU is 9000 or larger.
+* A network MTU of 9000 or larger on the OCP cluster hosting the KubeVirt VMs is recommended for optimal network performance. Smaller MTU settings will work, but network latency and throughput of the hosted pods will be impacted. Multiqueue should only be enabled on NodePools when the MTU is 9000 or larger.
 
 ## Installing HyperShift Operator and cli tooling
 
@@ -33,7 +33,7 @@ places the cli tool within the /usr/local/bin directory.
 !!! note
 
     The command below is the same if you use docker.
-  
+
 ```shell
 podman run --rm --privileged -it -v \
 $PWD:/output docker.io/library/golang:1.20 /bin/bash -c \
@@ -162,10 +162,35 @@ version   4.14.0        True        False         5m39s   Cluster version is 4.1
 ## Influencing VM Scheduling
 
 By default, KubeVirt VMs created by a NodePool are scheduled to any available
-node with the appropriate capacity to run the VM. There are affinity rules
-that attempt to spread VMs for a NodePool out across multiple underlying
+node with the appropriate capacity to run the VM. A topologySpreadConstraint
+is used to try to spread VMs for a NodePool out across multiple underlying
 nodes, but in general it is possible for the VMs to be scheduled to any node
 that meets the requirements for running KubeVirt VMs.
+For availability reasons, the topologySpreadConstraint is only a soft constraint
+(`whenUnsatisfiable: ScheduleAnyway` policy) so, under certain circumstances,
+VMs for a single nodepool can “clump” together on a single node due to live migration
+to available nodes.
+The De-Scheduler can optionally be used to continuously redistribute VMs so that
+they again satisfy the topologySpreadConstraint as soon as possible.
+To achieve that behavior, the cluster-kube-descheduler-operator should be installed
+and configured with something like:
+```yaml
+apiVersion: operator.openshift.io/v1
+kind: KubeDescheduler
+metadata:
+  name: cluster
+  namespace: openshift-kube-descheduler-operator
+spec:
+  mode: Automatic
+  managementState: Managed
+  deschedulingIntervalSeconds: 60
+  profiles:
+  - SoftTopologyAndDuplicates
+  - EvictPodsWithPVC
+  - EvictPodsWithLocalStorage
+  profileCustomizations:
+    devEnableEvictionsInBackground: true
+```
 
 It is possible to influence where the KubeVirt VMs within a NodePool are
 scheduled through the use of NodeSelectors. Below is an example of using a
@@ -245,7 +270,7 @@ namespace:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.14.0                                       
+example                   example         5               5               False         False        4.14.0  
 example-extra-cpu         example         2                               False         False                  True              True             Minimum availability requires 2 replicas, current 0 available
 ```
 
@@ -270,7 +295,7 @@ And the nodepool will be in the desired state:
 oc get nodepools --namespace clusters
 
 NAME                      CLUSTER         DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-example                   example         5               5               False         False        4.14.0                                       
+example                   example         5               5               False         False        4.14.0  
 example-extra-cpu         example         2               2               False         False        4.14.0  
 ```
 

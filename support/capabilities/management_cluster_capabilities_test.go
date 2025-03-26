@@ -4,16 +4,17 @@ import (
 	"fmt"
 	"testing"
 
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
-
-	. "github.com/onsi/gomega"
 )
 
 var _ CapabiltyChecker = &ManagementClusterCapabilities{}

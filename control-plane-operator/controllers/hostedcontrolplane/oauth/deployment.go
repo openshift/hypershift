@@ -7,29 +7,39 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/proxy"
+	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/util"
 	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	configHashAnnotation                 = "oauth.hypershift.openshift.io/config-hash"
+	KubeadminSecretHashAnnotation        = "hypershift.openshift.io/kubeadmin-secret-hash"
 	oauthNamedCertificateMountPathPrefix = "/etc/kubernetes/certs/named"
 	socks5ProxyContainerName             = "socks-proxy"
 
 	httpKonnectivityProxyPort   = 8092
 	socks5KonnectivityProxyPort = 8090
+
+	certsTrustPath         = "/etc/pki/tls/certs"
+	managedTrustBundlePath = "managed-trust-bundle.crt"
 )
 
 var (
@@ -66,12 +76,12 @@ var (
 
 func oauthLabels() map[string]string {
 	return map[string]string{
-		"app":                         "oauth-openshift",
-		hyperv1.ControlPlaneComponent: "oauth-openshift",
+		"app":                              "oauth-openshift",
+		hyperv1.ControlPlaneComponentLabel: "oauth-openshift",
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(ctx context.Context, client crclient.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -105,6 +115,17 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 		return fmt.Errorf("oauth server: configuration not found in configmap")
 	}
 	deployment.Spec.Template.ObjectMeta.Annotations[configHashAnnotation] = util.ComputeHash(configBytes)
+
+	kubeadminPasswordSecret := common.KubeadminPasswordSecret(deployment.Namespace)
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get kubeadmin password secret: %v", err)
+		}
+		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
+	} else {
+		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
+	}
+
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
@@ -132,6 +153,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 			util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig),
 			util.BuildVolume(oauthVolumeKonnectivityProxyClientCert(), buildOAuthVolumeKonnectivityProxyClientCert),
 			util.BuildVolume(oauthVolumeKonnectivityProxyTrustBundle(), buildOAuthVolumeKonnectivityProxyTrustBundle),
+			util.BuildVolume(oauthVolumeProxyManagedTrustBundle(), buildOAuthVolumeProxyManagedTrustBundle),
 		},
 	}
 
@@ -164,12 +186,13 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 
 	deploymentConfig.ApplyTo(deployment)
 	if len(identityProviders) > 0 {
-		_, volumeMountInfo, err := convertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
-		if err != nil {
-			return err
+		_, volumeMountInfo, _ := ConvertIdentityProviders(ctx, identityProviders, providerOverrides, client, deployment.Namespace)
+		// Ignore the error here, since we don't want to fail the deployment if the identity providers are invalid
+		// A condition will be set on the HC to indicate the error
+		if len(volumeMountInfo.Volumes) > 0 {
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
 		}
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volumeMountInfo.Volumes...)
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(oauthContainerMain().Name)...)
 	}
 	globalconfig.ApplyNamedCertificateMounts(oauthContainerMain().Name, oauthNamedCertificateMountPathPrefix, namedCertificates, &deployment.Spec.Template.Spec)
 	util.AvailabilityProber(kas.InClusterKASReadyURL(platformType), availabilityProberImage, &deployment.Spec.Template.Spec)
@@ -240,7 +263,7 @@ func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec,
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
-		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort)}
+		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort), "--connect-directly-to-cloud-apis"}
 		if proxyConfig != nil {
 			c.Args = append(c.Args, "--http-proxy", proxyConfig.HTTPProxy)
 			c.Args = append(c.Args, "--https-proxy", proxyConfig.HTTPSProxy)
@@ -251,6 +274,12 @@ func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec,
 			Value: fmt.Sprintf("%s/kubeconfig", volumeMounts.Path(c.Name, oauthVolumeKubeconfig().Name)),
 		}}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      oauthVolumeProxyManagedTrustBundle().Name,
+			MountPath: path.Join(certsTrustPath, managedTrustBundlePath),
+			SubPath:   managedTrustBundlePath,
+		})
+		proxy.SetEnvVars(&c.Env)
 	}
 }
 
@@ -446,6 +475,26 @@ func oauthVolumeKonnectivityProxyTrustBundle() *corev1.Volume {
 func buildOAuthVolumeKonnectivityProxyTrustBundle(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{DefaultMode: ptr.To[int32](0640)}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
+}
+
+func oauthVolumeProxyManagedTrustBundle() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "managed-trust-bundle",
+	}
+}
+
+func buildOAuthVolumeProxyManagedTrustBundle(v *corev1.Volume) {
+	v.ConfigMap = &corev1.ConfigMapVolumeSource{
+		Optional: ptr.To(true),
+	}
+	v.ConfigMap.DefaultMode = ptr.To[int32](0640)
+	v.ConfigMap.Name = manifests.TrustedCABundleConfigMap("").Name
+	v.ConfigMap.Items = []corev1.KeyToPath{
+		{
+			Key:  certs.UserCABundleMapKey,
+			Path: managedTrustBundlePath,
+		},
+	}
 }
 
 func applyOauthAuditWebhookConfigFileVolume(podSpec *corev1.PodSpec, auditWebhookRef *corev1.LocalObjectReference) {

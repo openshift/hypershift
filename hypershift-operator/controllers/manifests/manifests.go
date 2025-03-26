@@ -4,13 +4,13 @@ import (
 	"fmt"
 	"strings"
 
-	routev1 "github.com/openshift/api/route/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+	routev1 "github.com/openshift/api/route/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func HostedControlPlaneNamespaceObject(hostedClusterNamespace, hostedClusterName string) *corev1.Namespace {
@@ -109,6 +109,15 @@ func OpenShiftTrustedCABundleForNamespace(namespace string) *corev1.ConfigMap {
 		},
 		Data: map[string]string{
 			"ca-bundle.crt": "",
+		},
+	}
+}
+
+func KASServingCertSecret(namespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "kas-server-crt",
 		},
 	}
 }

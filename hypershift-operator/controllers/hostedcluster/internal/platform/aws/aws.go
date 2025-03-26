@@ -6,30 +6,39 @@ import (
 	"os"
 	"strings"
 
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-
-	"github.com/blang/semver"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
-	ImageStreamCAPA = "aws-cluster-api-controllers"
+	ImageStreamCAPA        = "aws-cluster-api-controllers"
+	awsCredentialsTemplate = `[default]
+role_arn = %s
+web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
+sts_regional_endpoints = regional
+region = %s
+`
 )
 
 func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
@@ -58,8 +67,22 @@ func (p AWS) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOr
 		},
 	}
 
+	var nodePools []hyperv1.NodePool
+	if hcluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		// Fetch nodepools to set AWSCluster subnets
+		nodePoolList := &hyperv1.NodePoolList{}
+		if err := c.List(ctx, nodePoolList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return nil, fmt.Errorf("failed to list nodepools: %w", err)
+		}
+		for i := range nodePoolList.Items {
+			if nodePoolList.Items[i].Spec.ClusterName == hcluster.Name {
+				nodePools = append(nodePools, nodePoolList.Items[i])
+			}
+		}
+	}
+
 	_, err := createOrUpdate(ctx, c, awsCluster, func() error {
-		return reconcileAWSCluster(awsCluster, hcluster, apiEndpoint)
+		return reconcileAWSCluster(awsCluster, hcluster, apiEndpoint, nodePools)
 	})
 	if err != nil {
 		return nil, err
@@ -90,7 +113,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
-				TerminationGracePeriodSeconds: k8sutilspointer.Int64(10),
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Tolerations: []corev1.Toleration{
 					{
 						Key:    "node-role.kubernetes.io/master",
@@ -243,24 +266,32 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	return deploymentSpec, nil
 }
 
+func buildAWSWebIdentityCredentials(roleArn, region string) (string, error) {
+	if roleArn == "" {
+		return "", fmt.Errorf("role arn cannot be empty in AssumeRole credentials")
+	}
+	if region == "" {
+		return "", fmt.Errorf("a region must be specified for cross-partition compatibility in AssumeRole credentials")
+	}
+	return fmt.Sprintf(awsCredentialsTemplate, roleArn, region), nil
+}
+
 func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
 	controlPlaneNamespace string) error {
-
-	awsCredentialsTemplate := `[default]
-role_arn = %s
-web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
-sts_regional_endpoints = regional
-`
 	// TODO (alberto): consider moving this reconciliation logic down to the CPO.
 	// this is not trivial as the CPO deployment itself needs the secret with the ControlPlaneOperatorARN
 	var errs []error
+	var region string
+	if platformSpec := hcluster.Spec.Platform.AWS; platformSpec != nil {
+		region = platformSpec.Region
+	}
 	syncSecret := func(secret *corev1.Secret, arn string) error {
-		if arn == "" {
-			return fmt.Errorf("ARN is not provided for cloud credential secret %s/%s", secret.Namespace, secret.Name)
+		credentials, err := buildAWSWebIdentityCredentials(arn, region)
+		if err != nil {
+			return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
 		if _, err := createOrUpdate(ctx, c, secret, func() error {
-			credentials := fmt.Sprintf(awsCredentialsTemplate, arn)
 			secret.Data = map[string][]byte{"credentials": []byte(credentials)}
 			secret.Type = corev1.SecretTypeOpaque
 			return nil
@@ -276,8 +307,7 @@ sts_regional_endpoints = regional
 		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.AWS.RolesRef.StorageARN:              AWSEBSCSIDriverCredsSecret(controlPlaneNamespace),
 	} {
-		err := syncSecret(secret, arn)
-		if err != nil {
+		if err := syncSecret(secret, arn); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -335,7 +365,7 @@ func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hype
 	return utilerrors.NewAggregate(errs)
 }
 
-func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint) error {
+func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, nodePools []hyperv1.NodePool) error {
 	// We only create this resource once and then let CAPI own it
 	awsCluster.Annotations = map[string]string{
 		capiv1.ManagedByAnnotation: "external",
@@ -363,6 +393,24 @@ func reconcileAWSCluster(awsCluster *capiaws.AWSCluster, hcluster *hyperv1.Hoste
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
+
+	if hcluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		subnetIDs := sets.New[string]()
+		for i := range nodePools {
+			subnetIDPtr := nodePools[i].Spec.Platform.AWS.Subnet.ID
+			if subnetIDPtr != nil {
+				subnetIDs.Insert(*subnetIDPtr)
+			}
+		}
+		awsCluster.Spec.NetworkSpec.Subnets = nil
+		for _, id := range sets.List(subnetIDs) {
+			awsCluster.Spec.NetworkSpec.Subnets = append(awsCluster.Spec.NetworkSpec.Subnets, capiaws.SubnetSpec{
+				ID:       id,
+				IsPublic: true,
+			})
+		}
+	}
+
 	return nil
 }
 

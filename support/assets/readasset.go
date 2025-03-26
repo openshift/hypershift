@@ -3,13 +3,14 @@ package assets
 import (
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -71,10 +72,22 @@ func MustRoleBinding(reader AssetReader, fileName string) *rbacv1.RoleBinding {
 	return roleBinding
 }
 
-func MustHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedCluster {
+func ShouldHostedCluster(reader AssetReader, fileName string) *hyperv1.HostedCluster {
 	hostedCluster := &hyperv1.HostedCluster{}
-	deserializeResource(reader, fileName, hostedCluster)
+	tolerantDeserializeResource(reader, fileName, hostedCluster)
 	return hostedCluster
+}
+
+func ShouldNodePool(reader AssetReader, fileName string) *hyperv1.NodePool {
+	nodePool := &hyperv1.NodePool{}
+	tolerantDeserializeResource(reader, fileName, nodePool)
+	return nodePool
+}
+
+func MustCRD(reader AssetReader, fileName string) *apiextensionsv1.CustomResourceDefinition {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	deserializeResource(reader, fileName, crd)
+	return crd
 }
 
 func deserializeResource(reader AssetReader, fileName string, obj runtime.Object) {
@@ -84,6 +97,17 @@ func deserializeResource(reader AssetReader, fileName string, obj runtime.Object
 		panic(fmt.Sprintf("cannot determine gvk of resource in %s: %v", fileName, err))
 	}
 	if _, _, err = api.YamlSerializer.Decode(data, &gvks[0], obj); err != nil {
+		panic(fmt.Sprintf("cannot decode resource in %s: %v", fileName, err))
+	}
+}
+
+func tolerantDeserializeResource(reader AssetReader, fileName string, obj runtime.Object) {
+	data := MustAsset(reader, fileName)
+	gvks, _, err := api.Scheme.ObjectKinds(obj)
+	if err != nil || len(gvks) == 0 {
+		panic(fmt.Sprintf("cannot determine gvk of resource in %s: %v", fileName, err))
+	}
+	if _, _, err = api.TolerantYAMLSerializer.Decode(data, &gvks[0], obj); err != nil {
 		panic(fmt.Sprintf("cannot decode resource in %s: %v", fileName, err))
 	}
 }

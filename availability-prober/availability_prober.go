@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -26,8 +26,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 type options struct {
@@ -35,6 +40,7 @@ type options struct {
 	kubeconfig                    string
 	waitForInfrastructureResource bool
 	waitForLabeledPodsGone        string
+	waitForClusterRolebinding     string
 	requiredAPIs                  stringSetFlag
 	requiredAPIsParsed            []schema.GroupVersionKind
 }
@@ -49,8 +55,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().Var(&opts.requiredAPIs, "required-api", "An api that must be up before the program will be end. Can be passed multiple times, must be in group,version,kind format (e.G. operators.coreos.com,v1alpha1,CatalogSource)")
 	cmd.Flags().BoolVar(&opts.waitForInfrastructureResource, "wait-for-infrastructure-resource", false, "Waits until the cluster infrastructure.config.openshift.io resource is present")
 	cmd.Flags().StringVar(&opts.waitForLabeledPodsGone, "wait-for-labeled-pods-gone", "", "Waits until pods with the specified label is gone from the namespace. Must be in format: namespace/label=selector")
+	cmd.Flags().StringVar(&opts.waitForClusterRolebinding, "wait-for-cluster-rolebinding", "", "Waits until a concrete ClusterRoleBinding is present.")
 
-	log := zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	log := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 
@@ -96,13 +103,13 @@ func NewStartCommand() *cobra.Command {
 			}
 		}
 
-		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
+		check(log, url, time.Second, time.Second, opts.requiredAPIsParsed, opts.waitForInfrastructureResource, opts.waitForClusterRolebinding, opts.waitForLabeledPodsGone, discoveryClient, kubeClient)
 	}
 
 	return cmd
 }
 
-func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
+func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleepTime time.Duration, requiredAPIs []schema.GroupVersionKind, waitForInfrastructureResource bool, waitForClusterRolebinding, waitForLabeledPodsGone string, discoveryClient discovery.DiscoveryInterface, kubeClient crclient.Client) {
 	log = log.WithValues("sleepTime", sleepTime.String())
 	client := &http.Client{
 		Timeout: requestTimeout,
@@ -125,7 +132,7 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 
 		if len(requiredAPIs) > 0 {
 			_, apis, err := discoveryClient.ServerGroupsAndResources()
-			// Ignore GroupDiscoveryFailedError error, as the groups we care about might have been sucessfully discovered
+			// Ignore GroupDiscoveryFailedError error, as the groups we care about might have been successfully discovered
 			if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
 				log.Error(err, "discovering api resources failed, retrying...")
 				continue
@@ -184,6 +191,15 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 					log.Info(fmt.Sprintf("pods %s in namespace %s still exist, retrying...", labelSelectors, namespace))
 					continue
 				}
+			}
+		}
+
+		if len(waitForClusterRolebinding) > 0 {
+			clusterRoleBinding := &rbacv1.ClusterRoleBinding{}
+			err := kubeClient.Get(context.Background(), types.NamespacedName{Name: waitForClusterRolebinding}, clusterRoleBinding)
+			if err != nil {
+				log.Info("failed to get cluster rolebinding, retrying...", "ClusterRoleBinding", waitForClusterRolebinding, "err", err)
+				continue
 			}
 		}
 

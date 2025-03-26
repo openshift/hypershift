@@ -1,0 +1,65 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    apiVersion: openshiftcontrolplane.config.openshift.io/v1
+    build:
+      additionalTrustedCA: ""
+      buildDefaults: null
+      buildOverrides: null
+      imageTemplateFormat:
+        format: ""
+        latest: false
+    controllers: null
+    deployer:
+      imageTemplateFormat:
+        format: ""
+        latest: false
+    dockerPullSecret:
+      internalRegistryHostname: ""
+      registryURLs: null
+    imageImport:
+      disableScheduledImport: false
+      maxScheduledImageImportsPerMinute: 0
+      scheduledImageImportMinimumIntervalSeconds: 0
+    ingress:
+      ingressIPNetworkCIDR: ""
+    kind: OpenShiftControllerManagerConfig
+    kubeClientConfig:
+      connectionOverrides:
+        acceptContentTypes: ""
+        burst: 0
+        contentType: ""
+        qps: 0
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+    leaderElection:
+      leaseDuration: 0s
+      renewDeadline: 0s
+      retryPeriod: 0s
+    network:
+      clusterNetworks: null
+      networkPluginName: ""
+      serviceNetworkCIDR: ""
+      vxlanPort: 0
+    resourceQuota:
+      concurrentSyncs: 0
+      minResyncPeriod: 0s
+      syncPeriod: 0s
+    securityAllocator:
+      mcsAllocatorRange: ""
+      mcsLabelsPerProject: 0
+      uidAllocatorRange: ""
+    serviceAccount:
+      managedNames: null
+    serviceServingCert:
+      signer: null
+    servingInfo:
+      bindAddress: 0.0.0.0:10357
+      bindNetwork: tcp
+      certFile: /etc/kubernetes/certs/tls.crt
+      clientCA: /etc/kubernetes/client-ca/ca.crt
+      keyFile: /etc/kubernetes/certs/tls.key
+      maxRequestsInFlight: 0
+      requestTimeoutSeconds: 0
+kind: ConfigMap
+metadata:
+  name: cluster-policy-controller-config

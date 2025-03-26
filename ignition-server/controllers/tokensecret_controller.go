@@ -8,18 +8,21 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
-	"github.com/prometheus/client_golang/prometheus"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 const (
@@ -249,12 +252,18 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
 	config, err := util.DecodeAndDecompress(compressedConfig)
 	if err != nil {
+		errWithFullMsg := fmt.Errorf("failed to decode and decompress config: %w", err)
+		if hasSameReasonAndMessage(tokenSecret, InvalidConfigReason, errWithFullMsg) {
+			return ctrl.Result{}, errWithFullMsg
+		}
+
 		patch := tokenSecret.DeepCopy()
 		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
-		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to decode and decompress config: %s", err))
+		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
 		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 		}
+
 		return ctrl.Result{}, err
 	}
 
@@ -274,12 +283,20 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return payload, err
 	}()
 	if err != nil {
+		// This patch could flood the API server, so we should only do it when the reason or message is different from the current one.
+		// More info here: https://issues.redhat.com/browse/OCPBUGS-42320.
+		errWithFullMsg := fmt.Errorf("failed to generate payload: %w", err)
+		if hasSameReasonAndMessage(tokenSecret, InvalidConfigReason, errWithFullMsg) {
+			return ctrl.Result{}, errWithFullMsg
+		}
+
 		patch := tokenSecret.DeepCopy()
 		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
-		patch.Data[TokenSecretMessageKey] = []byte(fmt.Sprintf("Failed to generate payload: %s", err))
+		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
 		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 		}
+
 		return ctrl.Result{}, err
 	}
 
@@ -306,6 +323,10 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+}
+
+func hasSameReasonAndMessage(tokenSecret *corev1.Secret, reason string, message error) bool {
+	return string(tokenSecret.Data[TokenSecretReasonKey]) == reason && string(tokenSecret.Data[TokenSecretMessageKey]) == message.Error()
 }
 
 // getTokenIDTimeLived returns the duration a from TokenSecretLastUpdatedTokenIDAnnotation til now.

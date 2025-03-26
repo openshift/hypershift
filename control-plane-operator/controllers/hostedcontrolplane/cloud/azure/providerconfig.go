@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -16,8 +17,8 @@ const (
 )
 
 // ReconcileCloudConfig reconciles as expected by Nodes Kubelet.
-func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
+	cfg, err := azureConfigWithoutCredentials(hcp)
 	if err != nil {
 		return err
 	}
@@ -36,16 +37,16 @@ func ReconcileCloudConfig(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane,
 }
 
 // ReconcileCloudConfigWithCredentials reconciles as expected by KAS/KCM.
-func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) error {
-	cfg, err := azureConfigWithoutCredentials(hcp, credentialsSecret)
+func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane) error {
+	cfg, err := azureConfigWithoutCredentials(hcp)
 	if err != nil {
 		return err
 	}
 
-	cfg.AADClientID = string(credentialsSecret.Data["AZURE_CLIENT_ID"])
-	cfg.AADClientSecret = string(credentialsSecret.Data["AZURE_CLIENT_SECRET"])
+	cfg.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CredentialsSecretName
 	cfg.UseManagedIdentityExtension = false
 	cfg.UseInstanceMetadata = false
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
@@ -58,7 +59,7 @@ func ReconcileCloudConfigWithCredentials(secret *corev1.Secret, hcp *hyperv1.Hos
 	return nil
 }
 
-func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsSecret *corev1.Secret) (AzureConfig, error) {
+func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane) (AzureConfig, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(hcp.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return AzureConfig{}, fmt.Errorf("failed to determine subnet name from SubnetID: %w", err)
@@ -76,7 +77,7 @@ func azureConfigWithoutCredentials(hcp *hyperv1.HostedControlPlane, credentialsS
 
 	azureConfig := AzureConfig{
 		Cloud:                        hcp.Spec.Platform.Azure.Cloud,
-		TenantID:                     string(credentialsSecret.Data["AZURE_TENANT_ID"]),
+		TenantID:                     hcp.Spec.Platform.Azure.TenantID,
 		UseManagedIdentityExtension:  true,
 		SubscriptionID:               hcp.Spec.Platform.Azure.SubscriptionID,
 		ResourceGroup:                hcp.Spec.Platform.Azure.ResourceGroupName,
@@ -108,7 +109,8 @@ type AzureConfig struct {
 	UseManagedIdentityExtension  bool   `json:"useManagedIdentityExtension"`
 	SubscriptionID               string `json:"subscriptionId"`
 	AADClientID                  string `json:"aadClientId"`
-	AADClientSecret              string `json:"aadClientSecret"`
+	AADClientCertPath            string `json:"aadClientCertPath"`
+	AADMSIDataPlaneIdentityPath  string `json:"aadMSIDataPlaneIdentityPath"`
 	ResourceGroup                string `json:"resourceGroup"`
 	Location                     string `json:"location"`
 	VnetName                     string `json:"vnetName"`

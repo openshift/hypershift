@@ -4,11 +4,14 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -236,7 +239,9 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 			name:             "Empty deployment config and oauth params",
 			deploymentConfig: config.DeploymentConfig{},
 			auditConfig:      manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
-			params:           OAuthDeploymentParams{},
+			params: OAuthDeploymentParams{
+				EtcdURL: "https://etcd-client:2379",
+			},
 		},
 	}
 	for _, tc := range testCases {

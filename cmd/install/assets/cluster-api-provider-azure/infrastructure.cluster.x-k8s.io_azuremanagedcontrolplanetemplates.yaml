@@ -155,6 +155,7 @@ spec:
                           to the cluster-autoscaler when enabled
                         properties:
                           balanceSimilarNodeGroups:
+                            default: "false"
                             description: BalanceSimilarNodeGroups - Valid values are
                               'true' and 'false'. The default is false.
                             enum:
@@ -162,6 +163,7 @@ spec:
                             - "false"
                             type: string
                           expander:
+                            default: random
                             description: Expander - If not specified, the default
                               is 'random'. See [expanders](https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-are-expanders)
                               for more information.
@@ -172,20 +174,24 @@ spec:
                             - random
                             type: string
                           maxEmptyBulkDelete:
+                            default: "10"
                             description: MaxEmptyBulkDelete - The default is 10.
                             type: string
                           maxGracefulTerminationSec:
+                            default: "600"
                             description: MaxGracefulTerminationSec - The default is
                               600.
                             pattern: ^(\d+)$
                             type: string
                           maxNodeProvisionTime:
+                            default: 15m
                             description: MaxNodeProvisionTime - The default is '15m'.
                               Values must be an integer followed by an 'm'. No unit
                               of time other than minutes (m) is supported.
                             pattern: ^(\d+)m$
                             type: string
                           maxTotalUnreadyPercentage:
+                            default: "45"
                             description: MaxTotalUnreadyPercentage - The default is
                               45. The maximum is 100 and the minimum is 0.
                             maxLength: 3
@@ -193,6 +199,7 @@ spec:
                             pattern: ^(\d+)$
                             type: string
                           newPodScaleUpDelay:
+                            default: 0s
                             description: NewPodScaleUpDelay - For scenarios like burst/batch
                               scale where you don't want CA to act before the kubernetes
                               scheduler could schedule all the pods, you can tell
@@ -202,17 +209,20 @@ spec:
                               'h' for hours, etc).
                             type: string
                           okTotalUnreadyCount:
+                            default: "3"
                             description: OkTotalUnreadyCount - This must be an integer.
                               The default is 3.
                             pattern: ^(\d+)$
                             type: string
                           scaleDownDelayAfterAdd:
+                            default: 10m
                             description: ScaleDownDelayAfterAdd - The default is '10m'.
                               Values must be an integer followed by an 'm'. No unit
                               of time other than minutes (m) is supported.
                             pattern: ^(\d+)m$
                             type: string
                           scaleDownDelayAfterDelete:
+                            default: 10s
                             description: ScaleDownDelayAfterDelete - The default is
                               the scan-interval. Values must be an integer followed
                               by an 's'. No unit of time other than seconds (s) is
@@ -220,33 +230,39 @@ spec:
                             pattern: ^(\d+)s$
                             type: string
                           scaleDownDelayAfterFailure:
+                            default: 3m
                             description: ScaleDownDelayAfterFailure - The default
                               is '3m'. Values must be an integer followed by an 'm'.
                               No unit of time other than minutes (m) is supported.
                             pattern: ^(\d+)m$
                             type: string
                           scaleDownUnneededTime:
+                            default: 10m
                             description: ScaleDownUnneededTime - The default is '10m'.
                               Values must be an integer followed by an 'm'. No unit
                               of time other than minutes (m) is supported.
                             pattern: ^(\d+)m$
                             type: string
                           scaleDownUnreadyTime:
+                            default: 20m
                             description: ScaleDownUnreadyTime - The default is '20m'.
                               Values must be an integer followed by an 'm'. No unit
                               of time other than minutes (m) is supported.
                             pattern: ^(\d+)m$
                             type: string
                           scaleDownUtilizationThreshold:
+                            default: "0.5"
                             description: ScaleDownUtilizationThreshold - The default
                               is '0.5'.
                             type: string
                           scanInterval:
+                            default: 10s
                             description: ScanInterval - How often cluster is reevaluated
                               for scale up or down. The default is '10s'.
                             pattern: ^(\d+)s$
                             type: string
                           skipNodesWithLocalStorage:
+                            default: "false"
                             description: SkipNodesWithLocalStorage - The default is
                               false.
                             enum:
@@ -254,6 +270,7 @@ spec:
                             - "false"
                             type: string
                           skipNodesWithSystemPods:
+                            default: "true"
                             description: SkipNodesWithSystemPods - The default is
                               true.
                             enum:
@@ -269,7 +286,6 @@ spec:
                           - PublicCloud: "AzurePublicCloud"
                           - USGovernmentCloud: "AzureUSGovernmentCloud"
 
-
                           Note that values other than the default must also be accompanied by corresponding changes to the
                           aso-controller-settings Secret to configure ASO to refer to the non-Public cloud. ASO currently does
                           not support referring to multiple different clouds in a single installation. The following fields must
@@ -278,9 +294,7 @@ spec:
                           - AZURE_RESOURCE_MANAGER_ENDPOINT
                           - AZURE_RESOURCE_MANAGER_AUDIENCE
 
-
                           See the [ASO docs] for more details.
-
 
                           [ASO docs]: https://azure.github.io/azure-service-operator/guide/aso-controller-settings-options/
                         type: string
@@ -296,6 +310,7 @@ spec:
                           Immutable.
                         type: string
                       enablePreviewFeatures:
+                        default: false
                         description: EnablePreviewFeatures enables preview features
                           for the cluster.
                         type: boolean
@@ -306,7 +321,6 @@ spec:
                           description: |-
                             AKSExtension represents the configuration for an AKS cluster extension.
                             See also [AKS doc].
-
 
                             [AKS doc]: https://learn.microsoft.com/en-us/azure/aks/cluster-extensions
                           properties:
@@ -410,10 +424,10 @@ spec:
                           FleetsMember is the spec for the fleet this cluster is a member of.
                           See also [AKS doc].
 
-
                           [AKS doc]: https://learn.microsoft.com/en-us/azure/templates/microsoft.containerservice/2023-03-15-preview/fleets/members
                         properties:
                           group:
+                            default: default
                             description: Group is the group this member belongs to
                               for multi-cluster update management.
                             type: string
@@ -457,6 +471,7 @@ spec:
                           plane.
                         properties:
                           type:
+                            default: SystemAssigned
                             description: Type - The Identity type to use.
                             enum:
                             - SystemAssigned
@@ -483,7 +498,6 @@ spec:
                               the event) or if no container name is specified "spec.containers[2]" (container with
                               index 2 in this pod). This syntax is chosen only to have some well-defined way of
                               referencing a part of an object.
-                              TODO: this design is not final and this field is subject to change in the future.
                             type: string
                           kind:
                             description: |-
@@ -579,6 +593,7 @@ spec:
                         - cilium
                         type: string
                       networkPlugin:
+                        default: azure
                         description: NetworkPlugin used for building Kubernetes network.
                         enum:
                         - azure
@@ -604,6 +619,7 @@ spec:
                           of the Managed Cluster.
                         properties:
                           enabled:
+                            default: false
                             description: Enabled is whether the OIDC issuer is enabled.
                             type: boolean
                         type: object
@@ -711,6 +727,7 @@ spec:
                         description: SKU is the SKU of the AKS to be provisioned.
                         properties:
                           tier:
+                            default: Free
                             description: Tier - Tier of an AKS cluster.
                             enum:
                             - Free
@@ -734,6 +751,7 @@ spec:
                           exist.
                         properties:
                           cidrBlock:
+                            default: 10.0.0.0/8
                             type: string
                           name:
                             description: Name is the name of the virtual network.
@@ -747,6 +765,7 @@ spec:
                               for an AKS cluster.
                             properties:
                               cidrBlock:
+                                default: 10.240.0.0/16
                                 type: string
                               name:
                                 type: string

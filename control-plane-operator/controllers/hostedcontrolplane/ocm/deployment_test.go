@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 // Ensure certain deployment fields do not get set
@@ -49,7 +51,7 @@ func TestReconcileOpenshiftControllerManagerDeploymentNoChanges(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		g := NewGomegaWithT(t)
-		ocmDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds = pointer.Int64(60)
+		ocmDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds = ptr.To[int64](60)
 		expectedTermGraceSeconds := ocmDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds
 		ocmDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := ocmDeployment.Spec.MinReadySeconds

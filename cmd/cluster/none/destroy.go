@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/spf13/cobra"
-	"k8s.io/apimachinery/pkg/util/errors"
-
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
+
+	"k8s.io/apimachinery/pkg/util/errors"
+
+	"github.com/spf13/cobra"
 )
 
 func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {

@@ -1,0 +1,28 @@
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:v1.23.4 AS builder
+
+WORKDIR /hypershift
+
+COPY . .
+
+RUN make control-plane-operator \
+  && make control-plane-pki-operator
+
+FROM registry.redhat.io/rhel9-2-els/rhel:9.2
+COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
+COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
+
+ENTRYPOINT /usr/bin/control-plane-operator
+
+LABEL io.openshift.release.operator=true
+LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
+LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
+LABEL io.openshift.hypershift.ignition-server-healthz-handler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages-ignition-server=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler=true
+LABEL io.openshift.hypershift.control-plane-operator-manages.decompress-decode-config=true
+LABEL io.openshift.hypershift.control-plane-operator-creates-aws-sg=true
+LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label=true
+LABEL io.openshift.hypershift.restricted-psa=true
+LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
+LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true

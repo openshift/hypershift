@@ -13,15 +13,16 @@ import (
 	"strings"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
-	osinv1 "github.com/openshift/api/osin/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	kas "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	manifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
 	supportproxy "github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
-	"golang.org/x/net/http/httpproxy"
+
+	configv1 "github.com/openshift/api/config/v1"
+	osinv1 "github.com/openshift/api/osin/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,9 +30,12 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/net"
 	clientcmd "k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"golang.org/x/net/http/httpproxy"
 )
 
 const (
@@ -77,13 +81,13 @@ func (i *IDPVolumeMountInfo) SecretPath(index int, secretName, field, key string
 	}
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = secretName
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	i.Volumes = append(i.Volumes, v)
 	i.VolumeMounts[i.Container][v.Name] = fmt.Sprintf("%s/idp_secret_%d_%s", IDPVolumePathPrefix, index, field)
 	return path.Join(i.VolumeMounts[i.Container][v.Name], key)
 }
 
-func convertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
+func ConvertIdentityProviders(ctx context.Context, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, kclient crclient.Client, namespace string) ([]osinv1.IdentityProvider, *IDPVolumeMountInfo, error) {
 	converted := make([]osinv1.IdentityProvider, 0, len(identityProviders))
 	errs := []error{}
 	volumeMountInfo := &IDPVolumeMountInfo{
@@ -590,7 +594,7 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 		return false, fmt.Errorf("couldn't get the referenced secret: %v", err)
 	}
 
-	// check whether we already attempted this not to send unneccessary login
+	// check whether we already attempted this not to send unnecessary login
 	// requests against the provider
 	if cachedResult, ok := oidcPasswordCheckCache.Get(secret.ResourceVersion); ok {
 		log.Info("using cached result for OIDC password grant check")
@@ -685,7 +689,10 @@ func transportForCARef(ctx context.Context, kclient crclient.Client, namespace, 
 	transport := net.SetTransportDefaults(&http.Transport{
 		TLSClientConfig: &tls.Config{},
 	})
-	roots := x509.NewCertPool()
+	roots, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create system cert pool: %w", err)
+	}
 
 	if !skipKonnectivityDialer {
 		var err error

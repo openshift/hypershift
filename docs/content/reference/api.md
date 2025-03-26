@@ -165,10 +165,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
-<p>Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.</p>
+<p>release specifies the desired OCP release payload for all the hosted cluster components.
+This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
+The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
+Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
+Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Changing this field will trigger a rollout of the control plane components.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -182,12 +185,14 @@ Release
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControlPlaneRelease specifies the desired OCP release payload for
-control plane components running on the management cluster.
-Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.
-If not defined, Release is used</p>
+<p>controlPlaneRelease is like spec.release but only for the components running on the management cluster.
+This excludes any operand which will land in the hosted cluster data plane.
+It is useful when you need to apply patch management side like a CVE, transparently for the hosted cluster.
+Version input for this field is free, no validation is performed against spec.release or maximum and minimum is performed.
+If defined, it will dicate the version of the components running management side, while spec.release will dictate the version of the components landing in the hosted cluster data plane.
+If not defined, spec.release is used for both.
+Changing this field will trigger a rollout of the control plane.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -199,15 +204,29 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ClusterID uniquely identifies this cluster. This is expected to be
-an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
-hexadecimal values).
-As with a Kubernetes metadata.uid, this ID uniquely identifies this
-cluster in space and time.
-This value identifies the cluster in metrics pushed to telemetry and
-metrics produced by the control plane operators. If a value is not
-specified, an ID is generated. After initial creation, the value is
-immutable.</p>
+<p>clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and metrics produced by the control plane operators.
+If a value is not specified, a random clusterID will be generated and set by the controller.
+Once set, this value is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>infraID is a globally unique identifier for the cluster.
+It must consist of lowercase alphanumeric characters and hyphens (&lsquo;-&rsquo;) only, and start and end with an alphanumeric character.
+It must be no more than 253 characters in length.
+This identifier will be used to associate various cloud resources with the HostedCluster and its associated NodePools.
+infraID is used to compute and tag created resources with &ldquo;kubernetes.io/cluster/&rdquo;+hcluster.Spec.InfraID which has contractual meaning for the cloud provider implementations.
+If a value is not specified, a random infraID will be generated and set by the controller.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -222,7 +241,8 @@ github.com/openshift/api/config/v1.URL
 <td>
 <em>(Optional)</em>
 <p>updateService may be used to specify the preferred upstream update service.
-By default it will use the appropriate update service for the cluster and region.</p>
+If omitted we will use the appropriate update service for the cluster and region.
+This is used by the control plane operator to determine and signal the appropriate available upgrades in the hostedCluster.status.</p>
 </td>
 </tr>
 <tr>
@@ -234,23 +254,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>channel is an identifier for explicitly requesting that a non-default
-set of updates be applied to this cluster. The default channel will be
-contain stable updates that are appropriate for production clusters.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
+<p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+If omitted no particular upgrades are suggested.
+TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -263,7 +269,7 @@ PlatformSpec
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the cluster
+<p>platform specifies the underlying infrastructure provider for the cluster
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -278,8 +284,9 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is HighlyAvailable.</p>
+<p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -293,9 +300,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
-to infrastructure services which run on cluster nodes. The default value is
-SingleReplica.</p>
+<p>infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
+Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.</p>
 </td>
 </tr>
 <tr>
@@ -308,7 +314,8 @@ DNSSpec
 </em>
 </td>
 <td>
-<p>DNS specifies DNS configuration for the cluster.</p>
+<em>(Optional)</em>
+<p>dns specifies the DNS configuration for the hosted cluster ingress.</p>
 </td>
 </tr>
 <tr>
@@ -321,7 +328,8 @@ ClusterNetworking
 </em>
 </td>
 <td>
-<p>Networking specifies network configuration for the cluster.</p>
+<p>networking specifies network configuration for the hosted cluster.
+Defaults to OVNKubernetes with a cluster network of cidr: &ldquo;10.132.0.0/14&rdquo; and a service network of cidr: &ldquo;172.31.0.0/16&rdquo;.</p>
 </td>
 </tr>
 <tr>
@@ -335,8 +343,21 @@ ClusterAutoscaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
-associated with the control plane.</p>
+<p>autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with this HostedCluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
 <tr>
@@ -349,8 +370,8 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd specifies configuration for the control plane etcd cluster. The
-default ManagementType is Managed. Once set, the ManagementType cannot be
+<p>etcd specifies configuration for the control plane etcd cluster. The
+default managementType is Managed. Once set, the managementType cannot be
 changed.</p>
 </td>
 </tr>
@@ -364,10 +385,15 @@ changed.</p>
 </em>
 </td>
 <td>
-<p>Services specifies how individual control plane services are published from
-the hosting cluster of the control plane.</p>
-<p>If a given service is not present in this list, it will be exposed publicly
-by default.</p>
+<p>services specifies how individual control plane services endpoints are published for consumption.
+This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This field is immutable for all platforms but IBMCloud.
+Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
+<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;[&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
+TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
 </td>
 </tr>
 <tr>
@@ -380,9 +406,14 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>PullSecret references a pull secret to be injected into the container
-runtime of all cluster nodes. The secret must have a key named
-&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+<p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
+and it will be injected into the container runtime of all NodePools.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+Changing the content of the secret inplace will not trigger a rollout and might result in unpredictable behaviour.
+TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
 <tr>
@@ -395,9 +426,13 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>SSHKey references an SSH key to be injected into all cluster node sshd
-servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
-public part of an SSH key.</p>
+<em>(Optional)</em>
+<p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -409,10 +444,14 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
-ServiceAccount tokens generated by the control plane API server. The
-default value is kubernetes.default.svc, which only works for in-cluster
-validation.</p>
+<p>issuerURL is an OIDC issuer URL which will be used as the issuer in all
+ServiceAccount tokens generated by the control plane API server via &ndash;service-account-issuer kube api server flag.
+<a href="https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/">https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/</a>
+<a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection">https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection</a>
+The default value is kubernetes.default.svc, which only works for in-cluster
+validation.
+If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
 </td>
 </tr>
 <tr>
@@ -426,11 +465,13 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceAccountSigningKey is a reference to a secret containing the private key
-used by the service account token issuer. The secret is expected to contain
-a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
-be generated automatically for the cluster. When specifying a service account
-signing key, a IssuerURL must also be specified.</p>
+<p>serviceAccountSigningKey is a local reference to a secret that must have a &ldquo;key&rdquo; key whose content must be the private key
+used by the service account token issuer.
+If not specified, a service account signing key will
+be generated automatically for the cluster.
+When specifying a service account signing key, an IssuerURL must also be specified.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.</p>
 </td>
 </tr>
 <tr>
@@ -447,6 +488,20 @@ ClusterConfiguration
 <p>Configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -479,8 +534,11 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+<p>imageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+When imageContentSources is set, the controllers will generate a machineConfig.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -494,8 +552,12 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
-PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+<p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
+whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -509,7 +571,7 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+<p>secretEncryption specifies a Kubernetes secret encryption strategy for the
 control plane.</p>
 </td>
 </tr>
@@ -522,7 +584,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+<p>fips indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
 If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
@@ -536,8 +598,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -568,7 +630,10 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
+Changes to this field will propagate to existing Deployments and StatefulSets.
+TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 </tr>
 <tr>
@@ -582,7 +647,40 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
 </table>
@@ -670,8 +768,8 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
-<p>TODO(dan): Should this be a LocalObjectReference?</p>
+<p>clusterName is the name of the HostedCluster this NodePool belongs to.
+If a HostedCluster with this name doesn&rsquo;t exist, the controller will no-op until it exists.</p>
 </td>
 </tr>
 <tr>
@@ -684,9 +782,14 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).</p>
+<p>release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines which includes the kubelet version, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).
+It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
+Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -699,7 +802,7 @@ NodePoolPlatform
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the NodePool
+<p>platform specifies the underlying infrastructure provider for the NodePool
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -712,8 +815,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Replicas is the desired number of nodes the pool should maintain. If
-unset, the default value is 0.</p>
+<p>replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.</p>
 </td>
 </tr>
 <tr>
@@ -726,7 +829,7 @@ NodePoolManagement
 </em>
 </td>
 <td>
-<p>Management specifies behavior for managing nodes in the pool, such as
+<p>management specifies behavior for managing nodes in the pool, such as
 upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
@@ -741,7 +844,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
+<p>autoscaling specifies auto-scaling behavior for the NodePool.
+autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
 </td>
 </tr>
 <tr>
@@ -754,19 +858,22 @@ NodePoolAutoScaling
 </em>
 </td>
 <td>
-<p>Config is a list of references to ConfigMaps containing serialized
+<p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:
-KubeletConfig
-ContainerRuntimeConfig
-MachineConfig
-ClusterImagePolicy
-ImageContentSourcePolicy
-or
-ImageDigestMirrorSet</p>
+with one or more serialized machineconfiguration.openshift.io resources:</p>
+<ul>
+<li>KubeletConfig</li>
+<li>ContainerRuntimeConfig</li>
+<li>MachineConfig</li>
+<li>ClusterImagePolicy</li>
+<li>ImageContentSourcePolicy</li>
+<li>ImageDigestMirrorSet</li>
+</ul>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -780,12 +887,9 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+<p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+The default value is 0, meaning that the node can retry drain without any time limitations.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -799,13 +903,10 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+<p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
-TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
-Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -817,7 +918,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -832,7 +933,8 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
+These taints are additive to the ones applied by other controllers</p>
 </td>
 </tr>
 <tr>
@@ -844,8 +946,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -860,14 +962,15 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
-<p>TuningConfig is a list of references to ConfigMaps containing serialized
+<p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
-JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -879,8 +982,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
-NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
+TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
@@ -974,10 +1077,12 @@ string
 </em>
 </td>
 <td>
-<p>AdvertiseAddress is the address that nodes will use to talk to the API
+<em>(Optional)</em>
+<p>advertiseAddress is the address that pods within the nodes will use to talk to the API
 server. This is an address associated with the loopback adapter of each
 node. If not specified, the controller will take default values.
-The default values will be set as 172.20.0.1 or fd00::1.</p>
+The default values will be set as 172.20.0.1 or fd00::1.
+This value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -988,12 +1093,14 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the port at which the APIServer is exposed inside a node. Other
+<em>(Optional)</em>
+<p>port is the port at which the APIServer is exposed inside a node. Other
 pods using host networking cannot listen on this port.
-If unset 6443 is used.
+If omitted 6443 is used.
 This is useful to choose a port other than the default one which might interfere with customer environments e.g. <a href="https://github.com/openshift/hypershift/pull/356">https://github.com/openshift/hypershift/pull/356</a>.
 Setting this to 443 is possible only for backward compatibility reasons and it&rsquo;s discouraged.
-Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.</p>
+Doing so, it would result in the controller overriding the KAS endpoint in the guest cluster having a discrepancy with the KAS Pod and potentially causing temporarily network failures.
+This value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -1006,7 +1113,7 @@ Doing so, it would result in the controller overriding the KAS endpoint in the g
 </em>
 </td>
 <td>
-<p>AllowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 If not specified, traffic is allowed from all addresses.
 This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
 </td>
@@ -1536,6 +1643,22 @@ Deprecated: This field is no longer used. The HyperShift Operator now performs m
 automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
 on the HostedCluster release image. This field is used by the NodePool controller to validate the
 NodePool.Spec.Arch is supported.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>sharedVPC</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPC">
+AWSSharedVPC
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+created in a different AWS account and is shared with the AWS account where the HostedCluster
+will be created.</p>
 </td>
 </tr>
 </tbody>
@@ -2181,6 +2304,212 @@ This must be provided and cannot be empty.</p>
 </tr>
 </tbody>
 </table>
+###AWSSharedVPC { #hypershift.openshift.io/v1beta1.AWSSharedVPC }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
+</p>
+<p>
+<p>AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been
+created and shared from a different AWS account than the AWS account where the cluster
+is getting created.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>rolesRef</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPCRolesRef">
+AWSSharedVPCRolesRef
+</a>
+</em>
+</td>
+<td>
+<p>RolesRef contains references to roles in the VPC owner account that enable a
+HostedCluster on a shared VPC.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>localZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+associated with the HostedCluster&rsquo;s VPC and exists in the VPC owner account.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSSharedVPCRolesRef { #hypershift.openshift.io/v1beta1.AWSSharedVPCRolesRef }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSharedVPC">AWSSharedVPC</a>)
+</p>
+<p>
+<p>AWSSharedVPCRolesRef contains references to AWS IAM roles required for a shared VPC hosted cluster.
+These roles must exist in the VPC owner&rsquo;s account.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ingressARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IngressARN is an ARN value referencing the role in the VPC owner account that allows the
+ingress operator in the cluster account to create and manage records in the private DNS
+hosted zone.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed by the
+ingress operator role in the VPC creator account.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;Statement1&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;AWS&rdquo;: &ldquo;arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-openshift-ingress&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRole&rdquo;
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.
+(Based on <a href="https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config">https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html#rosa-sharing-vpc-dns-and-roles_rosa-shared-vpc-config</a>)</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;route53:ListHostedZonesByName&rdquo;,
+&ldquo;route53:ChangeTagsForResource&rdquo;,
+&ldquo;route53:GetAccountLimit&rdquo;,
+&ldquo;route53:GetChange&rdquo;,
+&ldquo;route53:GetHostedZone&rdquo;,
+&ldquo;route53:ListTagsForResource&rdquo;,
+&ldquo;route53:UpdateHostedZoneComment&rdquo;,
+&ldquo;tag:GetResources&rdquo;,
+&ldquo;tag:UntagResources&rdquo;
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+},
+]
+}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ControlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
+the control plane operator in the cluster account to create and manage a VPC endpoint, its
+corresponding Security Group, and DNS records in the hypershift local hosted zone.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed by the
+control plane operator role in the VPC creator account.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;Statement1&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;AWS&rdquo;: &ldquo;arn:aws:iam::[cluster-creator-account-id]:role/[infra-id]-control-plane-operator&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRole&rdquo;
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:CreateVpcEndpoint&rdquo;,
+&ldquo;ec2:DescribeVpcEndpoints&rdquo;,
+&ldquo;ec2:ModifyVpcEndpoint&rdquo;,
+&ldquo;ec2:DeleteVpcEndpoints&rdquo;,
+&ldquo;ec2:CreateTags&rdquo;,
+&ldquo;route53:ListHostedZones&rdquo;,
+&ldquo;ec2:CreateSecurityGroup&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:AuthorizeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DeleteSecurityGroup&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupIngress&rdquo;,
+&ldquo;ec2:RevokeSecurityGroupEgress&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;route53:ChangeResourceRecordSets&rdquo;,
+&ldquo;route53:ListResourceRecordSets&rdquo;
+],
+&ldquo;Resource&rdquo;: &ldquo;*&rdquo;
+}
+]
+}</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AddressPair { #hypershift.openshift.io/v1beta1.AddressPair }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ipAddress</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>IPAddress is the IP address of the allowed address pair. Depending on
+the configuration of Neutron, it may be supported to specify a CIDR
+instead of a specific IP address.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AgentNodePoolPlatform { #hypershift.openshift.io/v1beta1.AgentNodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -2283,6 +2612,38 @@ string
 </tr>
 </tbody>
 </table>
+###AutoNode { #hypershift.openshift.io/v1beta1.AutoNode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>provisionerConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
+ProvisionerConfig
+</a>
+</em>
+</td>
+<td>
+<p>provisioner is the implementation used for Node auto provisioning.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
@@ -2290,7 +2651,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>AvailabilityPolicy specifies a high level availability policy for components.</p>
+<p>availabilityPolicy specifies a high level availability policy for components.</p>
 </p>
 <table>
 <thead>
@@ -2334,6 +2695,64 @@ toleration of full disruption of the component.</p>
 <td></td>
 </tr><tr><td><p>&#34;UserManaged&#34;</p></td>
 <td></td>
+</tr></tbody>
+</table>
+###AzureDiskPersistence { #hypershift.openshift.io/v1beta1.AzureDiskPersistence }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolOSDisk">AzureNodePoolOSDisk</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Ephemeral&#34;</p></td>
+<td><p>EphemeralDiskPersistence is the ephemeral disk type.</p>
+</td>
+</tr><tr><td><p>&#34;Persistent&#34;</p></td>
+<td><p>PersistentDiskPersistence is the persistent disk type.</p>
+</td>
+</tr></tbody>
+</table>
+###AzureDiskStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiskStorageAccountType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolOSDisk">AzureNodePoolOSDisk</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Premium_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesPremiumLRS - Premium SSD locally redundant storage. Best for production and performance sensitive
+workloads.</p>
+</td>
+</tr><tr><td><p>&#34;PremiumV2_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesPremiumV2LRS - Premium SSD v2 locally redundant storage. Best for production and performance-sensitive
+workloads that consistently require low latency and high IOPS and throughput.</p>
+</td>
+</tr><tr><td><p>&#34;Standard_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesStandardLRS - Standard HDD locally redundant storage. Best for backup, non-critical, and infrequent
+access.</p>
+</td>
+</tr><tr><td><p>&#34;StandardSSD_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
+applications and dev/test.</p>
+</td>
+</tr><tr><td><p>&#34;UltraSSD_LRS&#34;</p></td>
+<td><p>DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
+top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.</p>
+</td>
 </tr></tbody>
 </table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
@@ -2432,12 +2851,97 @@ AzureKMSKey
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>kms</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
+</td>
+</tr>
 </tbody>
 </table>
-###AzureNodePoolPlatform { #hypershift.openshift.io/v1beta1.AzureNodePoolPlatform }
+###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
+</p>
+<p>
+<p>AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>publisher</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>publisher is the name of the organization that created the image.
+It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
+It must start with a lowercase letter or a number.
+TODO: Can we explain where a user might find this value, or provide an example of one they might want to use</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>offer</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>offer specifies the name of a group of related images created by the publisher.
+TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>sku</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>sku specifies an instance of an offer, such as a major release of a distribution.
+For example, 22<em>04-lts-gen2, 8-lvm-gen2.
+The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (</em>).
+TODO: What about length limits?</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>version specifies the version of an image sku. The allowed formats are Major.Minor.Build or &lsquo;latest&rsquo;. Major,
+Minor, and Build are decimal numbers, e.g. &lsquo;1.2.0&rsquo;. Specify &lsquo;latest&rsquo; to use the latest version of an image available at
+deployment time. Even if you use &lsquo;latest&rsquo;, the VM image will not automatically update after deploy time even if a
+new version becomes available.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureNodePoolOSDisk { #hypershift.openshift.io/v1beta1.AzureNodePoolOSDisk }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
 </p>
 <p>
 </p>
@@ -2451,13 +2955,113 @@ secrets can continue to be decrypted until they are all re-encrypted with the ac
 <tbody>
 <tr>
 <td>
-<code>vmsize</code></br>
+<code>sizeGiB</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>SizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
+This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
+When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+The current default is 30.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskStorageAccountType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureDiskStorageAccountType">
+AzureDiskStorageAccountType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskStorageAccountType is the disk storage account type to use.
+Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
+Note that Standard means a HDD.
+The disk performance is tied to the disk type, please refer to the Azure documentation for further details
+<a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>.
+When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+The current default is Premium SSD LRS.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionSetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>VMSize is the Azure VM instance type to use for the nodes being created in the nodepool.</p>
+<em>(Optional)</em>
+<p>encryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs.
+Configuring a DiskEncyptionSet allows greater control over the encryption of the VM OS disk at rest.
+Can be used with either platform (Azure) managed, or customer managed encryption keys.
+This needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
+DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
+listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.
+The encryptionSetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}</code>.
+The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
+TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>persistence</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureDiskPersistence">
+AzureDiskPersistence
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>persistence determines whether the OS disk should be persisted beyond the life of the VM.
+Valid values are Persistent and Ephemeral.
+When set to Ephmeral, the OS disk will not be persisted to Azure storage and implies restrictions to the VM size and caching type.
+Full details can be found in the Azure documentation <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks">https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks</a>.
+Ephmeral disks are primarily used for stateless applications, provide lower latency than Persistent disks and also incur no storage costs.
+When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureNodePoolPlatform { #hypershift.openshift.io/v1beta1.AzureNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>vmSize</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
+The size naming convention is documented here <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions">https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions</a>.
+Size names should start with a Family name, which is represented by one of more capital letters, and then be followed by the CPU count.
+This is followed by 0 or more additional features, represented by a, b, d, i, l, m, p, t, s, C, and NP, refer to the Azure documentation for an explanation of these features.
+Optionally an accelerator such as a GPU can be added, prefixed by an underscore, for example A100, H100 or MI300X.
+The size may also be versioned, in which case it should be suffixed with _v<version> where the version is a number.
+For example, &ldquo;D32ads_v5&rdquo; would be a suitable general purpose VM size, or &ldquo;ND96_MI300X_v5&rdquo; would represent a GPU accelerated VM.</p>
 </td>
 </tr>
 <tr>
@@ -2470,7 +3074,7 @@ AzureVMImage
 </em>
 </td>
 <td>
-<p>ImageID is the id of the image to boot from. If unset, the default image at the location below will be used and
+<p>image is used to configure the VM boot image. If unset, the default image at the location below will be used and
 is expected to exist: subscription/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Compute/images/rhcos.x86_64.vhd.
 The <subscriptionID> and the <resourceGroupName> are expected to be the same resource group documented in the
 Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
@@ -2479,33 +3083,18 @@ HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
 </tr>
 <tr>
 <td>
-<code>diskSizeGB</code></br>
+<code>osDisk</code></br>
 <em>
-int32
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolOSDisk">
+AzureNodePoolOSDisk
+</a>
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>DiskSizeGB is the size in GB to assign to the OS disk
-CAPZ default is 30GB, <a href="https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599">https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/b3708019a67ff19407b87d63c402af94ca4246f6/api/v1beta1/types.go#L599</a></p>
-</td>
-</tr>
-<tr>
-<td>
-<code>diskStorageAccountType</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>DiskStorageAccountType is the disk storage account type to use. Valid values are:
-* Standard_LRS: HDD
-* StandardSSD_LRS: Standard SSD
-* Premium_LRS: Premium SDD
-* UltraSSD_LRS: Ultra SDD</p>
-<p>Defaults to Premium_LRS. For more details, visit the Azure documentation:
-<a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a></p>
+<p>osDisk provides configuration for the OS disk for the nodepool.
+This can be used to configure the size, storage account type, encryption options and whether the disk is persistent or ephemeral.
+When not provided, the platform will choose reasonable defaults which are subject to change over time.
+Review the fields within the osDisk for more details.</p>
 </td>
 </tr>
 <tr>
@@ -2517,8 +3106,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AvailabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
-for clusters in a location that does not support AvailabilityZone.</p>
+<p>availabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
+for clusters in a location that does not support AvailabilityZone because it would cause a failure from Azure API.</p>
 </td>
 </tr>
 <tr>
@@ -2538,43 +3127,22 @@ for more information.</p>
 </tr>
 <tr>
 <td>
-<code>diskEncryptionSetID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>DiskEncryptionSetID is the ID of the DiskEncryptionSet resource to use to encrypt the OS disks for the VMs. This
-needs to exist in the same subscription id listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.SubscriptionID.
-DiskEncryptionSetID should also exist in a resource group under the same subscription id and the same location
-listed in the Hosted Cluster, HostedCluster.Spec.Platform.Azure.Location.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>enableEphemeralOSDisk</code></br>
-<em>
-bool
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>EnableEphemeralOSDisk is a flag when set to true, will enable ephemeral OS disk.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>subnetID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>SubnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+<p>subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
 different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
-exist in the same HostedCluster.Spec.Platform.Azure.VnetID and must exist under the same subscription ID,
-HostedCluster.Spec.Platform.Azure.SubscriptionID.</p>
+exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
+HostedCluster.Spec.Platform.Azure.SubscriptionID.
+subnetID is immutable once set.
+The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
+The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
+The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
 </td>
 </tr>
 <tr>
@@ -2588,26 +3156,8 @@ Diagnostics
 </td>
 <td>
 <em>(Optional)</em>
-<p>Diagnostics specifies the diagnostics settings for a virtual machine.
+<p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>machineIdentityID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>MachineIdentityID is a user-assigned identity assigned to the VMs used to authenticate with Azure services. This
-field is expected to exist under the same resource group as HostedCluster.Spec.Platform.Azure.ResourceGroupName. This
-user assigned identity is expected to have the Contributor role assigned to it and scoped to the resource group
-under HostedCluster.Spec.Platform.Azure.ResourceGroupName.</p>
-<p>If this field is not supplied, the Service Principal credentials will be written to a file on the disk of each VM
-in order to be accessible by the cloud provider; the aforementioned credentials provided are the same ones as
-HostedCluster.Spec.Platform.Azure.Credentials. However, this is less secure than using a managed identity.</p>
 </td>
 </tr>
 </tbody>
@@ -2631,20 +3181,6 @@ fields of the Hosted Cluster CR. An existing cloud resource is expected to exist
 </tr>
 </thead>
 <tbody>
-<tr>
-<td>
-<code>credentials</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
-Kubernetes core/v1.LocalObjectReference
-</a>
-</em>
-</td>
-<td>
-<p>Credentials is the object containing existing Azure credentials needed for creating and managing cloud
-infrastructure resources.</p>
-</td>
-</tr>
 <tr>
 <td>
 <code>cloud</code></br>
@@ -2707,10 +3243,16 @@ string
 </em>
 </td>
 <td>
-<p>SubnetID is the subnet ID of an existing subnet where the load balancer for node egress will be created. This
-subnet is expected to be a subnet within the VNET specified in VnetID. This subnet is expected to exist under the
-same subscription as SubscriptionID.</p>
-<p>In ARO HCP, managed services will create the aforementioned load balancer in ResourceGroupName.</p>
+<p>subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
+different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
+exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must exist under the same subscription ID,
+HostedCluster.Spec.Platform.Azure.SubscriptionID.
+subnetID is immutable once set.
+The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
+The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
+The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
 </td>
 </tr>
 <tr>
@@ -2737,15 +3279,41 @@ configuration for the Azure cloud provider, aka Azure cloud controller manager (
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+authenticate with Azure&rsquo;s API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tenantID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
+</td>
+</tr>
 </tbody>
 </table>
-###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
+###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
 </p>
 <p>
-<p>AzureVMImage represents the different types of image data that can be provided for an Azure VM.</p>
+<p>AzureResourceManagedIdentities contains the managed identities needed for HCP control plane and data plane components
+that authenticate with Azure&rsquo;s API.</p>
 </p>
 <table>
 <thead>
@@ -2757,7 +3325,53 @@ expected to exist under the same subscription as SubscriptionID.</p>
 <tbody>
 <tr>
 <td>
-<code>azureImageType</code></br>
+<code>controlPlane</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">
+ControlPlaneManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
+authenticate with Azure&rsquo;s API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dataPlane</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities">
+DataPlaneManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<p>dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
+Azure&rsquo;s API.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AzureVMImageType">
 AzureVMImageType
@@ -2765,8 +3379,11 @@ AzureVMImageType
 </em>
 </td>
 <td>
-<p>Type is the type of image data that will be provided to the Azure VM. This can be either &ldquo;ImageID&rdquo; or
-&ldquo;AzureMarketplace&rdquo;.</p>
+<p>type is the type of image data that will be provided to the Azure VM.
+Valid values are &ldquo;ImageID&rdquo; and &ldquo;AzureMarketplace&rdquo;.
+ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
+AzureMarketplace means the VM will boot from an Azure Marketplace image.
+Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.</p>
 </td>
 </tr>
 <tr>
@@ -2778,21 +3395,22 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.</p>
+<p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
+TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
 </td>
 </tr>
 <tr>
 <td>
 <code>azureMarketplace</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.MarketplaceImage">
-MarketplaceImage
+<a href="#hypershift.openshift.io/v1beta1.AzureMarketplaceImage">
+AzureMarketplaceImage
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>AzureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.</p>
+<p>azureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.</p>
 </td>
 </tr>
 </tbody>
@@ -2803,6 +3421,8 @@ MarketplaceImage
 <a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
 </p>
 <p>
+<p>AzureVMImageType is used to specify the source of the Azure VM boot image.
+Valid values are ImageID and AzureMarketplace.</p>
 </p>
 <table>
 <thead>
@@ -2812,9 +3432,11 @@ MarketplaceImage
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;AzureMarketplace&#34;</p></td>
-<td></td>
+<td><p>AzureMarketplace is used to specify the Azure Marketplace image info to use to boot the Azure VMs from.</p>
+</td>
 </tr><tr><td><p>&#34;ImageID&#34;</p></td>
-<td></td>
+<td><p>ImageID is the used to specify that an Azure resource ID of a VHD image is used to boot the Azure VMs from.</p>
+</td>
 </tr></tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
@@ -2824,6 +3446,45 @@ MarketplaceImage
 </p>
 <p>
 </p>
+###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>capabilities allows disabling optional components at install time.
+Once set, it cannot be changed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>disabled</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
+and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+This effectively disables that capability on the hosted cluster.</p>
+<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version.</p>
+<p>Once set, this field cannot be changed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
 (<em>Appears on:</em>
@@ -2866,8 +3527,10 @@ int32
 </em>
 </td>
 <td>
-<p>MaxNodesTotal is the maximum allowable number of nodes across all NodePools
-for a HostedCluster. The autoscaler will not grow the cluster beyond this
+<em>(Optional)</em>
+<p>maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
+The autoscaler will not grow the cluster beyond this number.
+If omitted, the autoscaler will not have a maximum limit.
 number.</p>
 </td>
 </tr>
@@ -2879,7 +3542,8 @@ int32
 </em>
 </td>
 <td>
-<p>MaxPodGracePeriod is the maximum seconds to wait for graceful pod
+<em>(Optional)</em>
+<p>maxPodGracePeriod is the maximum seconds to wait for graceful pod
 termination before scaling down a NodePool. The default is 600 seconds.</p>
 </td>
 </tr>
@@ -2891,7 +3555,8 @@ string
 </em>
 </td>
 <td>
-<p>MaxNodeProvisionTime is the maximum time to wait for node provisioning
+<em>(Optional)</em>
+<p>maxNodeProvisionTime is the maximum time to wait for node provisioning
 before considering the provisioning to be unsuccessful, expressed as a Go
 duration string. The default is 15 minutes.</p>
 </td>
@@ -2905,7 +3570,7 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>PodPriorityThreshold enables users to schedule &ldquo;best-effort&rdquo; pods, which
+<p>podPriorityThreshold enables users to schedule &ldquo;best-effort&rdquo; pods, which
 shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
 resources available. The default is -10.</p>
 <p>See the following for more details:
@@ -2996,7 +3661,9 @@ for external registries. It allows cluster admins to configure which registries
 OpenShift is allowed to import images from, extra CA trust bundles for external
 registries, and policies to block or allow registry hostnames.
 When exposing OpenShift&rsquo;s image registry to the public, this also lets cluster
-admins specify the external hostname.</p>
+admins specify the external hostname.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+TODO(alberto): elaborate why.</p>
 </td>
 </tr>
 <tr>
@@ -3087,7 +3754,6 @@ github.com/openshift/api/config/v1.ProxySpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Proxy holds cluster-wide information on how to configure default proxies for the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -3119,7 +3785,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </em>
 </td>
 <td>
-<p>CIDR is the IP block address pool.</p>
+<p>cidr is the IP block address pool.</p>
 </td>
 </tr>
 <tr>
@@ -3131,8 +3797,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>HostPrefix is the prefix size to allocate to each node from the CIDR.
-For example, 24 would allocate 2^8=256 adresses to each node. If this
+<p>hostPrefix is the prefix size to allocate to each node from the CIDR.
+For example, 24 would allocate 2^(32-24)=2^8=256 addresses to each node. If this
 field is not used by the plugin, it can be left unset.</p>
 </td>
 </tr>
@@ -3145,7 +3811,11 @@ field is not used by the plugin, it can be left unset.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ClusterNetworking specifies network configuration for a cluster.</p>
+<p>clusterNetworking specifies network configuration for a cluster.
+All CIDRs must be unique. Additional validation to check for CIDRs overlap and consistent network stack is performed by the controllers.
+Failing that validation will result in the HostedCluster being degraded and the validConfiguration condition being false.
+TODO this is available in vanilla kube from 1.31 API servers and in Openshift from 4.16.
+TODO(alberto): Use CEL cidr library for all these validation when all management clusters are &gt;= 1.31.</p>
 </p>
 <table>
 <thead>
@@ -3166,7 +3836,10 @@ field is not used by the plugin, it can be left unset.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>MachineNetwork is the list of IP address pools for machines.</p>
+<p>machineNetwork is the list of IP address pools for machines.
+This might be used among other things to generate appropriate networking security groups in some clouds providers.
+Currently only one entry or two for dual stack is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3179,7 +3852,11 @@ field is not used by the plugin, it can be left unset.</p>
 </em>
 </td>
 <td>
-<p>ClusterNetwork is the list of IP address pools for pods.</p>
+<em>(Optional)</em>
+<p>clusterNetwork is the list of IP address pools for pods.
+Defaults to cidr: &ldquo;10.132.0.0/14&rdquo;.
+Currently only one entry is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3193,8 +3870,10 @@ field is not used by the plugin, it can be left unset.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceNetwork is the list of IP address pools for services.
-NOTE: currently only one entry is supported.</p>
+<p>serviceNetwork is the list of IP address pools for services.
+Defaults to cidr: &ldquo;172.31.0.0/16&rdquo;.
+Currently only one entry is supported.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3207,7 +3886,11 @@ NetworkType
 </em>
 </td>
 <td>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<em>(Optional)</em>
+<p>networkType specifies the SDN provider used for cluster networking.
+Defaults to OVNKubernetes.
+This field is required and immutable.
+kubebuilder:validation:XValidation:rule=&ldquo;self == oldSelf&rdquo;, message=&ldquo;networkType is immutable&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -3220,8 +3903,43 @@ APIServerNetworking
 </em>
 </td>
 <td>
-<p>APIServer contains advanced network settings for the API server that affect
-how the APIServer is exposed inside a cluster node.</p>
+<p>apiServer contains advanced network settings for the API server that affect
+how the APIServer is exposed inside a hosted cluster node.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ClusterVersionOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>ClusterVersionOperatorSpec is the specification of the desired behavior of the Cluster Version Operator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>operatorLogLevel</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.LogLevel">
+LogLevel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
+but it is a simple way to manage coarse grained logging choices that operators have to interpret for themselves.</p>
+<p>Valid values are: &ldquo;Normal&rdquo;, &ldquo;Debug&rdquo;, &ldquo;Trace&rdquo;, &ldquo;TraceAll&rdquo;.
+Defaults to &ldquo;Normal&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -3334,6 +4052,57 @@ or invalid channel has been specified.</p>
 </tr>
 </tbody>
 </table>
+###ComponentResource { #hypershift.openshift.io/v1beta1.ComponentResource }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus">ControlPlaneComponentStatus</a>)
+</p>
+<p>
+<p>ComponentResource defines a resource reconciled by a ControlPlaneComponent.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kind</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kind is the name of the resource schema.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>group</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>group is the API group for this resource type.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of this resource.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ConditionType { #hypershift.openshift.io/v1beta1.ConditionType }
 <p>
 </p>
@@ -3395,6 +4164,12 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;ClusterVersionUpgradeable&#34;</p></td>
 <td><p>ClusterVersionUpgradeable indicates the Upgradeable condition in the
 underlying cluster&rsquo;s ClusterVersion.</p>
+</td>
+</tr><tr><td><p>&#34;Available&#34;</p></td>
+<td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
+</td>
+</tr><tr><td><p>&#34;Progressing&#34;</p></td>
+<td><p>ControlPlaneComponentProgressing indicates whether the ControlPlaneComponent is progressing.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
@@ -3519,6 +4294,11 @@ A failure here is unlikely to resolve without the changing user input.</p>
 supported by the underlying management cluster.
 A failure here is unlikely to resolve without the changing user input.</p>
 </td>
+</tr><tr><td><p>&#34;ValidIDPConfiguration&#34;</p></td>
+<td><p>ValidIDPConfiguration indicates if the Identity Provider configuration is valid.
+A failure here may require external user intervention to resolve
+e.g. the user-provided IDP configuration provided is invalid or the IDP is not reachable.</p>
+</td>
 </tr><tr><td><p>&#34;ValidKubeVirtInfraNetworkMTU&#34;</p></td>
 <td><p>ValidKubeVirtInfraNetworkMTU indicates if the MTU configured on an infra cluster
 hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
@@ -3542,6 +4322,272 @@ and reports missing images if any.</p>
 </td>
 </tr></tbody>
 </table>
+###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
+<p>
+<p>ControlPlaneComponent specifies the state of a ControlPlane Component</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentSpec">
+ControlPlaneComponentSpec
+</a>
+</em>
+</td>
+<td>
+<br/>
+<br/>
+<table>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus">
+ControlPlaneComponentStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneComponentSpec { #hypershift.openshift.io/v1beta1.ControlPlaneComponentSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponent">ControlPlaneComponent</a>)
+</p>
+<p>
+<p>ControlPlaneComponentSpec defines the desired state of ControlPlaneComponent</p>
+</p>
+###ControlPlaneComponentStatus { #hypershift.openshift.io/v1beta1.ControlPlaneComponentStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneComponent">ControlPlaneComponent</a>)
+</p>
+<p>
+<p>ControlPlaneComponentStatus defines the observed state of ControlPlaneComponent</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>version reports the current version of this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resources</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ComponentResource">
+[]ComponentResource
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resources is a list of the resources reconciled by this component.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Conditions contains details for the current state of the ControlPlane Component.
+If there is an error, then the Available condition will be false.</p>
+<p>Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">AzureResourceManagedIdentities</a>)
+</p>
+<p>
+<p>ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
+Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>managedIdentitiesKeyVault</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedAzureKeyVault">
+ManagedAzureKeyVault
+</a>
+</em>
+</td>
+<td>
+<p>managedIdentitiesKeyVault contains information on the management cluster&rsquo;s managed identities Azure Key Vault.
+This Key Vault is where the managed identities certificates are stored. These certificates are pulled out of the
+Key Vault by the Secrets Store CSI driver and mounted into a volume on control plane pods requiring
+authentication with Azure API.</p>
+<p>More information on how the Secrets Store CSI driver works to do this can be found here:
+<a href="https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver">https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
+manager.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>nodePoolManagement is a pre-existing managed identity associated with the operator managing the NodePools.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>controlPlaneOperator is a pre-existing managed identity associated with the control plane operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>ingress is a pre-existing managed identity associated with the cluster-ingress-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>network is a pre-existing managed identity associated with the cluster-network-operator.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disk</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>diskClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>file</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">
+ManagedIdentity
+</a>
+</em>
+</td>
+<td>
+<p>fileClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
@@ -3549,7 +4595,7 @@ and reports missing images if any.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>DNSSpec specifies the DNS configuration in the cluster.</p>
+<p>DNSSpec specifies the DNS configuration for the hosted cluster ingress.</p>
 </p>
 <table>
 <thead>
@@ -3567,7 +4613,11 @@ string
 </em>
 </td>
 <td>
-<p>BaseDomain is the base domain of the cluster.</p>
+<p>baseDomain is the base domain of the hosted cluster.
+It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
+Once set, this field is immutable.
+When the value is the empty string &ldquo;&rdquo;, the controller might default to a value depending on the platform.</p>
 </td>
 </tr>
 <tr>
@@ -3579,8 +4629,11 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>BaseDomainPrefix is the base domain prefix of the cluster.
-defaults to clusterName if not set. Set it to &ldquo;&rdquo; if you don&rsquo;t want a prefix to be prepended to BaseDomain.</p>
+<p>baseDomainPrefix is the base domain prefix for the hosted cluster ingress.
+It will be used to configure ingress in the hosted cluster through the subdomain baseDomainPrefix.baseDomain.
+If baseDomainPrefix is omitted, the hostedCluster.name will be used as the subdomain.
+Set baseDomainPrefix to an empty string &ldquo;&rdquo;, if you don&rsquo;t want a prefix at all (not even hostedCluster.name) to be prepended to baseDomain.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3592,8 +4645,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PublicZoneID is the Hosted Zone ID where all the DNS records that are
-publicly accessible to the internet exist.</p>
+<p>publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
+This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3605,8 +4659,62 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PrivateZoneID is the Hosted Zone ID where all the DNS records that are only
-available internally to the cluster exist.</p>
+<p>privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
+This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
+Once set, this value is immutable.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###DataPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">AzureResourceManagedIdentities</a>)
+</p>
+<p>
+<p>DataPlaneManagedIdentities contains the client IDs of all the managed identities on the data plane needing to
+authenticate with Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistryMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
+registry controller.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>diskMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI Disk driver.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>fileMSIClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>fileMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI File driver.</p>
 </td>
 </tr>
 </tbody>
@@ -3637,25 +4745,23 @@ AzureDiagnosticsStorageAccountType
 </em>
 </td>
 <td>
-<p>StorageAccountType determines if the storage account for storing the diagnostics data
+<em>(Optional)</em>
+<p>storageAccountType determines if the storage account for storing the diagnostics data
 should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>storageAccountURI</code></br>
+<code>userManaged</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.UserManagedDiagnostics">
+UserManagedDiagnostics
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageAccountURI is the URI of the user-managed storage account.
-The URI typically will be <code>https://&lt;mystorageaccountname&gt;.blob.core.windows.net/</code>
-but may differ if you are using Azure DNS zone endpoints.
-You can find the correct endpoint by looking for the Blob Primary Endpoint in the
-endpoints tab in the Azure console or with the CLI by issuing
-<code>az storage account list --query='[].{name: name, &quot;resource group&quot;: resourceGroup, &quot;blob endpoint&quot;: primaryEndpoints.blob}'</code>.</p>
+<p>userManaged specifies the diagnostics settings for a virtual machine when the storage account is managed by the user.</p>
 </td>
 </tr>
 </tbody>
@@ -3712,7 +4818,9 @@ EtcdManagementType
 </em>
 </td>
 <td>
-<p>ManagementType defines how the etcd cluster is managed.</p>
+<p>managementType defines how the etcd cluster is managed.
+This can be either Managed or Unmanaged.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3726,7 +4834,7 @@ ManagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Managed specifies the behavior of an etcd cluster managed by HyperShift.</p>
+<p>managed specifies the behavior of an etcd cluster managed by HyperShift.</p>
 </td>
 </tr>
 <tr>
@@ -3740,8 +4848,8 @@ UnmanagedEtcdSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Unmanaged specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+<p>unmanaged specifies configuration which enables the control plane to
+integrate with an externally managed etcd cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -3927,10 +5035,13 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the desired OCP release payload for the hosted cluster.</p>
-<p>Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.</p>
+<p>release specifies the desired OCP release payload for all the hosted cluster components.
+This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
+The maximum and minimum supported release versions are determined by the running Hypersfhit Operator.
+Attempting to use an unsupported version will result in the HostedCluster being degraded and the validateReleaseImage condition being false.
+Attempting to use a release with a skew against a NodePool release bigger than N-2 for the y-stream will result in leaving the NodePool in an unsupported state.
+Changing this field will trigger a rollout of the control plane components.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -3944,12 +5055,14 @@ Release
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControlPlaneRelease specifies the desired OCP release payload for
-control plane components running on the management cluster.
-Updating this field will trigger a rollout of the control plane. The
-behavior of the rollout will be driven by the ControllerAvailabilityPolicy
-and InfrastructureAvailabilityPolicy.
-If not defined, Release is used</p>
+<p>controlPlaneRelease is like spec.release but only for the components running on the management cluster.
+This excludes any operand which will land in the hosted cluster data plane.
+It is useful when you need to apply patch management side like a CVE, transparently for the hosted cluster.
+Version input for this field is free, no validation is performed against spec.release or maximum and minimum is performed.
+If defined, it will dicate the version of the components running management side, while spec.release will dictate the version of the components landing in the hosted cluster data plane.
+If not defined, spec.release is used for both.
+Changing this field will trigger a rollout of the control plane.
+The behavior of the rollout will be driven by the ControllerAvailabilityPolicy and InfrastructureAvailabilityPolicy for PDBs and maxUnavailable and surce policies.</p>
 </td>
 </tr>
 <tr>
@@ -3961,15 +5074,29 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ClusterID uniquely identifies this cluster. This is expected to be
-an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in
-hexadecimal values).
-As with a Kubernetes metadata.uid, this ID uniquely identifies this
-cluster in space and time.
-This value identifies the cluster in metrics pushed to telemetry and
-metrics produced by the control plane operators. If a value is not
-specified, an ID is generated. After initial creation, the value is
-immutable.</p>
+<p>clusterID uniquely identifies this cluster. This is expected to be an RFC4122 UUID value (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx in hexadecimal digits).
+As with a Kubernetes metadata.uid, this ID uniquely identifies this cluster in space and time.
+This value identifies the cluster in metrics pushed to telemetry and metrics produced by the control plane operators.
+If a value is not specified, a random clusterID will be generated and set by the controller.
+Once set, this value is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>infraID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>infraID is a globally unique identifier for the cluster.
+It must consist of lowercase alphanumeric characters and hyphens (&lsquo;-&rsquo;) only, and start and end with an alphanumeric character.
+It must be no more than 253 characters in length.
+This identifier will be used to associate various cloud resources with the HostedCluster and its associated NodePools.
+infraID is used to compute and tag created resources with &ldquo;kubernetes.io/cluster/&rdquo;+hcluster.Spec.InfraID which has contractual meaning for the cloud provider implementations.
+If a value is not specified, a random infraID will be generated and set by the controller.
+Once set, this value is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -3984,7 +5111,8 @@ github.com/openshift/api/config/v1.URL
 <td>
 <em>(Optional)</em>
 <p>updateService may be used to specify the preferred upstream update service.
-By default it will use the appropriate update service for the cluster and region.</p>
+If omitted we will use the appropriate update service for the cluster and region.
+This is used by the control plane operator to determine and signal the appropriate available upgrades in the hostedCluster.status.</p>
 </td>
 </tr>
 <tr>
@@ -3996,23 +5124,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>channel is an identifier for explicitly requesting that a non-default
-set of updates be applied to this cluster. The default channel will be
-contain stable updates that are appropriate for production clusters.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>infraID</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>InfraID is a globally unique identifier for the cluster. This identifier
-will be used to associate various cloud resources with the HostedCluster
-and its associated NodePools.</p>
+<p>channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
+If omitted no particular upgrades are suggested.
+TODO(alberto): Consider the backend to use the default channel by default. Default channel will contain stable updates that are appropriate for production clusters.</p>
 </td>
 </tr>
 <tr>
@@ -4025,7 +5139,7 @@ PlatformSpec
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the cluster
+<p>platform specifies the underlying infrastructure provider for the cluster
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -4040,8 +5154,9 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies the availability policy applied to
-critical control plane components. The default value is HighlyAvailable.</p>
+<p>controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
+Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -4055,9 +5170,8 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
-to infrastructure services which run on cluster nodes. The default value is
-SingleReplica.</p>
+<p>infrastructureAvailabilityPolicy specifies the availability policy applied to infrastructure services which run on the hosted cluster data plane like the ingress controller and image registry controller.
+Possible values are HighlyAvailable and SingleReplica. The default value is SingleReplica.</p>
 </td>
 </tr>
 <tr>
@@ -4070,7 +5184,8 @@ DNSSpec
 </em>
 </td>
 <td>
-<p>DNS specifies DNS configuration for the cluster.</p>
+<em>(Optional)</em>
+<p>dns specifies the DNS configuration for the hosted cluster ingress.</p>
 </td>
 </tr>
 <tr>
@@ -4083,7 +5198,8 @@ ClusterNetworking
 </em>
 </td>
 <td>
-<p>Networking specifies network configuration for the cluster.</p>
+<p>networking specifies network configuration for the hosted cluster.
+Defaults to OVNKubernetes with a cluster network of cidr: &ldquo;10.132.0.0/14&rdquo; and a service network of cidr: &ldquo;172.31.0.0/16&rdquo;.</p>
 </td>
 </tr>
 <tr>
@@ -4097,8 +5213,21 @@ ClusterAutoscaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
-associated with the control plane.</p>
+<p>autoscaling specifies auto-scaling behavior that applies to all NodePools
+associated with this HostedCluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
 <tr>
@@ -4111,8 +5240,8 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd specifies configuration for the control plane etcd cluster. The
-default ManagementType is Managed. Once set, the ManagementType cannot be
+<p>etcd specifies configuration for the control plane etcd cluster. The
+default managementType is Managed. Once set, the managementType cannot be
 changed.</p>
 </td>
 </tr>
@@ -4126,10 +5255,15 @@ changed.</p>
 </em>
 </td>
 <td>
-<p>Services specifies how individual control plane services are published from
-the hosting cluster of the control plane.</p>
-<p>If a given service is not present in this list, it will be exposed publicly
-by default.</p>
+<p>services specifies how individual control plane services endpoints are published for consumption.
+This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This field is immutable for all platforms but IBMCloud.
+Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
+<p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;[&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
+TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4142,9 +5276,14 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>PullSecret references a pull secret to be injected into the container
-runtime of all cluster nodes. The secret must have a key named
-&ldquo;.dockerconfigjson&rdquo; whose value is the pull secret JSON.</p>
+<p>pullSecret is a local reference to a Secret that must have a &ldquo;.dockerconfigjson&rdquo; key whose content must be a valid Openshift pull secret JSON.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This pull secret will be part of every payload generated by the controllers for any NodePool of the HostedCluster
+and it will be injected into the container runtime of all NodePools.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.
+Changing the content of the secret inplace will not trigger a rollout and might result in unpredictable behaviour.
+TODO(alberto): have our own local reference type to include our opinions and avoid transparent changes.</p>
 </td>
 </tr>
 <tr>
@@ -4157,9 +5296,13 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>SSHKey references an SSH key to be injected into all cluster node sshd
-servers. The secret must have a single key &ldquo;id_rsa.pub&rdquo; whose value is the
-public part of an SSH key.</p>
+<em>(Optional)</em>
+<p>sshKey is a local reference to a Secret that must have a &ldquo;id_rsa.pub&rdquo; key whose content must be the public part of 1..N SSH keys.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+When sshKey is set, the controllers will generate a machineConfig with the sshAuthorizedKeys <a href="https://coreos.github.io/ignition/configuration-v3_2/">https://coreos.github.io/ignition/configuration-v3_2/</a> populated with this value.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4171,10 +5314,14 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
-ServiceAccount tokens generated by the control plane API server. The
-default value is kubernetes.default.svc, which only works for in-cluster
-validation.</p>
+<p>issuerURL is an OIDC issuer URL which will be used as the issuer in all
+ServiceAccount tokens generated by the control plane API server via &ndash;service-account-issuer kube api server flag.
+<a href="https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/">https://k8s-docs.netlify.app/en/docs/reference/command-line-tools-reference/kube-apiserver/</a>
+<a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection">https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection</a>
+The default value is kubernetes.default.svc, which only works for in-cluster
+validation.
+If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
+The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.</p>
 </td>
 </tr>
 <tr>
@@ -4188,11 +5335,13 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceAccountSigningKey is a reference to a secret containing the private key
-used by the service account token issuer. The secret is expected to contain
-a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
-be generated automatically for the cluster. When specifying a service account
-signing key, a IssuerURL must also be specified.</p>
+<p>serviceAccountSigningKey is a local reference to a secret that must have a &ldquo;key&rdquo; key whose content must be the private key
+used by the service account token issuer.
+If not specified, a service account signing key will
+be generated automatically for the cluster.
+When specifying a service account signing key, an IssuerURL must also be specified.
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.</p>
 </td>
 </tr>
 <tr>
@@ -4209,6 +5358,20 @@ ClusterConfiguration
 <p>Configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4241,8 +5404,11 @@ name that corresponds to the constant AuditWebhookKubeconfigKey.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources specifies image mirrors that can be used by cluster
-nodes to pull content.</p>
+<p>imageContentSources specifies image mirrors that can be used by cluster
+nodes to pull content.
+When imageContentSources is set, the controllers will generate a machineConfig.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4256,8 +5422,12 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalTrustBundle is a reference to a ConfigMap containing a
-PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes</p>
+<p>additionalTrustBundle is a local reference to a ConfigMap that must have a &ldquo;ca-bundle.crt&rdquo; key
+whose content must be a PEM-encoded X.509 certificate bundle that will be added to the hosted controlplane and nodes
+If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+TODO(alberto): Signal this in a condition.
+This will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -4271,7 +5441,7 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption specifies a Kubernetes secret encryption strategy for the
+<p>secretEncryption specifies a Kubernetes secret encryption strategy for the
 control plane.</p>
 </td>
 </tr>
@@ -4284,7 +5454,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>FIPS indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
+<p>fips indicates whether this cluster&rsquo;s nodes will be running in FIPS mode.
 If set to true, the control plane&rsquo;s ignition server will be configured to
 expect that nodes joining the cluster will be FIPS-enabled.</p>
 </td>
@@ -4298,8 +5468,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -4330,7 +5500,10 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
+Changes to this field will propagate to existing Deployments and StatefulSets.
+TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 </tr>
 <tr>
@@ -4344,7 +5517,40 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
 </tbody>
@@ -4802,6 +6008,20 @@ ClusterConfiguration
 </tr>
 <tr>
 <td>
+<code>operatorConfiguration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">
+OperatorConfiguration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>operatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>imageContentSources</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ImageContentSource">
@@ -4892,6 +6112,19 @@ associated with the control plane.</p>
 </tr>
 <tr>
 <td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">
+AutoNode
+</a>
+</em>
+</td>
+<td>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>nodeSelector</code></br>
 <em>
 map[string]string
@@ -4913,7 +6146,40 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custome tolerations are added to the hcp pods.</p>
+<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>labels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>labels when specified, define what custom labels are added to the hcp pods.
+Changing this day 2 will cause a rollout of all hcp pods.
+Duplicate keys are not supported. If duplicate keys are defined, only the last key/value pair is preserved.
+Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
+<p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
+-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
+TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
 </tbody>
@@ -5204,7 +6470,7 @@ KMS system (all provider managed).</p>
 </thead>
 <tbody><tr><td><p>&#34;Managed&#34;</p></td>
 <td><p>IBMCloudKMSManagedAuth defines the KMS authentication strategy where the IKS/ROKS platform uses
-service to service auth to call IBM Cloud KMS APIs (no customer credentials requried)</p>
+service to service auth to call IBM Cloud KMS APIs (no customer credentials required)</p>
 </td>
 </tr><tr><td><p>&#34;Unmanaged&#34;</p></td>
 <td><p>IBMCloudKMSUnmanagedAuth defines the KMS authentication strategy where a customer supplies IBM Cloud
@@ -5488,7 +6754,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+<p>maxUnavailable is the maximum number of nodes that can be unavailable
 during the update.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -5595,6 +6861,78 @@ AzureKMSSpec
 <td>
 <em>(Optional)</em>
 <p>Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KarpenterAWSConfig { #hypershift.openshift.io/v1beta1.KarpenterAWSConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>roleARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>arn specifies the ARN of the Karpenter provisioner.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###KarpenterConfig { #hypershift.openshift.io/v1beta1.KarpenterConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformType">
+PlatformType
+</a>
+</em>
+</td>
+<td>
+<p>platform specifies the platform-specific configuration for Karpenter.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterAWSConfig">
+KarpenterAWSConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws specifies the AWS-specific configuration for Karpenter.</p>
 </td>
 </tr>
 </tbody>
@@ -5864,7 +7202,7 @@ NodePool&rsquo;s nodes. Default is 1.</p>
 <p>StorageClassMapping maps StorageClasses on the infra cluster hosting
 the KubeVirt VMs to StorageClasses that are made available within the
 Guest Cluster.</p>
-<p>NOTE: It is possible that not all capablities of an infra cluster&rsquo;s
+<p>NOTE: It is possible that not all capabilities of an infra cluster&rsquo;s
 storageclass will be present for the corresponding guest clusters storageclass.</p>
 </td>
 </tr>
@@ -6426,7 +7764,7 @@ KubevirtManualStorageDriverConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>Manual is used to explicilty define how the infra storageclasses are
+<p>Manual is used to explicitly define how the infra storageclasses are
 mapped to guest storageclasses</p>
 </td>
 </tr>
@@ -6577,11 +7915,19 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the name of the DNS record that will be created pointing to the LoadBalancer.</p>
+<p>hostname is the name of the DNS record that will be created pointing to the LoadBalancer and passed through to consumers of the service.
+If omitted, the value will be inferred from the corev1.Service Load balancer type .status.</p>
 </td>
 </tr>
 </tbody>
 </table>
+###LogLevel { #hypershift.openshift.io/v1beta1.LogLevel }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">ClusterVersionOperatorSpec</a>)
+</p>
+<p>
+</p>
 ###MachineNetworkEntry { #hypershift.openshift.io/v1beta1.MachineNetworkEntry }
 <p>
 (<em>Appears on:</em>
@@ -6613,6 +7959,46 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </tr>
 </tbody>
 </table>
+###ManagedAzureKeyVault { #hypershift.openshift.io/v1beta1.ManagedAzureKeyVault }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
+</p>
+<p>
+<p>ManagedAzureKeyVault is an Azure Key Vault on the management cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Azure Key Vault on the management cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tenantID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>tenantID is the tenant ID of the Azure Key Vault on the management cluster.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -6640,7 +8026,7 @@ ManagedEtcdStorageSpec
 </em>
 </td>
 <td>
-<p>Storage specifies how etcd data is persisted.</p>
+<p>storage specifies how etcd data is persisted.</p>
 </td>
 </tr>
 </tbody>
@@ -6671,7 +8057,8 @@ ManagedEtcdStorageType
 </em>
 </td>
 <td>
-<p>Type is the kind of persistent storage implementation to use for etcd.</p>
+<p>type is the kind of persistent storage implementation to use for etcd.
+Only PersistentVolume is supported at the moment.</p>
 </td>
 </tr>
 <tr>
@@ -6685,7 +8072,7 @@ PersistentVolumeEtcdStorageSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>PersistentVolume is the configuration for PersistentVolume etcd storage.
+<p>persistentVolume is the configuration for PersistentVolume etcd storage.
 With this implementation, a PersistentVolume will be allocated for every
 etcd member (either 1 or 3 depending on the HostedCluster control plane
 availability configuration).</p>
@@ -6700,7 +8087,7 @@ availability configuration).</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>RestoreSnapshotURL allows an optional URL to be provided where
+<p>restoreSnapshotURL allows an optional URL to be provided where
 an etcd snapshot can be downloaded, for example a pre-signed URL
 referencing a storage service.
 This snapshot will be restored on initial startup, only when the etcd PV
@@ -6729,14 +8116,15 @@ is empty.</p>
 </td>
 </tr></tbody>
 </table>
-###MarketplaceImage { #hypershift.openshift.io/v1beta1.MarketplaceImage }
+###ManagedIdentity { #hypershift.openshift.io/v1beta1.ManagedIdentity }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
 </p>
 <p>
-<p>MarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image. This struct
-replicates the same fields found in CAPZ - <a href="https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go">https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go</a>.</p>
+<p>ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
+used, by an HCP component, to authenticate with the Azure API.</p>
 </p>
 <table>
 <thead>
@@ -6748,50 +8136,68 @@ replicates the same fields found in CAPZ - <a href="https://github.com/kubernete
 <tbody>
 <tr>
 <td>
-<code>publisher</code></br>
+<code>clientID</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>Publisher is the name of the organization that created the image</p>
+<em>(Optional)</em>
+<p>clientID is the client ID of a managed identity.
+Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>offer</code></br>
+<code>certificateName</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>Offer specifies the name of a group of related images created by the publisher.</p>
+<em>(Optional)</em>
+<p>certificateName is the name of the certificate backing the managed identity. This certificate is expected to
+reside in an Azure Key Vault on the management cluster.
+Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
+removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>sku</code></br>
+<code>objectEncoding</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.ObjectEncodingFormat">
+ObjectEncodingFormat
+</a>
 </em>
 </td>
 <td>
-<p>SKU specifies an instance of an offer, such as a major release of a distribution.
-For example, 18.04-LTS, 2019-Datacenter</p>
+<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
+unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+SecretProviderClass custom resource related to the managed identity.</p>
+<p>The default value is utf-8.</p>
+<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </td>
 </tr>
 <tr>
 <td>
-<code>version</code></br>
+<code>credentialsSecretName</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>Version specifies the version of an image sku. The allowed formats are Major.Minor.Build or &lsquo;latest&rsquo;. Major,
-Minor, and Build are decimal numbers. Specify &lsquo;latest&rsquo; to use the latest version of an image available at
-deployment time. Even if you use &lsquo;latest&rsquo;, the VM image will not automatically update after deploy time even if a
-new version becomes available.</p>
+<p>credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
+format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
+ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.</p>
+<p>More info on this struct can be found here - <a href="https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156">https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156</a>.</p>
+<p>credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
+credentialsSecretName must also be unique within the Azure Key Vault. See more details here - <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/</a>.</p>
+<p>TODO set the validation:MinLength=1
+TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 </td>
 </tr>
 </tbody>
@@ -6890,7 +8296,8 @@ FilterByNeutronTags
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
 </p>
 <p>
 <p>NetworkParam specifies an OpenStack network. It may be specified by either ID or Filter, but not both.</p>
@@ -6993,7 +8400,7 @@ int32
 </em>
 </td>
 <td>
-<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1.</p>
+<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1 and &lt;= .Max.</p>
 </td>
 </tr>
 <tr>
@@ -7004,7 +8411,7 @@ int32
 </em>
 </td>
 <td>
-<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1.</p>
+<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1 and &gt;= Min.</p>
 </td>
 </tr>
 </tbody>
@@ -7148,7 +8555,10 @@ UpgradeType
 </em>
 </td>
 <td>
-<p>UpgradeType specifies the type of strategy for handling upgrades.</p>
+<p>upgradeType specifies the type of strategy for handling upgrades.
+This can be either &ldquo;Replace&rdquo; or &ldquo;InPlace&rdquo;.
+&ldquo;Replace&rdquo; will update Nodes by recreating the underlying instances.
+&ldquo;InPlace&rdquo; will update Nodes by applying changes to the existing instances. This might or might not result in a reboot.</p>
 </td>
 </tr>
 <tr>
@@ -7161,7 +8571,8 @@ ReplaceUpgrade
 </em>
 </td>
 <td>
-<p>Replace is the configuration for rolling upgrades.</p>
+<p>replace is the configuration for rolling upgrades.
+It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.</p>
 </td>
 </tr>
 <tr>
@@ -7174,7 +8585,7 @@ InPlaceUpgrade
 </em>
 </td>
 <td>
-<p>InPlace is the configuration for in-place upgrades.</p>
+<p>inPlace is the configuration for in-place upgrades.</p>
 </td>
 </tr>
 <tr>
@@ -7186,8 +8597,11 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>AutoRepair specifies whether health checks should be enabled for machines
-in the NodePool. The default is false.</p>
+<p>autoRepair specifies whether health checks should be enabled for machines in the NodePool. The default is false.
+Enabling this feature will cause the controller to automatically delete unhealthy machines.
+The unhealthy criteria is reserved for the controller implementation and subject to change.
+But generally it&rsquo;s determined by checking the Node ready condition is true and a timeout that might vary depending on the platform provider.
+AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.</p>
 </td>
 </tr>
 </tbody>
@@ -7375,8 +8789,8 @@ string
 </em>
 </td>
 <td>
-<p>ClusterName is the name of the HostedCluster this NodePool belongs to.</p>
-<p>TODO(dan): Should this be a LocalObjectReference?</p>
+<p>clusterName is the name of the HostedCluster this NodePool belongs to.
+If a HostedCluster with this name doesn&rsquo;t exist, the controller will no-op until it exists.</p>
 </td>
 </tr>
 <tr>
@@ -7389,9 +8803,14 @@ Release
 </em>
 </td>
 <td>
-<p>Release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).</p>
+<p>release specifies the OCP release used for the NodePool. This informs the
+ignition configuration for machines which includes the kubelet version, as well as other platform specific
+machine properties (e.g. an AMI on the AWS platform).
+It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
+Attempting to use a release with a bigger skew might result in unpredictable behaviour.
+Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -7404,7 +8823,7 @@ NodePoolPlatform
 </em>
 </td>
 <td>
-<p>Platform specifies the underlying infrastructure provider for the NodePool
+<p>platform specifies the underlying infrastructure provider for the NodePool
 and is used to configure platform specific behavior.</p>
 </td>
 </tr>
@@ -7417,8 +8836,8 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Replicas is the desired number of nodes the pool should maintain. If
-unset, the default value is 0.</p>
+<p>replicas is the desired number of nodes the pool should maintain. If unset, the controller default value is 0.
+replicas is mutually exclusive with autoscaling. If autoscaling is configured, replicas must be omitted and autoscaling will control the NodePool size internally.</p>
 </td>
 </tr>
 <tr>
@@ -7431,7 +8850,7 @@ NodePoolManagement
 </em>
 </td>
 <td>
-<p>Management specifies behavior for managing nodes in the pool, such as
+<p>management specifies behavior for managing nodes in the pool, such as
 upgrade strategies and auto-repair behaviors.</p>
 </td>
 </tr>
@@ -7446,7 +8865,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior for the NodePool.</p>
+<p>autoscaling specifies auto-scaling behavior for the NodePool.
+autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
 </td>
 </tr>
 <tr>
@@ -7459,19 +8879,22 @@ NodePoolAutoScaling
 </em>
 </td>
 <td>
-<p>Config is a list of references to ConfigMaps containing serialized
+<p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
 <p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:
-KubeletConfig
-ContainerRuntimeConfig
-MachineConfig
-ClusterImagePolicy
-ImageContentSourcePolicy
-or
-ImageDigestMirrorSet</p>
+with one or more serialized machineconfiguration.openshift.io resources:</p>
+<ul>
+<li>KubeletConfig</li>
+<li>ContainerRuntimeConfig</li>
+<li>MachineConfig</li>
+<li>ClusterImagePolicy</li>
+<li>ImageContentSourcePolicy</li>
+<li>ImageDigestMirrorSet</li>
+</ul>
+<p>This is validated in the backend and signaled back via validMachineConfig condition.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -7485,12 +8908,9 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeDrainTimeout is the maximum amount of time that the controller will spend on draining a node.
-The default value is 0, meaning that the node can be drained without any time limitations.
-NOTE: NodeDrainTimeout is different from <code>kubectl drain --timeout</code>
-TODO (alberto): Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+<p>nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
+The default value is 0, meaning that the node can retry drain without any time limitations.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -7504,13 +8924,10 @@ Kubernetes meta/v1.Duration
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
+<p>nodeVolumeDetachTimeout is the maximum amount of time that the controller will spend on detaching volumes from a node.
 The default value is 0, meaning that the volumes will be detached from the node without any time limitations.
-After the timeout, the detachment of volumes that haven&rsquo;t been detached yet is skipped.
-TODO (cbusse): Same comment as Alberto&rsquo;s for <code>NodeDrainTimeout</code>:
-Today changing this field will trigger a recreate rolling update, which kind of defeats
-the purpose of the change. In future we plan to propagate this field in-place.
-<a href="https://github.com/kubernetes-sigs/cluster-api/issues/5880">https://github.com/kubernetes-sigs/cluster-api/issues/5880</a> / <a href="https://github.com/kubernetes-sigs/cluster-api/pull/10589">https://github.com/kubernetes-sigs/cluster-api/pull/10589</a></p>
+After the timeout, any remaining attached volumes will be ignored and the removal of the machine will continue.
+Changing this field propagate inplace into existing Nodes.</p>
 </td>
 </tr>
 <tr>
@@ -7522,7 +8939,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeLabels propagates a list of labels to Nodes, only once on creation.
+<p>nodeLabels propagates a list of labels to Nodes, only once on creation.
 Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set">https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/#syntax-and-character-set</a></p>
 </td>
 </tr>
@@ -7537,7 +8954,8 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 </td>
 <td>
 <em>(Optional)</em>
-<p>Taints if specified, propagates a list of taints to Nodes, only once on creation.</p>
+<p>taints if specified, propagates a list of taints to Nodes, only once on creation.
+These taints are additive to the ones applied by other controllers</p>
 </td>
 </tr>
 <tr>
@@ -7549,8 +8967,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
-Either a date can be provided in RFC3339 format or a boolean. If a date is
+<p>pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
+Either a date can be provided in RFC3339 format or a boolean as in &lsquo;true&rsquo;, &lsquo;false&rsquo;, &lsquo;True&rsquo;, &lsquo;False&rsquo;. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
 </td>
@@ -7565,14 +8983,15 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
-<p>TuningConfig is a list of references to ConfigMaps containing serialized
+<p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
 <p><a href="https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go">https://github.com/openshift/cluster-node-tuning-operator/blob/2c76314fb3cc8f12aef4a0dcd67ddc3677d5b54f/pkg/apis/tuned/v1/tuned_types.go</a></p>
 <p>The PerformanceProfile API is defined here:
 <a href="https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2">https://github.com/openshift/cluster-node-tuning-operator/tree/b41042d42d4ba5bb2e99960248cf1d6ae4935018/pkg/apis/performanceprofile/v2</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;tuning&rdquo; whose value is the
-JSON or YAML of a serialized Tuned or PerformanceProfile.</p>
+JSON or YAML of a serialized Tuned or PerformanceProfile.
+Changing this field will trigger a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -7584,8 +9003,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Arch is the preferred processor architecture for the NodePool (currently only supported on AWS)
-NOTE: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
+<p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
+TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
@@ -7686,7 +9105,7 @@ string
 </em>
 </td>
 <td>
-<p>Address is the host/ip that the NodePort service is exposed over.</p>
+<p>address is the host/ip that the NodePort service is exposed over.</p>
 </td>
 </tr>
 <tr>
@@ -7697,7 +9116,7 @@ int32
 </em>
 </td>
 <td>
-<p>Port is the port of the NodePort service. If &lt;=0, the port is dynamically
+<p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
 assigned when the service is created.</p>
 </td>
 </tr>
@@ -7729,6 +9148,14 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>)
+</p>
+<p>
+<p>ObjectEncodingFormat is the type of encoding for an Azure Key Vault secret</p>
+</p>
 ###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
 <p>
 (<em>Appears on:</em>
@@ -7809,6 +9236,37 @@ string
 <em>(Optional)</em>
 <p>ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>availabilityZone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>availabilityZone is the nova availability zone in which the provider will create the VM.
+If not specified, the VM will be created in the default availability zone specified in the nova configuration.
+Availability zone names must NOT contain : since it is used by admin users to specify hosts where instances
+are launched in server creation. Also, it must not contain spaces otherwise it will lead to node that belongs
+to this availability zone register failure, see kubernetes/cloud-provider-openstack#1379 for further information.
+The maximum length of availability zone name is 63 as per labels limits.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalPorts</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">
+[]PortSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AdditionalPorts is a list of additional ports to create on the node instances.</p>
 </td>
 </tr>
 </tbody>
@@ -7971,7 +9429,77 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 <p>Tags to set on all resources in cluster which support tags</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ingressFloatingIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+be associated with the OpenShift ingress port.
+When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
+When specified, the floating IP has to be pre-created.  If the
+specified value is not a floating IP or is already claimed, the
+OpenStack cloud provider won&rsquo;t be able to provision the load
+balancer.
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>OperatorConfiguration specifies configuration for individual OCP operators in the cluster.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clusterVersionOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec">
+ClusterVersionOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OptionalCapability { #hypershift.openshift.io/v1beta1.OptionalCapability }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">Capabilities</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
 <p>
@@ -8032,8 +9560,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageClassName is the StorageClass of the data volume for each etcd member.</p>
-<p>See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.</p>
+<p>storageClassName is the StorageClass of the data volume for each etcd member.
+See <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1">https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1</a>.
+TODO(alberto): This shouldn&rsquo;t really be a pointer. There&rsquo;s no real different semantic for nil and empty string. Revisit all pointer vs non-pointer choices.</p>
 </td>
 </tr>
 <tr>
@@ -8047,7 +9576,9 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 </td>
 <td>
 <em>(Optional)</em>
-<p>Size is the minimum size of the data volume for each etcd member.</p>
+<p>size is the minimum size of the data volume for each etcd member.
+Default is 8Gi.
+This field is immutable</p>
 </td>
 </tr>
 </tbody>
@@ -8251,6 +9782,7 @@ AWSPlatformStatus
 ###PlatformType { #hypershift.openshift.io/v1beta1.PlatformType }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>, 
 <a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
@@ -8289,6 +9821,130 @@ AWSPlatformStatus
 <td><p>PowerVSPlatform represents PowerVS infrastructure.</p>
 </td>
 </tr></tbody>
+</table>
+###PortSecurityPolicy { #hypershift.openshift.io/v1beta1.PortSecurityPolicy }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
+</p>
+<p>
+<p>PortSecurityPolicy defines whether or not to enable port security on a port.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;&#34;</p></td>
+<td><p>PortSecurityDefault uses the default port security policy.</p>
+</td>
+</tr><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>PortSecurityDisabled disables port security on a port.</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>PortSecurityEnabled enables port security on a port.</p>
+</td>
+</tr></tbody>
+</table>
+###PortSpec { #hypershift.openshift.io/v1beta1.PortSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OpenStackNodePoolPlatform">OpenStackNodePoolPlatform</a>)
+</p>
+<p>
+<p>PortSpec specifies the options for creating a port.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NetworkParam">
+NetworkParam
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Network is a query for an openstack network that the port will be created or discovered on.
+This will fail if the query returns more than one network.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>description</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>Description is a human-readable description for the port.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedAddressPairs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AddressPair">
+[]AddressPair
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>AllowedAddressPairs is a list of address pairs which Neutron will
+allow the port to send traffic from in addition to the port&rsquo;s
+addresses. If not specified, the MAC Address will be the MAC Address
+of the port. Depending on the configuration of Neutron, it may be
+supported to specify a CIDR instead of a specific IP address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>vnicType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>VNICType specifies the type of vNIC which this port should be
+attached to. This is used to determine which mechanism driver(s) to
+be used to bind the port. The valid values are normal, macvtap,
+direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
+remote-managed, although these values will not be validated in this
+API to ensure compatibility with future neutron changes or custom
+implementations. What type of vNIC is actually available depends on
+deployments. If not specified, the Neutron default value is used.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>portSecurityPolicy</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.PortSecurityPolicy">
+PortSecurityPolicy
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>PortSecurityPolicy specifies whether or not to enable port security on the port.
+Allowed values are &ldquo;Enabled&rdquo;, &ldquo;Disabled&rdquo; and omitted.
+When not set, it takes the value of the corresponding field at the network level.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###PowerVSNodePoolImageDeletePolicy { #hypershift.openshift.io/v1beta1.PowerVSNodePoolImageDeletePolicy }
 <p>
@@ -8801,6 +10457,70 @@ This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </tr>
 </tbody>
 </table>
+###Provisioner { #hypershift.openshift.io/v1beta1.Provisioner }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
+</p>
+<p>
+<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
+###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
+</p>
+<p>
+<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Provisioner">
+Provisioner
+</a>
+</em>
+</td>
+<td>
+<p>name specifies the name of the provisioner to use.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>karpenter</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">
+KarpenterConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>karpenter specifies the configuration for the Karpenter provisioner.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###PublishingStrategyType { #hypershift.openshift.io/v1beta1.PublishingStrategyType }
 <p>
 (<em>Appears on:</em>
@@ -8854,7 +10574,8 @@ string
 </em>
 </td>
 <td>
-<p>Image is the image pullspec of an OCP release payload image.</p>
+<p>Image is the image pullspec of an OCP release payload image.
+See <a href="https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags">https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags</a> for a list of available images.</p>
 </td>
 </tr>
 </tbody>
@@ -8886,7 +10607,9 @@ UpgradeStrategy
 </em>
 </td>
 <td>
-<p>Strategy is the node replacement strategy for nodes in the pool.</p>
+<p>strategy is the node replacement strategy for nodes in the pool.
+In can be either &ldquo;RollingUpdate&rdquo; or &ldquo;OnDelete&rdquo;. RollingUpdate will rollout Nodes honoring maxSurge and maxUnavailable.
+OnDelete provide more granular control and will replace nodes as the old ones are manually deleted.</p>
 </td>
 </tr>
 <tr>
@@ -8899,11 +10622,32 @@ RollingUpdate
 </em>
 </td>
 <td>
-<p>RollingUpdate specifies a rolling update strategy which upgrades nodes by
+<p>rollingUpdate specifies a rolling update strategy which upgrades nodes by
 creating new nodes and deleting the old ones.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###RetentionPolicy { #hypershift.openshift.io/v1beta1.RetentionPolicy }
+<p>
+<p>RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Orphan&#34;</p></td>
+<td><p>OrphanRetentionPolicy will keep the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr><tr><td><p>&#34;Prune&#34;</p></td>
+<td><p>PruneRetentionPolicy will delete the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr></tbody>
 </table>
 ###RollingUpdate { #hypershift.openshift.io/v1beta1.RollingUpdate }
 <p>
@@ -8933,7 +10677,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxUnavailable is the maximum number of nodes that can be unavailable
+<p>maxUnavailable is the maximum number of nodes that can be unavailable
 during the update.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -8958,7 +10702,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>MaxSurge is the maximum number of nodes that can be provisioned above the
+<p>maxSurge is the maximum number of nodes that can be provisioned above the
 desired number of nodes.</p>
 <p>Value can be an absolute number (ex: 5) or a percentage of desired nodes
 (ex: 10%).</p>
@@ -8999,7 +10743,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the name of the DNS record that will be created pointing to the Route.</p>
+<p>Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+If omitted, the value will be inferred from management ingress.Spec.Domain.</p>
 </td>
 </tr>
 </tbody>
@@ -9229,7 +10974,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </em>
 </td>
 <td>
-<p>CIDR is the IP block address pool for services within the cluster.</p>
+<p>cidr is the IP block address pool for services within the cluster in CIDR format (e.g., 192.168.1.0/24 or 2001:0db8::/64)</p>
 </td>
 </tr>
 </tbody>
@@ -9240,7 +10985,6 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 <a href="#hypershift.openshift.io/v1beta1.ServicePublishingStrategyMapping">ServicePublishingStrategyMapping</a>)
 </p>
 <p>
-<p>ServicePublishingStrategy specfies how to publish a ServiceType.</p>
 </p>
 <table>
 <thead>
@@ -9260,7 +11004,8 @@ PublishingStrategyType
 </em>
 </td>
 <td>
-<p>Type is the publishing strategy used for the service.</p>
+<p>type is the publishing strategy used for the service.
+It can be LoadBalancer;NodePort;Route;None;S3</p>
 </td>
 </tr>
 <tr>
@@ -9273,7 +11018,8 @@ NodePortPublishingStrategy
 </em>
 </td>
 <td>
-<p>NodePort configures exposing a service using a NodePort.</p>
+<em>(Optional)</em>
+<p>nodePort configures exposing a service using a NodePort.</p>
 </td>
 </tr>
 <tr>
@@ -9286,7 +11032,8 @@ LoadBalancerPublishingStrategy
 </em>
 </td>
 <td>
-<p>LoadBalancer configures exposing a service using a LoadBalancer.</p>
+<em>(Optional)</em>
+<p>loadBalancer configures exposing a service using a dedicated LoadBalancer.</p>
 </td>
 </tr>
 <tr>
@@ -9299,7 +11046,9 @@ RoutePublishingStrategy
 </em>
 </td>
 <td>
-<p>Route configures exposing a service using a Route.</p>
+<em>(Optional)</em>
+<p>route configures exposing a service using a Route through and an ingress controller behind a cloud Load Balancer.
+The specifics of the setup are platform dependent.</p>
 </td>
 </tr>
 </tbody>
@@ -9311,8 +11060,9 @@ RoutePublishingStrategy
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>ServicePublishingStrategyMapping specifies how individual control plane
-services are published from the hosting cluster of a control plane.</p>
+<p>ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
+This includes APIServer;OAuthServer;Konnectivity;Ignition.
+If a given service is not present in this list, it will be exposed publicly by default.</p>
 </p>
 <table>
 <thead>
@@ -9332,7 +11082,10 @@ ServiceType
 </em>
 </td>
 <td>
-<p>Service identifies the type of service being published.</p>
+<p>service identifies the type of service being published.
+It can be APIServer;OAuthServer;Konnectivity;Ignition
+OVNSbDb;OIDC are no-op and kept for backward compatibility.
+This field is immutable.</p>
 </td>
 </tr>
 <tr>
@@ -9345,7 +11098,7 @@ ServicePublishingStrategy
 </em>
 </td>
 <td>
-<p>ServicePublishingStrategy specifies how to publish Service.</p>
+<p>servicePublishingStrategy specifies how to publish a service endpoint.</p>
 </td>
 </tr>
 </tbody>
@@ -9586,8 +11339,10 @@ outside of these ranges manually.</p>
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
-<p>Taint is as v1 Core but without TimeAdded.
-<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a></p>
+<p>taint is as v1 Core but without TimeAdded.
+<a href="https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053">https://github.com/kubernetes/kubernetes/blob/ed8cad1e80d096257921908a52ac69cf1f41a098/staging/src/k8s.io/api/core/v1/types.go#L3037-L3053</a>
+Validation replicates the same validation as the upstream <a href="https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273">https://github.com/kubernetes/kubernetes/blob/9a2a7537f035969a68e432b4cc276dbce8ce1735/pkg/util/taints/taints.go#L273</a>.
+See also <a href="https://kubernetes.io/docs/concepts/overview/working-with-objects/names/">https://kubernetes.io/docs/concepts/overview/working-with-objects/names/</a>.</p>
 </p>
 <table>
 <thead>
@@ -9605,7 +11360,7 @@ string
 </em>
 </td>
 <td>
-<p>Required. The taint key to be applied to a node.</p>
+<p>key is the taint key to be applied to a node.</p>
 </td>
 </tr>
 <tr>
@@ -9617,7 +11372,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>The taint value corresponding to the taint key.</p>
+<p>value is the taint value corresponding to the taint key.</p>
 </td>
 </tr>
 <tr>
@@ -9630,7 +11385,7 @@ Kubernetes core/v1.TaintEffect
 </em>
 </td>
 <td>
-<p>Required. The effect of the taint on pods
+<p>effect is the effect of the taint on pods
 that do not tolerate the taint.
 Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
 </td>
@@ -9662,7 +11417,7 @@ string
 </em>
 </td>
 <td>
-<p>Endpoint is the full etcd cluster client endpoint URL. For example:</p>
+<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
 <pre><code>https://etcd-client:2379
 </code></pre>
 <p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
@@ -9678,7 +11433,7 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>TLS specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
 </td>
 </tr>
 </tbody>
@@ -9731,6 +11486,40 @@ additional node capacity requirements.</p>
 capacity.</p>
 </td>
 </tr></tbody>
+</table>
+###UserManagedDiagnostics { #hypershift.openshift.io/v1beta1.UserManagedDiagnostics }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.Diagnostics">Diagnostics</a>)
+</p>
+<p>
+<p>UserManagedDiagnostics specifies the diagnostics settings for a virtual machine when the storage account is managed by the user.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageAccountURI</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>storageAccountURI is the URI of the user-managed storage account.
+The URI typically will be <code>https://&lt;mystorageaccountname&gt;.blob.core.windows.net/</code>
+but may differ if you are using Azure DNS zone endpoints.
+You can find the correct endpoint by looking for the Blob Primary Endpoint in the
+endpoints tab in the Azure console or with the CLI by issuing
+<code>az storage account list --query='[].{name: name, &quot;resource group&quot;: resourceGroup, &quot;blob endpoint&quot;: primaryEndpoints.blob}'</code>.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###Volume { #hypershift.openshift.io/v1beta1.Volume }
 <p>

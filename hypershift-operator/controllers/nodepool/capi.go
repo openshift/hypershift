@@ -8,14 +8,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-logr/logr"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
 	"github.com/openshift/hypershift/support/api"
 	supportutil "github.com/openshift/hypershift/support/util"
+
+	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,16 +25,19 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiopenstack "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/go-logr/logr"
 )
 
 // CAPI Knows how to reconcile all the CAPI resources for a unique token.
@@ -370,6 +374,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		machineDeployment.Annotations = map[string]string{}
 	}
 	machineDeployment.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
+	machineDeployment.Annotations[capiv1.MachineSetSkipPreflightChecksAnnotation] = string(capiv1.MachineSetPreflightCheckAll)
+
 	// Delete any paused annotation
 	delete(machineDeployment.Annotations, capiv1.PausedAnnotation)
 	if machineDeployment.GetLabels() == nil {
@@ -380,9 +386,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	// Set defaults. These are normally set by the CAPI machinedeployment webhook.
 	// However, since we don't run the webhook, CAPI updates the machinedeployment
 	// after it has been created with defaults.
-	machineDeployment.Spec.MinReadySeconds = ptr.To(int32(0))
-	machineDeployment.Spec.RevisionHistoryLimit = ptr.To(int32(1))
-	machineDeployment.Spec.ProgressDeadlineSeconds = ptr.To(int32(600))
+	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
+	machineDeployment.Spec.RevisionHistoryLimit = ptr.To[int32](1)
+	machineDeployment.Spec.ProgressDeadlineSeconds = ptr.To[int32](600)
 
 	machineDeployment.Spec.ClusterName = capiClusterName
 	if machineDeployment.Spec.Selector.MatchLabels == nil {
@@ -426,6 +432,13 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
 			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
 		},
+	}
+
+	// The CAPI provider for OpenStack uses the FailureDomain field to set the availability zone.
+	if c.nodePool.Spec.Platform.Type == hyperv1.OpenStackPlatform && c.nodePool.Spec.Platform.OpenStack != nil {
+		if c.nodePool.Spec.Platform.OpenStack.AvailabilityZone != "" {
+			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(c.nodePool.Spec.Platform.OpenStack.AvailabilityZone)
+		}
 	}
 
 	// After a MachineDeployment is created we propagate label/taints directly into Machines.
@@ -602,6 +615,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 	// TODO (alberto): possibly expose this config at the nodePool API.
 	maxUnhealthy := intstr.FromInt(2)
 	var timeOut time.Duration
+	nodeStartupTimeout := 20 * time.Minute
 
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AgentPlatform, hyperv1.NonePlatform:
@@ -637,6 +651,19 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		}
 	}
 
+	nodeStartupTimeoutOverride := nodePool.Annotations[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation]
+	if nodeStartupTimeoutOverride == "" {
+		nodeStartupTimeoutOverride = hc.Annotations[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation]
+	}
+	if nodeStartupTimeoutOverride != "" {
+		nodeStartupTimeoutOverrideTime, err := time.ParseDuration(nodeStartupTimeoutOverride)
+		if err != nil {
+			log.Error(err, "Cannot parse node startup timeout override duration", "value", nodeStartupTimeoutOverrideTime)
+		} else {
+			nodeStartupTimeout = nodeStartupTimeoutOverrideTime
+		}
+	}
+
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
 	mhc.Spec = capiv1.MachineHealthCheckSpec{
 		ClusterName: capiClusterName,
@@ -663,7 +690,7 @@ func (c *CAPI) reconcileMachineHealthCheck(ctx context.Context,
 		},
 		MaxUnhealthy: &maxUnhealthy,
 		NodeStartupTimeout: &metav1.Duration{
-			Duration: 20 * time.Minute,
+			Duration: nodeStartupTimeout,
 		},
 	}
 	return nil
@@ -819,9 +846,9 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Obje
 			return nil
 		}
 	case hyperv1.OpenStackPlatform:
-		template = &capiopenstack.OpenStackMachineTemplate{}
+		template = &capiopenstackv1beta1.OpenStackMachineTemplate{}
 		var err error
-		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool)
+		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool, c.releaseImage)
 		if err != nil {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
@@ -837,8 +864,8 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Obje
 		}
 
 		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capiopenstack.OpenStackMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capiopenstack.OpenStackMachineTemplateSpec)
+			o, _ := object.(*capiopenstackv1beta1.OpenStackMachineTemplate)
+			o.Spec = *machineTemplateSpec.(*capiopenstackv1beta1.OpenStackMachineTemplateSpec)
 			if o.Annotations == nil {
 				o.Annotations = make(map[string]string)
 			}
@@ -907,6 +934,8 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	}
 	machineSet.Annotations[nodePoolAnnotationMaxUnavailable] = strconv.Itoa(maxUnavailable)
 
+	machineSet.Annotations[capiv1.MachineSetSkipPreflightChecksAnnotation] = string(capiv1.MachineSetPreflightCheckAll)
+
 	// Set selector and template
 	machineSet.Spec.ClusterName = capiClusterName
 	if machineSet.Spec.Selector.MatchLabels == nil {
@@ -949,7 +978,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	// Propagate labels.
 	for k, v := range nodePool.Spec.NodeLabels {
 		// Propagated managed labels down to Machines with a known hardcoded prefix
-		// so the CPO HCCO Node controller can recongnise them and apply them to Nodes.
+		// so the CPO HCCO Node controller can recognise them and apply them to Nodes.
 		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 		machineSet.Spec.Template.Labels[labelKey] = v
 	}
@@ -1033,65 +1062,6 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 				"previous", nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate], "new", machineTemplateCR.GetName())
 			nodePool.Annotations[nodePoolAnnotationPlatformMachineTemplate] = machineTemplateCR.GetName()
 		}
-	}
-
-	// Bubble up upgrading NodePoolUpdatingVersionConditionType.
-	var status corev1.ConditionStatus
-	reason := ""
-	message := ""
-	status = "unknown"
-	removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolUpdatingVersionConditionType)
-
-	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressTrue]; ok {
-		status = corev1.ConditionTrue
-		reason = hyperv1.AsExpectedReason
-	}
-
-	if _, ok := machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse]; ok {
-		status = corev1.ConditionFalse
-		reason = hyperv1.NodePoolInplaceUpgradeFailedReason
-	}
-
-	// Check if config needs to be updated.
-	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
-
-	// Check if version needs to be updated.
-	isUpdatingVersion := isUpdatingVersion(nodePool, targetVersion)
-
-	if isUpdatingVersion {
-		message = fmt.Sprintf("Updating Version, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             status,
-			ObservedGeneration: nodePool.Generation,
-			Message:            message,
-			Reason:             reason,
-		})
-	} else {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingVersionConditionType,
-			Status:             corev1.ConditionFalse,
-			ObservedGeneration: nodePool.Generation,
-			Reason:             hyperv1.AsExpectedReason,
-		})
-	}
-
-	if isUpdatingConfig {
-		message = fmt.Sprintf("Updating Config, Target: %v", machineSet.Annotations[nodePoolAnnotationTargetConfigVersion])
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             status,
-			ObservedGeneration: nodePool.Generation,
-			Message:            message,
-			Reason:             reason,
-		})
-	} else {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolUpdatingConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			ObservedGeneration: nodePool.Generation,
-			Reason:             hyperv1.AsExpectedReason,
-		})
 	}
 
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
@@ -1278,6 +1248,11 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 		}
 	case hyperv1.AzurePlatform:
 		gvk, err = apiutil.GVKForObject(&capiazure.AzureMachineTemplate{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.OpenStackPlatform:
+		gvk, err = apiutil.GVKForObject(&capiopenstackv1beta1.OpenStackMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}

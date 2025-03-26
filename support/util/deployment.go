@@ -12,7 +12,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func IsDeploymentReady(ctx context.Context, deployment *appsv1.Deployment) bool {
+func IsDeploymentReady(_ context.Context, deployment *appsv1.Deployment) bool {
 	if ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.AvailableReplicas ||
 		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.ReadyReplicas ||
 		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.UpdatedReplicas ||
@@ -25,7 +25,7 @@ func IsDeploymentReady(ctx context.Context, deployment *appsv1.Deployment) bool 
 	return true
 }
 
-func IsStatefulSetReady(ctx context.Context, statefulSet *appsv1.StatefulSet) bool {
+func IsStatefulSetReady(_ context.Context, statefulSet *appsv1.StatefulSet) bool {
 	if ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.AvailableReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.ReadyReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.UpdatedReplicas ||

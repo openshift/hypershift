@@ -3,13 +3,16 @@ package nodepool
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sutilspointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 const amiName = "ami"
@@ -25,7 +28,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 	infraName := "test"
 	defaultSG := []hyperv1.AWSResourceReference{
 		{
-			ID: k8sutilspointer.String("default"),
+			ID: ptr.To("default"),
 		},
 	}
 	testCases := []struct {
@@ -114,17 +117,17 @@ func TestAWSMachineTemplate(t *testing.T) {
 				AMI: amiName,
 			}}},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
-				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("cluster-default")}}
+				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: ptr.To("cluster-default")}}
 			}),
 		},
 		{
 			name: "NodePool sg is used in addition to cluster default",
 			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
-				SecurityGroups: []hyperv1.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}},
+				SecurityGroups: []hyperv1.AWSResourceReference{{ID: ptr.To("nodepool-specific")}},
 				AMI:            amiName,
 			}}},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
-				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("nodepool-specific")}, {ID: defaultSG[0].ID}}
+				tmpl.Spec.Template.Spec.AdditionalSecurityGroups = []capiaws.AWSResourceReference{{ID: ptr.To("nodepool-specific")}, {ID: defaultSG[0].ID}}
 			}),
 		},
 		{
@@ -209,15 +212,15 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 			Template: capiaws.AWSMachineTemplateResource{
 				Spec: capiaws.AWSMachineSpec{
 					AMI: capiaws.AMIReference{
-						ID: k8sutilspointer.String(amiName),
+						ID: ptr.To(amiName),
 					},
 					AdditionalTags: capiaws.Tags{
 						awsClusterCloudProviderTagKey(infraName): infraLifecycleOwned,
 					},
 					IAMInstanceProfile:       infraName + "-worker-profile",
-					AdditionalSecurityGroups: []capiaws.AWSResourceReference{{ID: k8sutilspointer.String("default")}},
+					AdditionalSecurityGroups: []capiaws.AWSResourceReference{{ID: ptr.To("default")}},
 					Subnet:                   &capiaws.AWSResourceReference{},
-					UncompressedUserData:     k8sutilspointer.Bool(true),
+					UncompressedUserData:     ptr.To(true),
 					CloudInit: capiaws.CloudInit{
 						InsecureSkipSecretsManager: true,
 						SecureSecretsBackend:       "secrets-manager",

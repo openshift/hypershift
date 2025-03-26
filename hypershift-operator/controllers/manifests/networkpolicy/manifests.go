@@ -95,11 +95,29 @@ func NodePortIgnitionNetworkPolicy(namespace string) *networkingv1.NetworkPolicy
 	}
 }
 
+func NodePortIgnitionProxyNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "nodeport-ignition-proxy",
+		},
+	}
+}
+
 func NodePortKonnectivityNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      "nodeport-konnectivity",
+		},
+	}
+}
+
+func NodePortKonnectivityKASNetworkPolicy(namespace string) *networkingv1.NetworkPolicy {
+	return &networkingv1.NetworkPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      "nodeport-konnectivity-kas",
 		},
 	}
 }

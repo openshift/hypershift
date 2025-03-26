@@ -106,8 +106,24 @@ func TestNodePool(t *testing.T) {
 						test: NewKubeVirtMultinetTest(ctx, mgtClient, hostedCluster),
 					},
 					{
+						name: "OpenStackAdvancedTest",
+						test: NewOpenStackAdvancedTest(ctx, mgtClient, hostedCluster),
+					},
+					{
 						name: "TestNTOPerformanceProfile",
 						test: NewNTOPerformanceProfileTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
+					},
+					{
+						name: "TestNodePoolPrevReleaseN1",
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts),
+					},
+					{
+						name: "TestNodePoolPrevReleaseN2",
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts),
+					},
+					{
+						name: "TestMirrorConfigs",
+						test: NewMirrorConfigsTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
 				}
 			},
@@ -144,7 +160,7 @@ func TestNodePoolMultiArch(t *testing.T) {
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
 			setup: func(t *testing.T) {
-				if !globalOpts.configurableClusterOptions.AWSMultiArch {
+				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch {
 					t.Skip("test only supported on multi-arch clusters")
 				}
 				if globalOpts.Platform != hyperv1.AWSPlatform {
@@ -178,6 +194,14 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			// create their own NodePools with the proper replicas
 			clusterOpts.NodePoolReplicas = 0
 
+			// On OpenStack, we need to create at least one replica of the default nodepool
+			// so we can create the Route53 record for the ingress router. If we don't do that,
+			// the HostedCluster conditions won't be met and the test will fail as some operators
+			// will be marked as degraded.
+			if globalOpts.Platform == hyperv1.OpenStackPlatform {
+				clusterOpts.NodePoolReplicas = 1
+			}
+
 			ctx, cancel := context.WithCancel(testContext)
 			defer cancel()
 			e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -196,7 +220,7 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 						executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
 					})
 				}
-			}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+			}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "node-pool", globalOpts.ServiceAccountSigningKey)
 		})
 	}
 }
@@ -288,15 +312,21 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	}
 
 	// Extra setup at some test after nodepool creation
-	g.Expect(nodePoolTest.SetupInfra(t)).To(Succeed(), "should succeed seting up the infra after creating the nodepool")
+	g.Expect(nodePoolTest.SetupInfra(t)).To(Succeed(), "should succeed setting up the infra after creating the nodepool")
 	defer func() {
 		g.Expect(nodePoolTest.TeardownInfra(t)).To(Succeed(), "should succeed cleaning up infra customizations")
 	}()
 
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 
-	// Wait for the rollout to be complete
-	e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster, globalOpts.LatestReleaseImage)
+	// TestNTOPerformanceProfile fails on 4.16 and older if we don't wait for the rollout here with
+	// ValidationFailed(ConfigMap "pp-test" not found)
+	// This root cause of this failure is unknown but doesn't seem worth the time to figure out since
+	// the NTO performance profile code was heavily refactored in 4.17.
+	if e2eutil.IsLessThan(e2eutil.Version417) {
+		// Wait for the rollout to be complete
+		e2eutil.WaitForImageRollout(t, ctx, mgmtClient, hostedCluster)
+	}
 
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)

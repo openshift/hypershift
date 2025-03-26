@@ -7,7 +7,7 @@ categories, each of which have differing requirements.
 
 ETCD requires usage of high performance persistent storage on the management
 cluster hosting the ETCD pods. Due to the performance requirements, usage of a
-local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is prefered.
+local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is preferred.
 When a guest cluster is created in HighAvailability mode, ETCD is replicated
 in pods across three separate management cluster nodes. This replication
 ensures data resiliency even when a local storage csi driver is in use.
@@ -43,7 +43,7 @@ to live migrate and be portable across infra nodes.
 Below is a chart that outlines the current features of KubeVirt CSI as they map
 to the infra cluster's storage class.
 
-| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           | 
+| Infra CSI Capability  | Guest CSI Capability               | VM Live Migration Support | Notes                                           |
 |-----------------------|------------------------------------|---------------------------|-------------------------------------------------|
 | RWX Block             | RWO (Block/Filesystem) RWX (Block) | Supported                 |                                                 |
 | RWO Block             | RWO (Block/Filesystem)             | Not Supported             |                                                 |
@@ -104,7 +104,7 @@ mapping that was configured during cluster creation.
 KubeVirt CSI permits infra VolumeSnapshotClasses to be exposed to the guest
 cluster. Since VolumeSnapshotClasses are tied to a particular provisioner the
 mapping between VolumeSnapshotClasses and StorageClasses needs to expressed to
-hypershift during guest cluster creation. using the `hcp` cli tool and the 
+hypershift during guest cluster creation. using the `hcp` cli tool and the
 `--infra-volumesnapshot-class-mapping` cli argument.
 
 Below is an example of a simple setup with a single infra storage class and a
@@ -128,9 +128,9 @@ hcp create cluster kubevirt \
 --infra-volumesnapshot-class-mapping=infra-vsc1/guest-vsc1
 ```
 
-If you omit the `--infra-storage-class-mapping` and the 
-`--infra-volumesnapshot-class-mapping`. The system will use the default 
-storage class and the default volume snapshot class in the infra cluster. If 
+If you omit the `--infra-storage-class-mapping` and the
+`--infra-volumesnapshot-class-mapping`. The system will use the default
+storage class and the default volume snapshot class in the infra cluster. If
 the default is not set, then the snapshot functionality will not work and the
 snapshot request will never reach ready state. This is because it not possible
 to create a correct snapshot in the infra cluster.
@@ -167,7 +167,7 @@ hcp create cluster kubevirt \
 ```
 
 Since both storage class `infra-sca` and volume snapshot class `infra-vsca`
-are in the same group, this indicates to KubeVirt CSI that they are 
+are in the same group, this indicates to KubeVirt CSI that they are
 compatible and be used to create snapshots of volumes from storage class
 `guest-sca` using the guest volume snapshot class `guest-vsca`. The same
 is true with with the `b` grouping as well. Since `infra-scc` is also in
@@ -178,9 +178,60 @@ snapshot of volumes that use storage class `guest-sca`
 !!! note
 
    KubeVirt CSI passes snapshot requests to the underlying infra. This means
-   that snapshots will only work for compatible volumes. Please ensure the 
+   that snapshots will only work for compatible volumes. Please ensure the
    proper mapping is configured before attempting to create a snapshot in the
    guest cluster.
+
+## Disabling KubeVirt CSI
+
+By default KubeVirt CSI maps the default storage class on the underlying
+infrastructure cluster to a storage class in the guest cluster.
+
+To disable KubeVirt CSI entirely, set the hostedCluster.spec.platform.kubeVirt.storageDriver.type
+to the value `None` at cluster creation time. Below is an example HostedCluster
+spec that outlines this behavior.
+
+```yaml linenums="1"
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  platform:
+    type: KubeVirt
+    storageDriver:
+      type: None
+  pullSecret:
+    name: hcp-pull-secret
+```
+
+## KubeVirt CSI Storage Security and Isolation
+
+While KubeVirt CSI is extending storage capabilities of the underlying
+infrastructure cluster to guest HCP clusters, the csi driver is doing so in a
+controlled way. This ensures each guest cluster's storage is both isolated
+from other guest clusters, and that the guest cluster can't access arbitrary
+storage volumes on the infrastructure cluster that are not associated with the
+guest cluster.
+
+This isolation is achieved through a depth of security enforcements
+
+1. Direct API access to the infrastructure cluster is never given directly to
+the HCP guest cluster worker nodes. This means the guest cluster does not have
+a means to provision storage on the infrastructure cluster except through the
+controlled KubeVirt CSI interface.
+2. The KubeVirt CSI cluster controller runs in a pod in the HCP namespace, and
+is not accessible from within the guest cluster. This component ensures PVCs on
+the infrastructure cluster can only be passed into the guest cluster if those
+PVCs are associated with the guest cluster.
+3. By default, the RBAC provided to the KubeVirt CSI cluster controller limits
+PVC access only to the HCP namespace. This prevents the possibility of cross
+namespace storage access by any KubeVirt CSI component.
+
+These security enforcements ensure safe and isolated multitenant access to
+shared infrastructure storage classes are possible for multiple HCP KubeVirt
+guest clusters.
 
 ## KubeVirt VM Root Volume Configuration
 

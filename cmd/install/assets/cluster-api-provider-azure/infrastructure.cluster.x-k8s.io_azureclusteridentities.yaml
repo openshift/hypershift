@@ -75,7 +75,6 @@ spec:
                       a label query over a set of resources. The result of matchLabels and
                       matchExpressions are ANDed.
 
-
                       A nil or empty selector indicates that AzureCluster cannot use this
                       AzureClusterIdentity from any namespace.
                     properties:
@@ -123,6 +122,11 @@ spec:
                     type: object
                     x-kubernetes-map-type: atomic
                 type: object
+              certPath:
+                description: CertPath is the path where certificates exist. When set,
+                  it takes precedence over ClientSecret for types that use certs like
+                  ServicePrincipalCertificate.
+                type: string
               clientID:
                 description: |-
                   ClientID is the service principal client ID.
@@ -146,6 +150,8 @@ spec:
                 description: |-
                   ResourceID is the Azure resource ID for the User Assigned MSI resource.
                   Only applicable when type is UserAssignedMSI.
+
+                  Deprecated: This field no longer has any effect.
                 type: string
               tenantID:
                 description: TenantID is the service principal primary tenant id.
@@ -192,20 +198,20 @@ spec:
                       description: |-
                         The reason for the condition's last transition in CamelCase.
                         The specific API may choose whether or not this field is considered a guaranteed API.
-                        This field may not be empty.
+                        This field may be empty.
                       type: string
                     severity:
                       description: |-
-                        Severity provides an explicit classification of Reason code, so the users or machines can immediately
+                        severity provides an explicit classification of Reason code, so the users or machines can immediately
                         understand the current situation and act accordingly.
                         The Severity field MUST be set only when Status=False.
                       type: string
                     status:
-                      description: Status of the condition, one of True, False, Unknown.
+                      description: status of the condition, one of True, False, Unknown.
                       type: string
                     type:
                       description: |-
-                        Type of condition in CamelCase or in foo.example.com/CamelCase.
+                        type of condition in CamelCase or in foo.example.com/CamelCase.
                         Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
                       type: string

@@ -6,22 +6,21 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
-
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
-	"github.com/openshift/hypershift/support/config"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -59,8 +58,8 @@ var (
 
 func kcmLabels() map[string]string {
 	return map[string]string{
-		"app":                         "kube-controller-manager",
-		hyperv1.ControlPlaneComponent: "kube-controller-manager",
+		"app":                              "kube-controller-manager",
+		hyperv1.ControlPlaneComponentLabel: "kube-controller-manager",
 	}
 }
 
@@ -102,7 +101,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, config, rootCA, serviceS
 	deployment.Spec.Template.ObjectMeta.Annotations[rootCAHashAnnotation] = util.HashSimple(rootCA.Data)
 
 	deployment.Spec.Template.Spec = corev1.PodSpec{
-		AutomountServiceAccountToken: pointer.Bool(false),
+		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
 			util.BuildContainer(kcmContainerMain(), buildKCMContainerMain(p.HyperkubeImage, args, DefaultPort)),
 		},
@@ -181,7 +180,7 @@ func kcmVolumeRootCA() *corev1.Volume {
 func buildKCMVolumeRootCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{}
 	v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
-	v.ConfigMap.DefaultMode = pointer.Int32(420)
+	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 }
 
 func kcmVolumeWorkLogs() *corev1.Volume {
@@ -203,7 +202,7 @@ func kcmVolumeServiceSigner() *corev1.Volume {
 func buildKCMVolumeServiceSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.ServiceAccountSigningKeySecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -226,7 +225,7 @@ func kcmVolumeClusterSigner() *corev1.Volume {
 func buildKCMVolumeClusterSigner(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.CSRSignerCASecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -239,7 +238,7 @@ func kcmVolumeKubeconfig() *corev1.Volume {
 func buildKCMVolumeKubeconfig(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  manifests.KCMKubeconfigSecret("").Name,
-		DefaultMode: pointer.Int32(0640),
+		DefaultMode: ptr.To[int32](0640),
 	}
 }
 
@@ -274,9 +273,9 @@ func buildKCMVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KCMServerCertSecret("").Name
-	v.Secret.DefaultMode = pointer.Int32(0640)
+	v.Secret.DefaultMode = ptr.To[int32](0640)
 }
 
 func kcmVolumeRecyclerConfig() *corev1.Volume {
@@ -334,6 +333,11 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 	if p.DisableProfiling {
 		args = append(args, "--profiling=false")
 	}
+	if p.PlatformType == hyperv1.IBMCloudPlatform {
+		args = append(args, "--node-monitor-grace-period=55s")
+	} else {
+		args = append(args, "--node-monitor-grace-period=50s")
+	}
 	args = append(args, []string{
 		fmt.Sprintf("--cert-dir=%s", cpath(kcmVolumeCertDir().Name, "")),
 		fmt.Sprintf("--cluster-cidr=%s", p.ClusterCIDR),
@@ -361,7 +365,6 @@ func kcmArgs(p *KubeControllerManagerParams) []string {
 		"--cluster-signing-duration=17520h",
 		fmt.Sprintf("--tls-cert-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSCertKey)),
 		fmt.Sprintf("--tls-private-key-file=%s", cpath(kcmVolumeServerCert().Name, corev1.TLSPrivateKeyKey)),
-		"--node-monitor-grace-period=50s",
 	}...)
 	for _, f := range p.FeatureGates() {
 		args = append(args, fmt.Sprintf("--feature-gates=%s", f))

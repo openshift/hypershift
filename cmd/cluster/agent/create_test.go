@@ -10,8 +10,10 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
-	"github.com/spf13/pflag"
+
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"github.com/spf13/pflag"
 )
 
 func TestCreateCluster(t *testing.T) {

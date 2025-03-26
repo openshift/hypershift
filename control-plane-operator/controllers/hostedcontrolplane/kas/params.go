@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
@@ -14,6 +13,9 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -89,7 +91,7 @@ const (
 	defaultMaxMutatingRequestsInflight = 1000
 )
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
@@ -169,7 +171,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		SuccessThreshold:    1,
 	}
 	if hcp.Spec.SecretEncryption != nil {
-		// Adjust KAS liveness probe to not have a hard depdendency on kms so problems isolated to kms don't
+		// Adjust KAS liveness probe to not have a hard dependency on kms so problems isolated to kms don't
 		// cause the entire kube-apiserver to restart and potentially enter CrashloopBackoff
 		totalProviderInstances := 0
 		switch hcp.Spec.SecretEncryption.Type {
@@ -467,9 +469,9 @@ func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
 
 func (p *KubeAPIServerParams) FeatureGates() []string {
 	if p.FeatureGate != nil {
-		return config.FeatureGates(&p.FeatureGate.FeatureGateSelection)
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
 	} else {
-		return config.FeatureGates(&configv1.FeatureGateSelection{
+		return config.FeatureGates(configv1.FeatureGateSelection{
 			FeatureSet: configv1.Default,
 		})
 	}

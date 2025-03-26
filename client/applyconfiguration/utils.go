@@ -19,12 +19,12 @@ package applyconfiguration
 
 import (
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
-	hypershiftv1alpha1 "github.com/openshift/hypershift/api/hypershift/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
-	applyconfigurationhypershiftv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	applyconfigurationkarpenterv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/karpenter/v1beta1"
 	applyconfigurationschedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -43,195 +43,9 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 	case v1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &certificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration{}
 
-		// Group=hypershift.openshift.io, Version=v1alpha1
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AESCBCSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AESCBCSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.AgentNodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AgentPlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AgentPlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("APIEndpoint"):
-		return &applyconfigurationhypershiftv1alpha1.APIEndpointApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("APIServerNetworking"):
-		return &applyconfigurationhypershiftv1alpha1.APIServerNetworkingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
-		return &applyconfigurationhypershiftv1alpha1.AWSCloudProviderConfigApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AWSKMSAuthSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSKMSKeyEntry"):
-		return &applyconfigurationhypershiftv1alpha1.AWSKMSKeyEntryApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSKMSSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AWSKMSSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSNodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.AWSNodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSPlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AWSPlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSPlatformStatus"):
-		return &applyconfigurationhypershiftv1alpha1.AWSPlatformStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSResourceReference"):
-		return &applyconfigurationhypershiftv1alpha1.AWSResourceReferenceApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSResourceTag"):
-		return &applyconfigurationhypershiftv1alpha1.AWSResourceTagApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSRoleCredentials"):
-		return &applyconfigurationhypershiftv1alpha1.AWSRoleCredentialsApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSRolesRef"):
-		return &applyconfigurationhypershiftv1alpha1.AWSRolesRefApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
-		return &applyconfigurationhypershiftv1alpha1.AWSServiceEndpointApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSKey"):
-		return &applyconfigurationhypershiftv1alpha1.AzureKMSKeyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AzureKMSSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.AzureNodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.AzurePlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("AzureVMImage"):
-		return &applyconfigurationhypershiftv1alpha1.AzureVMImageApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
-		return &applyconfigurationhypershiftv1alpha1.ClusterAutoscalingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterConfiguration"):
-		return &applyconfigurationhypershiftv1alpha1.ClusterConfigurationApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterNetworkEntry"):
-		return &applyconfigurationhypershiftv1alpha1.ClusterNetworkEntryApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterNetworking"):
-		return &applyconfigurationhypershiftv1alpha1.ClusterNetworkingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
-		return &applyconfigurationhypershiftv1alpha1.ClusterVersionStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Diagnostics"):
-		return &applyconfigurationhypershiftv1alpha1.DiagnosticsApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("DNSSpec"):
-		return &applyconfigurationhypershiftv1alpha1.DNSSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("EtcdSpec"):
-		return &applyconfigurationhypershiftv1alpha1.EtcdSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("EtcdTLSConfig"):
-		return &applyconfigurationhypershiftv1alpha1.EtcdTLSConfigApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Filter"):
-		return &applyconfigurationhypershiftv1alpha1.FilterApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("HostedCluster"):
-		return &applyconfigurationhypershiftv1alpha1.HostedClusterApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("HostedClusterSpec"):
-		return &applyconfigurationhypershiftv1alpha1.HostedClusterSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("HostedClusterStatus"):
-		return &applyconfigurationhypershiftv1alpha1.HostedClusterStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("IBMCloudKMSAuthSpec"):
-		return &applyconfigurationhypershiftv1alpha1.IBMCloudKMSAuthSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("IBMCloudKMSKeyEntry"):
-		return &applyconfigurationhypershiftv1alpha1.IBMCloudKMSKeyEntryApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("IBMCloudKMSSpec"):
-		return &applyconfigurationhypershiftv1alpha1.IBMCloudKMSSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("IBMCloudKMSUnmanagedAuthSpec"):
-		return &applyconfigurationhypershiftv1alpha1.IBMCloudKMSUnmanagedAuthSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("IBMCloudPlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.IBMCloudPlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ImageContentSource"):
-		return &applyconfigurationhypershiftv1alpha1.ImageContentSourceApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):
-		return &applyconfigurationhypershiftv1alpha1.InPlaceUpgradeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KMSSpec"):
-		return &applyconfigurationhypershiftv1alpha1.KMSSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubeconfigSecretRef"):
-		return &applyconfigurationhypershiftv1alpha1.KubeconfigSecretRefApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtCachingStrategy"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtCachingStrategyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtCompute"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtComputeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtDiskImage"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtDiskImageApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtHostDevice"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtHostDeviceApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtManualStorageDriverConfig"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtManualStorageDriverConfigApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtNetwork"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtNetworkApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtNodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtNodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubeVirtNodePoolStatus"):
-		return &applyconfigurationhypershiftv1alpha1.KubeVirtNodePoolStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtPersistentVolume"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtPersistentVolumeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtPlatformCredentials"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtPlatformCredentialsApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtPlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtPlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtRootVolume"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtRootVolumeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtStorageClassMapping"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtStorageClassMappingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtStorageDriverSpec"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtStorageDriverSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolume"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("KubevirtVolumeSnapshotClassMapping"):
-		return &applyconfigurationhypershiftv1alpha1.KubevirtVolumeSnapshotClassMappingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("LoadBalancerPublishingStrategy"):
-		return &applyconfigurationhypershiftv1alpha1.LoadBalancerPublishingStrategyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
-		return &applyconfigurationhypershiftv1alpha1.MachineNetworkEntryApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
-		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
-		return &applyconfigurationhypershiftv1alpha1.ManagedEtcdStorageSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("MarketplaceImage"):
-		return &applyconfigurationhypershiftv1alpha1.MarketplaceImageApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePool"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolAutoScaling"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolAutoScalingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolCondition"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolConditionApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolManagement"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolManagementApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolPlatformStatus"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolPlatformStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolSpec"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePoolStatus"):
-		return &applyconfigurationhypershiftv1alpha1.NodePoolStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("NodePortPublishingStrategy"):
-		return &applyconfigurationhypershiftv1alpha1.NodePortPublishingStrategyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
-		return &applyconfigurationhypershiftv1alpha1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlacementOptions"):
-		return &applyconfigurationhypershiftv1alpha1.PlacementOptionsApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.PlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PlatformStatus"):
-		return &applyconfigurationhypershiftv1alpha1.PlatformStatusApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PowerVSNodePoolPlatform"):
-		return &applyconfigurationhypershiftv1alpha1.PowerVSNodePoolPlatformApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PowerVSPlatformSpec"):
-		return &applyconfigurationhypershiftv1alpha1.PowerVSPlatformSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PowerVSResourceReference"):
-		return &applyconfigurationhypershiftv1alpha1.PowerVSResourceReferenceApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("PowerVSVPC"):
-		return &applyconfigurationhypershiftv1alpha1.PowerVSVPCApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Release"):
-		return &applyconfigurationhypershiftv1alpha1.ReleaseApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):
-		return &applyconfigurationhypershiftv1alpha1.ReplaceUpgradeApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("RollingUpdate"):
-		return &applyconfigurationhypershiftv1alpha1.RollingUpdateApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("RoutePublishingStrategy"):
-		return &applyconfigurationhypershiftv1alpha1.RoutePublishingStrategyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
-		return &applyconfigurationhypershiftv1alpha1.SecretEncryptionSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
-		return &applyconfigurationhypershiftv1alpha1.ServiceNetworkEntryApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ServicePublishingStrategy"):
-		return &applyconfigurationhypershiftv1alpha1.ServicePublishingStrategyApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("ServicePublishingStrategyMapping"):
-		return &applyconfigurationhypershiftv1alpha1.ServicePublishingStrategyMappingApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Taint"):
-		return &applyconfigurationhypershiftv1alpha1.TaintApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
-		return &applyconfigurationhypershiftv1alpha1.UnmanagedEtcdSpecApplyConfiguration{}
-	case hypershiftv1alpha1.SchemeGroupVersion.WithKind("Volume"):
-		return &applyconfigurationhypershiftv1alpha1.VolumeApplyConfiguration{}
-
 		// Group=hypershift.openshift.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):
+		return &hypershiftv1beta1.AddressPairApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AESCBCSpec"):
 		return &hypershiftv1beta1.AESCBCSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AgentNodePoolPlatform"):
@@ -244,6 +58,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.APIEndpointApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("APIServerNetworking"):
 		return &hypershiftv1beta1.APIServerNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AutoNode"):
+		return &hypershiftv1beta1.AutoNodeApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSCloudProviderConfig"):
 		return &hypershiftv1beta1.AWSCloudProviderConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSKMSAuthSpec"):
@@ -266,16 +82,28 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSServiceEndpoint"):
 		return &hypershiftv1beta1.AWSServiceEndpointApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPC"):
+		return &hypershiftv1beta1.AWSSharedVPCApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPCRolesRef"):
+		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
 		return &hypershiftv1beta1.AzureKMSSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureMarketplaceImage"):
+		return &hypershiftv1beta1.AzureMarketplaceImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolOSDisk"):
+		return &hypershiftv1beta1.AzureNodePoolOSDiskApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureNodePoolPlatform"):
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
+		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("Capabilities"):
+		return &hypershiftv1beta1.CapabilitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
@@ -286,8 +114,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworking"):
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
+		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
+		return &hypershiftv1beta1.ControlPlaneManagedIdentitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
+		return &hypershiftv1beta1.DataPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Diagnostics"):
 		return &hypershiftv1beta1.DiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DNSSpec"):
@@ -326,6 +160,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):
 		return &hypershiftv1beta1.InPlaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAWSConfig"):
+		return &hypershiftv1beta1.KarpenterAWSConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("KarpenterConfig"):
+		return &hypershiftv1beta1.KarpenterConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KMSSpec"):
 		return &hypershiftv1beta1.KMSSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KubeconfigSecretRef"):
@@ -366,12 +204,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.LoadBalancerPublishingStrategyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("MachineNetworkEntry"):
 		return &hypershiftv1beta1.MachineNetworkEntryApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedAzureKeyVault"):
+		return &hypershiftv1beta1.ManagedAzureKeyVaultApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
 		return &hypershiftv1beta1.ManagedEtcdStorageSpecApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("MarketplaceImage"):
-		return &hypershiftv1beta1.MarketplaceImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedIdentity"):
+		return &hypershiftv1beta1.ManagedIdentityApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkFilter"):
 		return &hypershiftv1beta1.NetworkFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NetworkParam"):
@@ -400,6 +240,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackPlatformSpec"):
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
+		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):
@@ -408,6 +250,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.PlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlatformStatus"):
 		return &hypershiftv1beta1.PlatformStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("PortSpec"):
+		return &hypershiftv1beta1.PortSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSNodePoolPlatform"):
 		return &hypershiftv1beta1.PowerVSNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSPlatformSpec"):
@@ -416,6 +260,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.PowerVSResourceReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PowerVSVPC"):
 		return &hypershiftv1beta1.PowerVSVPCApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ProvisionerConfig"):
+		return &hypershiftv1beta1.ProvisionerConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Release"):
 		return &hypershiftv1beta1.ReleaseApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ReplaceUpgrade"):
@@ -446,8 +292,30 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):
+		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
+
+		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDevice"):
+		return &applyconfigurationkarpenterv1beta1.BlockDeviceApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDeviceMapping"):
+		return &applyconfigurationkarpenterv1beta1.BlockDeviceMappingApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClass"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassSpec"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassSpecApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassStatus"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassStatusApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroup"):
+		return &applyconfigurationkarpenterv1beta1.SecurityGroupApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroupSelectorTerm"):
+		return &applyconfigurationkarpenterv1beta1.SecurityGroupSelectorTermApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("Subnet"):
+		return &applyconfigurationkarpenterv1beta1.SubnetApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("SubnetSelectorTerm"):
+		return &applyconfigurationkarpenterv1beta1.SubnetSelectorTermApplyConfiguration{}
 
 		// Group=scheduling.hypershift.openshift.io, Version=v1alpha1
 	case schedulingv1alpha1.SchemeGroupVersion.WithKind("ClusterSizingConfiguration"):

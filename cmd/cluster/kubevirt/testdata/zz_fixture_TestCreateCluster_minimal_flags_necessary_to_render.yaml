@@ -17,6 +17,18 @@ metadata:
   name: example-pull-secret
   namespace: clusters
 ---
+apiVersion: v1
+data:
+  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
@@ -76,18 +88,6 @@ status:
   controlPlaneEndpoint:
     host: ""
     port: 0
----
-apiVersion: v1
-data:
-  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
-kind: Secret
-metadata:
-  creationTimestamp: null
-  labels:
-    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: example-etcd-encryption-key
-  namespace: clusters
-type: Opaque
 ---
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool

@@ -1,0 +1,109 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  creationTimestamp: null
+  name: olm-collect-profiles
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  jobTemplate:
+    metadata:
+      creationTimestamp: null
+    spec:
+      template:
+        metadata:
+          annotations:
+            component.hypershift.openshift.io/config-hash: fe7dc514
+            hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+          creationTimestamp: null
+          labels:
+            hypershift.openshift.io/control-plane-component: olm-collect-profiles
+            hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            hypershift.openshift.io/need-management-kas-access: "true"
+        spec:
+          affinity:
+            nodeAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - preference:
+                  matchExpressions:
+                  - key: hypershift.openshift.io/control-plane
+                    operator: In
+                    values:
+                    - "true"
+                weight: 50
+              - preference:
+                  matchExpressions:
+                  - key: hypershift.openshift.io/cluster
+                    operator: In
+                    values:
+                    - hcp-namespace
+                weight: 100
+            podAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - podAffinityTerm:
+                  labelSelector:
+                    matchLabels:
+                      hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                  topologyKey: kubernetes.io/hostname
+                weight: 100
+          automountServiceAccountToken: true
+          containers:
+          - args:
+            - -n
+            - $(MY_NAMESPACE)
+            - --config-mount-path
+            - /etc/config
+            - --cert-mount-path
+            - /var/run/secrets/serving-cert
+            - olm-operator-heap-:https://olm-operator-metrics:8443/debug/pprof/heap
+            - catalog-operator-heap-:https://catalog-operator-metrics:8443/debug/pprof/heap
+            command:
+            - bin/collect-profiles
+            env:
+            - name: MY_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.namespace
+            image: operator-lifecycle-manager
+            imagePullPolicy: IfNotPresent
+            name: collect-profiles
+            resources:
+              requests:
+                cpu: 10m
+                memory: 80Mi
+            volumeMounts:
+            - mountPath: /etc/config
+              name: config-volume
+            - mountPath: /var/run/secrets/serving-cert
+              name: secret-volume
+          priorityClassName: hypershift-control-plane
+          restartPolicy: Never
+          serviceAccountName: olm-collect-profiles
+          tolerations:
+          - effect: NoSchedule
+            key: hypershift.openshift.io/control-plane
+            operator: Equal
+            value: "true"
+          - effect: NoSchedule
+            key: hypershift.openshift.io/cluster
+            operator: Equal
+            value: hcp-namespace
+          volumes:
+          - configMap:
+              defaultMode: 420
+              name: olm-collect-profiles
+            name: config-volume
+          - name: secret-volume
+            secret:
+              defaultMode: 416
+              secretName: metrics-client
+  schedule: 41 5 * * *
+status: {}

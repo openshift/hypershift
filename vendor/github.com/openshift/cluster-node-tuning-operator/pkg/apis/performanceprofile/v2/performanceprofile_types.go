@@ -34,14 +34,13 @@ const PerformanceProfileEnablePhysicalRpsAnnotation = "performance.openshift.io/
 // that ignores the removal of all RPS settings when realtime workload hint is explicitly set to false.
 const PerformanceProfileEnableRpsAnnotation = "performance.openshift.io/enable-rps"
 
-// PerformanceProfileIgnoreCgroupsVersion allows an admin to suspend the operator's
-// automatic downgrade of Cgroups version to V1 for development purposes.
-const PerformanceProfileIgnoreCgroupsVersion = "performance.openshift.io/ignore-cgroups-version"
-
 // PerformanceProfileSpec defines the desired state of PerformanceProfile.
 type PerformanceProfileSpec struct {
 	// CPU defines a set of CPU related parameters.
 	CPU *CPU `json:"cpu"`
+	// HardwareTuning defines a set of CPU frequencies for isolated and reserved cpus.
+	// +optional
+	HardwareTuning *HardwareTuning `json:"hardwareTuning,omitempty"`
 	// HugePages defines a set of huge pages related parameters.
 	// It is possible to set huge pages with multiple size values at the same time.
 	// For example, hugepages can be set with 1G and 2M, both values will be set on the node by the Performance Profile Controller.
@@ -66,6 +65,10 @@ type PerformanceProfileSpec struct {
 	NodeSelector map[string]string `json:"nodeSelector"`
 	// RealTimeKernel defines a set of real time kernel related parameters. RT kernel won't be installed when not set.
 	RealTimeKernel *RealTimeKernel `json:"realTimeKernel,omitempty"`
+	// KernelPageSize defines the kernel page size. 4k is the default, 64k is only supported on aarch64
+	// +default="4k"
+	// +optional
+	KernelPageSize *KernelPageSize `json:"kernelPageSize,omitempty"`
 	// Additional kernel arguments.
 	// +optional
 	AdditionalKernelArgs []string `json:"additionalKernelArgs,omitempty"`
@@ -121,7 +124,31 @@ type CPU struct {
 	Shared *CPUSet `json:"shared,omitempty"`
 }
 
-// HugePageSize defines size of huge pages, can be 2M or 1G.
+// CPUfrequency defines cpu frequencies for isolated and reserved cpus
+type CPUfrequency int
+
+// HardwareTuning defines a set of CPU frequency related features.
+type HardwareTuning struct {
+	// IsolatedCpuFreq defines a minimum frequency to be set across isolated cpus
+	IsolatedCpuFreq *CPUfrequency `json:"isolatedCpuFreq,omitempty"`
+	// ReservedCpuFreq defines a maximum frequency to be set across reserved cpus
+	ReservedCpuFreq *CPUfrequency `json:"reservedCpuFreq,omitempty"`
+}
+
+// KernelPageSize defines the size of the kernel pages.
+// The allowed values for this depend on CPU architecture
+// For x86/amd64, the only valid value is 4k.
+// For aarch64, the valid values are 4k, 64k.
+type KernelPageSize string
+
+// HugePageSize defines size of huge pages
+// The allowed values for this depend on CPU architecture
+// For x86/amd64, the valid values are 2M and 1G.
+// For aarch64, the valid huge page sizes depend on the kernel page size:
+// - With a 4k kernel page size: 64k, 2M, 32M, 1G
+// - With a 64k kernel page size: 2M, 512M, 16G
+//
+// Reference: https://docs.kernel.org/mm/vmemmap_dedup.html
 type HugePageSize string
 
 // HugePages defines a set of huge pages that we want to allocate at boot.

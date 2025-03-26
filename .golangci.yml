@@ -1,0 +1,53 @@
+run:
+  timeout: 10m
+  allow-parallel-runners: true
+output:
+  sort-results: true
+severity:
+  default-severity: error
+issues:
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release"
+    - linters:
+        - staticcheck
+      text: "SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.ReleaseImage is deprecated: Use versionStatus.desired.image instead."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.LastReleaseImageTransitionTime is deprecated"
+    - linters:
+        - staticcheck
+      text: "SA1019: in.Status.DNSName is deprecated"
+    - linters:
+        - unused
+      text: "const `tuningConfigKey` is unused"
+linters:
+  enable:
+    - gci
+    - unused
+    - ineffassign
+    - gosimple
+    - errcheck
+    - govet
+  disable:
+    - staticcheck
+linters-settings:
+  gci:
+    sections:
+      - standard
+      - dot
+      - prefix(github.com/openshift/hypershift)
+      - prefix(github.com/openshift)
+      - prefix(github.com/aws)
+      - prefix(github.com/Azure)
+      - prefix(k8s.io)
+      - prefix(sigs.k8s.io)
+      - default
+    custom-order: true

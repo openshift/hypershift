@@ -21,11 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/go-logr/logr"
-	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -37,13 +32,16 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/scheduler"
+	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
+	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -51,8 +49,13 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
-	"github.com/spf13/cobra"
-	"go.uber.org/zap/zapcore"
+
+	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/s3"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -61,23 +64,28 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
 
 	cmd := &cobra.Command{
 		Use: "hypershift-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -89,7 +97,7 @@ func main() {
 	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
 }
@@ -147,6 +155,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	featuregate.MutableGates.AddFlag(cmd.Flags())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -453,37 +462,37 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controllers to manage dedicated request serving isolation
-	if opts.EnableDedicatedRequestServingIsolation {
+	if opts.EnableDedicatedRequestServingIsolation && !azureutil.IsAroHCP() {
 		// Use the new scheduler if we support size tagging on hosted clusters
 		if enableSizeTagging {
-			hcScheduler := scheduler.DedicatedServingComponentSchedulerAndSizer{}
+			hcScheduler := awsscheduler.DedicatedServingComponentSchedulerAndSizer{}
 			if err := hcScheduler.SetupWithManager(ctx, mgr, createOrUpdate); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component scheduler/resizer controller: %w", err)
 			}
-			placeholderScheduler := scheduler.PlaceholderScheduler{}
+			placeholderScheduler := awsscheduler.PlaceholderScheduler{}
 			if err := placeholderScheduler.SetupWithManager(ctx, mgr); err != nil {
 				return fmt.Errorf("unable to create placeholder scheduler controller: %w", err)
 			}
-			autoScaler := scheduler.RequestServingNodeAutoscaler{}
+			autoScaler := awsscheduler.RequestServingNodeAutoscaler{}
 			if err := autoScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create autoscaler controller: %w", err)
 			}
-			deScaler := scheduler.MachineSetDescaler{}
+			deScaler := awsscheduler.MachineSetDescaler{}
 			if err := deScaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create machine set descaler controller: %w", err)
 			}
-			nonRequestServingNodeAutoscaler := scheduler.NonRequestServingNodeAutoscaler{}
+			nonRequestServingNodeAutoscaler := awsscheduler.NonRequestServingNodeAutoscaler{}
 			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
 			}
 		} else {
-			nodeReaper := scheduler.DedicatedServingComponentNodeReaper{
+			nodeReaper := awsscheduler.DedicatedServingComponentNodeReaper{
 				Client: mgr.GetClient(),
 			}
 			if err := nodeReaper.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create dedicated serving component node reaper controller: %w", err)
 			}
-			hcScheduler := scheduler.DedicatedServingComponentScheduler{
+			hcScheduler := awsscheduler.DedicatedServingComponentScheduler{
 				Client: mgr.GetClient(),
 			}
 			if err := hcScheduler.SetupWithManager(mgr, createOrUpdate); err != nil {
@@ -492,6 +501,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	} else {
 		log.Info("Dedicated request serving isolation controllers disabled")
+	}
+
+	if enableSizeTagging && azureutil.IsAroHCP() {
+		hcScheduler := azurescheduler.Scheduler{}
+		if err := hcScheduler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create aro scheduler controller: %w", err)
+		}
 	}
 
 	// If it exists, block default ingress controller from admitting HCP private routes

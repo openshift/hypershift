@@ -4,15 +4,19 @@ import (
 	"context"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
@@ -48,7 +52,7 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						HostedClusterAnnotation: annotationValue,
+						hyperutil.HostedClusterAnnotation: annotationValue,
 					},
 				},
 			},
@@ -82,8 +86,8 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 					Name:      "foo",
 					Namespace: "bar",
 					Annotations: map[string]string{
-						HostedClusterAnnotation: annotationValue,
-						"foo":                   "bar",
+						hyperutil.HostedClusterAnnotation: annotationValue,
+						"foo":                             "bar",
 					},
 				},
 			},

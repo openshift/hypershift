@@ -6,12 +6,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"k8s.io/utils/pointer"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
+
+	"k8s.io/utils/ptr"
 )
 
 // TODO (cewong): Add tests for other params
@@ -40,7 +40,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 		},
 		{
 			name:               "port set for default service publishing strategies",
-			port:               pointer.Int32(6789),
+			port:               ptr.To[int32](6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
 			expectedPort:       6789,
@@ -53,7 +53,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 					Type: hyperv1.NodePort,
 				},
 			},
-			port:               pointer.Int32(6789),
+			port:               ptr.To[int32](6789),
 			serviceNetworkCIDR: "10.0.0.0/24",
 			expectedAddress:    config.DefaultAdvertiseIPv4Address,
 			expectedPort:       6789,
@@ -67,7 +67,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
 			hcp.Spec.Networking.ServiceNetwork = append(hcp.Spec.Networking.ServiceNetwork, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(test.serviceNetworkCIDR)})
-			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: pointer.String(test.advertiseAddress)}
+			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: ptr.To(test.advertiseAddress)}
 			p := NewKubeAPIServerParams(context.Background(), hcp, imageProvider, "", 0, "", 0, false)
 			if len(test.advertiseAddress) > 0 {
 				g.Expect(test.advertiseAddress).To(Equal(test.expectedAddress))

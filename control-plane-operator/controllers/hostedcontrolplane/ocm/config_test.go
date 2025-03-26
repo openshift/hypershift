@@ -3,17 +3,18 @@ package ocm
 import (
 	"testing"
 
-	v1 "github.com/openshift/api/config/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/api"
 	config2 "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
-	corev1 "k8s.io/api/core/v1"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
+
+	v1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -66,7 +67,7 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 	params := NewOpenShiftControllerManagerParams(hcp, observedConfig, imageProvider, true)
 	configMap := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 
-	if err := ReconcileOpenShiftControllerManagerConfig(configMap, config2.OwnerRefFrom(hcp), params.DeployerImage, params.DockerBuilderImage, params.MinTLSVersion(), params.CipherSuites(), imageConfig, buildConfig, networkConfig); err != nil {
+	if err := ReconcileOpenShiftControllerManagerConfig(configMap, config2.OwnerRefFrom(hcp), params.DeployerImage, params.DockerBuilderImage, params.MinTLSVersion(), params.CipherSuites(), imageConfig, buildConfig, networkConfig, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)

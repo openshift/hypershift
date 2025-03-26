@@ -20,12 +20,14 @@ import (
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis"
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi"
 	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/certrotation"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/v1helpers"
+
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -709,6 +711,10 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 
 		var existingLeafCerts []*certificateSecret
 		for _, secret := range secrets {
+			if _, hasTLSCertKey := secret.Data[corev1.TLSCertKey]; !hasTLSCertKey {
+				continue
+			}
+
 			certKeyInfo, err := certgraphanalysis.InspectSecret(secret)
 			if err != nil {
 				klog.Warningf("failed to load cert/key pair from secret %s/%s: %v", secret.Namespace, secret.Name, err)
@@ -723,12 +729,14 @@ func (c *CertificateRevocationController) prunePreviousSignerCertificates(ctx co
 				return true, nil, false, fmt.Errorf("could not parse certificate in secret %s/%s: %w", secret.Namespace, secret.Name, err)
 			}
 
-			if isLeafCertificate(certKeyInfo) {
-				existingLeafCerts = append(existingLeafCerts, &certificateSecret{
-					namespace: secret.Namespace,
-					name:      secret.Name,
-					cert:      certs[0],
-				})
+			for _, cert := range certKeyInfo {
+				if isLeafCertificate(cert) {
+					existingLeafCerts = append(existingLeafCerts, &certificateSecret{
+						namespace: secret.Namespace,
+						name:      secret.Name,
+						cert:      certs[0],
+					})
+				}
 			}
 		}
 

@@ -3,16 +3,18 @@ package supportedversion
 import (
 	"testing"
 
+	. "github.com/onsi/gomega"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/blang/semver"
-	. "github.com/onsi/gomega"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"4.18", "4.17", "4.16", "4.15", "4.14"}))
+	g.Expect(Supported()).To(Equal([]string{"4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {
@@ -136,7 +138,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Invalid when isntalling with OVNKubernetes and version < 4.11",
+			name:                   "Invalid when installing with OVNKubernetes and version < 4.11",
 			currentVersion:         nil,
 			nextVersion:            v("4.10.5"),
 			latestVersionSupported: v("4.12.0"),
@@ -146,7 +148,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 			platform:               hyperv1.NonePlatform,
 		},
 		{
-			name:                   "Valid when isntalling with OVNKubernetes and version >= 4.11",
+			name:                   "Valid when installing with OVNKubernetes and version >= 4.11",
 			currentVersion:         nil,
 			nextVersion:            v("4.11.1"),
 			latestVersionSupported: v("4.12.0"),

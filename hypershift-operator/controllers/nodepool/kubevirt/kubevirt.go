@@ -7,19 +7,22 @@ import (
 	"strconv"
 	"strings"
 
-	jsonpatch "github.com/evanphx/json-patch/v5"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	openstack "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
+	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	kubevirtv1 "kubevirt.io/api/core/v1"
-	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	suppconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	jsonpatch "github.com/evanphx/json-patch/v5"
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
 var (
@@ -54,27 +57,6 @@ func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error
 	return containerImage, split[1], nil
 }
 
-func unsupportedOpenstackDefaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
-	if !foundArch {
-		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x64_64")
-	}
-	openStack, exists := arch.Artifacts["openstack"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack")
-	}
-	artifact, exists := openStack.Formats["qcow2.gz"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for openstack qcow2.gz")
-	}
-	disk, exists := artifact["disk"]
-	if !exists {
-		return "", "", fmt.Errorf("couldn't find OS metadata for the openstack qcow2.gz disk")
-	}
-
-	return disk.Location, disk.SHA256, nil
-}
-
 func allowUnsupportedRHCOSVariants(nodePool *hyperv1.NodePool) bool {
 	val, exists := nodePool.Annotations[hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation]
 	if exists && strings.ToLower(val) == "true" {
@@ -101,7 +83,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 	imageName, imageHash, err := defaultImage(releaseImage)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
-		imageName, imageHash, err = unsupportedOpenstackDefaultImage(releaseImage)
+		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage)
 		if err != nil {
 			return nil, err
 		}
@@ -112,7 +94,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 
 	// KubeVirt Caching is disabled by default
 	if rootVolume != nil && rootVolume.CacheStrategy != nil && rootVolume.CacheStrategy.Type == hyperv1.KubevirtCachingStrategyPVC {
-		return newCachedBootImage(imageName, imageHash, hostedNamespace, isHTTP), nil
+		return newCachedBootImage(imageName, imageHash, hostedNamespace, isHTTP, nodePool), nil
 	}
 
 	return newBootImage(imageName, isHTTP), nil
@@ -147,7 +129,7 @@ func PlatformValidation(nodePool *hyperv1.NodePool) error {
 	return nil
 }
 
-func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) *capikubevirt.VirtualMachineTemplateSpec {
+func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage) (*capikubevirt.VirtualMachineTemplateSpec, error) {
 	const rootVolumeName = "rhcos"
 
 	var (
@@ -156,7 +138,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		guaranteedResources = false
 	)
 
-	dvSource := bootImage.getDVSourceForVMTemplate()
+	dvSource, err := bootImage.getDVSourceForVMTemplate()
+	if err != nil {
+		return nil, err
+	}
 
 	kvPlatform := nodePool.Spec.Platform.Kubevirt
 
@@ -255,7 +240,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 			}
 
 			if kvPlatform.RootVolume.Persistent.Size != nil {
-				storageSpec.Resources = corev1.ResourceRequirements{
+				storageSpec.Resources = corev1.VolumeResourceRequirements{
 					Requests: map[corev1.ResourceName]apiresource.Quantity{
 						corev1.ResourceStorage: *kvPlatform.RootVolume.Persistent.Size,
 					},
@@ -286,20 +271,22 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 	if len(kvPlatform.KubevirtHostDevices) > 0 {
 		hostDevices := []kubevirtv1.HostDevice{}
+		deviceCounter := 1
 		for _, hostDevice := range kvPlatform.KubevirtHostDevices {
 			for i := 1; i <= hostDevice.Count; i++ {
 				kvHostDevice := kubevirtv1.HostDevice{
-					Name:       "hostdevice-" + strconv.Itoa(i),
+					Name:       "hostdevice-" + strconv.Itoa(deviceCounter),
 					DeviceName: hostDevice.DeviceName,
 				}
 				hostDevices = append(hostDevices, kvHostDevice)
+				deviceCounter++
 			}
 
 		}
 		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
 
-	return template
+	return template, nil
 }
 
 func virtualMachineInterfaceName(idx int, name string) string {
@@ -369,7 +356,10 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		}
 	}
 
-	vmTemplate := virtualMachineTemplateBase(nodePool, bootImage)
+	vmTemplate, err := virtualMachineTemplateBase(nodePool, bootImage)
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate kubevirt machine template: %w", err)
+	}
 
 	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster
 	// using TopologySpreadConstraints instead of Pod Anti-Affinity. When the new controller interacts

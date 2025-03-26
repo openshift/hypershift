@@ -10,14 +10,15 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/util"
 
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilpointer "k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
@@ -39,7 +40,7 @@ type Params struct {
 	OwnerRef                config.OwnerRef
 }
 
-func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider *imageprovider.ReleaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
+func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProvider imageprovider.ReleaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) Params {
 	p := Params{
 		Images: Images{
 			NodeTuningOperator: releaseImageProvider.GetImage(operatorName),
@@ -53,7 +54,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		config.NeedManagementKASAccessLabel: "true",
 	}
 	p.DeploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	p.DeploymentConfig.SetDefaults(hcp, nil, utilpointer.Int(1))
+	p.DeploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
@@ -69,8 +70,8 @@ func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, owner
 	ownerRef.ApplyTo(svc)
 
 	svc.Labels = map[string]string{
-		"name":                        metricsServiceName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             metricsServiceName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 	svc.Spec.Ports = []corev1.ServicePort{
 		{
@@ -90,8 +91,8 @@ func ReconcileClusterNodeTuningOperatorMetricsService(svc *corev1.Service, owner
 func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.ServiceMonitor, clusterID string, metricsSet metrics.MetricsSet, ownerRef config.OwnerRef) error {
 	ownerRef.ApplyTo(sm)
 	sm.Spec.Selector.MatchLabels = map[string]string{
-		"name":                        metricsServiceName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             metricsServiceName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 	sm.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{
 		MatchNames: []string{sm.Namespace},
@@ -104,7 +105,7 @@ func ReconcileClusterNodeTuningOperatorServiceMonitor(sm *prometheusoperatorv1.S
 			Path:       "/metrics",
 			TLSConfig: &prometheusoperatorv1.TLSConfig{
 				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: metricsServiceName + "." + sm.Namespace + ".svc",
+					ServerName: ptr.To(metricsServiceName + "." + sm.Namespace + ".svc"),
 					Cert: prometheusoperatorv1.SecretOrConfigMap{
 						Secret: &corev1.SecretKeySelector{
 							LocalObjectReference: corev1.LocalObjectReference{
@@ -206,9 +207,9 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		dep.Spec.Template.Labels = map[string]string{}
 	}
 	dep.Spec.Template.Labels = map[string]string{
-		"name":                        operatorName,
-		"app":                         operatorName,
-		hyperv1.ControlPlaneComponent: operatorName,
+		"name":                             operatorName,
+		"app":                              operatorName,
+		hyperv1.ControlPlaneComponentLabel: operatorName,
 	}
 
 	ntoArgs := []string{
@@ -260,7 +261,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params) error {
 		{Name: "node-tuning-operator-tls", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "node-tuning-operator-tls"}}},
 		{Name: "metrics-client-ca", VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "metrics-client"}}},
 		{Name: "trusted-ca", VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
-			Optional:             utilpointer.Bool(true),
+			Optional:             ptr.To(true),
 			LocalObjectReference: corev1.LocalObjectReference{Name: "trusted-ca"},
 			Items: []corev1.KeyToPath{
 				{Key: "ca-bundle.crt", Path: "tls-ca-bundle.pem"},

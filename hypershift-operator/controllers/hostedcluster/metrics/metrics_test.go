@@ -11,21 +11,25 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
 var (
@@ -36,22 +40,22 @@ var (
 
 func createMetricValue(metricName, metricDesc string, value float64) *dto.MetricFamily {
 	return &dto.MetricFamily{
-		Name: pointer.String(metricName),
-		Help: pointer.String(metricDesc),
+		Name: ptr.To(metricName),
+		Help: ptr.To(metricDesc),
 		Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 		Metric: []*dto.Metric{{
 			Label: []*dto.LabelPair{
 				{
-					Name: pointer.String("_id"), Value: pointer.String("id"),
+					Name: ptr.To("_id"), Value: ptr.To("id"),
 				},
 				{
-					Name: pointer.String("name"), Value: pointer.String("hc"),
+					Name: ptr.To("name"), Value: ptr.To("hc"),
 				},
 				{
-					Name: pointer.String("namespace"), Value: pointer.String("any"),
+					Name: ptr.To("namespace"), Value: ptr.To("any"),
 				},
 			},
-			Gauge: &dto.Gauge{Value: pointer.Float64(value)},
+			Gauge: &dto.Gauge{Value: ptr.To[float64](value)},
 		}},
 	}
 }
@@ -229,28 +233,28 @@ func TestReportInitialRollingOutDuration(t *testing.T) {
 func TestReportUpgradingDuration(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64, previousVersion, newVersion string) *dto.MetricFamily {
 		return &dto.MetricFamily{
-			Name: pointer.String(UpgradingDurationMetricName),
-			Help: pointer.String(upgradingDurationMetricHelp),
+			Name: ptr.To(UpgradingDurationMetricName),
+			Help: ptr.To(upgradingDurationMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{
-						Name: pointer.String("_id"), Value: pointer.String("id"),
+						Name: ptr.To("_id"), Value: ptr.To("id"),
 					},
 					{
-						Name: pointer.String("name"), Value: pointer.String("hc"),
+						Name: ptr.To("name"), Value: ptr.To("hc"),
 					},
 					{
-						Name: pointer.String("namespace"), Value: pointer.String("any"),
+						Name: ptr.To("namespace"), Value: ptr.To("any"),
 					},
 					{
-						Name: pointer.String("new_version"), Value: pointer.String(newVersion),
+						Name: ptr.To("new_version"), Value: ptr.To(newVersion),
 					},
 					{
-						Name: pointer.String("previous_version"), Value: pointer.String(previousVersion),
+						Name: ptr.To("previous_version"), Value: ptr.To(previousVersion),
 					},
 				},
-				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+				Gauge: &dto.Gauge{Value: ptr.To[float64](expectedValue)},
 			}},
 		}
 	}
@@ -469,31 +473,31 @@ func TestReportProxy(t *testing.T) {
 		}
 
 		return &dto.MetricFamily{
-			Name: pointer.String(ProxyMetricName),
-			Help: pointer.String(proxyMetricHelp),
+			Name: ptr.To(ProxyMetricName),
+			Help: ptr.To(proxyMetricHelp),
 			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
 			Metric: []*dto.Metric{{
 				Label: []*dto.LabelPair{
 					{
-						Name: pointer.String("_id"), Value: pointer.String("id"),
+						Name: ptr.To("_id"), Value: ptr.To("id"),
 					},
 					{
-						Name: pointer.String("name"), Value: pointer.String("hc"),
+						Name: ptr.To("name"), Value: ptr.To("hc"),
 					},
 					{
-						Name: pointer.String("namespace"), Value: pointer.String("any"),
+						Name: ptr.To("namespace"), Value: ptr.To("any"),
 					},
 					{
-						Name: pointer.String("proxy_http"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_http"), Value: ptr.To(labelValue),
 					},
 					{
-						Name: pointer.String("proxy_https"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_https"), Value: ptr.To(labelValue),
 					},
 					{
-						Name: pointer.String("proxy_trusted_ca"), Value: pointer.String(labelValue),
+						Name: ptr.To("proxy_trusted_ca"), Value: ptr.To(labelValue),
 					},
 				},
-				Gauge: &dto.Gauge{Value: pointer.Float64(expectedValue)},
+				Gauge: &dto.Gauge{Value: ptr.To[float64](expectedValue)},
 			}},
 		}
 	}
@@ -765,6 +769,102 @@ func TestReportDeletingDuration(t *testing.T) {
 	}
 }
 
+func TestReportEtcdManualInterventionRequired(t *testing.T) {
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: ptr.To(EtcdManualInterventionRequiredMetricName),
+			Help: ptr.To(etcdManualInterventionRequiredMetricHelp),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("environment"), Value: ptr.To("")},
+					{Name: ptr.To("internal_id"), Value: ptr.To("")},
+					{Name: ptr.To("name"), Value: ptr.To("hc")},
+					{Name: ptr.To("namespace"), Value: ptr.To("any")},
+				},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
+			}},
+		}
+	}
+
+	testCases := []struct {
+		name       string
+		timestamp  time.Time
+		conditions []metav1.Condition
+		tags       map[string]string
+		expected   *dto.MetricFamily
+	}{
+		{
+			name:      "When cluster does not have the required tags, metric is not reported",
+			timestamp: now,
+		},
+		{
+			name:      "When cluster has the required tags but etcd recovery is not active, metric is not reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.EtcdRecoveryActive),
+					Status: metav1.ConditionTrue,
+				},
+			},
+		},
+		{
+			name:      "When cluster has the required tags and etcd recovery job failed, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.EtcdRecoveryActive),
+					Status: metav1.ConditionFalse,
+					Reason: hyperv1.EtcdRecoveryJobFailedReason,
+				},
+			},
+			expected: wrapExpectedValueAsMetric(1.0),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "any",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: func() []hyperv1.AWSResourceTag {
+								var tags []hyperv1.AWSResourceTag
+								for k, v := range tc.tags {
+									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+								}
+								return tags
+							}(),
+						},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				EtcdManualInterventionRequiredMetricName,
+				tc.expected)
+		})
+	}
+}
+
 func TestProxyCAValidity(t *testing.T) {
 	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
 		return createMetricValue(
@@ -944,6 +1044,95 @@ func TestProxyCAExpiry(t *testing.T) {
 	}
 }
 
+func TestReportClusterSizeOverride(t *testing.T) {
+	wrapExpectedValueAsMetric := func(size string, expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: ptr.To(ClusterSizeOverrideMetricName),
+			Help: ptr.To(clusterSizeOverrideMetricHelp),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: ptr.To("_id"), Value: ptr.To("id")},
+					{Name: ptr.To("environment"), Value: ptr.To("")},
+					{Name: ptr.To("internal_id"), Value: ptr.To("")},
+					{Name: ptr.To("name"), Value: ptr.To("hc")},
+					{Name: ptr.To("namespace"), Value: ptr.To("any")},
+					{Name: ptr.To("size"), Value: ptr.To(size)},
+				},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
+			}},
+		}
+	}
+
+	testCases := []struct {
+		name        string
+		timestamp   time.Time
+		tags        map[string]string
+		annotations map[string]string
+		expected    *dto.MetricFamily
+	}{
+		{
+			name:      "When cluster does not have the cluster override annotation, metric is not reported",
+			timestamp: now,
+		},
+		{
+			name:      "When cluster has the cluster size annotation with a large value, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			annotations: map[string]string{
+				hyperv1.ClusterSizeOverrideAnnotation: "large",
+			},
+			expected: wrapExpectedValueAsMetric("large", 1.0),
+		},
+		{
+			name:      "When cluster has the cluster size annotation with a small value, metric is reported",
+			timestamp: now,
+			tags: map[string]string{
+				"red-hat-clustertype": "rosa",
+			},
+			annotations: map[string]string{
+				hyperv1.ClusterSizeOverrideAnnotation: "small",
+			},
+			expected: wrapExpectedValueAsMetric("small", 1.0),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "hc",
+					Namespace:   "any",
+					Annotations: tc.annotations,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ClusterID: "id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: func() []hyperv1.AWSResourceTag {
+								var tags []hyperv1.AWSResourceTag
+								for k, v := range tc.tags {
+									tags = append(tags, hyperv1.AWSResourceTag{Key: k, Value: v})
+								}
+								return tags
+							}(),
+						},
+					},
+				},
+			}
+
+			checkMetric(t,
+				fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster).Build(),
+				clocktesting.NewFakeClock(tc.timestamp),
+				ClusterSizeOverrideMetricName,
+				tc.expected)
+		})
+	}
+}
+
 func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
@@ -975,7 +1164,7 @@ func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) 
 
 	// pem encode
 	caPEM := new(bytes.Buffer)
-	pem.Encode(caPEM, &pem.Block{
+	_ = pem.Encode(caPEM, &pem.Block{
 		Type:  "CERTIFICATE",
 		Bytes: caBytes,
 	})

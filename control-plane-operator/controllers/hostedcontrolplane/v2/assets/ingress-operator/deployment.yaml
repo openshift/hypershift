@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ingress-operator
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: ingress-operator
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      labels:
+        app: ingress-operator
+        name: ingress-operator
+    spec:
+      containers:
+      - command:
+        - ingress-operator
+        - start
+        - --namespace
+        - openshift-ingress-operator
+        - --image
+        - $(IMAGE)
+        - --canary-image
+        - $(CANARY_IMAGE)
+        - --release-version
+        - $(RELEASE_VERSION)
+        - --metrics-listen-addr
+        - 0.0.0.0:60000
+        env:
+        - name: RELEASE_VERSION
+          value: ""
+        - name: IMAGE
+          value: ""
+        - name: CANARY_IMAGE
+          value: ""
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        - name: HTTP_PROXY
+          value: http://127.0.0.1:8090
+        - name: HTTPS_PROXY
+          value: http://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver
+        image: cluster-ingress-operator
+        imagePullPolicy: IfNotPresent
+        name: ingress-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+      volumes:
+      - name: admin-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -15,21 +16,34 @@ import (
 	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
-func DefaultOptions() *RawCreateOptions {
-	return &RawCreateOptions{
+const (
+	SATokenIssuerSecret = "sa-token-issuer-key"
+	ObjectEncoding      = "utf-8"
+)
+
+func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
+	rawCreateOptions := &RawCreateOptions{
 		Location:     "eastus",
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
+
+	if client == nil {
+		return rawCreateOptions, nil
+	}
+
+	return rawCreateOptions, nil
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -47,6 +61,14 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
 	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
+	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
+	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
+	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
+	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -56,16 +78,25 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
-	CredentialsFile        string
-	Location               string
-	EncryptionKeyID        string
-	AvailabilityZones      []string
-	ResourceGroupName      string
-	VnetID                 string
-	NetworkSecurityGroupID string
-	ResourceGroupTags      map[string]string
-	SubnetID               string
-	RHCOSImage             string
+	CredentialsFile                  string
+	Location                         string
+	EncryptionKeyID                  string
+	AvailabilityZones                []string
+	ResourceGroupName                string
+	VnetID                           string
+	NetworkSecurityGroupID           string
+	ResourceGroupTags                map[string]string
+	SubnetID                         string
+	RHCOSImage                       string
+	KMSUserAssignedCredsSecretName   string
+	TechPreviewEnabled               bool
+	DNSZoneRGName                    string
+	ManagedIdentitiesFile            string
+	DataPlaneIdentitiesFile          string
+	AssignServicePrincipalRoles      bool
+	AssignCustomHCPRoles             bool
+	IssuerURL                        string
+	ServiceAccountTokenIssuerKeyPath string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -88,7 +119,7 @@ type ValidatedCreateOptions struct {
 	*validatedCreateOptions
 }
 
-func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
 	// Check if the network security group is set and the resource group is not
@@ -96,10 +127,24 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
+	if o.ManagedIdentitiesFile == "" {
+		return nil, fmt.Errorf("flag --managed-identities-file is required")
+	}
+
+	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
+		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
+	}
+
 	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
 		},
+	}
+
+	for _, az := range o.AvailabilityZones {
+		if !slices.Contains([]string{"1", "2", "3"}, az) {
+			return nil, fmt.Errorf("invalid value for --availability-zone: %s", az)
+		}
 	}
 
 	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
@@ -191,11 +236,19 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 
 	cluster.Spec.InfraID = o.infra.InfraID
 
+	cluster.Spec.IssuerURL = o.IssuerURL
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		cluster.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+			Name: o.name + SATokenIssuerSecret,
+		}
+	}
+
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type: hyperv1.AzurePlatform,
 		Azure: &hyperv1.AzurePlatformSpec{
-			Credentials:       corev1.LocalObjectReference{Name: credentialSecret(cluster.Namespace, cluster.Name).Name},
 			SubscriptionID:    o.creds.SubscriptionID,
+			TenantID:          o.creds.TenantID,
 			Location:          o.infra.Location,
 			ResourceGroupName: o.infra.ResourceGroupName,
 			VnetID:            o.infra.VNetID,
@@ -203,6 +256,18 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			SecurityGroupID:   o.infra.SecurityGroupID,
 		},
 	}
+
+	cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
+	cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
@@ -217,6 +282,13 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 					},
 				},
 			},
+		}
+	}
+
+	if o.encryptionKey != nil {
+		cluster.Spec.SecretEncryption.KMS.Azure.KMS = hyperv1.ManagedIdentity{
+			CredentialsSecretName: o.KMSUserAssignedCredsSecretName,
+			ObjectEncoding:        ObjectEncoding,
 		}
 	}
 
@@ -261,6 +333,19 @@ func credentialSecret(namespace, name string) *corev1.Secret {
 	}
 }
 
+func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+}
+
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
 	var vmImage hyperv1.AzureVMImage
 	if o.MarketplacePublisher == "" {
@@ -271,7 +356,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	} else {
 		vmImage = hyperv1.AzureVMImage{
 			Type: hyperv1.AzureMarketplace,
-			AzureMarketplace: &hyperv1.MarketplaceImage{
+			AzureMarketplace: &hyperv1.AzureMarketplaceImage{
 				Publisher: o.MarketplacePublisher,
 				Offer:     o.MarketplaceOffer,
 				SKU:       o.MarketplaceSKU,
@@ -300,23 +385,38 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 			}
 			nodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-				VMSize:                 instanceType,
-				Image:                  vmImage,
-				DiskSizeGB:             o.NodePoolOpts.DiskSize,
-				AvailabilityZone:       availabilityZone,
-				DiskEncryptionSetID:    o.DiskEncryptionSetID,
-				EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
-				DiskStorageAccountType: o.DiskStorageAccountType,
-				SubnetID:               o.infra.SubnetID,
-				MachineIdentityID:      o.infra.MachineIdentityID,
-				EncryptionAtHost:       o.EncryptionAtHost,
+				VMSize: instanceType,
+				Image:  vmImage,
+				OSDisk: hyperv1.AzureNodePoolOSDisk{
+					SizeGiB:                o.NodePoolOpts.DiskSize,
+					EncryptionSetID:        o.DiskEncryptionSetID,
+					DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
+				},
+				AvailabilityZone: availabilityZone,
+				SubnetID:         o.infra.SubnetID,
+				EncryptionAtHost: o.EncryptionAtHost,
 			}
+
+			if o.EnableEphemeralOSDisk {
+				nodePool.Spec.Platform.Azure.OSDisk.Persistence = hyperv1.EphemeralDiskPersistence
+			}
+
 			if len(o.DiagnosticsStorageAccountType) > 0 {
 				nodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
 					StorageAccountType: o.DiagnosticsStorageAccountType,
-					StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+				}
+
+				if o.DiagnosticsStorageAccountType == hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged &&
+					o.DiagnosticsStorageAccountURI != "" {
+					nodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
+						StorageAccountType: o.DiagnosticsStorageAccountType,
+						UserManaged: &hyperv1.UserManagedDiagnostics{
+							StorageAccountURI: o.DiagnosticsStorageAccountURI,
+						},
+					}
 				}
 			}
+
 			nodePools = append(nodePools, nodePool)
 		}
 		return nodePools
@@ -326,35 +426,65 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		azureNodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 	}
 	azureNodePool.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-		VMSize:                 instanceType,
-		Image:                  vmImage,
-		DiskSizeGB:             o.NodePoolOpts.DiskSize,
-		DiskEncryptionSetID:    o.DiskEncryptionSetID,
-		EnableEphemeralOSDisk:  o.EnableEphemeralOSDisk,
-		DiskStorageAccountType: o.DiskStorageAccountType,
-		SubnetID:               o.infra.SubnetID,
-		MachineIdentityID:      o.infra.MachineIdentityID,
-		EncryptionAtHost:       o.EncryptionAtHost,
+		VMSize:           instanceType,
+		Image:            vmImage,
+		SubnetID:         o.infra.SubnetID,
+		EncryptionAtHost: o.EncryptionAtHost,
+		OSDisk: hyperv1.AzureNodePoolOSDisk{
+			SizeGiB:                o.NodePoolOpts.DiskSize,
+			EncryptionSetID:        o.DiskEncryptionSetID,
+			DiskStorageAccountType: hyperv1.AzureDiskStorageAccountType(o.DiskStorageAccountType),
+		},
 	}
+
+	if o.EnableEphemeralOSDisk {
+		azureNodePool.Spec.Platform.Azure.OSDisk.Persistence = hyperv1.EphemeralDiskPersistence
+	}
+
 	if len(o.DiagnosticsStorageAccountType) > 0 {
 		azureNodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
 			StorageAccountType: o.DiagnosticsStorageAccountType,
-			StorageAccountURI:  o.DiagnosticsStorageAccountURI,
+		}
+
+		if o.DiagnosticsStorageAccountType == hyperv1.AzureDiagnosticsStorageAccountTypeUserManaged &&
+			o.DiagnosticsStorageAccountURI != "" {
+			azureNodePool.Spec.Platform.Azure.Diagnostics = &hyperv1.Diagnostics{
+				StorageAccountType: o.DiagnosticsStorageAccountType,
+				UserManaged: &hyperv1.UserManagedDiagnostics{
+					StorageAccountURI: o.DiagnosticsStorageAccountURI,
+				},
+			}
 		}
 	}
 
 	return []*hyperv1.NodePool{azureNodePool}
 }
 
-func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
+func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
+	var objects []crclient.Object
+
+	// This secret is primarily generated because we need a way to pass the tenant ID to the HCP
 	secret := credentialSecret(o.namespace, o.name)
 	secret.Data = map[string][]byte{
 		"AZURE_SUBSCRIPTION_ID": []byte(o.creds.SubscriptionID),
 		"AZURE_TENANT_ID":       []byte(o.creds.TenantID),
-		"AZURE_CLIENT_ID":       []byte(o.creds.ClientID),
-		"AZURE_CLIENT_SECRET":   []byte(o.creds.ClientSecret),
 	}
-	return []client.Object{secret}, nil
+	objects = append(objects, secret)
+
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		privateKey, err := os.ReadFile(o.ServiceAccountTokenIssuerKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		saSecret := serviceAccountTokenIssuerSecret(o.namespace, o.name+SATokenIssuerSecret)
+		saSecret.Data = map[string][]byte{
+			"key": privateKey,
+		}
+		objects = append(objects, saSecret)
+	}
+
+	return objects, nil
 }
 
 var _ core.Platform = (*CreateOptions)(nil)
@@ -366,7 +496,16 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	azureOpts := DefaultOptions()
+	client, err := util.GetClient()
+	if err != nil {
+		opts.Log.Info(fmt.Sprintf("Failed to get client, proceeding without checking feature gate CM: %s", err.Error()))
+	}
+
+	azureOpts, err := DefaultOptions(client, opts.Log)
+	if err != nil {
+		opts.Log.Error(err, "Failed to create default options")
+		return nil
+	}
 	BindOptions(azureOpts, cmd.Flags())
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -399,17 +538,22 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	}
 
 	return azureinfra.CreateInfraOptions{
-		Name:                   opts.Name,
-		Location:               azureOpts.Location,
-		InfraID:                opts.InfraID,
-		CredentialsFile:        azureOpts.CredentialsFile,
-		BaseDomain:             opts.BaseDomain,
-		RHCOSImage:             rhcosImage,
-		VnetID:                 azureOpts.VnetID,
-		ResourceGroupName:      azureOpts.ResourceGroupName,
-		NetworkSecurityGroupID: azureOpts.NetworkSecurityGroupID,
-		ResourceGroupTags:      azureOpts.ResourceGroupTags,
-		SubnetID:               azureOpts.SubnetID,
+		Name:                        opts.Name,
+		Location:                    azureOpts.Location,
+		InfraID:                     opts.InfraID,
+		CredentialsFile:             azureOpts.CredentialsFile,
+		BaseDomain:                  opts.BaseDomain,
+		RHCOSImage:                  rhcosImage,
+		VnetID:                      azureOpts.VnetID,
+		ResourceGroupName:           azureOpts.ResourceGroupName,
+		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
+		ResourceGroupTags:           azureOpts.ResourceGroupTags,
+		SubnetID:                    azureOpts.SubnetID,
+		DNSZoneRG:                   azureOpts.DNSZoneRGName,
+		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
+		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
+		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
+		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 	}, nil
 }
 

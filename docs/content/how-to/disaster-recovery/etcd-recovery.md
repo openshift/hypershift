@@ -16,7 +16,7 @@ If this is enabled, then the HyperShift operator will attempt to recover the hea
 
 The recovery procedure consists of the following:
 * If a member has been removed from the etcd cluster, re-add the missing member by executing the `member add` command
-* Delete the etcd member's pod and pvc
+* The administrator should [delete the etcd member's pod and pvc](#single-node-recovery), after which the HyperShift operator will automatically provision a replacement etcd member Pod and PersistentVolume.
 
 Once this is done, the `reset-member` init container of the removed pod should be able to complete the recovery.
 
@@ -27,7 +27,7 @@ To disable this default behavior, install HyperShift with `--enable-etcd-recover
 Execute into a running etcd pod:
 
 ```
-$ oc rsh -n ${CONTROL_PLANE_NAMESPACE} -c etcd etcd-0 
+$ oc rsh -n ${CONTROL_PLANE_NAMESPACE} -c etcd etcd-0
 ```
 
 Setup the etcdctl environment:
@@ -93,15 +93,7 @@ CONTROL_PLANE_NAMESPACE="${CLUSTER_NAMESPACE}-${CLUSTER_NAME}"
 oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":"true"}}' --type=merge
 ```
 
-2. Scale down API servers:
-
-```
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/kube-apiserver --replicas=0
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/openshift-apiserver --replicas=0
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/openshift-oauth-apiserver --replicas=0
-```
-
-3. Take a snapshot of etcd data using one of the following methods:
+2. Take a snapshot of etcd data using one of the following methods:
 
     a. Use a previously backed up snapshot
 
@@ -115,41 +107,41 @@ oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/openshift-oauth-apiserver --re
 
         # 1. take a snapshot of its database and save it locally
         # Set ETCD_POD to the name of the pod that is available
-        ETCD_POD=etcd-0 
+        ETCD_POD=etcd-0
         oc exec -n ${CONTROL_PLANE_NAMESPACE} -c etcd -t ${ETCD_POD} -- env ETCDCTL_API=3 /usr/bin/etcdctl \
         --cacert /etc/etcd/tls/etcd-ca/ca.crt \
         --cert /etc/etcd/tls/client/etcd-client.crt \
         --key /etc/etcd/tls/client/etcd-client.key \
         --endpoints=https://localhost:2379 \
         snapshot save /var/lib/snapshot.db
-    
+
         # 2. Verify that the snapshot is good
         oc exec -n ${CONTROL_PLANE_NAMESPACE} -c etcd -t ${ETCD_POD} -- env ETCDCTL_API=3 /usr/bin/etcdctl -w table snapshot status /var/lib/snapshot.db
-        
+
         # 3. Make a local copy of the snapshot
         oc cp -c etcd ${CONTROL_PLANE_NAMESPACE}/${ETCD_POD}:/var/lib/snapshot.db /tmp/etcd.snapshot.db
         ```
-    
+
     c. Make a copy of the snapshot db from etcd persistent storage:
 
        ```
        # List etcd pods
-       oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd 
+       oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd
 
-       # Find a pod that is running and set its name as the value of ETCD_POD 
+       # Find a pod that is running and set its name as the value of ETCD_POD
        ETCD_POD=etcd-0
 
        # Copy the snapshot db from it
        oc cp -c etcd ${CONTROL_PLANE_NAMESPACE}/${ETCD_POD}:/var/lib/data/member/snap/db /tmp/etcd.snapshot.db
        ```
 
-4. Scale down the etcd statefulset:
+3. Scale down the etcd statefulset:
 
 ```
-oc scale -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd --replicas=0 
+oc scale -n ${CONTROL_PLANE_NAMESPACE} statefulset/etcd --replicas=0
 ```
 
-5. Delete volumes for 2nd and 3rd members:
+4. Delete volumes for 2nd and 3rd members:
 ```
 oc delete -n ${CONTROL_PLANE_NAMESPACE} pvc/data-etcd-1 pvc/data-etcd-2
 ```
@@ -202,7 +194,7 @@ EOF
 
 ```
 # Wait for the etcd-data pod to start running
-oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd-data 
+oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd-data
 
 # Get the name of the etcd-data pod
 DATA_POD=$(oc get -n ${CONTROL_PLANE_NAMESPACE} pods --no-headers -l app=etcd-data -o name | cut -d/ -f2)
@@ -242,16 +234,8 @@ Wait for the all etcd member pods to come up and report available:
 oc get -n ${CONTROL_PLANE_NAMESPACE} pods -l app=etcd -w
 ```
 
-9. Scale apiservers back up:
+9. Remove hosted cluster pause:
 
 ```
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/kube-apiserver --replicas=3
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/openshift-apiserver --replicas=3
-oc scale -n ${CONTROL_PLANE_NAMESPACE} deployment/openshift-oauth-apiserver --replicas=3
-```
-
-10. Remove hosted cluster pause:
-
-```
-oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":""}}' --type=merge
+oc patch -n ${CLUSTER_NAMESPACE} hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":null}}' --type=merge
 ```

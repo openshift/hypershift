@@ -160,10 +160,23 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
 
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have version %s", nodePool.Namespace, nodePool.Name, previousReleaseInfo.ObjectMeta.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(nodePool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				return nodePool.Status.Version == previousReleaseInfo.ObjectMeta.Name, fmt.Sprintf("wanted version %s, got %s", previousReleaseInfo.ObjectMeta.Name, nodePool.Status.Version), nil
+			},
+		},
+		e2eutil.WithTimeout(10*time.Second),
+	)
+
 	// Update NodePool images to the latest.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-	g.Expect(nodePool.Status.Version).To(Equal(previousReleaseInfo.ObjectMeta.Name), fmt.Sprintf("wrong previous release version: Previous: %s Nodepool current: %s", previousReleaseInfo.Version(), nodePool.Spec.Release.Image))
 	t.Logf("Updating NodePool image. Image: %s", ru.latestReleaseImage)
 	original := nodePool.DeepCopy()
 	nodePool.Spec.Release.Image = ru.latestReleaseImage
@@ -202,5 +215,6 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		},
 		e2eutil.WithTimeout(20*time.Minute),
 	)
-	e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
+	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
+	e2eutil.EnsureNodesRuntime(t, newNodes)
 }

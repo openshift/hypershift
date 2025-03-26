@@ -51,12 +51,10 @@ spec:
                       ObjectMeta is metadata that all persisted resources must have, which includes all objects
                       users must create. This is a copy of customizable fields from metav1.ObjectMeta.
 
-
                       ObjectMeta is embedded in `Machine.Spec`, `MachineDeployment.Template` and `MachineSet.Template`,
                       which are not top-level Kubernetes objects. Given that metav1.ObjectMeta has lots of special cases
                       and read-only fields which end up in the generated CRD validation, having it as a subset simplifies
                       the API and some issues that can impact user experience.
-
 
                       During the [upgrade to controller-tools@v2](https://github.com/kubernetes-sigs/cluster-api/pull/1054)
                       for v1alpha2, we noticed a failure would occur running Cluster API test suite against the new CRDs,
@@ -64,12 +62,10 @@ spec:
                       The investigation showed that `controller-tools@v2` behaves differently than its previous version
                       when handling types from [metav1](k8s.io/apimachinery/pkg/apis/meta/v1) package.
 
-
                       In more details, we found that embedded (non-top level) types that embedded `metav1.ObjectMeta`
                       had validation properties, including for `creationTimestamp` (metav1.Time).
                       The `metav1.Time` type specifies a custom json marshaller that, when IsZero() is true, returns `null`
                       which breaks validation because the field isn't marked as nullable.
-
 
                       In future versions, controller-tools@v2 might allow overriding the type and validation for embedded
                       types. When that happens, this hack should be revisited.
@@ -78,7 +74,7 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Annotations is an unstructured key value map stored with a resource that may be
+                          annotations is an unstructured key value map stored with a resource that may be
                           set by external tools to store and retrieve arbitrary metadata. They are not
                           queryable and should be preserved when modifying objects.
                           More info: http://kubernetes.io/docs/user-guide/annotations
@@ -128,6 +124,10 @@ spec:
                         description: |-
                           CapacityReservationGroupID specifies the capacity reservation group resource id that should be
                           used for allocating the virtual machine.
+                          The field size should be greater than 0 and the field input must start with '/'.
+                          The input for capacityReservationGroupID must be similar to '/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/capacityReservationGroups/{capacityReservationGroupName}'.
+                          The keys which are used should be among 'subscriptions', 'providers' and 'resourcegroups' followed by valid ID or names respectively.
+                          It is optional but may not be changed once set.
                         type: string
                       dataDisks:
                         description: DataDisk specifies the parameters that are used
@@ -253,6 +253,12 @@ spec:
                             - storageAccountType
                             type: object
                         type: object
+                      disableExtensionOperations:
+                        description: |-
+                          DisableExtensionOperations specifies whether extension operations should be disabled on the virtual machine.
+                          Use this setting only if VMExtensions are not supported by your image, as it disables CAPZ bootstrapping extension used for detecting Kubernetes bootstrap failure.
+                          This may only be set to True when no extensions are configured on the virtual machine.
+                        type: boolean
                       dnsServers:
                         description: DNSServers adds a list of DNS Server IP addresses
                           to the VM NICs.
@@ -286,8 +292,8 @@ spec:
                       image:
                         description: |-
                           Image is used to provide details of an image to use during VM creation.
-                          If image details are omitted the image will default the Azure Marketplace "capi" offer,
-                          which is based on Ubuntu.
+                          If image details are omitted, the default is to use an Azure Compute Gallery Image
+                          from CAPZ's community gallery.
                         properties:
                           computeGallery:
                             description: ComputeGallery specifies an image to use
@@ -486,6 +492,7 @@ spec:
                           system disk of the machine
                         properties:
                           cachingType:
+                            default: None
                             description: CachingType specifies the caching requirements.
                             enum:
                             - None
@@ -502,6 +509,15 @@ spec:
                                   See https://learn.microsoft.com/azure/virtual-machines/ephemeral-os-disks for full details
                                 enum:
                                 - Local
+                                type: string
+                              placement:
+                                description: Placement specifies the ephemeral disk
+                                  placement for operating system disk. If placement
+                                  is specified, Option must be set to "Local".
+                                enum:
+                                - CacheDisk
+                                - NvmeDisk
+                                - ResourceDisk
                                 type: string
                             required:
                             - option
@@ -559,6 +575,7 @@ spec:
                                 type: string
                             type: object
                           osType:
+                            default: Linux
                             type: string
                         required:
                         - osType

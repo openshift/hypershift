@@ -2,16 +2,16 @@ package config
 
 import (
 	"bytes"
-
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/api"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/openshift/hypershift/support/api"
 )
 
 func TestSetResources(t *testing.T) {
@@ -53,11 +53,11 @@ func TestSetResources(t *testing.T) {
 	}
 
 	b := &bytes.Buffer{}
-	api.YamlSerializer.Encode(deployment, b)
+	_ = api.YamlSerializer.Encode(deployment, b)
 	t.Logf("Before applying: \n%s\n", b.String())
 	spec.ApplyTo(&deployment.Spec.Template.Spec)
 	b = &bytes.Buffer{}
-	api.YamlSerializer.Encode(deployment, b)
+	_ = api.YamlSerializer.Encode(deployment, b)
 	t.Logf("After applying: \n%s\n", b.String())
 
 	if len(deployment.Spec.Template.Spec.Containers[0].Resources.Requests) == 0 {

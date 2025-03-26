@@ -2,6 +2,7 @@ package manifests
 
 import (
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 

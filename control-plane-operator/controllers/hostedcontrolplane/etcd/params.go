@@ -3,15 +3,14 @@ package etcd
 import (
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	"github.com/openshift/hypershift/support/config"
+	hyputils "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
-
-	"github.com/openshift/hypershift/support/config"
-	hyputils "github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -38,9 +37,9 @@ func etcdPodSelector() map[string]string {
 	return map[string]string{"app": "etcd"}
 }
 
-func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
+func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
 
-	ipv4, err := hyputils.IsIPv4(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
+	ipv4, err := hyputils.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return nil, fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
 	}
@@ -64,7 +63,7 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagep
 	if p.DeploymentConfig.AdditionalLabels == nil {
 		p.DeploymentConfig.AdditionalLabels = make(map[string]string)
 	}
-	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponent] = "etcd"
+	p.DeploymentConfig.AdditionalLabels[hyperv1.ControlPlaneComponentLabel] = "etcd"
 	p.DeploymentConfig.Scheduling.PriorityClass = config.EtcdPriorityClass
 	if hcp.Annotations[hyperv1.EtcdPriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.EtcdPriorityClass]

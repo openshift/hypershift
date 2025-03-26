@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	imagereference "github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
+	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/helpers/image/dockerlayer/add"
+
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/manifest/ocischema"
 	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/manifest/schema2"
-
 	"github.com/opencontainers/go-digest"
 	imagespecv1 "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	imagereference "github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
-	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/helpers/image/dockerlayer/add"
 )
 
 // PreferManifestList specifically requests a manifest list first
@@ -169,9 +169,7 @@ func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManife
 		manifestList := t
 
 		filtered := make([]manifestlist.ManifestDescriptor, 0, len(t.Manifests))
-		for _, manifest := range t.Manifests {
-			filtered = append(filtered, manifest)
-		}
+		filtered = append(filtered, t.Manifests...)
 
 		if len(filtered) == 0 {
 			return nil, nil, "", nil

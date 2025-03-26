@@ -7,26 +7,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-logr/logr"
 	. "github.com/onsi/gomega"
-	imageapi "github.com/openshift/api/image/v1"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/upsert"
+
+	imageapi "github.com/openshift/api/image/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	k8sutilspointer "k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
+
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	"github.com/go-logr/logr"
 )
 
 func TestSetMachineSetReplicas(t *testing.T) {
@@ -106,7 +110,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32(1),
+					Replicas: ptr.To[int32](1),
 				},
 			},
 			expectReplicas: 2,
@@ -132,7 +136,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					CreationTimestamp: metav1.Now(),
 				},
 				Spec: capiv1.MachineSetSpec{
-					Replicas: k8sutilspointer.Int32(10),
+					Replicas: ptr.To[int32](10),
 				},
 			},
 			expectReplicas: 5,
@@ -570,7 +574,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 	gvk, err := apiutil.GVKForObject(template1, api.Scheme)
 	g.Expect(err).ToNot(HaveOccurred())
-	// machine set refrencing template1
+	// machine set referencing template1
 	ms := &capiv1.MachineSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "machineSet",
@@ -613,7 +617,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 
 func TestListMachineTemplatesAWS(t *testing.T) {
 	g := NewWithT(t)
-	capiaws.AddToScheme(api.Scheme)
+	_ = capiaws.AddToScheme(api.Scheme)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
 		Client:                 c,
@@ -643,7 +647,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 	}
 	g.Expect(r.Client.Create(context.Background(), template1)).To(BeNil())
 
-	// MachineTemplate without the expected annoation
+	// MachineTemplate without the expected annotation
 	template2 := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "template2",
@@ -927,6 +931,21 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 			}
 		}
 	}
+	withNodeStartupTimeoutOverride := func(value string) func(client.Object) {
+		return func(o client.Object) {
+			a := o.GetAnnotations()
+			if a == nil {
+				a = map[string]string{}
+			}
+			a[hyperv1.MachineHealthCheckNodeStartupTimeoutAnnotation] = value
+			o.SetAnnotations(a)
+		}
+	}
+	withNodeStartupTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
+		return func(mhc *capiv1.MachineHealthCheck) {
+			mhc.Spec.NodeStartupTimeout = &metav1.Duration{Duration: d}
+		}
+	}
 
 	tests := []struct {
 		name     string
@@ -961,6 +980,30 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 		{
 			name:     "invalid timeout override, retains default",
 			hc:       hostedcluster(withTimeoutOverride("foo")),
+			np:       nodepool(),
+			expected: healthcheck(),
+		},
+		{
+			name:     "node startup timeout override in hc",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
+			np:       nodepool(),
+			expected: healthcheck(withNodeStartupTimeout(10 * time.Minute)),
+		},
+		{
+			name:     "node startup timeout override in np",
+			hc:       hostedcluster(),
+			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
+			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "node startup timeout override in both, np takes precedence",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("10m")),
+			np:       nodepool(withNodeStartupTimeoutOverride("40m")),
+			expected: healthcheck(withNodeStartupTimeout(40 * time.Minute)),
+		},
+		{
+			name:     "node startup invalid timeout override, retains default",
+			hc:       hostedcluster(withNodeStartupTimeoutOverride("foo")),
 			np:       nodepool(),
 			expected: healthcheck(),
 		},
@@ -1003,7 +1046,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 				capiClusterName: "cluster",
 			}
 			mhc := &capiv1.MachineHealthCheck{}
-			capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			err := capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
 	}
@@ -1048,7 +1092,7 @@ func TestCAPIReconcile(t *testing.T) {
 						},
 						AutoRepair: false,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1144,7 +1188,7 @@ func TestCAPIReconcile(t *testing.T) {
 						},
 						AutoRepair: false,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1243,7 +1287,7 @@ func TestCAPIReconcile(t *testing.T) {
 						Min: 3,
 						Max: 10,
 					},
-					Replicas: ptr.To(int32(3)),
+					Replicas: ptr.To[int32](3),
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSNodePoolPlatform{
@@ -1408,10 +1452,12 @@ func TestCAPIReconcile(t *testing.T) {
 				md := &capiv1.MachineDeployment{}
 				err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
 				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(md.Spec.Replicas).To(Equal(k8sutilspointer.Int32(3)))
+				g.Expect(md.Spec.Replicas).To(Equal(ptr.To[int32](3)))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
 				// Check MachineDeployment annotations
 				g.Expect(md.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
+				// Check skip preflight annotation.
+				g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.MachineSetSkipPreflightChecksAnnotation, string(capiv1.MachineSetPreflightCheckAll)))
 
 				// Check MachineDeployment spec.
 				g.Expect(md.Spec.Strategy.Type).To(Equal(capiv1.MachineDeploymentStrategyType("RollingUpdate")))
@@ -1515,7 +1561,7 @@ func TestPause(t *testing.T) {
 		},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    k8sutilspointer.Int32(3),
+			Replicas:    ptr.To[int32](3),
 			Management: hyperv1.NodePoolManagement{
 				UpgradeType: hyperv1.UpgradeTypeReplace,
 			},

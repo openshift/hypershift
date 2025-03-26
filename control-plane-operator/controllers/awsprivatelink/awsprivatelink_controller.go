@@ -5,12 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/go-logr/logr"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	supportawsutil "github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
@@ -38,13 +47,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	supportawsutil "github.com/openshift/hypershift/support/awsutil"
-	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
+	"github.com/go-logr/logr"
 )
 
 const (
@@ -111,10 +114,13 @@ func (r *PrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.
 	}); err != nil {
 		return err
 	}
-	mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+	err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
 		informerFactory.Start(ctx.Done())
 		return nil
 	}))
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -186,16 +192,122 @@ const (
 // the existence of AWS Endpoints for it in the guest cluster infrastructure.
 type AWSEndpointServiceReconciler struct {
 	client.Client
-	ec2Client     ec2iface.EC2API
-	route53Client route53iface.Route53API
 	upsert.CreateOrUpdateProvider
+	awsClientBuilder clientBuilder
+}
+
+type clientBuilder struct {
+	mu                             sync.Mutex
+	initialized                    bool
+	assumeSharedVPCEndpointRoleARN string
+	assumeSharedVPCRoute53RoleARN  string
+	localZoneID                    string
+}
+
+func (b *clientBuilder) awsSession() (*session.Session, error) {
+	s, err := session.NewSession()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AWS session: %w", err)
+	}
+	s.Handlers.Build.PushBackNamed(request.NamedHandler{
+		Name: "openshift.io/hypershift",
+		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "control-plane-operator"),
+	})
+	return s, nil
+}
+
+func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		return nil, nil, errors.New("clients not initialized")
+	}
+
+	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
+	awsEndpointSession, err := b.awsSession()
+	if err != nil {
+		return nil, nil, err
+	}
+	awsRoute53Session, err := b.awsSession()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// When sharedVPC we need assume these additional roles
+	if b.assumeSharedVPCEndpointRoleARN != "" {
+		awsEndpointSession.Config.WithCredentials(stscreds.NewCredentials(awsEndpointSession, b.assumeSharedVPCEndpointRoleARN))
+	}
+	if b.assumeSharedVPCRoute53RoleARN != "" {
+		awsRoute53Session.Config.WithCredentials(stscreds.NewCredentials(awsRoute53Session, b.assumeSharedVPCRoute53RoleARN))
+	}
+
+	awsConfig := aws.NewConfig()
+	ec2Client := ec2.New(awsEndpointSession, awsConfig)
+
+	route53Config := aws.NewConfig()
+	route53Client := route53.New(awsRoute53Session, route53Config)
+
+	return ec2Client, route53Client, nil
+}
+
+func (b *clientBuilder) localHostedZoneID() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.localZoneID
+}
+
+func (b *clientBuilder) initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if !b.initialized {
+		b.setFromHCP(hcp)
+		b.initialized = true
+	} else {
+		b.warnOnDifferentValues(log, hcp)
+		b.setFromHCP(hcp)
+	}
+}
+
+func (b *clientBuilder) warnOnDifferentValues(log logr.Logger, hcp *hyperv1.HostedControlPlane) {
+	newEndpointRoleARN := ""
+	newRoute53RoleARN := ""
+	newLocalZoneID := ""
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+		newEndpointRoleARN = hcp.Spec.Platform.AWS.SharedVPC.RolesRef.ControlPlaneARN
+		newRoute53RoleARN = hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN
+		newLocalZoneID = hcp.Spec.Platform.AWS.SharedVPC.LocalZoneID
+	}
+	if b.assumeSharedVPCEndpointRoleARN != newEndpointRoleARN {
+		log.Info("WARNING: Setting different value for the endpoint role ARN", "previous", b.assumeSharedVPCEndpointRoleARN, "new", newEndpointRoleARN)
+	}
+	if b.assumeSharedVPCRoute53RoleARN != newRoute53RoleARN {
+		log.Info("WARNING: Setting different value for the route53 role ARN", "previous", b.assumeSharedVPCRoute53RoleARN, "new", newRoute53RoleARN)
+	}
+	if b.localZoneID != newLocalZoneID {
+		log.Info("WARNING: Setting different value for local zone ID", "previous", b.localZoneID, "new", newLocalZoneID)
+	}
+}
+
+func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.SharedVPC != nil {
+		b.assumeSharedVPCEndpointRoleARN = hcp.Spec.Platform.AWS.SharedVPC.RolesRef.ControlPlaneARN
+		b.assumeSharedVPCRoute53RoleARN = hcp.Spec.Platform.AWS.SharedVPC.RolesRef.IngressARN
+		b.localZoneID = hcp.Spec.Platform.AWS.SharedVPC.LocalZoneID
+	} else {
+		b.assumeSharedVPCEndpointRoleARN = ""
+		b.assumeSharedVPCRoute53RoleARN = ""
+		b.localZoneID = ""
+	}
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		WithOptions(controller.Options{
-			RateLimiter:             workqueue.NewItemExponentialFailureRateLimiter(3*time.Second, 30*time.Second),
+			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
 		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
@@ -205,20 +317,11 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	}
 	r.Client = mgr.GetClient()
 
-	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
-	awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
-	awsConfig := aws.NewConfig()
-	r.ec2Client = ec2.New(awsSession, awsConfig)
-	route53Config := aws.NewConfig()
-	// Hardcode region for route53 config
-	route53Config.Region = aws.String("us-east-1")
-	r.route53Client = route53.New(awsSession, route53Config)
-
 	return nil
 }
 
-func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.RateLimitingInterface) {
-	return func(ctx context.Context, e event.UpdateEvent, q workqueue.RateLimitingInterface) {
+func (r *AWSEndpointServiceReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
 		logger := mgr.GetLogger()
 		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
 		if !isOk {
@@ -275,12 +378,18 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			// If we previously removed our finalizer, don't delete again and return early
 			return ctrl.Result{}, nil
 		}
-		completed, err := r.delete(ctx, awsEndpointService, r.ec2Client, r.route53Client)
+
+		ec2Client, route53Client, err := r.awsClientBuilder.getClients()
 		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-		}
-		if !completed {
-			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
+		} else {
+			completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+			}
+			if !completed {
+				return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+			}
 		}
 		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
 			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
@@ -328,9 +437,15 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: duration}, nil
 	}
 
+	r.awsClientBuilder.initializeWithHCP(log, hcp)
+	ec2Client, route53Client, err := r.awsClientBuilder.getClients()
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile the AWSEndpointService
 	oldStatus := awsEndpointService.Status.DeepCopy()
-	if err := r.reconcileAWSEndpointService(ctx, awsEndpointService, hcp, r.ec2Client, r.route53Client); err != nil {
+	if err := r.reconcileAWSEndpointService(ctx, awsEndpointService, hcp, ec2Client, route53Client); err != nil {
 		meta.SetStatusCondition(&awsEndpointService.Status.Conditions, metav1.Condition{
 			Type:    string(hyperv1.AWSEndpointAvailable),
 			Status:  metav1.ConditionFalse,
@@ -358,7 +473,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
-	log.Info("reconcilation complete")
+	log.Info("reconciliation complete")
 	// always requeue to catch and report out of band changes in AWS
 	// NOTICE: if the RequeueAfter interval is short enough, it could result in hitting some AWS request limits.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
@@ -409,7 +524,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		return nil
 	}
 
-	if err := r.reconcileAWSEndpointSecurityGroup(ctx, awsEndpointService, hcp); err != nil {
+	if err := r.reconcileAWSEndpointSecurityGroup(ctx, ec2Client, awsEndpointService, hcp); err != nil {
 		return err
 	}
 
@@ -421,6 +536,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			VpcEndpointIds: []*string{aws.String(endpointID)},
 		})
 		if err != nil {
+			log.Error(err, "failed to describe vpc endpoint", "endpointID", endpointID)
 			if awsErr, ok := err.(awserr.Error); ok {
 				if awsErr.Code() == "InvalidVpcEndpointId.NotFound" {
 					// clear the EndpointID so a new Endpoint is created on the requeue
@@ -438,6 +554,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 			if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
 				VpcEndpointIds: []*string{output.VpcEndpoints[0].VpcEndpointId},
 			}); err != nil {
+				log.Error(err, "failed to delete vpc endpoint", "id", output.VpcEndpoints[0].VpcEndpointId)
 				return fmt.Errorf("error deleting AWSEndpoint: %w", err)
 			}
 
@@ -473,6 +590,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				AddSecurityGroupIds: addedSG,
 			})
 			if err != nil {
+				log.Error(err, "failed to modify vpc endpoint", "id", endpointID, "addSubnets", addedSubnet, "removeSubnets", removedSubnet, "addSG", addedSG)
 				msg := err.Error()
 				if awsErr, ok := err.(awserr.Error); ok {
 					msg = awsErr.Code()
@@ -490,7 +608,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 		}
 
 		// Verify there is not already an Endpoint that we can adopt
-		// This can happen if we have a stale status on AWSEndpointService or encoutered
+		// This can happen if we have a stale status on AWSEndpointService or encountered
 		// an error updating the AWSEndpointService on the previous reconcile
 		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
 			Filters: apiTagToEC2Filter(awsEndpointService.Name, hcp.Spec.Platform.AWS.ResourceTags),
@@ -509,6 +627,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 				if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
 					VpcEndpointIds: []*string{output.VpcEndpoints[0].VpcEndpointId},
 				}); err != nil {
+					log.Error(err, "failed to delete vpc endpoint", "id", output.VpcEndpoints[0].VpcEndpointId)
 					return fmt.Errorf("error deleting AWSEndpoint: %w", err)
 				}
 
@@ -572,9 +691,14 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	}
 
 	zoneName := zoneName(hcp.Name)
-	zoneID, err := lookupZoneID(ctx, route53Client, zoneName)
-	if err != nil {
-		return err
+	var zoneID string
+	if r.awsClientBuilder.localHostedZoneID() == "" {
+		zoneID, err = lookupZoneID(ctx, route53Client, zoneName)
+		if err != nil {
+			return err
+		}
+	} else {
+		zoneID = r.awsClientBuilder.localHostedZoneID()
 	}
 
 	var fqdns []string
@@ -637,14 +761,15 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	return nil
 }
 
-func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) error {
+func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) error {
 	var sgID string
 	var sg *ec2.SecurityGroup
 
 	log := ctrl.LoggerFrom(ctx)
 	var err error
-	sg, err = supportawsutil.GetSecurityGroup(r.ec2Client, vpcEndpointSecurityGroupFilter(hcp.Spec.InfraID, awsEndpointService.Name))
+	sg, err = supportawsutil.GetSecurityGroup(ec2Client, vpcEndpointSecurityGroupFilter(hcp.Spec.InfraID, awsEndpointService.Name))
 	if err != nil {
+		log.Error(err, "failed to get security group for endpoint", "infraID", hcp.Spec.InfraID, "name", awsEndpointService.Name)
 		return err
 	}
 	if sg != nil {
@@ -656,7 +781,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 	}
 	if sgID == "" {
 		var err error
-		if sg, err = r.createSecurityGroup(ctx, awsEndpointService, hcp); err != nil {
+		if sg, err = r.createSecurityGroup(ctx, ec2Client, awsEndpointService, hcp); err != nil {
 			return err
 		}
 		sgID = aws.StringValue(sg.GroupId)
@@ -669,11 +794,12 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 	ingressPermissions := supportawsutil.VPCEndpointSecurityGroupRules(machineCIDRs, vpcEndpointPort(awsEndpointService))
 	missingPermissions := diffPermissions(sg.IpPermissions, ingressPermissions)
 	if len(missingPermissions) > 0 {
-		if _, err = r.ec2Client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+		if _, err = ec2Client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId:       aws.String(sgID),
 			IpPermissions: ingressPermissions,
 		}); err != nil {
 			if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
+				log.Error(err, "failed to set security group ingress rules", "id", sgID)
 				return fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
 			}
 			log.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
@@ -694,7 +820,7 @@ func vpcEndpointPort(awsEndpointService *hyperv1.AWSEndpointService) int64 {
 	}
 }
 
-func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) (*ec2.SecurityGroup, error) {
+func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane) (*ec2.SecurityGroup, error) {
 	log := ctrl.LoggerFrom(ctx)
 	tagKeys := sets.NewString()
 	var tags []*ec2.Tag
@@ -719,7 +845,7 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 			Value: aws.String(name),
 		})
 	}
-	createSGResult, err := r.ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
+	createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 		GroupName:   aws.String(name),
 		Description: aws.String("VPC endpoint security group"),
 		VpcId:       aws.String(hcp.Spec.Platform.AWS.CloudProviderConfig.VPC),
@@ -731,6 +857,7 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 		},
 	})
 	if err != nil {
+		log.Error(err, "failed to create security group for aws endpoint", "name", name, "vpc", hcp.Spec.Platform.AWS.CloudProviderConfig.VPC)
 		return nil, fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
 	}
 	sgID := aws.StringValue(createSGResult.GroupId)
@@ -739,14 +866,17 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 	describeSGInput := &ec2.DescribeSecurityGroupsInput{
 		GroupIds: []*string{aws.String(sgID)},
 	}
-	if err = r.ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-		return nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
+	if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
+		log.Error(err, "failed to wait for security group to exist", "id", sgID)
+		return nil, fmt.Errorf("failed to wait for security group to exist (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 	}
-	sg, err := supportawsutil.GetSecurityGroupById(r.ec2Client, sgID)
+	sg, err := supportawsutil.GetSecurityGroupById(ec2Client, sgID)
 	if err != nil {
+		log.Error(err, "failed to fetch security group by ID", "id", sgID)
 		return nil, err
 	}
 	if sg == nil {
+		log.Error(errors.New("security group not found"), "id", sgID)
 		return nil, fmt.Errorf("failed to fetch security group (id: %s)", sgID)
 	}
 	log.Info("created security group", "id", sgID)
@@ -885,7 +1015,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	}
 
 	if awsEndpointService.Status.SecurityGroupID != "" {
-		if err := r.deleteSecurityGroup(ctx, awsEndpointService.Status.SecurityGroupID); err != nil {
+		if err := r.deleteSecurityGroup(ctx, ec2Client, awsEndpointService.Status.SecurityGroupID); err != nil {
 			return false, err
 		}
 		log.Info("security group deleted", "id", awsEndpointService.Status.SecurityGroupID)
@@ -921,9 +1051,9 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	return true, nil
 }
 
-func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, sgID string) error {
+func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, sgID string) error {
 	log := ctrl.LoggerFrom(ctx)
-	describeSGResult, err := r.ec2Client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(sgID)}})
+	describeSGResult, err := ec2Client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(sgID)}})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
 			return nil
@@ -936,7 +1066,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	sg := describeSGResult.SecurityGroups[0]
 
 	if len(sg.IpPermissions) > 0 {
-		if _, err = r.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
+		if _, err = ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
@@ -947,7 +1077,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	}
 
 	if len(sg.IpPermissionsEgress) > 0 {
-		if _, err = r.ec2Client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
+		if _, err = ec2Client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
@@ -956,7 +1086,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 		}
 	}
 
-	if _, err = r.ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
+	if _, err = ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
 		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))

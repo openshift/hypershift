@@ -5,16 +5,19 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/support/upsert"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
@@ -27,7 +30,7 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 			in:   &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "foo"}},
 		},
 		{
-			name: "Label set with wrong value gets overriden",
+			name: "Label set with wrong value gets overridden",
 			in: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 				Name:   "foo",
 				Labels: map[string]string{CacheLabelSelectorKey: "invalid"},

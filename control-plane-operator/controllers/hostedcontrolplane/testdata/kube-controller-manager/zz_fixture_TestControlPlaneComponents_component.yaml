@@ -1,0 +1,37 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: kube-controller-manager
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: kube-controller-manager Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: kube-controller-manager Deployment Progressing condition not found
+    reason: NotFound
+    status: "False"
+    type: Progressing
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: kcm-config
+  - group: ""
+    kind: Secret
+    name: kube-controller-manager-kubeconfig
+  - group: ""
+    kind: ConfigMap
+    name: recycler-config
+  - group: ""
+    kind: Service
+    name: kube-controller-manager
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+    name: kube-controller-manager
+  version: 4.18.0

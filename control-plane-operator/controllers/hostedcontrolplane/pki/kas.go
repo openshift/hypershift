@@ -4,17 +4,16 @@ import (
 	"fmt"
 	"net"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/tools/clientcmd"
-
-	"k8s.io/apiserver/pkg/authentication/serviceaccount"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apiserver/pkg/authentication/serviceaccount"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	utilsnet "k8s.io/utils/net"
 )
 
@@ -102,7 +101,7 @@ func ReconcileSystemAdminClientCertSecret(secret, ca *corev1.Secret, ownerRef co
 }
 
 func ReconcileHCCOClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
-	return reconcileSignedCert(secret, ca, ownerRef, fmt.Sprintf("system:%s", config.HCCOUser), []string{"kubernetes"}, X509UsageClientAuth)
+	return reconcileSignedCert(secret, ca, ownerRef, fmt.Sprintf("system:%s", config.HCCOUser), []string{"kubernetes", "system:serviceaccounts:openshift"}, X509UsageClientAuth)
 }
 
 func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {

@@ -4,19 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
-	"github.com/google/go-cmp/cmp"
 	. "github.com/onsi/gomega"
-	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
-	routev1client "github.com/openshift/client-go/route/clientset/versioned"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
@@ -28,10 +23,15 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	configv1client "github.com/openshift/client-go/config/clientset/versioned"
+	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
-	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/model"
-	"go.uber.org/zap/zaptest"
+
+	"github.com/aws/aws-sdk-go/service/route53"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -46,13 +46,20 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
-	k8s "k8s.io/client-go/kubernetes"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"github.com/google/go-cmp/cmp"
+	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	"github.com/prometheus/common/model"
+	"go.uber.org/zap/zaptest"
 )
 
 var expectedKasManagementComponents = []string{
@@ -73,6 +80,8 @@ var expectedKasManagementComponents = []string{
 	"cloud-controller-manager",
 	"olm-collect-profiles",
 	"aws-ebs-csi-driver-operator",
+	"karpenter",
+	"karpenter-operator",
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -154,7 +163,7 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 					Namespace: hostedCluster.Namespace,
 					Name:      ptr.Deref(hostedCluster.Status.KubeConfig, corev1.LocalObjectReference{}).Name,
 				}
-				return hostedCluster.Status.KubeConfig != nil, fmt.Sprintf("expected a kubeconfig reference in status"), nil
+				return hostedCluster.Status.KubeConfig != nil, "expected a kubeconfig reference in status", nil
 			},
 		},
 	)
@@ -194,7 +203,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	if IsLessThan(Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
-		err = wait.PollImmediateWithContext(ctx, 35*time.Second, 30*time.Minute, func(ctx context.Context) (done bool, err error) {
+		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 			if err != nil {
 				t.Logf("attempt to connect failed: %s", err)
@@ -202,11 +211,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 			}
 			return true, nil
 		})
+		if err != nil {
+			t.Fatalf("failed to connect to guest cluster: %v", err)
+		}
 	} else {
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(30*time.Minute),
+			}, nil, WithTimeout(10*time.Minute),
 		)
 
 	}
@@ -252,7 +264,39 @@ func WaitForGuestKubeconfigHostUpdate(t *testing.T, ctx context.Context, client 
 		return true, nil
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host update")
-	t.Logf("Guest kubeconfig host switched from %s to %s", oldHost, newHost)
+	t.Logf("kubeconfig host switched from %s to %s", oldHost, newHost)
+}
+
+func WaitForGuestKubeconfigHostResolutionUpdate(t *testing.T, ctx context.Context, uri string, endpointAccess hyperv1.AWSEndpointAccessType) {
+	g := NewWithT(t)
+	visibility := "public"
+	if endpointAccess == hyperv1.Private {
+		visibility = "private"
+	}
+	t.Logf("Waiting for guest kubeconfig host to resolve to %s address", visibility)
+	err := wait.PollUntilContextTimeout(ctx, 15*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		host := strings.TrimPrefix(uri, "https://")
+		host = strings.Split(host, ":")[0]
+		ips, err := net.LookupIP(host)
+		if err != nil {
+			t.Logf("failed to resolve guest kubeconfig host: %v", err)
+			return false, nil
+		}
+		ip := ips[0].String()
+		if endpointAccess == hyperv1.Private {
+			if strings.HasPrefix(ip, "10.") {
+				t.Logf("kubeconfig host now resolves to private address")
+				return true, nil
+			}
+		} else {
+			if !strings.HasPrefix(ip, "10.") {
+				t.Logf("kubeconfig host now resolves to public address")
+				return true, nil
+			}
+		}
+		return false, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for guest kubeconfig host resolution to update")
 }
 
 func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType) []corev1.Node {
@@ -261,6 +305,42 @@ func WaitForNReadyNodes(t *testing.T, ctx context.Context, client crclient.Clien
 
 func WaitForReadyNodesByNodePool(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType, opts ...NodePoolPollOption) []corev1.Node {
 	return WaitForNReadyNodesWithOptions(t, ctx, client, *np.Spec.Replicas, platform, fmt.Sprintf("for NodePool %s/%s", np.Namespace, np.Name), append(opts, WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: np.Name})}))...)
+}
+
+func WaitForReadyNodesByLabels(t *testing.T, ctx context.Context, client crclient.Client, platform hyperv1.PlatformType, replicas int32, nodeLabels map[string]string) []corev1.Node {
+	return WaitForNReadyNodesWithOptions(t, ctx, client, replicas, platform, "", WithClientOptions(crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(nodeLabels))}))
+}
+
+func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
+	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to start config update", np.Namespace, np.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			nodePool := &hyperv1.NodePool{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
+			return nodePool, err
+		},
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
+				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		WithTimeout(1*time.Minute),
+	)
+	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			nodePool := &hyperv1.NodePool{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(np), nodePool)
+			return nodePool, err
+		},
+		[]Predicate[*hyperv1.NodePool]{
+			ConditionPredicate[*hyperv1.NodePool](Condition{
+				Type:   hyperv1.NodePoolUpdatingConfigConditionType,
+				Status: metav1.ConditionFalse,
+			}),
+		},
+		WithTimeout(20*time.Minute),
+	)
 }
 
 type NodePoolPollOptions struct {
@@ -342,8 +422,13 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
-	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout image %s", hostedCluster.Namespace, hostedCluster.Name, image),
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	var lastVersionCompletionTime *metav1.Time
+	if hostedCluster.Status.Version != nil &&
+		len(hostedCluster.Status.Version.History) > 0 {
+		lastVersionCompletionTime = hostedCluster.Status.Version.History[0].CompletionTime
+	}
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
@@ -359,11 +444,13 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 				Status: metav1.ConditionFalse,
 			}),
 			func(hostedCluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
-				if wanted, got := image, ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).Desired.Image; wanted != got {
-					return false, fmt.Sprintf("wanted HostedCluster to desire image %s, got %s", wanted, got), nil
-				}
 				if len(ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).History) == 0 {
 					return false, "HostedCluster has no version history", nil
+				}
+				if lastVersionCompletionTime != nil &&
+					hostedCluster.Status.Version.History[0].CompletionTime != nil &&
+					lastVersionCompletionTime.Equal(hostedCluster.Status.Version.History[0].CompletionTime) {
+					return false, "HostedCluster version history has not been updated yet", nil
 				}
 				if wanted, got := hostedCluster.Status.Version.Desired.Image, hostedCluster.Status.Version.History[0].Image; wanted != got {
 					return false, fmt.Sprintf("desired image %s doesn't match most recent image in history %s", wanted, got), nil
@@ -371,7 +458,7 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 				if wanted, got := configv1.CompletedUpdate, hostedCluster.Status.Version.History[0].State; wanted != got {
 					return false, fmt.Sprintf("wanted most recent version history to have state %s, has state %s", wanted, got), nil
 				}
-				return true, fmt.Sprintf("image %s rolled out", image), nil
+				return true, "cluster rolled out", nil
 			},
 		},
 		WithTimeout(30*time.Minute),
@@ -426,6 +513,7 @@ func WaitForNodePoolDesiredNodes(t *testing.T, ctx context.Context, client crcli
 
 func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
+		g := NewWithT(t)
 
 		var crashToleration int32
 
@@ -459,6 +547,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			crashToleration = 0
 		}
 
+		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestClient := kubeclient.NewForConfigOrDie(guestConfig)
+
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var podList corev1.PodList
@@ -466,6 +559,10 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
+			// TODO: Figure out why Karpenter needs restaring some times https://issues.redhat.com/browse/HOSTEDCP-2254.
+			if strings.HasPrefix(pod.Name, "karpenter") {
+				continue
+			}
 			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
@@ -487,17 +584,48 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 				continue
 			}
 
+			// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+			if strings.HasPrefix(pod.Name, "openstack-manila-csi-controllerplugin-") {
+				continue
+			}
+
 			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
 				continue
 			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
+					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name) {
+						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
+						continue
+					}
 					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
 				}
 			}
 		}
 	})
+}
+
+func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string) bool {
+	podLogOpts := corev1.PodLogOptions{
+		Container: containerName,
+		Previous:  true,
+		TailLines: ptr.To[int64](10),
+	}
+	req := guestClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
+	podLogs, err := req.Stream(ctx)
+	if err != nil {
+		return false
+	}
+	defer podLogs.Close()
+
+	buf := new(bytes.Buffer)
+	_, err = buf.ReadFrom(podLogs)
+	if err != nil {
+		return false
+	}
+
+	return strings.Contains(buf.String(), "leader election lost")
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -512,6 +640,23 @@ func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, clien
 			if event.Reason == "FailedScheduling" || event.Reason == "Preempted" {
 				// "error: " is to trigger prow syntax highlight in prow
 				t.Logf("error: non-fatal, observed FailedScheduling or Preempted event: %s", event.Message)
+			}
+		}
+	})
+}
+
+func EnsureNoRapidDeploymentRollouts(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	const maxAllowedGeneration = 10
+	t.Run("EnsureNoRapidDeploymentRollouts", func(t *testing.T) {
+		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		var deploymentList appsv1.DeploymentList
+		if err := client.List(ctx, &deploymentList, crclient.InNamespace(namespace)); err != nil {
+			t.Fatalf("failed to list deployments in namespace %s: %v", namespace, err)
+		}
+		for _, deployment := range deploymentList.Items {
+			if deployment.Generation > maxAllowedGeneration {
+				t.Errorf("Rapidly updating deployment detected! Deployment %s exceeds the max allowed generation of %d", deployment.Name, maxAllowedGeneration)
 			}
 		}
 	})
@@ -638,6 +783,7 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 
 func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
+		AtLeast(t, Version419)
 		testNamespaceName := "e2e-psa-check"
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -757,6 +903,31 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 	})
 }
 
+// EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
+// This is only supported on 4.18+ when the default runtime is changed to crun.
+func EnsureNodesRuntime(t *testing.T, nodes []corev1.Node) {
+	AtLeast(t, Version418)
+	g := NewWithT(t)
+
+	validHandlers := map[string]bool{
+		"runc": false,
+		"crun": false,
+	}
+
+	for _, node := range nodes {
+		g.Expect(node.Status.RuntimeHandlers).NotTo(BeNil(), "node %s is missing runtime handlers", node.Name)
+		for _, handler := range node.Status.RuntimeHandlers {
+			if _, ok := validHandlers[handler.Name]; ok {
+				validHandlers[handler.Name] = true
+			}
+		}
+
+		for handler, present := range validHandlers {
+			g.Expect(present).To(BeTrue(), "node %s is missing runtime handler %s", node.Name, handler)
+		}
+	}
+}
+
 func getComponentName(pod *corev1.Pod) string {
 	if pod.Labels["app"] != "" {
 		return pod.Labels["app"]
@@ -841,56 +1012,6 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 	return stdOut.String(), err
 }
 
-func getPrometheusToken(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
-	if secretName == "" {
-		return createPrometheusToken(ctx)
-	} else {
-		return getTokenFromSecret(ctx, secretName, client)
-	}
-}
-
-func createPrometheusToken(ctx context.Context) ([]byte, error) {
-	cli, err := createK8sClient()
-	if err != nil {
-		return nil, err
-	}
-
-	tokenReq, err := cli.CoreV1().ServiceAccounts("openshift-monitoring").CreateToken(
-		ctx,
-		"prometheus-k8s",
-		&authenticationv1.TokenRequest{
-			Spec: authenticationv1.TokenRequestSpec{
-				// Avoid specifying any audiences so that the token will be
-				// issued for the default audience of the issuer.
-			},
-		},
-		metav1.CreateOptions{},
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create token; %w", err)
-	}
-
-	return []byte(tokenReq.Status.Token), nil
-}
-
-func getTokenFromSecret(ctx context.Context, secretName string, client crclient.Client) ([]byte, error) {
-	tokenSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: "hypershift",
-		},
-	}
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
-		return nil, fmt.Errorf("failed to get hypershift operator token secret: %w", err)
-	}
-	token, ok := tokenSecret.Data["token"]
-	if !ok {
-		return nil, fmt.Errorf("token secret did not contain a token value")
-	}
-	return token, nil
-}
-
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureHCPContainersHaveResourceRequests", func(t *testing.T) {
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -932,6 +1053,30 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
+
+		err = UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+				obj.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+			}
+			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+				obj.Spec.ControllerAvailabilityPolicy = hyperv1.HighlyAvailable
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
+	})
+
+	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
+		AtLeast(t, Version419)
+		g := NewWithT(t)
+
+		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			obj.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+			}
+		})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
 	})
 }
 
@@ -1010,20 +1155,6 @@ func ensureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedClus
 	if !strings.Contains(out.String(), expectedPrefix) {
 		t.Errorf("secret is not encrypted using kms")
 	}
-}
-
-func createK8sClient() (*k8s.Clientset, error) {
-	config, err := GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
-	}
-
-	cli, err := k8s.NewForConfig(config)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
-	}
-
-	return cli, nil
 }
 
 func NewLogr(t *testing.T) logr.Logger {
@@ -1107,30 +1238,38 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
-			"cloud-controller-manager":         "app",
-			"cloud-credential-operator":        "app",
-			"aws-ebs-csi-driver-controller":    "app",
-			"capi-provider-controller-manager": "app",
-			"cloud-network-config-controller":  "app",
-			"cluster-network-operator":         "app",
-			"cluster-version-operator":         "app",
-			"control-plane-operator":           "app",
-			"ignition-server":                  "app",
-			"ingress-operator":                 "app",
-			"kube-apiserver":                   "app",
-			"kube-controller-manager":          "app",
-			"kube-scheduler":                   "app",
-			"multus-admission-controller":      "app",
-			"oauth-openshift":                  "app",
-			"openshift-apiserver":              "app",
-			"openshift-oauth-apiserver":        "app",
-			"packageserver":                    "app",
-			"ovnkube-master":                   "app",
-			"kubevirt-csi-driver":              "app",
-			"cluster-image-registry-operator":  "name",
-			"virt-launcher":                    "kubevirt.io",
-			"azure-disk-csi-driver-controller": "app",
-			"azure-file-csi-driver-controller": "app",
+			"cloud-controller-manager":               "app",
+			"cloud-credential-operator":              "app",
+			"aws-ebs-csi-driver-controller":          "app",
+			"capi-provider-controller-manager":       "app",
+			"cloud-network-config-controller":        "app",
+			"cluster-network-operator":               "app",
+			"cluster-version-operator":               "app",
+			"control-plane-operator":                 "app",
+			"ignition-server":                        "app",
+			"ingress-operator":                       "app",
+			"kube-apiserver":                         "app",
+			"kube-controller-manager":                "app",
+			"kube-scheduler":                         "app",
+			"multus-admission-controller":            "app",
+			"oauth-openshift":                        "app",
+			"openshift-apiserver":                    "app",
+			"openshift-oauth-apiserver":              "app",
+			"packageserver":                          "app",
+			"ovnkube-master":                         "app",
+			"kubevirt-csi-driver":                    "app",
+			"cluster-image-registry-operator":        "name",
+			"virt-launcher":                          "kubevirt.io",
+			"azure-disk-csi-driver-controller":       "app",
+			"azure-file-csi-driver-controller":       "app",
+			"certified-operators-catalog":            "app",
+			"community-operators-catalog":            "app",
+			"redhat-operators-catalog":               "app",
+			"redhat-marketplace-catalog":             "app",
+			"openstack-cinder-csi-driver-controller": "app",
+			"openstack-manila-csi":                   "app",
+			"karpenter":                              "app",
+			"karpenter-operator":                     "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1158,7 +1297,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			}
 
 			if labelKey == "" || labelValue == "" {
-				// if the Key/Value are empty we asume that the pod is not in the auditedList,
+				// if the Key/Value are empty we assume that the pod is not in the auditedList,
 				// if that's the case the annotation should not exists in that pod.
 				// Then continue to the next pod
 				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
@@ -1194,7 +1333,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			AdmissionReviewVersions: []string{"v1"},
 			Name:                    "etcd-client.example.com",
 			ClientConfig: admissionregistrationv1.WebhookClientConfig{
-				URL: pointer.String("https://etcd-client:2379"),
+				URL: ptr.To("https://etcd-client:2379"),
 			},
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
@@ -1234,51 +1373,33 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
 	t.Run("EnsureValidatingAdmissionPoliciesExists", func(t *testing.T) {
-		AtLeast(t, Version418)
-		t.Log("Waiting for ValidatingAdmissionPolicies to exist")
-		var expectedVAPCount int = 3
+		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
-		start := time.Now()
+		t.Log("Checking that all ValidatingAdmissionPolicies are present")
 		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
-		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-
-			if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
-				t.Logf("Failed to list ValidatingAdmissionPolicies: %v", err)
-				return false, nil
-			}
-
-			if len(validatingAdmissionPolicies.Items) == 0 {
-				t.Log("No ValidatingAdmissionPolicies found")
-				return false, nil
-			}
-
-			if len(validatingAdmissionPolicies.Items) == expectedVAPCount {
-				t.Logf("Found at least %d ValidatingAdmissionPolicies", expectedVAPCount)
-				return true, nil
-			}
-
-			return true, nil
-		})
-		duration := time.Since(start).Round(time.Second)
-		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait for ValidatingAdmissionPolicies to exist in %s: %v", duration, err))
-
-		for _, vap := range validatingAdmissionPolicies.Items {
-			switch vap.Name {
-			case hccokasvap.AdmissionPolicyNameConfig:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameConfig), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameConfig))
-			case hccokasvap.AdmissionPolicyNameMirror:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameMirror), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameMirror))
-			case hccokasvap.AdmissionPolicyNameICSP:
-				g.Expect(vap.Name).To(Equal(hccokasvap.AdmissionPolicyNameICSP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found in the list", hccokasvap.AdmissionPolicyNameICSP))
-			default:
-				t.Errorf("Unexpected ValidatingAdmissionPolicy %s found in the list", vap.Name)
-			}
+		if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
+			t.Errorf("Failed to list ValidatingAdmissionPolicies: %v", err)
 		}
-		g.Expect(expectedVAPCount).To(Equal(len(validatingAdmissionPolicies.Items)), fmt.Sprintf("Failed checking ValidatingAdmissionPolicies, there are %d VAP deployed and %d is expected", len(validatingAdmissionPolicies.Items), expectedVAPCount))
-		t.Logf("Successfully waited for ValidatingAdmissionPolicies to exist in %s", duration)
+		if len(validatingAdmissionPolicies.Items) == 0 {
+			t.Errorf("No ValidatingAdmissionPolicies found")
+		}
+		requiredVAPs := []string{
+			hccokasvap.AdmissionPolicyNameConfig,
+			hccokasvap.AdmissionPolicyNameMirror,
+			hccokasvap.AdmissionPolicyNameICSP,
+			hccokasvap.AdmissionPolicyNameInfra,
+			hccokasvap.AdmissionPolicyNameNTOMirroredConfigs,
+		}
+		presentVAPs := []string{}
+		for _, vap := range validatingAdmissionPolicies.Items {
+			presentVAPs = append(presentVAPs, vap.Name)
+		}
+		for _, requiredVAP := range requiredVAPs {
+			g.Expect(presentVAPs).To(ContainElement(requiredVAP), fmt.Sprintf("ValidatingAdmissionPolicy %s not found", requiredVAP))
+		}
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesCheckDeniedRequests", func(t *testing.T) {
-		AtLeast(t, Version418)
+		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
 		apiServer := &configv1.APIServer{
@@ -1403,7 +1524,6 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 
 func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
 	t.Helper()
-	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
 
 	defaultIngressRouterService := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1413,7 +1533,7 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 	}
 
 	if err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 30*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-		getErr := guestClient.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressRouterService), defaultIngressRouterService)
+		getErr := client.Get(ctx, crclient.ObjectKeyFromObject(defaultIngressRouterService), defaultIngressRouterService)
 		if apierrors.IsNotFound(getErr) {
 			return false, nil
 		}
@@ -1501,12 +1621,17 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	g := NewWithT(t)
 
-	if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
-		createIngressRoute53Record(t, ctx, client, hostedCluster, clusterOpts)
-	}
-
 	// Sanity check the cluster by waiting for the nodes to report ready
 	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+
+	// Create Ingress Route53 Record for OpenStack clusters when AWS credentials are provided
+	if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform && clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
+		if clusterOpts.NodePoolReplicas > 0 {
+			createIngressRoute53Record(t, ctx, guestClient, hostedCluster, clusterOpts)
+		} else {
+			t.Logf("Skipping creating Ingress Route53 Record for HostedCluster %s as there are no worker nodes", hostedCluster.Name)
+		}
+	}
 
 	// Wait for Nodes to be Ready
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
@@ -1514,7 +1639,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster)
 	}
 
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -1557,7 +1682,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
-		WaitForImageRollout(t, ctx, client, hostedCluster, clusterOpts.ReleaseImage)
+		WaitForImageRollout(t, ctx, client, hostedCluster)
 	}
 
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -1590,6 +1715,13 @@ func validateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+	}
+	if IsLessThan(Version415) {
+		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+	}
+	if IsLessThan(Version417) {
 		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	}
 
@@ -1717,6 +1849,11 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 				continue
 			}
 
+			// SRO is being removed in 4.18, not worth correcting the tolerations on back releases
+			if pod.Labels["name"] == "shared-resource-csi-driver-operator" {
+				continue
+			}
+
 			// aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
 				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
@@ -1815,6 +1952,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"packageserver",
 			"csi-snapshot-webhook",
 			"csi-snapshot-controller",
+			"shared-resource-csi-driver-operator",
 		)
 
 		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
@@ -1824,6 +1962,15 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 				"azure-disk-csi-driver-operator",
 				"azure-file-csi-driver-controller",
 				"azure-file-csi-driver-operator",
+			)
+		}
+
+		if hostedCluster.Spec.Platform.Type == hyperv1.OpenStackPlatform {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
+				"openstack-cinder-csi-driver-controller",
+				"openstack-cinder-csi-driver-operator",
+				"openstack-manila-csi-controllerplugin",
+				"manila-csi-driver-operator",
 			)
 		}
 
@@ -1850,7 +1997,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			}
 			if !hasPrefix {
 				for _, volume := range pod.Spec.Volumes {
-					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"))
+					g.Expect(volume.Name).ToNot(HavePrefix("kube-api-access-"), "pod %s should not have kube-api-access-* volume mounted", pod.Name)
 				}
 			}
 		}
@@ -1881,4 +2028,129 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 			}, WithTimeout(30*time.Minute),
 		)
 	})
+}
+
+func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCustomLabels", func(t *testing.T) {
+		AtLeast(t, Version419)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		podList := &corev1.PodList{}
+		if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+			t.Fatalf("error listing hcp pods: %v", err)
+		}
+
+		var podsWithoutLabel []string
+		for _, pod := range podList.Items {
+			// Ensure that each pod in the HCP has the custom label
+			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
+				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
+			}
+		}
+
+		if len(podsWithoutLabel) > 0 {
+			t.Fatalf("expected pods [%s] to have label %s=%s", strings.Join(podsWithoutLabel, ", "), "hypershift-e2e-test-label", "test")
+		}
+	})
+}
+
+func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCustomTolerations", func(t *testing.T) {
+		AtLeast(t, Version419)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		podList := &corev1.PodList{}
+		if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+			t.Fatalf("error listing hcp pods: %v", err)
+		}
+
+		var podsWithoutToleration []string
+		for _, pod := range podList.Items {
+			// Ensure that each pod in the HCP has the custom toleration
+			found := false
+			for _, toleration := range pod.Spec.Tolerations {
+				if toleration.Key == "hypershift-e2e-test-toleration" &&
+					toleration.Operator == corev1.TolerationOpEqual &&
+					toleration.Value == "true" &&
+					toleration.Effect == corev1.TaintEffectNoSchedule {
+					found = true
+					break
+				}
+			}
+			if !found {
+				podsWithoutToleration = append(podsWithoutToleration, pod.Name)
+			}
+		}
+
+		if len(podsWithoutToleration) > 0 {
+			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
+		}
+	})
+}
+
+// EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled
+func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	AtLeast(t, Version419)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	// we know we're the only real clients for these test servers, so turn off client-side throttling
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+
+	cfgClient, err := configv1client.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	_, err = cfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"image-registry\" not found"))
+
+	guestClient, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+	// ensure existing service accounts don't have pull-secrets.
+	EventuallyObject(t, ctx, "Waiting for service account default/default to be provisioned...",
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, "expected default/default service account to exist, got nil", nil
+			},
+		},
+		WithInterval(10*time.Second), WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// create a namespace and ensure no pull-secrets are provisioned to
+	// the newly auto-created service accounts.
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"}}
+	ns, err = guestClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't create test namespace")
+
+	EventuallyObject(t, ctx, fmt.Sprintf("Waiting for service account default/%s to be provisioned...", ns.Name),
+		func(ctx context.Context) (*corev1.ServiceAccount, error) {
+			defaultSA, err := guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+			return defaultSA, err
+		},
+		[]Predicate[*corev1.ServiceAccount]{
+			func(serviceAccount *corev1.ServiceAccount) (done bool, reasons string, err error) {
+				return serviceAccount != nil, "expected default/default service account to exist, got nil", nil
+			},
+		},
+		WithInterval(10*time.Second), WithTimeout(2*time.Minute),
+	)
+
+	defaultSA, err = guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
+	g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
+
+	// ensure image-registry resources are not present
+	_, err = guestClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+
 	"github.com/spf13/cobra"
 )
 
@@ -66,9 +67,9 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.s3KeyPrefix, "s3-key-prefix", "", "S3 snapshot key prefix.")
 	cmd.Flags().StringToStringVar(&opts.s3ObjectTags, "s3-object-tags", opts.s3ObjectTags, "S3 snapshot object tags.")
 
-	cmd.MarkFlagRequired("etcd-endpoint")
-	cmd.MarkFlagRequired("s3-bucket-name")
-	cmd.MarkFlagRequired("s3-key-prefix")
+	_ = cmd.MarkFlagRequired("etcd-endpoint")
+	_ = cmd.MarkFlagRequired("s3-bucket-name")
+	_ = cmd.MarkFlagRequired("s3-key-prefix")
 
 	return cmd
 }
@@ -130,7 +131,7 @@ func uploadToS3(ctx context.Context, opts options) error {
 		return fmt.Errorf("failed to upload snapshot file: %w", err)
 	}
 
-	fmt.Printf("snapshot succesfully uploaded to %s\n", output.Location)
+	fmt.Printf("snapshot successfully uploaded to %s\n", output.Location)
 	return nil
 }
 

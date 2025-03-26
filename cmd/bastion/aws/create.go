@@ -7,20 +7,22 @@ import (
 	"regexp"
 	"time"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/go-logr/logr"
-	"github.com/openshift/hypershift/cmd/log"
-	"github.com/spf13/cobra"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
-	"github.com/openshift/hypershift/cmd/util"
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
 )
 
 type CreateBastionOpts struct {
@@ -54,16 +56,16 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "File with AWS credentials")
 	cmd.Flags().BoolVar(&opts.Wait, "wait", opts.Wait, "Wait for instance to be running")
 
-	cmd.MarkFlagRequired("aws-creds")
+	_ = cmd.MarkFlagRequired("aws-creds")
 
-	cmd.MarkFlagFilename("ssh-key-file")
-	cmd.MarkFlagFilename("aws-creds")
+	_ = cmd.MarkFlagFilename("ssh-key-file")
+	_ = cmd.MarkFlagFilename("aws-creds")
 
 	logger := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if err := opts.Validate(); err != nil {
 			logger.Error(err, "Invalid arguments")
-			cmd.Usage()
+			_ = cmd.Usage()
 			return nil
 		}
 
@@ -526,7 +528,7 @@ func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *
 					return false, nil
 				}
 			}
-			return false, fmt.Errorf("error waiting for intance running: %w", err)
+			return false, fmt.Errorf("error waiting for instance running: %w", err)
 		}
 		return true, nil
 	}, waitCtx.Done())

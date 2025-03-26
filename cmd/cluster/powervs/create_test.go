@@ -12,10 +12,12 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
-	"github.com/spf13/pflag"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"github.com/spf13/pflag"
 )
 
 func TestCreateCluster(t *testing.T) {
@@ -40,7 +42,6 @@ func TestCreateCluster(t *testing.T) {
 		DHCPSubnet:        "fakeDHCPSubnet",
 		DHCPSubnetID:      "fakeDHCPSubnetID",
 		DHCPID:            "fakeDHCPID",
-		CloudConnectionID: "fakeCloudConnectionID",
 		VPCName:           "fakeVPCName",
 		VPCID:             "fakeVPCID",
 		VPCCRN:            "fakeVPCCRN",
@@ -52,7 +53,6 @@ func TestCreateCluster(t *testing.T) {
 			VPCSubnet:           powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 1}, Status: "b"},
 			CloudInstance:       powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 2}, Status: "c"},
 			DHCPService:         powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 3}, Status: "d"},
-			CloudConnState:      powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 4}, Status: "e"},
 			TransitGatewayState: powervsinfra.CreateStat{Duration: powervsinfra.TimeDuration{Duration: 5}, Status: "f"},
 		},
 		Secrets: powervsinfra.Secrets{

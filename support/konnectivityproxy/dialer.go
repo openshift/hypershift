@@ -14,12 +14,14 @@ import (
 	"sync"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/armon/go-socks5"
 	"github.com/go-logr/logr"
 	"golang.org/x/net/proxy"
-	"k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // The ProxyDialer is the dialer used to connect via a Konnectivity proxy
@@ -265,7 +267,7 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 	}
 	log.V(4).Info("Host and port determined", "requestHost", requestHost, "requestPort", requestPort)
 	// return a dial direct function which respects any proxy environment settings
-	if p.connectDirectlyToCloudAPIs && p.IsCloudAPI(requestHost) {
+	if p.IsCloudAPI(requestHost) {
 		p.log.V(4).Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
 		return p.dialDirectWithProxy(network, requestAddress)
 	}
@@ -389,9 +391,17 @@ func (f *syncBool) set(valueToSet bool) {
 // IBMCLOUD: https://cloud.ibm.com/apidocs/iam-identity-token-api#endpoints
 func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 	log := p.log.WithName("konnectivityProxy.IsCloudAPI")
+	if !p.connectDirectlyToCloudAPIs {
+		// If not connecting directly to cloud APIs, we should not
+		// make any distinction between regular hostnames and cloud hostnames.
+		// This is used by both the dialer and the resolver in determining how
+		// to access cloud api hostnames when connectDirectlyToCloudAPIs is set
+		// to true.
+		return false
+	}
 	log.V(4).Info("Determining whether host is cloud API", "host", host)
 	if p.excludeCloudHosts.Has(host) {
-		log.V(4).Info("Host is in the list of exclude hosts, returnin false")
+		log.V(4).Info("Host is in the list of exclude hosts, returning false")
 		return false
 	}
 	if strings.HasSuffix(host, ".amazonaws.com") ||

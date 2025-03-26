@@ -4,8 +4,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 var (
@@ -58,7 +59,7 @@ func (c *ExpiringCache) Set(key string, value CacheValue) {
 	c.Lock()
 	defer c.Unlock()
 
-	// Renew expiring time everytime time we Set.
+	// Renew expiring time every time time we Set.
 	c.cache[key] = &entry{
 		value:  value,
 		expiry: time.Now().Add(c.ttl),

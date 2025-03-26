@@ -4,25 +4,31 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/backwardcompat"
+	"github.com/openshift/hypershift/support/globalconfig"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	supportutil "github.com/openshift/hypershift/support/util"
+
 	configv1 "github.com/openshift/api/config/v1"
 	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/operator/v1alpha1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	supportutil "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/yaml"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,7 +57,7 @@ type rolloutConfig struct {
 	// rawConfig is an mco consumable version of NodePool.spec.config, tuneConfig and any hypershift core machine config.
 	mcoRawConfig string
 	// TODO(alberto): consider let haproxyRawConfig be an implementation detail of ConfigGenerator.
-	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this intial refactor.
+	// For now, it's a required input to keep the haproxy business logic and files outside the scope of this initial refactor.
 	haproxyRawConfig string
 }
 
@@ -116,7 +122,7 @@ func (cg *ConfigGenerator) Hash() string {
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
 // This is only used to signal if a rollout is driven by a new release or by something else.
-// TODO(alberto): This was left unconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
+// TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
 	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
@@ -318,4 +324,31 @@ func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
 		return nil, err
 	}
 	return buff.Bytes(), nil
+}
+
+func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
+	// 1. - Reconcile conditions according to current state of the world.
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)
+
+	// NOTE: The image global config is not injected via userdata or NodePool ignition config.
+	// It is included directly by the ignition server.  However, we need to detect the change
+	// here to trigger a nodepool update.
+	image := globalconfig.ImageConfig()
+	globalconfig.ReconcileImageConfigFromHostedCluster(image, hcluster)
+
+	// Serialize proxy and image into a single string to use in the token secret hash.
+	globalConfigBytes := bytes.NewBuffer(nil)
+
+	enc := json.NewEncoder(globalConfigBytes)
+	if err := enc.Encode(proxy); err != nil {
+		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
+	}
+
+	if err := enc.Encode(image); err != nil {
+		return "", fmt.Errorf("failed to encode image global config: %w", err)
+	}
+
+	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
+	return backwardcompat.GetBackwardCompatibleConfigString(globalConfigBytes.String()), nil
 }

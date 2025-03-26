@@ -9,10 +9,11 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -20,11 +21,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 )
 
 const (
@@ -73,11 +73,11 @@ func newReconciler(
 			if !ok {
 				return false, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 			}
-			controlPlaneOperatorImage, err := hostedcluster.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
+			controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hostedCluster, releaseProvider, hypershiftOperatorImage, pullSecretBytes)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 			}
-			controlPlaneOperatorImageLabels, err := hostedcluster.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
+			controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hostedCluster, controlPlaneOperatorImage, pullSecretBytes, imageMetadataProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 			}

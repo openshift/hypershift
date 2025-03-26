@@ -8,10 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestReconcileSignedCertWithKeysAndAddresses(t *testing.T) {
