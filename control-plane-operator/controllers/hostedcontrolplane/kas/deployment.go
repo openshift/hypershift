@@ -41,6 +41,9 @@ var (
 		kasContainerBootstrap().Name: {
 			kasVolumeBootstrapManifests().Name: "/work",
 		},
+		kasContainerAuthBootstrap().Name: {
+			kasVolumeBootstrapManifests().Name: "/work",
+		},
 		kasContainerApplyBootstrap().Name: {
 			kasVolumeBootstrapManifests().Name:  "/work",
 			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
@@ -120,7 +123,6 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	oidcCA *corev1.LocalObjectReference,
 	cipherSuites []string,
 ) error {
-
 	secretEncryptionData := hcp.Spec.SecretEncryption
 	etcdMgmtType := hcp.Spec.Etcd.ManagementType
 	var additionalNoProxyCIDRS []string
@@ -180,6 +182,18 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	}
 	featureGateYaml := featureGateBuffer.String()
 
+	// Depending on whether or not the OpenShift OAuth server is enabled
+	// we may need to perform some additional bootstrapping logic to ensure the
+	// RoleBindingRestriction resource exists prior to starting up the KAS.
+	initContainers := []corev1.Container{
+		util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
+	}
+	if util.HCPOAuthEnabled(hcp) {
+		initContainers = append(initContainers,
+			util.BuildContainer(kasContainerAuthBootstrap(), buildKASContainerAuthBootstrap(images.ClusterAuthenticationOperator, payloadVersion, featureGateYaml)),
+		)
+	}
+
 	deployment.Spec.Template = corev1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
@@ -199,9 +213,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			TerminationGracePeriodSeconds: ptr.To[int64](95),
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  ptr.To(false),
-			InitContainers: []corev1.Container{
-				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
-			},
+			InitContainers:                initContainers,
 			Containers: []corev1.Container{
 				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
@@ -360,6 +372,33 @@ func buildKASContainerBootstrap(image, payloadVersion, featureGateYaml string) f
 	}
 }
 
+func kasContainerAuthBootstrap() *corev1.Container {
+	return &corev1.Container{
+		Name: "init-auth-bootstrap",
+	}
+}
+
+func buildKASContainerAuthBootstrap(image, payloadVersion, featureGateYaml string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		c.Args = []string{
+			"-c",
+			invokeAuthBootstrapRenderScript(volumeMounts.Path(kasContainerAuthBootstrap().Name, kasVolumeBootstrapManifests().Name), payloadVersion, featureGateYaml),
+		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
+		c.Image = image
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
 func kasContainerApplyBootstrap() *corev1.Container {
 	return &corev1.Container{
 		Name: "apply-bootstrap",
@@ -502,6 +541,7 @@ func kasVolumeLocalhostKubeconfig() *corev1.Volume {
 		Name: "localhost-kubeconfig",
 	}
 }
+
 func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -515,14 +555,17 @@ func kasVolumeWorkLogs() *corev1.Volume {
 		Name: "logs",
 	}
 }
+
 func buildKASVolumeWorkLogs(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
 }
+
 func kasVolumeConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "kas-config",
 	}
 }
+
 func buildKASVolumeConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -530,11 +573,13 @@ func buildKASVolumeConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASConfig("").Name
 }
+
 func kasVolumeAuthConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "auth-config",
 	}
 }
+
 func buildKASVolumeAuthConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -542,11 +587,13 @@ func buildKASVolumeAuthConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.AuthConfig("").Name
 }
+
 func kasVolumeAuditConfig() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "audit-config",
 	}
 }
+
 func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -554,27 +601,32 @@ func buildKASVolumeAuditConfig(v *corev1.Volume) {
 	v.ConfigMap.DefaultMode = ptr.To[int32](420)
 	v.ConfigMap.Name = manifests.KASAuditConfig("").Name
 }
+
 func kasVolumeKonnectivityCA() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "konnectivity-ca",
 	}
 }
+
 func buildKASVolumeKonnectivityCA(v *corev1.Volume) {
 	v.ConfigMap = &corev1.ConfigMapVolumeSource{
 		DefaultMode: ptr.To[int32](0640),
 	}
 	v.ConfigMap.Name = manifests.KonnectivityCAConfigMap("").Name
 }
+
 func kasVolumeServerCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "server-crt",
 	}
 }
+
 func kasVolumeServerPrivateCert() *corev1.Volume {
 	return &corev1.Volume{
 		Name: "server-private-crt",
 	}
 }
+
 func buildKASVolumeServerCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -596,6 +648,7 @@ func kasVolumeKubeletClientCA() *corev1.Volume {
 		Name: "kubelet-client-ca",
 	}
 }
+
 func buildKASVolumeKubeletClientCA(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -609,6 +662,7 @@ func kasVolumeKonnectivityClientCert() *corev1.Volume {
 		Name: "konnectivity-client",
 	}
 }
+
 func buildKASVolumeKonnectivityClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -650,6 +704,7 @@ func kasVolumeServiceAccountKey() *corev1.Volume {
 		Name: "svcacct-key",
 	}
 }
+
 func buildKASVolumeServiceAccountKey(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -677,6 +732,7 @@ func kasVolumeEtcdClientCert() *corev1.Volume {
 		Name: "etcd-client-crt",
 	}
 }
+
 func buildKASVolumeEtcdClientCert(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -701,6 +757,7 @@ func kasVolumeOauthMetadata() *corev1.Volume {
 		Name: "oauth-metadata",
 	}
 }
+
 func buildKASVolumeOauthMetadata(v *corev1.Volume) {
 	if v.ConfigMap == nil {
 		v.ConfigMap = &corev1.ConfigMapVolumeSource{}
@@ -714,6 +771,7 @@ func kasVolumeAuthTokenWebhookConfig() *corev1.Volume {
 		Name: "auth-token-webhook-config",
 	}
 }
+
 func buildKASVolumeAuthTokenWebhookConfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
@@ -760,8 +818,7 @@ func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec
 }
 
 func invokeBootstrapRenderScript(workDir, payloadVersion, featureGateYaml string) string {
-
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 cd /tmp
 mkdir input output manifests
 
@@ -797,8 +854,29 @@ cp /tmp/manifests/* %[1]s
 	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
 }
 
+func invokeAuthBootstrapRenderScript(workDir, payloadVersion, featureGateYaml string) string {
+	script := `#!/bin/sh
+cd /tmp
+mkdir input output manifests
+
+touch /tmp/manifests/99_feature-gate.yaml
+cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+%[3]s
+EOF
+
+/usr/bin/authentication-operator render \
+   --asset-output-dir /tmp/output \
+   --rendered-manifest-dir=/tmp/manifests \
+   --cluster-profile=ibm-cloud-managed \
+   --payload-version=%[2]s
+cp /tmp/output/manifests/* %[1]s
+cp /tmp/manifests/* %[1]s
+`
+	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
+}
+
 func applyBootstrapManifestsScript(workDir string) string {
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 function cleanup() {
 	pkill -P $$$
 	wait
@@ -828,7 +906,7 @@ done
 }
 
 func waitForEtcdScript(namespace string) string {
-	var script = `#!/bin/sh
+	script := `#!/bin/sh
 while ! nslookup etcd-client.%s.svc; do sleep 1; done
 `
 	return fmt.Sprintf(script, namespace)
@@ -1014,7 +1092,7 @@ func buildKonnectivityVolumeClusterCerts(v *corev1.Volume) {
 }
 
 func RenderAuditLogScript(auditLogFilePath string) string {
-	var script = `
+	script := `
 set -o errexit
 set -o nounset
 set -o pipefail
