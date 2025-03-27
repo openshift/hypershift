@@ -20,6 +20,7 @@ import (
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
+	kasbootstrap "github.com/openshift/hypershift/kas-bootstrap"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
@@ -78,6 +79,8 @@ func main() {
 func commandFor(name string) *cobra.Command {
 	var cmd *cobra.Command
 	switch name {
+	case "kas-bootstrap":
+		cmd = kasbootstrap.NewRunCommand()
 	case "ignition-server":
 		cmd = ignitionserver.NewStartCommand()
 	case "konnectivity-socks5-proxy":
@@ -140,7 +143,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
-
+	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	return cmd
 
 }
@@ -358,6 +361,7 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
+		cpoImage = os.Getenv("CONTROL_PLANE_OPERATOR_IMAGE")
 		cpoImage, err = lookupOperatorImage(cpoImage)
 		if err != nil {
 			setupLog.Error(err, "failed to find controlplane-operator-image")
