@@ -3988,3 +3988,87 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 		)
 	}
 }
+
+func TestReconcileCAPIManagerDeployment(t *testing.T) {
+	testCases := []struct {
+		name              string
+		version           string
+		expectFeatureGate bool
+	}{
+		{
+			name:              "version >= 4.19 should have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.19.0",
+			expectFeatureGate: true,
+		},
+		{
+			name:              "version <= 4.19 should not have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.18.0",
+			expectFeatureGate: false,
+		},
+	}
+
+	hcNamespace := "namespace"
+	cpNamespace := "cp-namespace"
+	image := "image"
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: hcNamespace,
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: cpNamespace,
+				},
+			}
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+			}
+
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{},
+					},
+				},
+			}
+
+			semVersion, err := semver.Parse(tc.version)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			err = reconcileCAPIManagerDeployment(deployment, hc, hcp, sa, image, true, &semVersion)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+			// Check for feature gate argument
+			gotFeatureGate := false
+			for _, arg := range deployment.Spec.Template.Spec.Containers[0].Args {
+				if arg == "--feature-gates=MachineSetPreflightChecks=false" {
+					gotFeatureGate = true
+					break
+				}
+			}
+
+			g.Expect(gotFeatureGate).To(Equal(tc.expectFeatureGate), "Feature gate presence doesn't match expectation")
+
+			// Verify other expected configurations
+			g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(sa.Name))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(image))
+		})
+	}
+}
