@@ -718,3 +718,41 @@ func ReconcileAzureFileCSIDriverNodeServiceAccountClusterRoleBinding(r *rbacv1.C
 	}
 	return nil
 }
+
+func ReconcileCloudNetworkConfigControllerServiceAccountClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{"events"},
+			Verbs: []string{
+				"get",
+				"create",
+			},
+		},
+	}
+	return nil
+}
+
+func ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: rbacv1.SchemeGroupVersion.Group,
+		Kind:     "ClusterRole",
+		Name:     "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			Kind:      "ServiceAccount",
+			Name:      "cloud-network-config-controller",
+			Namespace: "openshift-cloud-network-config-controller",
+		},
+	}
+	return nil
+}
