@@ -1221,7 +1221,7 @@ golang.org/x/net/internal/timeseries
 golang.org/x/net/proxy
 golang.org/x/net/trace
 golang.org/x/net/websocket
-# golang.org/x/oauth2 v0.20.0
+# golang.org/x/oauth2 v0.20.0 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
 ## explicit; go 1.18
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
@@ -2379,3 +2379,5 @@ sigs.k8s.io/yaml/goyaml.v3
 # k8s.io/mount-utils => k8s.io/mount-utils v0.29.3
 # github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
 # github.com/prometheus/common => github.com/prometheus/common v0.45.0
+# golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
+# golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
