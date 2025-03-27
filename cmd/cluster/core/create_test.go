@@ -153,3 +153,66 @@ func TestAsObjects(t *testing.T) {
 		})
 	}
 }
+
+func TestPrototypeResources(t *testing.T) {
+	g := NewWithT(t)
+	opts := &CreateOptions{
+		completedCreateOptions: &completedCreateOptions{
+			ValidatedCreateOptions: &ValidatedCreateOptions{
+				validatedCreateOptions: &validatedCreateOptions{
+					RawCreateOptions: &RawCreateOptions{
+						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+					},
+				},
+			},
+		},
+	}
+	resources, err := prototypeResources(opts)
+	g.Expect(err).To(BeNil())
+	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+}
+
+func TestValidate(t *testing.T) {
+	g := NewWithT(t)
+	ctx := context.Background()
+	tests := []struct {
+		name        string
+		rawOpts     *RawCreateOptions
+		expectedErr string
+	}{
+		{
+			name: "fails with unsupported capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown capability, accepted values are:",
+		},
+		{
+			name: "passes with ImageRegistry capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// avoid actual client calls in Validate
+			test.rawOpts.Render = true
+			_, err := test.rawOpts.Validate(ctx)
+			if test.expectedErr == "" {
+				g.Expect(err).To(BeNil())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
