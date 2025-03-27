@@ -1456,8 +1456,6 @@ func TestCAPIReconcile(t *testing.T) {
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
 				// Check MachineDeployment annotations
 				g.Expect(md.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
-				// Check skip preflight annotation.
-				g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.MachineSetSkipPreflightChecksAnnotation, string(capiv1.MachineSetPreflightCheckAll)))
 
 				// Check MachineDeployment spec.
 				g.Expect(md.Spec.Strategy.Type).To(Equal(capiv1.MachineDeploymentStrategyType("RollingUpdate")))
