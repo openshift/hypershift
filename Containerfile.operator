@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.21.13-2 as builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.22.9-1743094161 as builder
 
 COPY . .
 
