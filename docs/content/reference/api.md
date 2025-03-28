@@ -4339,6 +4339,10 @@ A failure here is unlikely to resolve without the changing user input.</p>
 <td><p>ValidReleaseInfo bubbles up the same condition from HCP. It indicates if the release contains all the images used by hypershift
 and reports missing images if any.</p>
 </td>
+</tr><tr><td><p>&#34;ValidVersion&#34;</p></td>
+<td><p>ValidVersionConditionType signals if the version of the HostedCluster is valid and compatible.
+A failure here is unlikely to resolve without changing the version input.</p>
+</td>
 </tr></tbody>
 </table>
 ###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }

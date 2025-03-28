@@ -18,6 +18,9 @@ const (
 	// NodePoolValidTuningConfigConditionType signals if the content within nodePool.spec.tuningConfig is valid.
 	// A failure here is unlikely to resolve without the changing user input.
 	NodePoolValidTuningConfigConditionType = "ValidTuningConfig"
+	// NodePoolValidVersionConditionType signals if the version of the NodePool is valid and compatible.
+	// A failure here is unlikely to resolve without changing the version input.
+	NodePoolValidVersionConditionType = "ValidVersion"
 
 	// NodePoolUpdateManagementEnabledConditionType signals if the nodePool.spec.management input is valid.
 	// A failure here is unlikely to resolve without the changing user input.
@@ -116,4 +119,5 @@ const (
 	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
+	NodePoolInvalidVersionReason          = "InvalidVersion"
 )
