@@ -13,6 +13,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
+	azureutil "github.com/Azure/go-autorest/autorest/azure"
+	awssdk "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/kms"
+	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
@@ -1443,6 +1454,29 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile etcd-backup cronJob: %w", err)
 			}
+		}
+	}
+
+	// Delete all auditing configmaps if auditing is disabled
+	if hostedControlPlane.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		kubeAPIServerAuditConfig := manifests.KASAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, kubeAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove kas-audit-config configmap: %w", err)
+		}
+
+		openshiftAPIServerAuditConfig := manifests.OpenShiftAPIServerAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-apiserver-audit configmap: %w", err)
+		}
+
+		openshiftOAuthAPIServerAuditConfig := manifests.OpenShiftOAuthAPIServerAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftOAuthAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-oauth-apiserver-audit configmap: %w", err)
+		}
+
+		oAuthAuditConfig := manifests.OAuthAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, oAuthAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove oauth-openshift-audit configmap: %w", err)
 		}
 	}
 
@@ -3062,10 +3096,6 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile api server audit config: %w", err)
 		}
-	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r, kubeAPIServerAuditConfig); err != nil {
-			return fmt.Errorf("failed to remove kas-audit-config configmap: %w", err)
-		}
 	}
 
 	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
@@ -3419,10 +3449,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
 		}
-	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r, auditCfg); err != nil {
-			return fmt.Errorf("failed to remove openshift-apiserver-audit configmap: %w", err)
-		}
 	}
 
 	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
@@ -3480,10 +3506,6 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 			return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
-		}
-	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r, auditCfg); err != nil {
-			return fmt.Errorf("failed to remove openshift-oauth-apiserver-audit configmap: %w", err)
 		}
 	}
 
@@ -3563,10 +3585,6 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 			return oauth.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile oauth openshift audit config: %w", err)
-		}
-	} else {
-		if _, err := util.DeleteIfNeeded(ctx, r, auditCfg); err != nil {
-			return fmt.Errorf("failed to remove oauth-openshift-audit configmap: %w", err)
 		}
 	}
 

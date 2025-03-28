@@ -53,6 +53,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 
+	// If auditing is none/disabled, remove the audit-logs container and remove volume and volume mount
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
 		util.RemoveContainerVolumeMount(auditConfigVolumeName, util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
