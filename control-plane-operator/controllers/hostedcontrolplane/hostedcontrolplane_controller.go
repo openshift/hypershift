@@ -5098,7 +5098,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterStorageOperator(ctx conte
 
 		azureFileSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureFileCSISecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, azureFileSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(azureFileSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Azure File Secret Provider Class: %w", err)
