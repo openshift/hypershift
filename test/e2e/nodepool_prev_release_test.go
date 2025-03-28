@@ -4,12 +4,13 @@
 package e2e
 
 import (
+	"testing"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"testing"
 )
 
 type NodePoolPrevReleaseCreateTest struct {
@@ -32,6 +33,11 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Setup(t *testing.T) {
 
 	if npPrevTest.release == "" {
 		t.Skip("previous release wasn't set, skipping")
+	}
+
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(npPrevTest.release, npPrevTest.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		t.Skip("nodepool release is not compatible with the current hostedCluster release, skipping")
 	}
 }
 
