@@ -1699,7 +1699,7 @@ func TestControlPlaneComponents(t *testing.T) {
 			cpContext.Client = fakeClient
 
 			// Reconcile multiple times to make sure multiple runs don't produce different results,
-			// and to check if resrouces are making a no-op update calls.
+			// and to check if resources are making a no-op update calls.
 			for range 2 {
 				if err := component.Reconcile(cpContext); err != nil {
 					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)

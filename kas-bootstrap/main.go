@@ -1,6 +1,6 @@
 package kasbootstrap
 
-// kas-bootstrap is a tool to run the pre-required actions for bootstraping the kas during cluster creation (or upgrade).
+// kas-bootstrap is a tool to run the pre-required actions for bootstrapping the kas during cluster creation (or upgrade).
 // It will apply some CRDs rendered by the cluster-config-operator and update the featureGate CR status by appending the git FeatureGate status.
 
 import (
