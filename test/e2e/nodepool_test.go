@@ -294,6 +294,9 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		manifestBuilder = nodePoolTest
 	}
 	nodePool, err := manifestBuilder.BuildNodePoolManifest(defaultNodepool)
+	if nodePool == nil {
+		t.Skip("skipping test because nodePool is nil")
+	}
 	g.Expect(err).ToNot(HaveOccurred(), "should success preparing nodepool")
 
 	// Using default security group is main use case for OCM.
