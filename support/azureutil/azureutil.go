@@ -277,3 +277,24 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 
 	return role, scopes
 }
+
+// GetKeyVaultDNSSuffixFromCloudType simply mimics the functionality in environments.go from the Azure SDK, github.com/Azure/go-autorest.
+// This function is used to get the DNS suffix for the Key Vault based on the cloud type.
+func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
+	cloud = strings.ToUpper(cloud)
+
+	switch cloud {
+	case "AZURECHINACLOUD":
+		return "vault.azure.cn", nil
+	case "AZURECLOUD":
+		return "vault.azure.net", nil
+	case "AZUREPUBLICCLOUD":
+		return "vault.azure.net", nil
+	case "AZUREUSGOVERNMENT":
+		return "vault.usgovcloudapi.net", nil
+	case "AZUREUSGOVERNMENTCLOUD":
+		return "vault.usgovcloudapi.net", nil
+	default:
+		return "", fmt.Errorf("unknown cloud type %q", cloud)
+	}
+}
