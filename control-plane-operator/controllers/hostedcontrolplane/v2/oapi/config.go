@@ -58,6 +58,14 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 		cfg.APIServerArguments["audit-webhook-initial-backoff"] = []string{"5s"}
 	}
 
+	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		delete(cfg.APIServerArguments, "audit-log-format")
+		delete(cfg.APIServerArguments, "audit-log-maxsize")
+		delete(cfg.APIServerArguments, "audit-log-maxbackup")
+		delete(cfg.APIServerArguments, "audit-policy-file")
+		delete(cfg.APIServerArguments, "audit-log-path")
+	}
+
 	configuration := hcp.Spec.Configuration
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
