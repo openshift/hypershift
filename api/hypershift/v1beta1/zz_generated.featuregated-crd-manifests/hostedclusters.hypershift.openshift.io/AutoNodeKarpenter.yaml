@@ -896,6 +896,11 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                        x-kubernetes-validations:
+                        - message: Only one of blockedRegistries or allowedRegistries
+                            may be set
+                          rule: 'has(self.blockedRegistries) ? !has(self.allowedRegistries)
+                            : true'
                     type: object
                   ingress:
                     description: |-
