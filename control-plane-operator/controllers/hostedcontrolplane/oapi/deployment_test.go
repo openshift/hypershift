@@ -204,6 +204,7 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			g := NewGomegaWithT(t)
 			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 			ownerRef := config.OwnerRefFrom(hcp)
+			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
 			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditEnabled, tc.auditConfig, nil, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.imageRegistryAdditionalCAs, tc.clusterConf, nil, "")
 			g.Expect(err).To(BeNil())
 			if tc.expectProjectedVolumeMounted {
@@ -257,7 +258,7 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 		oauthAPIDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthAPIDeployment.Spec.MinReadySeconds
 		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, true, tc.auditConfig, &tc.params, hyperv1.IBMCloudPlatform)
+		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, tc.auditConfig, true, &tc.params, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthAPIDeployment.Spec.MinReadySeconds))
 	}
