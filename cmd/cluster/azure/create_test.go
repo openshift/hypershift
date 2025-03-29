@@ -129,6 +129,17 @@ func TestCreateCluster(t *testing.T) {
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 			},
 		},
+		{
+			name: "with disabled capabilities",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--rhcos-image=whatever",
+				"--render-sensitive",
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--disable-cluster-capabilities=ImageRegistry",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
