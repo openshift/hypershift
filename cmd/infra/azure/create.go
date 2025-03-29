@@ -2,10 +2,12 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -13,8 +15,12 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	azureauth "github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
@@ -41,14 +47,7 @@ const (
 	VirtualNetworkLinkLocation        = "global"
 	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
 
-	azureDisk     = "azure-disk"
-	azureFile     = "azure-file"
-	ciro          = "ciro"
-	cloudProvider = "cloud-provider"
-	cncc          = "cncc"
-	cpo           = "cpo"
-	ingress       = "ingress"
-	nodePoolMgmt  = "capz"
+	graphAPIEndpoint = "https://graph.microsoft.com/v1.0/servicePrincipals"
 )
 
 type CreateInfraOptions struct {
@@ -85,6 +84,12 @@ type CreateInfraOutput struct {
 	SecurityGroupID     string                                 `json:"securityGroupID"`
 	ControlPlaneMIs     hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities     `json:"dataPlaneIdentities"`
+}
+
+type ServicePrincipalResponse struct {
+	Value []struct {
+		ID string `json:"id"`
+	} `json:"value"`
 }
 
 func NewCreateCommand() *cobra.Command {
@@ -231,25 +236,37 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		components := map[string]string{
-			cpo:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
-			ciro:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
-			nodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
-			cloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
-			azureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
-			azureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
-			ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
-			cncc:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+			config.CPO:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
+			config.CIRO:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
+			config.NodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
+			config.CloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
+			config.AzureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
+			config.AzureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
+			config.Ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
+			config.CNCC:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
 		}
 
+		// Perform role assignments over each component's service principal
 		if o.AssignServicePrincipalRoles {
+			// Get an access token for Microsoft Graph API for getting the object IDs
+			token, err := getAzureToken(azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
 			for component, clientID := range components {
-				objectID, err := findObjectId(clientID)
+				objectID, err := getObjectIDFromClientID(clientID, token)
 				if err != nil {
 					return nil, err
 				}
-				err = assignServicePrincipalRoles(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, objectID, o.AssignCustomHCPRoles)
-				if err != nil {
-					return nil, err
+
+				role, scopes := azureutil.GetServicePrincipalScopes(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, o.AssignCustomHCPRoles)
+
+				// For each resource group (aka scope), assign the role to the service principal
+				for _, scope := range scopes {
+					if err := assignRole(ctx, subscriptionID, o.InfraID, component, objectID, role, scope, azureCreds); err != nil {
+						return nil, fmt.Errorf("failed to perform role assignment: %w", err)
+					}
 				}
 			}
 		}
@@ -267,30 +284,36 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		}
 
 		if o.AssignServicePrincipalRoles {
+			// Get an access token for Microsoft Graph API for getting the object IDs
+			token, err := getAzureToken(azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
 			// Setup Data Plane MI role assignments
-			objectID, err := findObjectId(result.DataPlaneIdentities.ImageRegistryMSIClientID)
+			objectID, err := getObjectIDFromClientID(result.DataPlaneIdentities.ImageRegistryMSIClientID, token)
 			if err != nil {
 				return nil, err
 			}
-			err = assignRole(objectID, "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5", managedRG)
-			if err != nil {
-				return nil, err
-			}
-
-			objectID, err = findObjectId(result.DataPlaneIdentities.DiskMSIClientID)
-			if err != nil {
-				return nil, err
-			}
-			err = assignRole(objectID, "5b7237c5-45e1-49d6-bc18-a1f62f400748", managedRG)
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.CIRO+"WI", objectID, config.ImageRegistryRoleDefinitionID, managedRG, azureCreds)
 			if err != nil {
 				return nil, err
 			}
 
-			objectID, err = findObjectId(result.DataPlaneIdentities.FileMSIClientID)
+			objectID, err = getObjectIDFromClientID(result.DataPlaneIdentities.DiskMSIClientID, token)
 			if err != nil {
 				return nil, err
 			}
-			err = assignRole(objectID, "0d7aedc0-15fd-4a67-a412-efad370c947e", managedRG)
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.AzureDisk+"WI", objectID, config.AzureDiskRoleDefinitionID, managedRG, azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
+			objectID, err = getObjectIDFromClientID(result.DataPlaneIdentities.FileMSIClientID, token)
+			if err != nil {
+				return nil, err
+			}
+			err = assignRole(ctx, subscriptionID, o.InfraID, config.AzureFile+"WI", objectID, config.AzureFileRoleDefinitionID, managedRG, azureCreds)
 			if err != nil {
 				return nil, err
 			}
@@ -819,88 +842,90 @@ func createLoadBalancer(ctx context.Context, subscriptionID string, resourceGrou
 	return nil
 }
 
-// assignServicePrincipalRoles assigns the required roles to the service principal for each control plane managed identity component
-func assignServicePrincipalRoles(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component, assigneeID string, assignCustomHCPRoles bool) error {
-	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
-	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
-	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
-	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
-
-	role := "b24988ac-6180-42a0-ab88-20f7382dd24c"
-
-	scopes := []string{managedRG}
-
-	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
-	switch component {
-	case cloudProvider:
-		role = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
-		scopes = append(scopes, nsgRG, vnetRG)
-	case ingress:
-		role = "0336e1d3-7a87-462b-b6db-342b63f7802c"
-		scopes = append(scopes, vnetRG, dnsZoneRG)
-	case cpo:
-		scopes = append(scopes, nsgRG, vnetRG)
-		if assignCustomHCPRoles {
-			role = "7d8bb4e4-6fa7-4545-96cf-20fce11b705d"
-		}
-	case azureFile:
-		role = "0d7aedc0-15fd-4a67-a412-efad370c947e"
-		scopes = append(scopes, nsgRG, vnetRG)
-	case azureDisk:
-		role = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
-	case cncc:
-		role = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
-		scopes = append(scopes, vnetRG)
-	case ciro:
-		role = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
-	case nodePoolMgmt:
-		scopes = append(scopes, vnetRG)
-		if assignCustomHCPRoles {
-			role = "Azure Red Hat OpenShift NodePool Management Role"
-		}
+// assignRole assigns a scoped role to the service principal assignee
+func assignRole(ctx context.Context, subscriptionID, infraID, component, assigneeID, role, scope string, azureCreds *azidentity.DefaultAzureCredential) error {
+	roleAssignmentClient, err := azureauth.NewRoleAssignmentsClient(subscriptionID, azureCreds, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create new role assignments client: %w", err)
 	}
 
-	// Assign contributor role to service principal
-	for _, scope := range scopes {
-		if err := assignRole(assigneeID, role, scope); err != nil {
-			return err
-		}
+	// Generate the role assignment name
+	roleAssignmentName := util.GenerateRoleAssignmentName(infraID, component, scope)
+
+	// Generate the role definition ID
+	roleDefinitionID := fmt.Sprintf("/subscriptions/%s/providers/Microsoft.Authorization/roleDefinitions/%s", subscriptionID, role)
+
+	// Generate the role assignment properties
+	roleAssignmentProperties := azureauth.RoleAssignmentCreateParameters{
+		Properties: &azureauth.RoleAssignmentProperties{
+			PrincipalID:      ptr.To(assigneeID),
+			RoleDefinitionID: ptr.To(roleDefinitionID),
+			Scope:            ptr.To(scope),
+		},
 	}
 
+	// Create the role assignment
+	_, err = roleAssignmentClient.Create(ctx, scope, roleAssignmentName, roleAssignmentProperties, nil)
+	if err != nil {
+		// Azure will return an error if the role assignment already exists, but we can ignore it since the role
+		// assignment already exists.
+		if !strings.Contains(err.Error(), "The role assignment already exists") {
+			return fmt.Errorf("failed to create role assignment: %w", err)
+		}
+		log.Log.Info("WARNING: Role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+	}
+	log.Log.Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
 	return nil
 }
 
-// assignRole assigns the role to the service principal
-func assignRole(assigneeID, role, scope string) error {
-	cmdStr := fmt.Sprintf("az role assignment create --assignee-object-id %s --role \"%s\" --scope %s --assignee-principal-type \"ServicePrincipal\" ", assigneeID, role, scope)
-	log.Log.Info("Role assignment command", "command", cmdStr)
-	output, err := execAzCommand(cmdStr)
+func getAzureToken(azureCreds *azidentity.DefaultAzureCredential) (azcore.AccessToken, error) {
+	token, err := azureCreds.GetToken(context.Background(), policy.TokenRequestOptions{
+		Scopes: []string{"https://graph.microsoft.com/.default"},
+	})
 	if err != nil {
-		return fmt.Errorf("failed to assign %s role to service principal, %s for scope %s : %w output: %s", role, assigneeID, scope, err, string(output))
+		return azcore.AccessToken{}, fmt.Errorf("failed to get access token: %w", err)
 	}
-	log.Log.Info("Successfully assigned role to service principal", "role", role, "ID", assigneeID, "scope", scope)
-	return nil
+
+	return token, nil
 }
 
-func findObjectId(appID string) (string, error) {
-	cmdStr := fmt.Sprintf("az ad sp show --id %s --query id | sed 's/\"//g'", appID)
+func getObjectIDFromClientID(clientID string, token azcore.AccessToken) (string, error) {
+	filterQuery := "$filter=appId eq '" + clientID + "'"
+	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
 
-	output, err := execAzCommand(cmdStr)
+	// Make the API request
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to find object ID for service principal, %s : %w", appID, err)
-
-	}
-	objectID := strings.ReplaceAll(string(output), "\n", "")
-
-	return objectID, nil
-}
-
-func execAzCommand(cmdStr string) ([]byte, error) {
-	cmd := exec.Command("sh", "-c", cmdStr)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("failed to execute az command, output: %s err: %w", string(output), err)
+		return "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	return output, nil
+	// Set Authorization header
+	req.Header.Set("Authorization", "Bearer "+token.Token)
+	req.Header.Set("Content-Type", "application/json")
+
+	// Send request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	// Parse response
+	var result ServicePrincipalResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if len(result.Value) == 0 {
+		return "", fmt.Errorf("no object id found for client id: %s", clientID)
+	}
+
+	if len(result.Value) > 1 {
+		return "", fmt.Errorf("more than one object id found for client id: %s", clientID)
+	}
+
+	return result.Value[0].ID, nil
 }

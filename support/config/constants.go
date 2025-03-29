@@ -87,6 +87,27 @@ const (
 	ManagedAzureNetworkSecretStoreProviderClassName       = "managed-azure-network"
 	ManagedAzureNodePoolMgmtSecretProviderClassName       = "managed-azure-nodepool-management"
 	ManagedAzureNodePoolMgmtSecretStoreVolumeName         = "nodepool-management-cert"
+
+	// Azure Role Definitions
+	ContributorRoleDefinitionID   = "b24988ac-6180-42a0-ab88-20f7382dd24c"
+	CloudProviderRoleDefinitionID = "a1f96423-95ce-4224-ab27-4e3dc72facd4"
+	IngressRoleDefinitionID       = "0336e1d3-7a87-462b-b6db-342b63f7802c"
+	CPOCustomRoleDefinitionID     = "7d8bb4e4-6fa7-4545-96cf-20fce11b705d"
+	AzureFileRoleDefinitionID     = "0d7aedc0-15fd-4a67-a412-efad370c947e"
+	AzureDiskRoleDefinitionID     = "5b7237c5-45e1-49d6-bc18-a1f62f400748"
+	NetworkRoleDefinitionID       = "be7a6435-15ae-4171-8f30-4a343eff9e8f"
+	ImageRegistryRoleDefinitionID = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
+	CAPZCustomRoleDefinitionID    = "Azure Red Hat OpenShift NodePool Management Role"
+
+	// Azure Components with Control Plane Managed Identities
+	AzureDisk     = "azure-disk"
+	AzureFile     = "azure-file"
+	CIRO          = "ciro"
+	CloudProvider = "cloud-provider"
+	CNCC          = "cncc"
+	CPO           = "cpo"
+	Ingress       = "ingress"
+	NodePoolMgmt  = "capz"
 )
 
 var (
