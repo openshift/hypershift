@@ -200,7 +200,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			// The KAS takes 90 seconds to finish its graceful shutdown, give it enough
 			// time to do that + 5 seconds margin. The shutdown sequence is described
 			// in detail here: https://github.com/openshift/installer/blob/master/docs/dev/kube-apiserver-health-check.md
-			TerminationGracePeriodSeconds: ptr.To[int64](95),
+			TerminationGracePeriodSeconds: ptr.To[int64](130),
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  ptr.To(false),
 			InitContainers: []corev1.Container{
