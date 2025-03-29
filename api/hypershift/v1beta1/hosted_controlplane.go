@@ -34,6 +34,7 @@ type HostedControlPlane struct {
 }
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
 type HostedControlPlaneSpec struct {
 	// ReleaseImage is the release image applied to the hosted control plane.
 	ReleaseImage string `json:"releaseImage"`
@@ -118,7 +119,6 @@ type HostedControlPlaneSpec struct {
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	// +kubebuilder:validation:MaxItems=6
-	// +kubebuilder:validation:MinItems=4
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// AuditWebhook contains metadata for configuring an audit webhook
