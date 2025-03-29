@@ -14,6 +14,7 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
@@ -308,4 +309,59 @@ func TestExtractCloud(t *testing.T) {
 		assert.Nil(t, err)
 	})
 
+}
+
+func TestValidateNetworkingOpts(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		input         RawCreateOptions
+		expectedError string
+	}{
+		{
+			name: "should fail if more than 2 subnets are specified",
+			input: RawCreateOptions{
+				OpenStackSubnetIDs: []string{"subnet1", "subnet2", "subnet3"},
+			},
+			expectedError: "only 0, 1 or 2 subnets can be specified",
+		},
+		{
+			name: "should fail if subnet IDs are specified without network ID",
+			input: RawCreateOptions{
+				OpenStackSubnetIDs: []string{"subnet1"},
+			},
+			expectedError: "network ID must be specified when specifying subnet IDs",
+		},
+		{
+			name: "should fail if router ID is specified without network ID",
+			input: RawCreateOptions{
+				OpenStackRouterID: "router1",
+			},
+			expectedError: "network ID must be specified when specifying router ID",
+		},
+		{
+			name: "should pass with valid subnet IDs and network ID",
+			input: RawCreateOptions{
+				OpenStackSubnetIDs: []string{"subnet1", "subnet2"},
+				OpenStackNetworkID: "network1",
+			},
+			expectedError: "",
+		},
+		{
+			name: "should pass with valid router ID and network ID",
+			input: RawCreateOptions{
+				OpenStackRouterID:  "router1",
+				OpenStackNetworkID: "network1",
+			},
+			expectedError: "",
+		},
+	} {
+		err := validateNetworkingOpts(&test.input)
+		var errString string
+		if err != nil {
+			errString = err.Error()
+		}
+		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+			t.Errorf("test %q: got incorrect error: %v", test.name, diff)
+		}
+	}
 }
