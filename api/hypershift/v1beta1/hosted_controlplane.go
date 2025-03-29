@@ -116,6 +116,20 @@ type HostedControlPlaneSpec struct {
 	// +optional
 	KubeConfig *KubeconfigSecretRef `json:"kubeconfig,omitempty"`
 
+	// kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+	// When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+	// If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+	// The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+	// This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+	// access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+	// for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+	//
+	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:example: "api.example.com"
+	// +optional
+	KubeAPIServerDNSName string `json:"kubeAPIServerDNSName,omitempty"`
+
 	// Services defines metadata about how control plane services are published
 	// in the management cluster.
 	// +kubebuilder:validation:MaxItems=6
@@ -313,6 +327,15 @@ type HostedControlPlaneStatus struct {
 	// KubeConfig is a reference to the secret containing the default kubeconfig
 	// for this control plane.
 	KubeConfig *KubeconfigSecretRef `json:"kubeConfig,omitempty"`
+
+	// customKubeconfig references an external custom kubeconfig secret.
+	// This field is populated in the status when a custom kubeconfig secret has been generated
+	// for the hosted cluster. It contains the name and key of the secret located in the
+	// hostedCluster namespace. This field is only populated when kubeApiExternalName is set.
+	// If this field is removed during a day 2 operation, the referenced secret will be deleted
+	// and this field will be removed from the hostedCluster status.
+	// +optional
+	CustomKubeconfig *KubeconfigSecretRef `json:"customKubeconfig,omitempty"`
 
 	// KubeadminPassword is a reference to the secret containing the initial kubeadmin password
 	// for the guest cluster.

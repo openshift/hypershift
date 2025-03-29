@@ -739,7 +739,8 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
 
-	kubeconfig := manifests.KASExternalKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
+	// Admin Kubeconfig
+	kubeconfig := manifests.KASAdminKubeconfigSecret(hostedControlPlane.Namespace, hostedControlPlane.Spec.KubeConfig)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeconfig), kubeconfig); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return reconcile.Result{}, err
@@ -749,9 +750,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Name: kubeconfig.Name,
 			Key:  DefaultAdminKubeconfigKey,
 		}
+
 		if hostedControlPlane.Spec.KubeConfig != nil {
 			hostedControlPlane.Status.KubeConfig.Key = hostedControlPlane.Spec.KubeConfig.Key
 		}
+	}
+
+	if err := setKASCustomKubeconfigStatus(ctx, hostedControlPlane, r.Client); err != nil {
+		return reconcile.Result{}, err
 	}
 
 	explicitOauthConfig := hostedControlPlane.Spec.Configuration != nil && hostedControlPlane.Spec.Configuration.OAuth != nil
@@ -3008,12 +3014,33 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile localhost kubeconfig secret: %w", err)
 	}
 
-	externalKubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
-	if _, err := createOrUpdate(ctx, r, externalKubeconfigSecret, func() error {
-		if !util.IsPublicHCP(hcp) && !util.IsRouteKAS(hcp) {
-			return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
+	// Generate the new KASCustomKubeconfig secret if the KubeAPIServerDNSName is set
+	kasCustomKubeconfigSecret := manifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
+	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
+		newRootCA, err := includeServingCertificates(ctx, r.Client, hcp, rootCA)
+		if err != nil {
+			return fmt.Errorf("failed to include serving certificates: %w", err)
 		}
-		return kas.ReconcileExternalKubeconfigSecret(externalKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
+
+		if _, err := createOrUpdate(ctx, r, kasCustomKubeconfigSecret, func() error {
+			return kas.ReconcileKASCustomKubeconfigSecret(kasCustomKubeconfigSecret, clientCertSecret, newRootCA, p.OwnerRef, p.CustomExternalURL(), p.KASCustomKubeconfigKey())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile custom external kubeconfig secret: %w", err)
+		}
+	} else {
+		// Cleanup the new kasCustomKubeconfigSecret secret if the KubeAPIServerDNSName is removed
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, kasCustomKubeconfigSecret); err != nil {
+			return fmt.Errorf("failed to delete customKubeconfig status from HCP object: %w", err)
+		}
+	}
+
+	// Renamed the old externalKubeconfigSecret to adminKubeconfigSecret
+	adminKubeconfigSecret := manifests.KASAdminKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
+	if _, err := createOrUpdate(ctx, r, adminKubeconfigSecret, func() error {
+		if !util.IsPublicHCP(hcp) && !util.IsRouteKAS(hcp) {
+			return kas.ReconcileKASCustomKubeconfigSecret(adminKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.InternalURL(), p.ExternalKubeconfigKey())
+		}
+		return kas.ReconcileKASCustomKubeconfigSecret(adminKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.ExternalURL(), p.ExternalKubeconfigKey())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 	}
@@ -5571,7 +5598,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 }
 
 func (r *HostedControlPlaneReconciler) GetGuestClusterClient(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*kubernetes.Clientset, error) {
-	kubeconfigSecret := manifests.KASExternalKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
+	kubeconfigSecret := manifests.KASAdminKubeconfigSecret(hcp.Namespace, hcp.Spec.KubeConfig)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret); err != nil {
 		return nil, err
 	}
@@ -5675,4 +5702,55 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		return fmt.Errorf("the locations of the resource groups do not match - vnet location: %v; network security group location: %v; managed resource group location: %v", ptr.Deref(vnet.Location, ""), ptr.Deref(nsg.Location, ""), ptr.Deref(rg.Location, ""))
 	}
 	return nil
+}
+
+func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane, c client.Client) error {
+	customKubeconfig := manifests.KASCustomKubeconfigSecret(hcp.Namespace, nil)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(customKubeconfig), customKubeconfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get custom kubeconfig secret: %w", err)
+		}
+	}
+
+	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
+		// Reconcile custom kubeconfig status
+		hcp.Status.CustomKubeconfig = &hyperv1.KubeconfigSecretRef{
+			Name: customKubeconfig.Name,
+			Key:  DefaultAdminKubeconfigKey,
+		}
+	} else {
+		// Cleanning up custom kubeconfig status
+		hcp.Status.CustomKubeconfig = nil
+	}
+
+	return nil
+}
+
+// includeServingCertificates includes additional serving certificates into the provided root CA ConfigMap.
+// It retrieves the named certificates specified in the HostedControlPlane's APIServer configuration and appends
+// their contents to the "ca.crt" entry in the root CA ConfigMap.
+func includeServingCertificates(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane, rootCA *corev1.ConfigMap) (*corev1.ConfigMap, error) {
+	var tlsCRT string
+	newRootCA := rootCA.DeepCopy()
+
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.APIServer != nil && len(hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) > 0 {
+		for _, servingCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
+			newCRT := &corev1.Secret{}
+			if err := c.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: servingCert.ServingCertificate.Name}, newCRT); err != nil {
+				return nil, fmt.Errorf("failed to get serving certificate secret: %w", err)
+			}
+
+			if len(tlsCRT) <= 0 {
+				tlsCRT = newRootCA.Data["ca.crt"]
+			}
+
+			tlsCRT = fmt.Sprintf("%s\n%s", tlsCRT, string(newCRT.Data["tls.crt"]))
+		}
+
+		if len(tlsCRT) > 0 {
+			newRootCA.Data["ca.crt"] = tlsCRT
+		}
+	}
+
+	return newRootCA, nil
 }

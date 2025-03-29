@@ -2410,6 +2410,21 @@ spec:
                   rule: self == oldSelf
                 - message: issuerURL must be a valid absolute URL
                   rule: isURL(self)
+              kubeAPIServerDNSName:
+                description: |-
+                  kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+                  When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+                  If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+                  The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+                  This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+                  access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+                  for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+                  This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.
+                maxLength: 253
+                type: string
+                x-kubernetes-validations:
+                - message: kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)
+                  rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
               labels:
                 additionalProperties:
                   type: string
@@ -4836,6 +4851,22 @@ spec:
                 - host
                 - port
                 type: object
+              customKubeconfig:
+                description: |-
+                  CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+                  Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the `HostedCluster` namespace.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               ignitionEndpoint:
                 description: |-
                   IgnitionEndpoint is the endpoint injected in the ign config userdata.

@@ -153,6 +153,9 @@ func TestHasBeenAvailable(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 			}
 
@@ -162,8 +165,19 @@ func TestHasBeenAvailable(t *testing.T) {
 			hcp.Status = hyperv1.HostedControlPlaneStatus{
 				Conditions: tc.hcpConditions,
 			}
+			objects := []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "any"},
+					Data: map[string][]byte{
+						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
+					},
+				},
+				hcp,
+				hcluster,
+			}
 
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp).WithStatusSubresource(hcluster).Build()
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
 			clock := clocktesting.NewFakeClock(tc.timestamp)
 			r := &HostedClusterReconciler{
 				Client:                        client,
@@ -3618,6 +3632,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "kubevirt" + etcdEncKeyPostfix,
+					},
 				},
 			},
 			secretName:     "kubevirt" + etcdEncKeyPostfix,
@@ -3627,6 +3644,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
 					Data: map[string][]byte{
 						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
 					},
 				},
 			},
@@ -3852,10 +3870,22 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "custom-name",
+					},
 				},
 			},
 			secretName:     "custom-name",
 			secretExpected: false,
+			objects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "custom-name", Namespace: "test"},
+					Data: map[string][]byte{
+						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
+					},
+				},
+			},
 		},
 		{
 			name: "secret encryption not defined and secret exists with no key",

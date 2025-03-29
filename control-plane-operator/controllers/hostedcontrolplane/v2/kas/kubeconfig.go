@@ -101,6 +101,7 @@ func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secr
 	}
 
 	url := externalURL(cpContext.InfraStatus)
+
 	if !util.IsPublicHCP(cpContext.HCP) && !util.IsRouteKAS(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
 	}
@@ -116,7 +117,26 @@ func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secr
 	return nil
 }
 
+func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	hcp := cpContext.HCP
+	apiServerPort := util.KASPodPort(hcp)
+	url := customExternalURL(hcp.Spec.KubeAPIServerDNSName, apiServerPort)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(hcp.Namespace), url)
+	if err != nil {
+		return fmt.Errorf("failed to generate kubeconfig: %w", err)
+	}
+
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[externalKubeconfigKey(hcp)] = kubeconfig
+
+	return nil
+
+}
+
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+
 	url := externalURL(cpContext.InfraStatus)
 	if util.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
@@ -201,13 +221,17 @@ func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCPort)
 }
 
+func customExternalURL(address string, port int32) string {
+	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(address), port)
+}
+
 func externalURL(infraStatus infra.InfrastructureStatus) string {
 	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(infraStatus.APIHost), infraStatus.APIPort)
 }
 
 func internalURL(infraStatus infra.InfrastructureStatus, hcpName string) string {
 	internalAddress := fmt.Sprintf("api.%s.hypershift.local", hcpName)
-	return fmt.Sprintf("https://%s:%d", pki.AddBracketsIfIPv6(internalAddress), infraStatus.APIPort)
+	return fmt.Sprintf("https://%s:%d", internalAddress, infraStatus.APIPort)
 }
 
 func externalKubeconfigKey(hcp *hyperv1.HostedControlPlane) string {

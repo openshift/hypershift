@@ -2525,6 +2525,20 @@ spec:
                   default value is kubernetes.default.svc, which only works for in-cluster
                   validation.
                 type: string
+              kubeAPIServerDNSName:
+                description: |-
+                  kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+                  When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+                  If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+                  The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+                  This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+                  access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+                  for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+                maxLength: 253
+                type: string
+                x-kubernetes-validations:
+                - message: kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)
+                  rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
               kubeconfig:
                 description: KubeConfig specifies the name and key for the kubeconfig
                   secret
@@ -4878,6 +4892,23 @@ spec:
                 required:
                 - host
                 - port
+                type: object
+              customKubeconfig:
+                description: |-
+                  customKubeconfig references an external custom kubeconfig secret.
+                  This field is populated in the status when a custom kubeconfig secret has been generated
+                  for the hosted cluster. It contains the name and key of the secret located in the
+                  hostedCluster namespace. This field is only populated when kubeApiExternalName is set.
+                  If this field is removed during a day 2 operation, the referenced secret will be deleted
+                  and this field will be removed from the hostedCluster status.
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                required:
+                - key
+                - name
                 type: object
               externalManagedControlPlane:
                 default: true

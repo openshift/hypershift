@@ -1512,6 +1512,172 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 }
 
+func TestSetKASCustomKubeconfigStatus(t *testing.T) {
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	tests := []struct {
+		name                 string
+		KubeAPIServerDNSName string
+		expectedStatus       *hyperv1.KubeconfigSecretRef
+	}{
+		{
+			name:                 "KubeAPIServerDNSName is empty",
+			KubeAPIServerDNSName: "",
+			expectedStatus:       nil,
+		},
+		{
+			name:                 "KubeAPIServerDNSName has a valid value",
+			KubeAPIServerDNSName: "testapi.example.com",
+			expectedStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp.Spec.KubeAPIServerDNSName = tc.KubeAPIServerDNSName
+
+			err := setKASCustomKubeconfigStatus(ctx, hcp, c)
+			g.Expect(err).To(BeNil(), fmt.Errorf("error setting custom kubeconfig status failed: %v", err))
+			g.Expect(hcp.Status.CustomKubeconfig).To(Equal(tc.expectedStatus))
+		})
+	}
+}
+
+func TestIncludeServingCertificates(t *testing.T) {
+	ctx := context.Background()
+	hcp := sampleHCP(t)
+	rootCA := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "root-ca",
+			Namespace: hcp.Namespace,
+		},
+		Data: map[string]string{
+			"ca.crt": "root-ca-cert",
+		},
+	}
+
+	tests := []struct {
+		name           string
+		servingCerts   *configv1.APIServerServingCerts
+		servingSecrets []*corev1.Secret
+		expectedCert   string
+		expectError    bool
+	}{
+		{
+			name:         "APIServer servingCerts is nil",
+			servingCerts: &configv1.APIServerServingCerts{},
+			expectedCert: "root-ca-cert",
+		},
+		{
+			name: "APIServer servingCerts configuration with one named certificates",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-1",
+						},
+					},
+				},
+			},
+			servingSecrets: []*corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-1",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-1"),
+					},
+				},
+			},
+			expectedCert: "root-ca-cert\ncert-1",
+		},
+		{
+			name: "APIServer servingCerts configuration with multiple named certificates",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-1",
+						},
+					},
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-2",
+						},
+					},
+				},
+			},
+			servingSecrets: []*corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-1",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-1"),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-2",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-2"),
+					},
+				},
+			},
+			expectedCert: "root-ca-cert\ncert-1\ncert-2",
+		},
+		{
+			name: "APIServer servingCerts configuration with missing named certificate",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "missing-cert",
+						},
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					ServingCerts: *tc.servingCerts,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(rootCA).Build()
+			for _, secret := range tc.servingSecrets {
+				_ = fakeClient.Create(ctx, secret)
+			}
+
+			newRootCA, err := includeServingCertificates(ctx, fakeClient, hcp, rootCA)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(newRootCA.Data["ca.crt"]).To(Equal(tc.expectedCert))
+			}
+		})
+	}
+}
+
 type fakeMessageCollector struct {
 	msg string
 }
