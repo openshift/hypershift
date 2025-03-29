@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 )
 
@@ -49,7 +49,7 @@ type DockerConfigEntry struct {
 func ReadSpecificDockerConfigJSONFile(filePath string) (cfg DockerConfig, err error) {
 	var contents []byte
 
-	if contents, err = ioutil.ReadFile(filePath); err != nil {
+	if contents, err = os.ReadFile(filePath); err != nil {
 		return nil, err
 	}
 

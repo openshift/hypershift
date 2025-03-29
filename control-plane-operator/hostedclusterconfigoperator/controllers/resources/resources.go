@@ -2017,7 +2017,7 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		} else {
 			reason = "RemainingCloudResources"
 			status = metav1.ConditionFalse
-			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining.List(), ","))
+			message = fmt.Sprintf("Remaining resources: %s", strings.Join(remaining.UnsortedList(), ","))
 		}
 	}
 	resourcesDestroyedCond := &metav1.Condition{
@@ -2043,9 +2043,9 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	}
 }
 
-func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.String, error) {
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.Set[string], error) {
 	log := ctrl.LoggerFrom(ctx)
-	remaining := sets.NewString()
+	remaining := sets.New[string]()
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
 		return remaining, err
