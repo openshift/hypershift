@@ -50,7 +50,6 @@ var (
 			oauthVolumeProvidersTemplate().Name: "/etc/kubernetes/secrets/templates/providers",
 			oauthVolumeWorkLogs().Name:          "/var/run/kubernetes",
 			oauthVolumeMasterCABundle().Name:    "/etc/kubernetes/certs/master-ca",
-			oauthVolumeAuditConfig().Name:       "/etc/kubernetes/audit-config",
 		},
 		oauthContainerSocks5Proxy().Name: {
 			oauthVolumeKubeconfig().Name:                   "/etc/kubernetes",
@@ -61,6 +60,11 @@ var (
 			oauthVolumeKubeconfig().Name:                   "/etc/kubernetes",
 			oauthVolumeKonnectivityProxyClientCert().Name:  "/etc/konnectivity/proxy-client",
 			oauthVolumeKonnectivityProxyTrustBundle().Name: "/etc/konnectivity/proxy-ca",
+		},
+	}
+	oauthAuditConfigFileVolumeMount = util.PodVolumeMounts{
+		oauthContainerMain().Name: {
+			oauthVolumeAuditConfig().Name: "/etc/kubernetes/audit-config",
 		},
 	}
 	oauthAuditWebhookConfigFileVolumeMount = util.PodVolumeMounts{
@@ -77,7 +81,7 @@ func oauthLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
+func ReconcileDeployment(ctx context.Context, client client.Client, deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditEnabled bool, auditConfig *corev1.ConfigMap, image string, deploymentConfig config.DeploymentConfig, identityProviders []configv1.IdentityProvider, providerOverrides map[string]*ConfigOverride, availabilityProberImage string, namedCertificates []configv1.APIServerNamedServingCert, proxyImage string, proxyConfig *configv1.ProxySpec, clusterNoProxy string, oauthNoProxy []string, params *OAuthConfigParams, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main oauth container
@@ -114,7 +118,7 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 	deployment.Spec.Template.Spec = corev1.PodSpec{
 		AutomountServiceAccountToken: ptr.To(false),
 		Containers: []corev1.Container{
-			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, auditWebhookRef, oauthNoProxy)),
+			util.BuildContainer(oauthContainerMain(), buildOAuthContainerMain(image, auditWebhookRef, oauthNoProxy, auditEnabled)),
 			util.BuildContainer(oauthContainerSocks5Proxy(), buildOAuthContainerSocks5Proxy(proxyImage)),
 			util.BuildContainer(oauthContainerHTTPProxy(), buildOAuthContainerHTTPProxy(proxyImage, proxyConfig, clusterNoProxy)),
 		},
@@ -135,14 +139,14 @@ func ReconcileDeployment(ctx context.Context, client client.Client, deployment *
 				}),
 			util.BuildVolume(oauthVolumeWorkLogs(), buildOAuthVolumeWorkLogs),
 			util.BuildVolume(oauthVolumeMasterCABundle(), buildOAuthVolumeMasterCABundle),
-			util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig),
 			util.BuildVolume(oauthVolumeKonnectivityProxyClientCert(), buildOAuthVolumeKonnectivityProxyClientCert),
 			util.BuildVolume(oauthVolumeKonnectivityProxyTrustBundle(), buildOAuthVolumeKonnectivityProxyTrustBundle),
 			util.BuildVolume(oauthVolumeProxyManagedTrustBundle(), buildOAuthVolumeProxyManagedTrustBundle),
 		},
 	}
 
-	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
+	if auditEnabled {
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, util.BuildVolume(oauthVolumeAuditConfig(), buildOAuthVolumeAuditConfig))
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
 			Name:            "audit-logs",
 			Image:           image,
@@ -190,17 +194,12 @@ func oauthContainerMain() *corev1.Container {
 	}
 }
 
-func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectReference, noProxy []string) func(c *corev1.Container) {
+func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectReference, noProxy []string, auditEnabled bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Args = []string{
 			"osinserver",
 			fmt.Sprintf("--config=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeConfig().Name), OAuthServerConfigKey)),
-			"--audit-log-format=json",
-			"--audit-log-maxbackup=1",
-			"--audit-log-maxsize=10",
-			fmt.Sprintf("--audit-log-path=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name), "audit.log")),
-			fmt.Sprintf("--audit-policy-file=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeAuditConfig().Name), auditPolicyConfigMapKey)),
 		}
 
 		if auditWebhookRef != nil {
@@ -209,6 +208,19 @@ func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectRe
 		}
 
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+
+		if auditEnabled {
+			c.Args = append(c.Args, []string{
+				"--audit-log-format=json",
+				"--audit-log-maxbackup=1",
+				"--audit-log-maxsize=10",
+				fmt.Sprintf("--audit-log-path=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name), "audit.log")),
+				fmt.Sprintf("--audit-policy-file=%s", path.Join(oauthAuditConfigFileVolumeMount.Path(c.Name, oauthVolumeAuditConfig().Name), auditPolicyConfigMapKey)),
+			}...)
+			c.VolumeMounts = append(c.VolumeMounts,
+				oauthAuditConfigFileVolumeMount.ContainerMounts(oauthContainerMain().Name)...)
+		}
+
 		c.WorkingDir = volumeMounts.Path(c.Name, oauthVolumeWorkLogs().Name)
 		c.Env = []corev1.EnvVar{
 			/** NOTE:

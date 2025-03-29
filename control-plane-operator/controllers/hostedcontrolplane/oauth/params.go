@@ -50,6 +50,7 @@ type OAuthServerParams struct {
 	// konnectivity. Currently only used for IBM Cloud specific addresses.
 	OAuthNoProxy    []string
 	AuditWebhookRef *corev1.LocalObjectReference
+	AuditEnabled    bool
 }
 
 type OAuthConfigParams struct {
@@ -96,6 +97,7 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		Availability:            hcp.Spec.ControllerAvailabilityPolicy,
 		ProxyImage:              releaseImageProvider.GetImage("socks5-proxy"),
 		OAuthNoProxy:            []string{manifests.KubeAPIServerService("").Name, config.AuditWebhookService},
+		AuditEnabled:            true,
 	}
 	if hcp.Spec.Configuration != nil {
 		p.APIServer = hcp.Spec.Configuration.APIServer
@@ -105,6 +107,10 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		p.AuditWebhookRef = hcp.Spec.AuditWebhook
+	}
+
+	if p.APIServer != nil {
+		p.AuditEnabled = string(p.APIServer.Audit.Profile) != string(configv1.NoneAuditProfileType)
 	}
 
 	p.Scheduling = config.Scheduling{
