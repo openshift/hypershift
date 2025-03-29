@@ -176,7 +176,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 	}
 
 	if auditEnabled {
-		auditConfigBytes, ok := auditConfig.Data[auditPolicyProfileMapKey]
+		auditConfigBytes, ok := auditConfig.Data[auditPolicyConfigMapKey]
 		if !ok {
 			return fmt.Errorf("kube apiserver audit configuration is not expected to be empty")
 		}

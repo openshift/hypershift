@@ -13,17 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
-	azureutil "github.com/Azure/go-autorest/autorest/azure"
-	awssdk "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/kms"
-	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
@@ -120,6 +109,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	awssdk "github.com/aws/aws-sdk-go/aws"
@@ -3531,7 +3521,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 
 	deployment := manifests.OpenShiftOAuthAPIServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileOAuthAPIServerDeployment(deployment, p.OwnerRef, p.AuditEnabled, auditCfg, p.OAuthAPIServerDeploymentParams(hcp), hcp.Spec.Platform.Type)
+		return oapi.ReconcileOAuthAPIServerDeployment(deployment, p.OwnerRef, auditCfg, p.AuditEnabled, p.OAuthAPIServerDeploymentParams(hcp), hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver deployment: %w", err)
 	}
@@ -3602,7 +3592,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	clusterNoProxy := proxy.DefaultNoProxy(hcp)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.AuditWebhookRef, p.OwnerRef, oauthConfig, p.AuditEnabled, auditCfg, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.AuditWebhookRef, p.OwnerRef, oauthConfig, auditCfg, p.AuditEnabled, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
