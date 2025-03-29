@@ -14,7 +14,7 @@ RUN chmod g+w . && \
   git config --global --add safe.directory "$PWD" && \
   make build
 
-FROM registry.access.redhat.com/ubi9-minimal:9.5-1739420147
+FROM registry.access.redhat.com/ubi9-minimal:9.5-1742914212
 COPY --from=builder \
   /opt/app-root/src/bin/hypershift \
   /opt/app-root/src/bin/hcp \
