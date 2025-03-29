@@ -41,13 +41,13 @@ spec:
       - args:
         - osinserver
         - --config=/etc/kubernetes/config/config.yaml
+        - --audit-webhook-config-file=/etc/kubernetes/auditwebhook/webhook-kubeconfig
+        - --audit-webhook-mode=batch
         - --audit-log-format=json
         - --audit-log-maxbackup=1
         - --audit-log-maxsize=10
         - --audit-log-path=/var/run/kubernetes/audit.log
         - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
-        - --audit-webhook-config-file=/etc/kubernetes/auditwebhook/webhook-kubeconfig
-        - --audit-webhook-mode=batch
         env:
         - name: HTTP_PROXY
           value: http://127.0.0.1:8092
@@ -60,8 +60,6 @@ spec:
         name: oauth-server
         resources: {}
         volumeMounts:
-        - mountPath: /etc/kubernetes/audit-config
-          name: audit-config
         - mountPath: /etc/kubernetes/secrets/templates/error
           name: error-template
         - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
@@ -80,6 +78,8 @@ spec:
           name: serving-cert
         - mountPath: /etc/kubernetes/secrets/session
           name: session-secret
+        - mountPath: /etc/kubernetes/audit-config
+          name: audit-config
         - mountPath: /etc/kubernetes/auditwebhook
           name: oauth-audit-webhook
         workingDir: /var/run/kubernetes
@@ -186,9 +186,6 @@ spec:
       - configMap:
           name: oauth-master-ca-bundle
         name: master-ca-bundle
-      - configMap:
-          name: oauth-openshift-audit
-        name: audit-config
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
@@ -205,6 +202,9 @@ spec:
           name: trusted-ca-bundle-managed
           optional: true
         name: managed-trust-bundle
+      - configMap:
+          name: oauth-openshift-audit
+        name: audit-config
       - name: oauth-audit-webhook
         secret:
           secretName: test-webhook-audit-secret
