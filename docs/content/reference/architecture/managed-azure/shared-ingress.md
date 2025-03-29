@@ -1,5 +1,4 @@
-# Shared Ingress in Azure Red Hat OpenShift
-
+# Shared Ingress
 ## Motivation
 
 Today, exposing the apiserver of an hosted cluster to its nodes is possible only with two options: LoadBalancer and NodePort.
