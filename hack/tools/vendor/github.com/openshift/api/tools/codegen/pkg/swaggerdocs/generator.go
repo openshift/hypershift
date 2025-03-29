@@ -79,19 +79,19 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the schemapatch generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping swaggerdocs generation for %s", groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	for _, version := range groupCtx.Versions {
 		if err := g.generateGroupVersion(groupCtx.Name, version); err != nil {
-			return fmt.Errorf("error generating swagger docs for %s/%s: %w", groupCtx.Name, version.Name, err)
+			return nil, fmt.Errorf("error generating swagger docs for %s/%s: %w", groupCtx.Name, version.Name, err)
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 // generateGroupVersion generates swagger docs for the group version.
