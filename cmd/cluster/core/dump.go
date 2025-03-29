@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -183,21 +184,11 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
 
-	kubeAPIServerPodList := &corev1.PodList{}
-	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"}); err != nil {
-		return fmt.Errorf("failed to list kube-apiserver pods in control plane namespace: %w", err)
+	podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
 	}
-	var podToForward *corev1.Pod
-	for i := range kubeAPIServerPodList.Items {
-		pod := &kubeAPIServerPodList.Items[i]
-		if pod.Status.Phase == corev1.PodRunning {
-			podToForward = pod
-			break
-		}
-	}
-	if podToForward == nil {
-		return fmt.Errorf("did not find running kube-apiserver pod for guest cluster")
-	}
+
 	restConfig, err := util.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get a config for management cluster: %w", err)
@@ -214,7 +205,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		return fmt.Errorf("failed to get a kubernetes client: %w", err)
 	}
 	forwarderOutput := &bytes.Buffer{}
-	forwarder := portForwarder{
+	forwarder := supportforwarder.PortForwarder{
 		Namespace: podToForward.Namespace,
 		PodName:   podToForward.Name,
 		Config:    restConfig,

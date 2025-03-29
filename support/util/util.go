@@ -681,4 +681,10 @@ func HostFromURL(addr string) (string, error) {
 		return "", fmt.Errorf("missing host name in URL(%s)", addr)
 	}
 	return hostName, nil
+
+}
+
+// EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined
+func EnableIfCustomKubeconfig(hcp *hyperv1.HostedControlPlane) bool {
+	return len(hcp.Spec.KubeAPIServerDNSName) > 0
 }

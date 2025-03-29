@@ -72,7 +72,20 @@ func HCCOKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
-func KASExternalKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.KubeconfigSecretRef) *corev1.Secret {
+func KASCustomKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.KubeconfigSecretRef) *corev1.Secret {
+	s := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "custom-admin-kubeconfig",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+	if ref != nil {
+		s.Name = ref.Name
+	}
+	return s
+}
+
+func KASAdminKubeconfigSecret(controlPlaneNamespace string, ref *hyperv1.KubeconfigSecretRef) *corev1.Secret {
 	s := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "admin-kubeconfig",
