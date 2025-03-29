@@ -29,7 +29,6 @@ tools/bin
 
 .kube
 /kubeconfig
-vendor/**/.dockerignore
 .docker
 /fast.Dockerfile.dockerignore
 
