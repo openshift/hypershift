@@ -28,11 +28,6 @@ import (
 	"github.com/go-logr/logr"
 )
 
-const (
-	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
-	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
-)
-
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
@@ -790,7 +785,7 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{
 			{
-				Key:      NeedManagementKASAccessLabel,
+				Key:      config.NeedManagementKASAccessLabel,
 				Operator: "DoesNotExist",
 				Values:   nil,
 			},
@@ -859,7 +854,7 @@ func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{
 			{
-				Key:      NeedMetricsServerAccessLabel,
+				Key:      config.NeedMetricsServerAccessLabel,
 				Operator: "Exists",
 				Values:   nil,
 			},
