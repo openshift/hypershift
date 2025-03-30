@@ -117,6 +117,8 @@ const (
 	StringType
 	// BoolType type for Bool token
 	BoolType
+	// InvalidType type for invalid token
+	InvalidType
 )
 
 // String type identifier to text
@@ -186,6 +188,8 @@ func (t Type) String() string {
 		return "Infinity"
 	case NanType:
 		return "Nan"
+	case InvalidType:
+		return "Invalid"
 	}
 	return ""
 }
@@ -202,6 +206,8 @@ const (
 	CharacterTypeMiscellaneous
 	// CharacterTypeEscaped type of escaped character
 	CharacterTypeEscaped
+	// CharacterTypeInvalid type for a invalid token.
+	CharacterTypeInvalid
 )
 
 // String character type identifier to text
@@ -339,9 +345,12 @@ func reservedKeywordToken(typ Type, value, org string, pos *Position) *Token {
 
 func init() {
 	for _, keyword := range reservedNullKeywords {
-		reservedKeywordMap[keyword] = func(value, org string, pos *Position) *Token {
+		f := func(value, org string, pos *Position) *Token {
 			return reservedKeywordToken(NullType, value, org, pos)
 		}
+
+		reservedKeywordMap[keyword] = f
+		reservedEncKeywordMap[keyword] = f
 	}
 	for _, keyword := range reservedBoolKeywords {
 		f := func(value, org string, pos *Position) *Token {
@@ -623,7 +632,7 @@ func IsNeedQuoted(value string) bool {
 	}
 	first := value[0]
 	switch first {
-	case '*', '&', '[', '{', '}', ']', ',', '!', '|', '>', '%', '\'', '"', '@', ' ':
+	case '*', '&', '[', '{', '}', ']', ',', '!', '|', '>', '%', '\'', '"', '@', ' ', '`':
 		return true
 	}
 	last := value[len(value)-1]
@@ -756,8 +765,25 @@ func (t *Token) Clone() *Token {
 	return &copied
 }
 
+// Dump outputs token information to stdout for debugging.
+func (t *Token) Dump() {
+	fmt.Printf(
+		"[TYPE]:%q [CHARTYPE]:%q [INDICATOR]:%q [VALUE]:%q [ORG]:%q [POS(line:column:level)]: %d:%d:%d\n",
+		t.Type, t.CharacterType, t.Indicator, t.Value, t.Origin, t.Position.Line, t.Position.Column, t.Position.IndentLevel,
+	)
+}
+
 // Tokens type of token collection
 type Tokens []*Token
+
+func (t Tokens) InvalidToken() *Token {
+	for _, tt := range t {
+		if tt.Type == InvalidType {
+			return tt
+		}
+	}
+	return nil
+}
 
 func (t *Tokens) add(tk *Token) {
 	tokens := *t
@@ -782,7 +808,8 @@ func (t *Tokens) Add(tks ...*Token) {
 // Dump dump all token structures for debugging
 func (t Tokens) Dump() {
 	for _, tk := range t {
-		fmt.Printf("- %+v\n", tk)
+		fmt.Print("- ")
+		tk.Dump()
 	}
 }
 
@@ -1049,6 +1076,17 @@ func DocumentEnd(org string, pos *Position) *Token {
 		CharacterType: CharacterTypeMiscellaneous,
 		Indicator:     NotIndicator,
 		Value:         "...",
+		Origin:        org,
+		Position:      pos,
+	}
+}
+
+func Invalid(org string, pos *Position) *Token {
+	return &Token{
+		Type:          InvalidType,
+		CharacterType: CharacterTypeInvalid,
+		Indicator:     NotIndicator,
+		Value:         org,
 		Origin:        org,
 		Position:      pos,
 	}

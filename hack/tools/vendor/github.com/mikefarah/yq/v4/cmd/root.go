@@ -66,14 +66,23 @@ yq -P -oy sample.json
 			return evaluateSequence(cmd, args)
 
 		},
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			cmd.SetOut(cmd.OutOrStdout())
 			level := logging.WARNING
 			stringFormat := `[%{level}] %{color}%{time:15:04:05}%{color:reset} %{message}`
 
-			if verbose {
+			// when NO_COLOR environment variable presents and not an empty string the coloured output should be disabled;
+			// refer to no-color.org
+			forceNoColor = forceNoColor || os.Getenv("NO_COLOR") != ""
+
+			if verbose && forceNoColor {
+				level = logging.DEBUG
+				stringFormat = `[%{level:5.5s}] %{time:15:04:05} %{shortfile:-33s} %{shortfunc:-25s} %{message}`
+			} else if verbose {
 				level = logging.DEBUG
 				stringFormat = `[%{level:5.5s}] %{color}%{time:15:04:05}%{color:bold} %{shortfile:-33s} %{shortfunc:-25s}%{color:reset} %{message}`
+			} else if forceNoColor {
+				stringFormat = `[%{level}] %{time:15:04:05} %{message}`
 			}
 
 			var format = logging.MustStringFormatter(stringFormat)
@@ -177,7 +186,7 @@ yq -P -oy sample.json
 	rootCmd.PersistentFlags().BoolVarP(&exitStatus, "exit-status", "e", false, "set exit status if there are no matches or null or false is returned")
 
 	rootCmd.PersistentFlags().BoolVarP(&forceColor, "colors", "C", false, "force print with colors")
-	rootCmd.PersistentFlags().BoolVarP(&forceNoColor, "no-colors", "M", false, "force print with no colors")
+	rootCmd.PersistentFlags().BoolVarP(&forceNoColor, "no-colors", "M", forceNoColor, "force print with no colors")
 	rootCmd.PersistentFlags().StringVarP(&frontMatter, "front-matter", "f", "", "(extract|process) first input as yaml front-matter. Extract will pull out the yaml content, process will run the expression against the yaml content, leaving the remaining data intact")
 	if err = rootCmd.RegisterFlagCompletionFunc("front-matter", cobra.FixedCompletions([]string{"extract", "process"}, cobra.ShellCompDirectiveNoFileComp)); err != nil {
 		panic(err)
@@ -188,7 +197,7 @@ yq -P -oy sample.json
 	}
 	rootCmd.PersistentFlags().BoolVarP(&yqlib.ConfiguredYamlPreferences.LeadingContentPreProcessing, "header-preprocess", "", true, "Slurp any header comments and separators before processing expression.")
 
-	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter.")
+	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter. The necessary directories will be created.")
 	if err = rootCmd.RegisterFlagCompletionFunc("split-exp", cobra.NoFileCompletions); err != nil {
 		panic(err)
 	}
