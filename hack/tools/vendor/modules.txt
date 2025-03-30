@@ -396,11 +396,12 @@ github.com/goccy/go-json/internal/encoder/vm_color_indent
 github.com/goccy/go-json/internal/encoder/vm_indent
 github.com/goccy/go-json/internal/errors
 github.com/goccy/go-json/internal/runtime
-# github.com/goccy/go-yaml v1.11.3
-## explicit; go 1.19
+# github.com/goccy/go-yaml v1.16.0
+## explicit; go 1.21.0
 github.com/goccy/go-yaml
 github.com/goccy/go-yaml/ast
 github.com/goccy/go-yaml/internal/errors
+github.com/goccy/go-yaml/internal/format
 github.com/goccy/go-yaml/lexer
 github.com/goccy/go-yaml/parser
 github.com/goccy/go-yaml/printer
@@ -1343,10 +1344,6 @@ golang.org/x/tools/internal/stdlib
 golang.org/x/tools/internal/typeparams
 golang.org/x/tools/internal/typesinternal
 golang.org/x/tools/internal/versions
-# golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028
-## explicit; go 1.18
-golang.org/x/xerrors
-golang.org/x/xerrors/internal
 # google.golang.org/protobuf v1.34.2
 ## explicit; go 1.20
 google.golang.org/protobuf/encoding/protodelim
