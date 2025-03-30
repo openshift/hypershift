@@ -1242,12 +1242,12 @@ golang.org/x/crypto/salsa20/salsa
 golang.org/x/crypto/sha3
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
-## explicit; go 1.22.0
+# golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
+## explicit; go 1.23.0
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-# golang.org/x/mod v0.23.0
-## explicit; go 1.22.0
+# golang.org/x/mod v0.24.0
+## explicit; go 1.23.0
 golang.org/x/mod/semver
 # golang.org/x/net v0.37.0
 ## explicit; go 1.23.0
