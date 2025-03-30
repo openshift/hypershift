@@ -48,7 +48,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0
 	github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
 	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
-	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
+	github.com/openshift/cloud-credential-operator v0.0.0-20250326174647-d66761c09842
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
@@ -236,7 +236,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.23.0 // indirect
-	golang.org/x/oauth2 v0.27.0 // indirect
+	golang.org/x/oauth2 v0.28.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
