@@ -20,6 +20,7 @@ func NewDefaultComparators() manifestcomparators.CRDComparatorRegistry {
 	must(ret.AddComparator(manifestcomparators.ListsMustHaveSSATags()))
 	must(ret.AddComparator(manifestcomparators.ConditionsMustHaveProperSSATags()))
 	must(ret.AddComparator(manifestcomparators.NoNewRequiredFields()))
+	must(ret.AddComparator(manifestcomparators.MustNotExceedCostBudget()))
 
 	/*
 		other useful comparators

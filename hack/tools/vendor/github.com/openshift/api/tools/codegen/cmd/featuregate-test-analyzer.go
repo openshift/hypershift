@@ -582,13 +582,22 @@ func listTestResultForVariant(featureGate string, jobVariant JobVariant) (*Testi
 			Host:   "sippy.dptools.openshift.org",
 			Path:   "api/tests",
 		}
-
-		latestRelease, err := getLatestRelease()
-		if err != nil {
-			return nil, fmt.Errorf("couldn't fetch latest release version: %w", err)
+		var release string
+		// if its not main branch, then use the ENV var to determine the release version
+		currentRelease := os.Getenv("PULL_BASE_REF")
+		if strings.Contains(currentRelease, "release-") {
+			// example: release-4.18, release-4.17
+			release = strings.TrimPrefix(currentRelease, "release-")
+		} else {
+			// means its main branch
+			var err error
+			release, err = getLatestRelease()
+			if err != nil {
+				return nil, fmt.Errorf("couldn't fetch latest release version: %w", err)
+			}
 		}
 		queryParams := currURL.Query()
-		queryParams.Add("release", latestRelease)
+		queryParams.Add("release", release)
 		queryParams.Add("period", "default")
 		filterJSON, err := json.Marshal(currQuery)
 		if err != nil {

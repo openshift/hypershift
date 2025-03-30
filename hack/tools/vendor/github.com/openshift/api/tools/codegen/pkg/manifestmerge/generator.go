@@ -5,13 +5,16 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"github.com/google/go-cmp/cmp"
-	"k8s.io/apimachinery/pkg/api/equality"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"math/rand"
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/google/go-cmp/cmp"
+	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/util/sets"
+
+	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
 	"github.com/openshift/api/tools/codegen/pkg/utils"
@@ -25,7 +28,6 @@ import (
 	"k8s.io/kube-openapi/pkg/spec3"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/utils/pointer"
-	"path/filepath"
 	kyaml "sigs.k8s.io/yaml"
 )
 
@@ -104,10 +106,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the schemapatch generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping %q for %s", g.Name(), groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	versionPaths := allVersionPaths(groupCtx.Versions)
@@ -128,10 +130,10 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	}
 
 	if len(errs) > 0 {
-		return kerrors.NewAggregate(errs)
+		return nil, kerrors.NewAggregate(errs)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // genGroupVersion runs the schemapatch generator against a particular version of the API group.
