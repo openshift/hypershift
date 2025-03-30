@@ -1152,8 +1152,8 @@ gitlab.com/bosi/decorder
 # go-simpler.org/musttag v0.13.0
 ## explicit; go 1.20
 go-simpler.org/musttag
-# go-simpler.org/sloglint v0.7.2
-## explicit; go 1.21
+# go-simpler.org/sloglint v0.9.0
+## explicit; go 1.22.0
 go-simpler.org/sloglint
 # go.uber.org/automaxprocs v1.6.0
 ## explicit; go 1.20
@@ -1203,7 +1203,7 @@ golang.org/x/mod/internal/lazyregexp
 golang.org/x/mod/modfile
 golang.org/x/mod/module
 golang.org/x/mod/semver
-# golang.org/x/net v0.33.0
+# golang.org/x/net v0.34.0
 ## explicit; go 1.18
 golang.org/x/net/context
 golang.org/x/net/html
@@ -1261,7 +1261,7 @@ golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/width
-# golang.org/x/tools v0.28.0
+# golang.org/x/tools v0.29.0
 ## explicit; go 1.22.0
 golang.org/x/tools/cmd/stringer
 golang.org/x/tools/go/analysis
