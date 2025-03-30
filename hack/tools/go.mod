@@ -165,7 +165,7 @@ require (
 	github.com/nakabonne/nestif v0.3.1 // indirect
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
-	github.com/nunnatsa/ginkgolinter v0.18.4 // indirect
+	github.com/nunnatsa/ginkgolinter v0.19.1 // indirect
 	github.com/olekukonko/tablewriter v0.0.5 // indirect
 	github.com/openshift/crd-schema-checker v0.0.0-20240927092539-11d809bb1183 // indirect
 	github.com/pelletier/go-toml v1.9.5 // indirect
@@ -241,14 +241,14 @@ require (
 	go.uber.org/zap v1.26.0 // indirect
 	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f // indirect
-	golang.org/x/mod v0.22.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
+	golang.org/x/mod v0.23.0 // indirect
+	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
-	golang.org/x/tools v0.28.0 // indirect
+	golang.org/x/tools v0.30.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
