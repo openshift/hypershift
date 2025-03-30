@@ -33,11 +33,20 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 	switch x := n.(type) {
 	case *ast.AssignStmt:
 		// Skip any assignment to the field.
-		for _, s := range x.Lhs {
+		for i, s := range x.Lhs {
 			c.filter.AddPos(s.Pos())
 
 			if se, ok := s.(*ast.StarExpr); ok {
 				c.filter.AddPos(se.X.Pos())
+			}
+
+			if len(x.Rhs) > i {
+				value := x.Rhs[i]
+				if se, ok := value.(*ast.SelectorExpr); ok {
+					if hasPointerKeyWithoutPointerGetter(c.info, s, se) {
+						c.filter.AddPos(se.Sel.Pos())
+					}
+				}
 			}
 		}
 
@@ -52,6 +61,13 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 			c.filter.AddPos(x.X.Pos())
 		}
 
+	case *ast.KeyValueExpr:
+		if se, ok := x.Value.(*ast.SelectorExpr); ok {
+			if hasPointerKeyWithoutPointerGetter(c.info, x.Key, se) {
+				c.filter.AddPos(se.Sel.Pos())
+			}
+		}
+
 	case *ast.CallExpr:
 		if !c.cfg.ReplaceFirstArgInAppend && len(x.Args) > 0 {
 			if v, ok := x.Fun.(*ast.Ident); ok && v.Name == "append" {
@@ -61,16 +77,64 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 			}
 		}
 
-		f, ok := x.Fun.(*ast.SelectorExpr)
-		if !ok {
+		switch fun := x.Fun.(type) {
+		case *ast.Ident:
+			// Allow passing optional parameters to the function without getter.
+
+			if len(x.Args) == 0 {
+				return &Result{}, nil
+			}
+
+			if fun.Obj == nil || fun.Obj.Kind != ast.Fun {
+				return &Result{}, nil
+			}
+
+			decl, ok := fun.Obj.Decl.(*ast.FuncDecl)
+			if !ok || decl.Type == nil || decl.Type.Params == nil {
+				return &Result{}, nil
+			}
+
+			paramTypes := make([]ast.Expr, 0, len(x.Args))
+			for _, p := range decl.Type.Params.List {
+				count := max(len(p.Names), 1)
+				for range count {
+					paramTypes = append(paramTypes, p.Type)
+				}
+			}
+
+			for i, arg := range x.Args {
+				a, ok := arg.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+
+				_, isParamPointer := paramTypes[i].(*ast.StarExpr)
+				if !isParamPointer {
+					return &Result{}, nil
+				}
+
+				if !isProtoMessage(c.info, a.X) {
+					continue
+				}
+
+				hasPointer, ok := getterResultHasPointer(c.info, a.X, a.Sel.Name)
+				if !ok || hasPointer {
+					continue
+				}
+
+				c.filter.AddPos(a.Sel.Pos())
+			}
+
+		case *ast.SelectorExpr:
+			if !isProtoMessage(c.info, fun.X) {
+				return &Result{}, nil
+			}
+
+			c.processInner(x)
+
+		default:
 			return &Result{}, nil
 		}
-
-		if !isProtoMessage(c.info, f.X) {
-			return &Result{}, nil
-		}
-
-		c.processInner(x)
 
 	case *ast.SelectorExpr:
 		if !isProtoMessage(c.info, x.X) {
@@ -176,8 +240,11 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.processInner(x.X)
 		c.write(".")
 
+		// Skip if the field is filtered.
+		isFiltered := c.filter.IsFiltered(x.Sel.Pos())
+
 		// If getter exists, use it.
-		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) {
+		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) && !isFiltered {
 			c.writeFrom(x.Sel.Name)
 			c.writeTo("Get" + x.Sel.Name + "()")
 			return
@@ -218,7 +285,7 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.write("*")
 		c.processInner(x.X)
 
-	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr:
+	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr, *ast.MapType:
 		// Process the node as is.
 		c.write(formatNode(x))
 
@@ -348,4 +415,18 @@ func getterResultHasPointer(info *types.Info, x ast.Expr, name string) (hasPoint
 	}
 
 	return false, false
+}
+
+func hasPointerKeyWithoutPointerGetter(info *types.Info, key ast.Expr, value *ast.SelectorExpr) bool {
+	_, isPtr := info.TypeOf(key).(*types.Pointer)
+	if !isPtr {
+		return false
+	}
+
+	getterHasPointer, ok := getterResultHasPointer(info, value.X, value.Sel.Name)
+	if !ok {
+		return false
+	}
+
+	return !getterHasPointer
 }
