@@ -7,6 +7,11 @@ import (
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=etcds,scope=Cluster,categories=coreoperators
+// +kubebuilder:subresource:status
+// +openshift:api-approved.openshift.io=https://github.com/openshift/api/pull/752
+// +openshift:file-pattern=cvoRunLevel=0000_12,operatorName=etcd,operatorOrdering=01
 
 // Etcd provides information to configure an operator to manage etcd.
 //
@@ -19,7 +24,6 @@ type Etcd struct {
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ObjectMeta `json:"metadata"`
 
-	// +kubebuilder:validation:Required
 	// +required
 	Spec EtcdSpec `json:"spec"`
 	// +optional
@@ -34,10 +38,21 @@ type EtcdSpec struct {
 	// Valid values are "", "Standard" and "Slower".
 	//	"" means no opinion and the platform is left to choose a reasonable default
 	//	which is subject to change without notice.
-	// +kubebuilder:validation:Optional
-	// +openshift:enable:FeatureSets=CustomNoUpgrade;TechPreviewNoUpgrade
+	// +openshift:enable:FeatureGate=HardwareSpeed
 	// +optional
 	HardwareSpeed ControlPlaneHardwareSpeed `json:"controlPlaneHardwareSpeed"`
+
+	// backendQuotaGiB sets the etcd backend storage size limit in gibibytes.
+	// The value should be an integer not less than 8 and not more than 32.
+	// When not specified, the default value is 8.
+	// +kubebuilder:default:=8
+	// +kubebuilder:validation:Minimum=8
+	// +kubebuilder:validation:Maximum=32
+	// +kubebuilder:validation:XValidation:rule="self>=oldSelf",message="etcd backendQuotaGiB may not be decreased"
+	// +openshift:enable:FeatureGate=EtcdBackendQuota
+	// +default=8
+	// +optional
+	BackendQuotaGiB int32 `json:"backendQuotaGiB,omitempty"`
 }
 
 type EtcdStatus struct {
@@ -76,6 +91,6 @@ type EtcdList struct {
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	metav1.ListMeta `json:"metadata"`
 
-	// Items contains the items
+	// items contains the items
 	Items []Etcd `json:"items"`
 }
