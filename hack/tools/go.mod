@@ -1,6 +1,8 @@
 module github.com/openshift-hive/hypershift/hack/tools
 
-go 1.20
+go 1.21.3
+
+toolchain go1.22.9
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
@@ -11,7 +13,7 @@ require (
 	sigs.k8s.io/controller-tools v0.12.0
 )
 
-replace k8s.io/code-generator => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20231218200749-2151937f4610
+replace k8s.io/code-generator => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20240205144616-0579a1885bb1
 
 require (
 	cloud.google.com/go/compute v1.19.1 // indirect
