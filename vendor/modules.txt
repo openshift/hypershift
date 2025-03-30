@@ -361,7 +361,7 @@ github.com/coreos/ignition/v2/config/shared/parse
 github.com/coreos/ignition/v2/config/shared/validations
 github.com/coreos/ignition/v2/config/util
 github.com/coreos/ignition/v2/config/v3_2/types
-# github.com/coreos/vcontext v0.0.0-20230201181013-d72178a18687
+# github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5
 ## explicit; go 1.18
 github.com/coreos/vcontext/path
 github.com/coreos/vcontext/report
