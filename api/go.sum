@@ -96,8 +96,8 @@ github.com/onsi/ginkgo/v2 v2.22.2 h1:/3X8Panh8/WwhU/3Ssa6rCKqPLuAkVY2I0RoyDLySlU
 github.com/onsi/ginkgo/v2 v2.22.2/go.mod h1:oeMosUL+8LtarXBHu/c0bx2D/K9zyQ6uX3cTyztHwsk=
 github.com/onsi/gomega v1.36.2 h1:koNYke6TVk6ZmnyHrCXba/T/MoLBXFjeC1PtvYgw0A8=
 github.com/onsi/gomega v1.36.2/go.mod h1:DdwyADRjrc825LhMEkD76cHR5+pUnjhUN8GlHlRPHzY=
-github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56 h1:fWNA66LNXugnaxTaRVHZLdW+vbwyk5vwTT9/x2YYiG8=
-github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
+github.com/openshift/api v0.0.0-20250327202946-4521905c611e h1:RUKfJ9SPZF6NFoE2tVfymrCrztFG3sUTlz5YLGhFxN8=
+github.com/openshift/api v0.0.0-20250327202946-4521905c611e/go.mod h1:yk60tHAmHhtVpJQo3TwVYq2zpuP70iJIFDCmeKMIzPw=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
 github.com/patrickmn/go-cache v2.1.0+incompatible/go.mod h1:3Qf8kWWT7OJRJbdiICTKqZju1ZixQ/KpMGzzAfe6+WQ=
 github.com/pelletier/go-toml/v2 v2.2.2 h1:aYUidT7k73Pcl9nb2gScu7NSrKCSHIDE89b3+6Wq+LM=

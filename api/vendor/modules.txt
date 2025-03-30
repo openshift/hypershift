@@ -141,7 +141,7 @@ github.com/munnerz/goautoneg
 ## explicit; go 1.22.0
 # github.com/onsi/gomega v1.36.2
 ## explicit; go 1.22.0
-# github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
+# github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 ## explicit; go 1.23.0
 github.com/openshift/api/config/v1
 # github.com/pkg/errors v0.9.1
