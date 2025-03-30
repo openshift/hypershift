@@ -43,7 +43,7 @@ github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/comment
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/pattern
 github.com/GaijinEntertainment/go-exhaustruct/v3/internal/structure
-# github.com/Masterminds/semver/v3 v3.3.0
+# github.com/Masterminds/semver/v3 v3.3.1
 ## explicit; go 1.21
 github.com/Masterminds/semver/v3
 # github.com/Microsoft/go-winio v0.6.1
