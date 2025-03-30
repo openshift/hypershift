@@ -2168,7 +2168,7 @@ k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
 k8s.io/klog/v2/internal/verbosity
 k8s.io/klog/v2/textlogger
-# k8s.io/kms v0.32.2
+# k8s.io/kms v0.32.3
 ## explicit; go 1.23.0
 k8s.io/kms/apis/v1beta1
 k8s.io/kms/apis/v2
