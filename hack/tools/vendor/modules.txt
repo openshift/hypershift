@@ -1110,7 +1110,7 @@ github.com/ultraware/whitespace
 # github.com/uudashr/gocognit v1.2.0
 ## explicit; go 1.19
 github.com/uudashr/gocognit
-# github.com/uudashr/iface v1.3.0
+# github.com/uudashr/iface v1.3.1
 ## explicit; go 1.22.1
 github.com/uudashr/iface/identical
 github.com/uudashr/iface/internal/directive
