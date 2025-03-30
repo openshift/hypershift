@@ -222,7 +222,7 @@ require (
 	go.etcd.io/etcd/client/v2 v2.305.19 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.5.19 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.19 // indirect
-	go.mongodb.org/mongo-driver v1.14.0 // indirect
+	go.mongodb.org/mongo-driver v1.17.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.54.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.54.0 // indirect
