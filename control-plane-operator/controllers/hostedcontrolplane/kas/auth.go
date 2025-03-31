@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openshift/hypershift/control-plane-operator/featuregate"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -131,20 +132,23 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 
 	groups := generateGroupsClaimMapping(claimMappings.Groups)
 
-	uid, err := generateUIDClaimMapping(claimMappings.UID)
-	if err != nil {
-		return out, fmt.Errorf("generating uid claim mapping: %v", err)
-	}
-
-	extras, err := generateExtraClaimMapping(claimMappings.Extra...)
-	if err != nil {
-		return out, fmt.Errorf("generating extra claim mapping: %v", err)
-	}
-
 	out.Username = username
 	out.Groups = groups
-	out.UID = uid
-	out.Extra = extras
+
+	if featuregate.Gates.Enabled(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings) {
+		uid, err := generateUIDClaimMapping(claimMappings.UID)
+		if err != nil {
+			return out, fmt.Errorf("generating uid claim mapping: %v", err)
+		}
+
+		extras, err := generateExtraClaimMapping(claimMappings.Extra...)
+		if err != nil {
+			return out, fmt.Errorf("generating extra claim mapping: %v", err)
+		}
+
+		out.UID = uid
+		out.Extra = extras
+	}
 
 	return out, nil
 }
@@ -245,10 +249,10 @@ func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
 		return out, errors.New("extra mapping must specify a valueExpression, but none was provided")
 	}
 
-    err := validateExtraMappingExpression(extra.ValueExpression)
-    if err != nil {
-        return out, fmt.Errorf("validating valueExpression: %v", err)
-    }
+	err := validateExtraMappingExpression(extra.ValueExpression)
+	if err != nil {
+		return out, fmt.Errorf("validating valueExpression: %v", err)
+	}
 
 	out.Key = extra.Key
 	out.ValueExpression = extra.ValueExpression

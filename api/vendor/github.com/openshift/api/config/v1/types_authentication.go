@@ -5,7 +5,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 // +genclient
 // +genclient:nonNamespaced
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
-// +openshift:validation:FeatureGateAwareXValidation:featureGate=ExternalOIDC,rule="!has(self.spec.oidcProviders) || self.spec.oidcProviders.all(p, !has(p.oidcClients) || p.oidcClients.all(specC, self.status.oidcClients.exists(statusC, statusC.componentNamespace == specC.componentNamespace && statusC.componentName == specC.componentName) || (has(oldSelf.spec.oidcProviders) && oldSelf.spec.oidcProviders.exists(oldP, oldP.name == p.name && has(oldP.oidcClients) && oldP.oidcClients.exists(oldC, oldC.componentNamespace == specC.componentNamespace && oldC.componentName == specC.componentName)))))",message="all oidcClients in the oidcProviders must match their componentName and componentNamespace to either a previously configured oidcClient or they must exist in the status.oidcClients"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings,rule="!has(self.spec.oidcProviders) || self.spec.oidcProviders.all(p, !has(p.oidcClients) || p.oidcClients.all(specC, self.status.oidcClients.exists(statusC, statusC.componentNamespace == specC.componentNamespace && statusC.componentName == specC.componentName) || (has(oldSelf.spec.oidcProviders) && oldSelf.spec.oidcProviders.exists(oldP, oldP.name == p.name && has(oldP.oidcClients) && oldP.oidcClients.exists(oldC, oldC.componentNamespace == specC.componentNamespace && oldC.componentName == specC.componentName)))))",message="all oidcClients in the oidcProviders must match their componentName and componentNamespace to either a previously configured oidcClient or they must exist in the status.oidcClients"
 
 // Authentication specifies cluster-wide settings for authentication (like OAuth and
 // webhook token authenticators). The canonical name of an instance is `cluster`.
@@ -89,7 +89,7 @@ type AuthenticationSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=1
-	// +openshift:enable:FeatureGate=ExternalOIDC
+	// +openshift:enable:FeatureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
 	OIDCProviders []OIDCProvider `json:"oidcProviders,omitempty"`
 }
 
@@ -274,6 +274,7 @@ type TokenClaimMappings struct {
 	// The current default is to use the 'sub' claim.
 	//
 	// +optional
+	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
 	UID *TokenClaimOrExpressionMapping `json:"uid,omitempty"`
 
 	// extra is an optional field for configuring the mappings
@@ -286,6 +287,7 @@ type TokenClaimMappings struct {
 	// +kubebuilder:validation:MaxItems=64
 	// +listType=map
 	// +listMapKey=key
+	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
 	Extra []ExtraMapping `json:"extra,omitempty"`
 }
 
