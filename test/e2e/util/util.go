@@ -1435,13 +1435,6 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 }
 
 func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
-	// Skipping KubeAPIDNSName test until we investigate why it's flaking in CI
-	// https://testgrid-citests.apps.cewong-dev.cewong.hypershift.devcluster.openshift.com/?job=1906642686312452096&test=TestCreateClusterCustomConfig/Main
-	// Message: "Operation cannot be fulfilled on hostedclusters.hypershift.openshift.io \"custom-config-2pwq4\": the object has been modified; please apply your changes to the latest version and try again",
-	// Reason: "Conflict"
-	// Code: 409
-
-	t.Skip("Skipping KubeAPIDNSName test")
 	AtLeast(t, Version419)
 	var (
 		hcKASCustomKubeconfigSecretName string
@@ -1470,7 +1463,14 @@ func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient
 	hc.Spec.KubeAPIServerDNSName = customApiServerHost
 	t.Log("Updating hosted cluster with KubeAPIDNSName")
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		return mgmtClient.Update(ctx, hc)
+		// Get the latest version of the object
+		latestHC := &hyperv1.HostedCluster{}
+		if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
+			return err
+		}
+		// Apply our changes to the latest version
+		latestHC.Spec.KubeAPIServerDNSName = customApiServerHost
+		return mgmtClient.Update(ctx, latestHC)
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update hosted cluster")
 
@@ -1553,7 +1553,14 @@ func EnsureKubeAPIDNSName(t *testing.T, ctx context.Context, mgmtClient crclient
 	// removing KubeAPIDNSName from HC
 	hc.Spec.KubeAPIServerDNSName = ""
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		return mgmtClient.Update(ctx, hc)
+		// Get the latest version of the object
+		latestHC := &hyperv1.HostedCluster{}
+		if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
+			return err
+		}
+		// Apply our changes to the latest version
+		latestHC.Spec.KubeAPIServerDNSName = ""
+		return mgmtClient.Update(ctx, latestHC)
 	})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update hosted control plane")
 
