@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -48,6 +49,12 @@ func NewComponent() component.ControlPlaneComponent {
 		WithDependencies(oapiv2.ComponentName).
 		WatchResource(&corev1.ConfigMap{}, "openshift-oauth-apiserver-audit").
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
+			Mode: component.Socks5,
+			Socks5Options: component.Socks5Options{
+				ResolveFromGuestClusterDNS: ptr.To(true),
+			},
+		}).
 		Build()
 }
 

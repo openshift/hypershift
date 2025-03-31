@@ -236,7 +236,9 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 			name:             "Empty deployment config and oauth params",
 			deploymentConfig: config.DeploymentConfig{},
 			auditConfig:      manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
-			params:           OAuthDeploymentParams{},
+			params: OAuthDeploymentParams{
+				EtcdURL: "https://etcd-client:2379",
+			},
 		},
 	}
 	for _, tc := range testCases {

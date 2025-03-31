@@ -12,7 +12,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -537,4 +539,30 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 	}
 
 	return pullSecretBytes, nil
+}
+
+var (
+	hasPortRegex = regexp.MustCompile(`:\d{1,5}$`)
+)
+
+func HostFromURL(addr string) (string, error) {
+	parsedURL, err := url.Parse(addr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL(%s): %w", addr, err)
+	}
+	hostPort := parsedURL.Host
+	if hostPort == "" {
+		return "", fmt.Errorf("missing host/port name in URL(%s)", addr)
+	}
+	if !hasPortRegex.MatchString(hostPort) {
+		return hostPort, nil
+	}
+	hostName, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return "", fmt.Errorf("failed to split host/port from (%s): %w", hostPort, err)
+	}
+	if hostName == "" {
+		return "", fmt.Errorf("missing host name in URL(%s)", addr)
+	}
+	return hostName, nil
 }
