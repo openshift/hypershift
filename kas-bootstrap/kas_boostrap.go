@@ -8,6 +8,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	equality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -22,7 +24,12 @@ import (
 )
 
 func init() {
+	// Needed for the featureGate.
 	utilruntime.Must(configv1.Install(configScheme))
+	// Needed for the CRDs.
+	utilruntime.Must(apiextensionsv1.AddToScheme(configScheme))
+	// Needed for the hcco-rolebinding.
+	utilruntime.Must(rbacv1.AddToScheme(configScheme))
 }
 
 var (
@@ -45,7 +52,11 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
-	content, err := os.ReadFile(filepath.Join(opts.RenderedFeatureGatePath, "99_feature-gate.yaml"))
+	if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
+		return fmt.Errorf("failed to apply bootstrap resources: %w", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(opts.ResourcesPath, "99_feature-gate.yaml"))
 	if err != nil {
 		return fmt.Errorf("failed to read featureGate file: %w", err)
 	}
@@ -139,4 +150,52 @@ func parseFeatureGateV1(objBytes []byte) (*configv1.FeatureGate, error) {
 	}
 
 	return requiredObj.(*configv1.FeatureGate), nil
+}
+
+func applyBootstrapResources(ctx context.Context, c client.Client, filesPath string) error {
+	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
+
+	// Fail early if the specified path does not exist.
+	if _, err := os.Stat(filesPath); err != nil {
+		return fmt.Errorf("bootstrap resources path %q does not exist: %w", filesPath, err)
+	}
+
+	// Walk the filesPath and apply the resources.
+	err := filepath.Walk(filesPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return fmt.Errorf("error accessing path %s: %w", path, err)
+		}
+
+		if info.IsDir() {
+			logger.Info("Skipping dir", "path", path)
+			return nil
+		}
+
+		if filepath.Ext(path) != ".yaml" {
+			logger.Info("Skipping non-yaml file", "path", path)
+			return nil
+		}
+
+		logger.Info("Processing file", "path", path)
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %w", path, err)
+		}
+
+		obj, _, err := configCodecs.UniversalDeserializer().Decode(content, nil, nil)
+		if err != nil {
+			return fmt.Errorf("failed to decode file %s: %w", path, err)
+		}
+
+		if _, err = ctrl.CreateOrUpdate(ctx, c, obj.(client.Object), func() error {
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to createOrUpdate file %s: %w", path, err)
+		}
+
+		return nil
+	})
+
+	return err
 }

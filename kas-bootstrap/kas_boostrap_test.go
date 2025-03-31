@@ -10,6 +10,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -365,6 +367,62 @@ func TestReconcileFeatureGate(t *testing.T) {
 			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, &updatedFeatureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(updatedFeatureGate.Status.FeatureGates).To(ConsistOf(tc.expectedFeatureGates))
+		})
+	}
+}
+
+func TestApplyBootstrapResources(t *testing.T) {
+	testCases := []struct {
+		name      string
+		filesPath string
+		expectErr bool
+	}{
+		{
+			name:      "when the files path does not exist it should return an error",
+			filesPath: filepath.Join(".", "testdata-not-exist"),
+			expectErr: true,
+		},
+		{
+			name:      "when the files path exist it should return create the resources",
+			filesPath: filepath.Join(".", "testdata"),
+		},
+	}
+
+	logger := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	}))
+	ctrl.SetLogger(logger)
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			builder := fake.NewClientBuilder().WithScheme(configScheme)
+			c := builder.Build()
+
+			err := applyBootstrapResources(context.TODO(), c, tc.filesPath)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			crdList := &apiextensionsv1.CustomResourceDefinitionList{}
+			err = c.List(context.TODO(), crdList)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// we expect 2 CRDs to be created.
+			g.Expect(crdList.Items).To(HaveLen(2))
+
+			// we expect the feature gate to be created.
+			featureGate := &configv1.FeatureGate{}
+			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, featureGate)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// we expect the hcco-role-binding to be created.
+			roleBinding := &rbacv1.ClusterRoleBinding{}
+			err = c.Get(context.TODO(), client.ObjectKey{Name: "hcco-cluster-admin"}, roleBinding)
+			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}
 }

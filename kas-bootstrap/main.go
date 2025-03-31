@@ -14,7 +14,7 @@ import (
 )
 
 type Options struct {
-	RenderedFeatureGatePath string
+	ResourcesPath string
 }
 
 func NewRunCommand() *cobra.Command {
@@ -25,10 +25,9 @@ func NewRunCommand() *cobra.Command {
 	}
 
 	opts := Options{
-		RenderedFeatureGatePath: "/work",
+		ResourcesPath: "/work",
 	}
-	cmd.Flags().StringVar(&opts.RenderedFeatureGatePath, "rendered-featuregate-path", "", "The path to the rendered featureGate CR")
-
+	cmd.Flags().StringVar(&opts.ResourcesPath, "resources-path", "", "The path to all resources that should be applied and the rendered featureGate CR to reconcile.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		sigs := make(chan os.Signal, 1)
