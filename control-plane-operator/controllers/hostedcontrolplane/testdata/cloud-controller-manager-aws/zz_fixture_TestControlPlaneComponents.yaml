@@ -116,7 +116,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig
