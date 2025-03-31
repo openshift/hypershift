@@ -45,10 +45,6 @@ var (
 		kasContainerBootstrapRender().Name: {
 			kasVolumeBootstrapManifests().Name: "/work",
 		},
-		kasContainerApplyBootstrap().Name: {
-			kasVolumeBootstrapManifests().Name:  "/work",
-			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
-		},
 		kasContainerMain().Name: {
 			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
 			kasVolumeAuthConfig().Name:             "/etc/kubernetes/auth",
@@ -207,9 +203,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 				util.BuildContainer(kasContainerBootstrapRender(), buildKASContainerBootstrapRender(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
 			},
 			Containers: []corev1.Container{
-				// TODO(alberto): Move the logic from kasContainerApplyBootstrap to kasContainerBootstrap and drop the former.
 				util.BuildContainer(kasContainerBootstrap(), buildKASContainerNewBootstrap(images.KASBootstrap)),
-				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
 				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas, cipherSuites)),
 			},
@@ -353,7 +347,7 @@ func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"kas-bootstrap",
-			"--rendered-featuregate-path", volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name),
+			"--resources-path", volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -392,39 +386,6 @@ func buildKASContainerBootstrapRender(image, payloadVersion, featureGateYaml str
 			corev1.ResourceMemory: resource.MustParse("10Mi"),
 		}
 		c.Image = image
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func kasContainerApplyBootstrap() *corev1.Container {
-	return &corev1.Container{
-		Name: "apply-bootstrap",
-	}
-}
-
-func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
-		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.Command = []string{
-			"/bin/bash",
-		}
-		c.Args = []string{
-			"-c",
-			applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
-		}
-		c.Resources.Requests = corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
-		}
-		c.Env = []corev1.EnvVar{
-			{
-				Name:  "KUBECONFIG",
-				Value: path.Join(volumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
-			},
-		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -831,29 +792,6 @@ cp /tmp/output/manifests/* %[1]s
 cp /tmp/manifests/* %[1]s
 `
 	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
-}
-
-func applyBootstrapManifestsScript(workDir string) string {
-	var script = `#!/bin/sh
-function cleanup() {
-	pkill -P $$$
-	wait
-	exit
-}
-trap cleanup SIGTERM
-while true; do
-  if oc apply -f %[1]s; then
-    echo "Bootstrap manifests applied successfully."
-    break
-  fi
-  sleep 1
-done
-while true; do
-  sleep 1000 &
-  wait $!
-done
-`
-	return fmt.Sprintf(script, workDir)
 }
 
 func waitForEtcdScript(namespace string) string {
