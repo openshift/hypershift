@@ -7,9 +7,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregate"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sfg "k8s.io/component-base/featuregate"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -22,6 +25,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 		expectedAuthenticationConfiguration *AuthenticationConfiguration
 		kasParams                           KubeAPIServerConfigParams
 		shouldError                         bool
+		featureGate                         *k8sfg.Feature
 	}
 
 	testCases := []testCase{
@@ -121,9 +125,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
-							},
 						},
 					},
 				},
@@ -171,9 +172,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
 							},
 						},
 					},
@@ -223,9 +221,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
 							},
 						},
 					},
@@ -304,9 +299,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
-							},
 						},
 					},
 				},
@@ -355,9 +347,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
 							},
 						},
 					},
@@ -408,9 +397,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 								Prefix: ptr.To("groups-prefix"),
 								Claim:  "groups",
 							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
-							},
 						},
 					},
 					{
@@ -426,9 +412,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "groups",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
 							},
 						},
 					},
@@ -517,6 +500,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty expression provided, no error, successful mapping",
@@ -566,6 +550,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty claim and expression provided, error",
@@ -589,8 +574,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
-        {
+		{
 			name:   "authn spec provided, uid claim mapping specified, empty claim, non-empty but invalid expression provided, error",
 			client: nil,
 			kasParams: KubeAPIServerConfigParams{
@@ -611,6 +597,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
@@ -669,8 +656,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
-        {
+		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key, invalid valueExpression, error",
 			client: nil,
 			kasParams: KubeAPIServerConfigParams{
@@ -684,7 +672,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 							ClaimMappings: configv1.TokenClaimMappings{
 								Extra: []configv1.ExtraMapping{
 									{
-                                        Key: "example.com/foo",
+										Key:             "example.com/foo",
 										ValueExpression: "#@!$&*(^)",
 									},
 								},
@@ -694,6 +682,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, empty key provided, error",
@@ -718,6 +707,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and empty valueExpression provided, error",
@@ -742,6 +732,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGate: ptr.To(featuregate.ExternalOIDCWithUIDAndExtraClaimMappings),
 		},
 		{
 			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim is set, no error, successful mapping",
@@ -765,9 +756,6 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Groups: PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
-							},
-							UID: ClaimOrExpression{
-								Claim: "sub",
 							},
 						},
 						ClaimValidationRules: []ClaimValidationRule{
@@ -813,18 +801,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
 							},
-                            ClaimValidationRules: []configv1.TokenClaimValidationRule{
-                                {
-                                    Type: configv1.TokenValidationRuleTypeRequiredClaim,
-                                },
-                            },
+							ClaimValidationRules: []configv1.TokenClaimValidationRule{
+								{
+									Type: configv1.TokenValidationRuleTypeRequiredClaim,
+								},
+							},
 						},
 					},
 				},
 			},
 			shouldError: true,
 		},
-        {
+		{
 			name:   "authn spec provided, claim validation rules specified, type set to invalid value, error",
 			client: nil,
 			kasParams: KubeAPIServerConfigParams{
@@ -835,11 +823,11 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
 							},
-                            ClaimValidationRules: []configv1.TokenClaimValidationRule{
-                                {
-                                    Type: "Invalid",
-                                },
-                            },
+							ClaimValidationRules: []configv1.TokenClaimValidationRule{
+								{
+									Type: "Invalid",
+								},
+							},
 						},
 					},
 				},
@@ -850,6 +838,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.featureGate != nil {
+				fgtesting.SetFeatureGateDuringTest(t, featuregate.Gates, *tc.featureGate, true)
+			}
 			cm := &corev1.ConfigMap{
 				ObjectMeta: v1.ObjectMeta{
 					Namespace: "test",

@@ -8,7 +8,7 @@ import (
 const (
     // ExternalOIDCWithUIDAndExtraClaimMappings is a feature gate for enabling an external
     // OIDC provider configuration with the addition of the uid and extra claim mappings
-    ExternalOIDCWithUIDAndExtraClaimMappings = "ExternalOIDCWithUIDAndExtraClaimMappings"
+    ExternalOIDCWithUIDAndExtraClaimMappings featuregate.Feature = "ExternalOIDCWithUIDAndExtraClaimMappings"
 )
 
 var (
