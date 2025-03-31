@@ -11,6 +11,7 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -26,10 +27,15 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	// Set default values
 	opts.AzurePlatform.Location = "eastus"
+	opts.AzurePlatform.DNSResourceGroupName = "os4-common"
+
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
+	cmd.Flags().StringVar(&opts.AzurePlatform.DNSResourceGroupName, "dns-zone-resource-group-name", opts.AzurePlatform.DNSResourceGroupName, "The name of the resource group containing the DNS zone; this is only used to delete role assignments to this resource group.")
+	cmd.Flags().BoolVar(&opts.AzurePlatform.UsedCustomHCPRoles, "used-custom-hcp-roles", opts.AzurePlatform.UsedCustomHCPRoles, "Used custom roles on HCP identities; this is only used in deleting role assignments.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 
@@ -45,6 +51,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 			cancel()
 		}()
 
+		logger.Info("DNS zone resource group name in cmd/cluster/azure/destroy.go", "dns-zone-resource-group-name", opts.AzurePlatform.DNSResourceGroupName)
 		if err := DestroyCluster(ctx, opts); err != nil {
 			logger.Error(err, "Failed to destroy cluster")
 			os.Exit(1)
@@ -62,6 +69,19 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
 		o.AzurePlatform.Location = hostedCluster.Spec.Platform.Azure.Location
+		o.AzurePlatform.Location = hostedCluster.Spec.Platform.Azure.Location
+		o.AzurePlatform.VnetID = hostedCluster.Spec.Platform.Azure.VnetID
+		o.AzurePlatform.NsgID = hostedCluster.Spec.Platform.Azure.SecurityGroupID
+		o.AzurePlatform.CPOManagedIdentityClientIDs = map[string]string{
+			config.CPO:           hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ClientID,
+			config.CIRO:          hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID,
+			config.NodePoolMgmt:  hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
+			config.CloudProvider: hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ClientID,
+			config.AzureFile:     hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ClientID,
+			config.AzureDisk:     hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ClientID,
+			config.Ingress:       hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ClientID,
+			config.CNCC:          hostedCluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ClientID,
+		}
 	}
 
 	var inputErrors []error
@@ -101,11 +121,18 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	destroyInfraOptions := &azureinfra.DestroyInfraOptions{
-		Name:              o.Name,
-		Location:          o.AzurePlatform.Location,
-		InfraID:           o.InfraID,
-		CredentialsFile:   o.AzurePlatform.CredentialsFile,
-		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
+		Name:                        o.Name,
+		Location:                    o.AzurePlatform.Location,
+		InfraID:                     o.InfraID,
+		CredentialsFile:             o.AzurePlatform.CredentialsFile,
+		ResourceGroupName:           o.AzurePlatform.ResourceGroupName,
+		VnetID:                      o.AzurePlatform.VnetID,
+		NsgID:                       o.AzurePlatform.NsgID,
+		DNSZoneResourceGroupName:    o.AzurePlatform.DNSResourceGroupName,
+		CPOManagedIdentityClientIDs: o.AzurePlatform.CPOManagedIdentityClientIDs,
+		UsedCustomHCPRoles:          o.AzurePlatform.UsedCustomHCPRoles,
 	}
+	logger := log.Log
+	logger.Info("DNS zone resource group name in cmd/cluster/azure/destroy.go before destroyInfraOptions", "destroyInfraOptions.DNSZoneResourceGroupName", destroyInfraOptions.DNSZoneResourceGroupName, "o.AzurePlatform.DNSResourceGroupName", o.AzurePlatform.DNSResourceGroupName)
 	return destroyInfraOptions.Run(ctx, o.Log)
 }
