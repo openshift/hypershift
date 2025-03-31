@@ -27,3 +27,5 @@ LABEL io.openshift.hypershift.restricted-psa=true
 LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
 LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true
 LABEL io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig=true
+# TODO: Uncomment when CPO v2 is the default
+# LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true
