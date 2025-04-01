@@ -18,22 +18,12 @@ package crd
 import (
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/utils/ptr"
-
 	"sigs.k8s.io/controller-tools/pkg/loader"
 )
 
 // KnownPackages overrides types in some comment packages that have custom validation
 // but don't have validation markers on them (since they're from core Kubernetes).
 var KnownPackages = map[string]PackageOverride{
-	"k8s.io/api/core/v1": func(p *Parser, pkg *loader.Package) {
-		// Explicit defaulting for the corev1.Protocol type in lieu of https://github.com/kubernetes/enhancements/pull/1928
-		p.Schemata[TypeIdent{Name: "Protocol", Package: pkg}] = apiext.JSONSchemaProps{
-			Type:    "string",
-			Default: &apiext.JSON{Raw: []byte(`"TCP"`)},
-		}
-		p.AddPackage(pkg)
-	},
-
 	"k8s.io/apimachinery/pkg/apis/meta/v1": func(p *Parser, pkg *loader.Package) {
 		p.Schemata[TypeIdent{Name: "ObjectMeta", Package: pkg}] = apiext.JSONSchemaProps{
 			Type: "object",

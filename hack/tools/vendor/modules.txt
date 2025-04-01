@@ -2092,8 +2092,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.0.0-20240809124726-b901265f16d5
-## explicit; go 1.22.0
+# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.1-0.20250218152928-be0dbe446d10
+## explicit; go 1.23.0
 sigs.k8s.io/controller-tools/cmd/controller-gen
 sigs.k8s.io/controller-tools/pkg/crd
 sigs.k8s.io/controller-tools/pkg/crd/markers
@@ -2123,5 +2123,5 @@ sigs.k8s.io/structured-merge-diff/v4/value
 ## explicit; go 1.12
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
-# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.0.0-20240809124726-b901265f16d5
+# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250218152928-be0dbe446d10
 # k8s.io/code-generator => k8s.io/code-generator v0.30.1
