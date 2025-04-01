@@ -417,7 +417,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 					controlplaneNamespace: controlplaneNamespace,
 				},
 			},
-			fakeObjects:   []crclient.Object{
+			fakeObjects: []crclient.Object{
 				tokenSecretWithTimestamp,
 			},
 			expectedError: "",
@@ -468,8 +468,8 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 	fakeCurrentTokenVal := "tokenval1"
 
 	testCases := []struct {
-		name        string
-		inputSecret *corev1.Secret
+		name              string
+		inputSecret       *corev1.Secret
 		expectedTimestamp string
 	}{
 		{
