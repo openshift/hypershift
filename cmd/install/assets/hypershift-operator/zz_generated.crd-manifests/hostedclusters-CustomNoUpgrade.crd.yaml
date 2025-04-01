@@ -1074,6 +1074,7 @@ spec:
                         - ""
                         - None
                         - IntegratedOAuth
+                        - OIDC
                         type: string
                       webhookTokenAuthenticator:
                         description: |-

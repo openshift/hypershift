@@ -116,7 +116,7 @@ type AuthenticationStatus struct {
 	// +listMapKey=componentNamespace
 	// +listMapKey=componentName
 	// +kubebuilder:validation:MaxItems=20
-	// +openshift:enable:FeatureGate=ExternalOIDC
+	// +openshift:enable:FeatureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
 	OIDCClients []OIDCClientStatus `json:"oidcClients"`
 }
 
@@ -135,7 +135,7 @@ type AuthenticationList struct {
 }
 
 // +openshift:validation:FeatureGateAwareEnum:featureGate="",enum="";None;IntegratedOAuth
-// +openshift:validation:FeatureGateAwareEnum:featureGate=ExternalOIDC,enum="";None;IntegratedOAuth;OIDC
+// +openshift:validation:FeatureGateAwareEnum:featureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings,enum="";None;IntegratedOAuth;OIDC
 type AuthenticationType string
 
 const (
