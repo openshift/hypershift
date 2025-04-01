@@ -98,7 +98,7 @@ hostedclusters.hypershift.openshift.io:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
   - DynamicResourceAllocation
-  - ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
+  - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
   - NetworkDiagnosticsConfig
@@ -153,7 +153,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
   - DynamicResourceAllocation
-  - ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
+  - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
   - NetworkDiagnosticsConfig

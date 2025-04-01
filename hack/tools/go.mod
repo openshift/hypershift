@@ -301,7 +301,9 @@ require (
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250218152928-be0dbe446d10
+//replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250218152928-be0dbe446d10
+
+replace sigs.k8s.io/controller-tools => ../../../../kubernetes-sigs/controller-tools
 
 // Pin current version of k8s.io/code-generator to avoid cascade breaking changes coming from 0.31.1
 // TODO(alberto): bump k8s version across the board.

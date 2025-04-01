@@ -89,7 +89,8 @@ type AuthenticationSpec struct {
 	// +listType=map
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=1
-	// +openshift:enable:FeatureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
+	// +openshift:enable:FeatureGate=ExternalOIDC
+	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
 	OIDCProviders []OIDCProvider `json:"oidcProviders,omitempty"`
 }
 
@@ -116,7 +117,8 @@ type AuthenticationStatus struct {
 	// +listMapKey=componentNamespace
 	// +listMapKey=componentName
 	// +kubebuilder:validation:MaxItems=20
-	// +openshift:enable:FeatureGate=ExternalOIDC;ExternalOIDCWithUIDAndExtraClaimMappings
+	// +openshift:enable:FeatureGate=ExternalOIDC
+	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
 	OIDCClients []OIDCClientStatus `json:"oidcClients"`
 }
 
