@@ -81,42 +81,17 @@ spec:
             topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
-      - args:
-        - -c
-        - |
-          #!/bin/sh
-          function cleanup() {
-            pkill -P $$$
-            wait
-            exit
-          }
-          trap cleanup SIGTERM
-          while true; do
-            if oc apply -f /work; then
-              echo "Bootstrap manifests applied successfully."
-              break
-            fi
-            sleep 1
-          done
-          while true; do
-            if oc replace --subresource=status -f /work/99_feature-gate.yaml; then
-              echo "FeatureGate status applied successfully."
-              break
-            fi
-            sleep 1
-          done
-          while true; do
-            sleep 1000 &
-            wait $!
-          done
-        command:
-        - /bin/bash
+      - command:
+        - /usr/bin/control-plane-operator
+        - kas-bootstrap
+        - --resources-path
+        - /work
         env:
         - name: KUBECONFIG
           value: /var/secrets/localhost-kubeconfig/kubeconfig
-        image: cli
+        image: controlplane-operator
         imagePullPolicy: IfNotPresent
-        name: apply-bootstrap
+        name: bootstrap
         resources:
           requests:
             cpu: 10m
@@ -384,7 +359,7 @@ spec:
               featureGates: null
         image: cluster-config-api
         imagePullPolicy: IfNotPresent
-        name: init-bootstrap
+        name: init-bootstrap-render
         resources:
           requests:
             cpu: 30m
