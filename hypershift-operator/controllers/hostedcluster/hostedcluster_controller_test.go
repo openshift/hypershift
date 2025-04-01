@@ -34,12 +34,14 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imagev1 "github.com/openshift/api/image/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -4016,5 +4018,165 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			}
 		},
 		)
+	}
+}
+
+func TestValidateVersionCompatibility(t *testing.T) {
+	baseHC := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Release: hyperv1.Release{
+				Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Conditions: []metav1.Condition{},
+		},
+	}
+
+	baseNP := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "test-cluster",
+		},
+	}
+
+	tests := []struct {
+		name                string
+		controlPlaneVersion string
+		nodePoolVersion     string
+		expectedCondition   *metav1.Condition
+		expectedError       string
+	}{
+		{
+			name:                "When HostedCluster and NodePool versions are the same, it should not return an error",
+			controlPlaneVersion: "4.18.5",
+			nodePoolVersion:     "4.18.5",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AsExpectedReason,
+				Message: "Release image version is valid",
+			},
+			expectedError: "",
+		},
+		{
+			name:                "When the HostedCluster version is lower than the NodePool version, it should return an error",
+			controlPlaneVersion: "4.17.0",
+			nodePoolVersion:     "4.18.5",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.InvalidVersionReason,
+				Message: "control plane version 4.17.0 is lower than nodepool version 4.18.5",
+			},
+			expectedError: "control plane version 4.17.0 is lower than nodepool version 4.18.5",
+		},
+		{
+			name:                "When the HostedCluster version is one minor version higher than the NodePool version (odd version), it should not return an error",
+			controlPlaneVersion: "4.17.0",
+			nodePoolVersion:     "4.16.37",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AsExpectedReason,
+				Message: "Release image version is valid",
+			},
+			expectedError: "",
+		},
+		{
+			name:                "When the HostedCluster version is two minor versions higher than the NodePool version (odd version), it should return an error",
+			controlPlaneVersion: "4.17.0",
+			nodePoolVersion:     "4.15.47",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.InvalidVersionReason,
+				Message: "control plane version 4.17 is not compatible with nodepool test-nodepool version 4.15 (max allowed difference: 1)",
+			},
+			expectedError: "control plane version 4.17 is not compatible with nodepool test-nodepool version 4.15 (max allowed difference: 1)",
+		},
+		{
+			name:                "When the HostedCluster version is two minor versions higher than the NodePool version (even version), it should not return an error",
+			controlPlaneVersion: "4.18.0",
+			nodePoolVersion:     "4.16.0",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AsExpectedReason,
+				Message: "Release image version is valid",
+			},
+			expectedError: "",
+		},
+		{
+			name:                "When the HostedCluster version is three minor versions higher than the NodePool version (even version), it should return an error",
+			controlPlaneVersion: "4.18.0",
+			nodePoolVersion:     "4.15.0",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.InvalidVersionReason,
+				Message: "control plane version 4.18 is not compatible with nodepool test-nodepool version 4.15 (max allowed difference: 2)",
+			},
+			expectedError: "control plane version 4.18 is not compatible with nodepool test-nodepool version 4.15 (max allowed difference: 2)",
+		},
+		{
+			name:                "When the NodePool version is a major version higher than the HostedCluster version, it should return an error",
+			controlPlaneVersion: "4.18.0",
+			nodePoolVersion:     "5.0.0",
+			expectedCondition: &metav1.Condition{
+				Type:    string(hyperv1.ValidVersionConditionType),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.InvalidVersionReason,
+				Message: "control plane version 4.18.0 is lower than nodepool version 5.0.0",
+			},
+			expectedError: "control plane version 4.18.0 is lower than nodepool version 5.0.0",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			np := baseNP.DeepCopy()
+			np.Status.Version = test.nodePoolVersion
+
+			releaseImage := &releaseinfo.ReleaseImage{
+				ImageStream: &imagev1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: test.controlPlaneVersion,
+					},
+				},
+			}
+
+			r := &HostedClusterReconciler{
+				Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects([]crclient.Object{baseHC, np}...).Build(),
+			}
+
+			// Run the test
+			err := r.validateVersionCompatibility(context.TODO(), baseHC, releaseImage)
+
+			// Check the results
+			if test.expectedError == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(test.expectedError))
+			}
+
+			condition := meta.FindStatusCondition(baseHC.Status.Conditions, string(hyperv1.ValidVersionConditionType))
+			g.Expect(condition).NotTo(BeNil())
+
+			g.Expect(condition.Type).To(Equal(test.expectedCondition.Type))
+			g.Expect(condition.Status).To(Equal(test.expectedCondition.Status))
+			g.Expect(condition.Reason).To(Equal(test.expectedCondition.Reason))
+			g.Expect(condition.Message).To(Equal(test.expectedCondition.Message))
+		})
 	}
 }

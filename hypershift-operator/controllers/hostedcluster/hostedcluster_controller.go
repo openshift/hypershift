@@ -1102,6 +1102,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
+
+	// Set ValidVersion condition
+	{
+		if err := r.validateVersionCompatibility(ctx, hcluster, releaseImage); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	// Set Progressing condition
 	{
 		condition := metav1.Condition{
@@ -5600,5 +5608,82 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 		}
 	}
 
+	return nil
+}
+
+// validateNodePoolVersions validates the version compatibility of all nodepools
+func (r *HostedClusterReconciler) validateVersionCompatibility(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) error {
+	// Parse control plane version
+	controlPlaneVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse control plane version: %w", err)
+	}
+
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return fmt.Errorf("failed to list nodepools: %w", err)
+	}
+	for _, np := range nodePools {
+		if np.Status.Version == "" {
+			continue
+		}
+		// Parse NodePool version
+		nodePoolVersion, err := semver.Parse(np.Status.Version)
+		if err != nil {
+			return fmt.Errorf("failed to parse nodepool %s version: %w", np.Name, err)
+		}
+
+		// NodePool version cannot be higher than control plane version
+		if nodePoolVersion.GT(controlPlaneVersion) {
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidVersionConditionType),
+				ObservedGeneration: hcluster.Generation,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InvalidVersionReason,
+				Message:            fmt.Sprintf("control plane version %s is lower than nodepool version %s", controlPlaneVersion, nodePoolVersion),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+			return fmt.Errorf("control plane version %s is lower than nodepool version %s", controlPlaneVersion, nodePoolVersion)
+		}
+
+		// Calculate minor version difference
+		versionDiff := int64(controlPlaneVersion.Minor - nodePoolVersion.Minor)
+
+		// For 4.even versions, allow y-2 difference
+		// For 4.odd versions, allow y-1 difference
+		maxAllowedDiff := int64(2)
+		if controlPlaneVersion.Minor%2 == 1 {
+			maxAllowedDiff = 1
+		}
+
+		if versionDiff > maxAllowedDiff {
+			condition := metav1.Condition{
+				Type:               string(hyperv1.ValidVersionConditionType),
+				ObservedGeneration: hcluster.Generation,
+				Status:             metav1.ConditionFalse,
+				Reason:             hyperv1.InvalidVersionReason,
+				Message: fmt.Sprintf("control plane version %d.%d is not compatible with nodepool %s version %d.%d (max allowed difference: %d)",
+					controlPlaneVersion.Major, controlPlaneVersion.Minor,
+					np.Name,
+					nodePoolVersion.Major, nodePoolVersion.Minor,
+					maxAllowedDiff),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+			return fmt.Errorf("control plane version %d.%d is not compatible with nodepool %s version %d.%d (max allowed difference: %d)",
+				controlPlaneVersion.Major, controlPlaneVersion.Minor,
+				np.Name,
+				nodePoolVersion.Major, nodePoolVersion.Minor,
+				maxAllowedDiff)
+		}
+	}
+
+	condition := metav1.Condition{
+		Type:               string(hyperv1.ValidVersionConditionType),
+		ObservedGeneration: hcluster.Generation,
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Release image version is valid",
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	return nil
 }

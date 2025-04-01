@@ -30,9 +30,19 @@ func TestUpgradeControlPlane(t *testing.T) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
+		var nodePoolList hyperv1.NodePoolList
+		err := mgtClient.List(ctx, &nodePoolList, &crclient.ListOptions{Namespace: hostedCluster.Namespace})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
+		for i := range nodePoolList.Items {
+			isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(nodePoolList.Items[i].Spec.Release.Image, globalOpts.LatestReleaseImage)
+			if err != nil || !isCompatible {
+				t.Skipf("NodePool version %s is not compatible with the HostedCluster version %s, skipping", nodePoolList.Items[i].Spec.Release.Image, globalOpts.LatestReleaseImage)
+			}
+		}
+
 		// Update the cluster image
 		t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
-		err := e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Release.Image = globalOpts.LatestReleaseImage
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)

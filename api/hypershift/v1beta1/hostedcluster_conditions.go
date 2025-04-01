@@ -112,6 +112,9 @@ const (
 	// unsupported upgrade e.g y-stream upgrade before 4.11.
 	// A failure here is unlikely to resolve without the changing user input.
 	ValidReleaseImage ConditionType = "ValidReleaseImage"
+	// ValidVersionConditionType signals if the version of the HostedCluster is valid and compatible.
+	// A failure here is unlikely to resolve without changing the version input.
+	ValidVersionConditionType ConditionType = "ValidVersion"
 
 	// ValidKubeVirtInfraNetworkMTU indicates if the MTU configured on an infra cluster
 	// hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
@@ -241,6 +244,7 @@ const (
 	KubeVirtSuboptimalMTUReason = "KubeVirtSuboptimalMTUDetected"
 
 	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
+	InvalidVersionReason              = "InvalidVersion"
 )
 
 // Messages.
