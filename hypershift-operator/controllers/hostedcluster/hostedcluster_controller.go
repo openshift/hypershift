@@ -2329,11 +2329,11 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager deployment
 	var capiImage string
+	version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to lookup payload version: %w", err)
+	}
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
-		version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
-		if err != nil {
-			return fmt.Errorf("failed to lookup payload version: %w", err)
-		}
 		// Use environment variable image only if using HCP release < 4.12
 		if version.Major == 4 && version.Minor < 12 {
 			capiImage = envImage
@@ -2351,7 +2351,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext, version)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -3444,7 +3444,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool, hcVersion *semver.Version) error {
 	defaultMode := int32(0o640)
 	selectorLabels := map[string]string{
 		"name":                             "cluster-api",
@@ -3560,6 +3560,14 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			},
 		},
 	}
+
+	if hcVersion.GE(config.Version419) {
+		deployment.Spec.Template.Spec.Containers[0].Args = append(
+			deployment.Spec.Template.Spec.Containers[0].Args,
+			"--feature-gates=MachineSetPreflightChecks=false",
+		)
+	}
+
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
