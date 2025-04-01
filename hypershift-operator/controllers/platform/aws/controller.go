@@ -264,7 +264,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile the AWSEndpointService Spec
 	if _, err := r.CreateOrUpdate(ctx, r.Client, awsEndpointService, func() error {
-		return reconcileAWSEndpointServiceSpec(ctx, r, awsEndpointService, hc)
+		return reconcileAWSEndpointService(ctx, r, awsEndpointService, hc)
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile AWSEndpointService spec: %w", err)
 	}
@@ -309,7 +309,11 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
-func reconcileAWSEndpointServiceSpec(ctx context.Context, c client.Client, awsEndpointService *hyperv1.AWSEndpointService, hc *hyperv1.HostedCluster) error {
+func reconcileAWSEndpointService(ctx context.Context, c client.Client, awsEndpointService *hyperv1.AWSEndpointService, hc *hyperv1.HostedCluster) error {
+	if awsEndpointService.Annotations == nil {
+		awsEndpointService.Annotations = make(map[string]string)
+	}
+	awsEndpointService.Annotations[supportutil.HostedClusterAnnotation] = fmt.Sprintf("%s/%s", hc.Namespace, hc.Name)
 	return reconcileAWSEndpointServiceSubnetIDs(ctx, c, awsEndpointService, hc)
 }
 
