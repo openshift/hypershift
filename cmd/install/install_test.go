@@ -1,13 +1,18 @@
 package install
 
 import (
+	"io/fs"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/install/assets"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -118,6 +123,24 @@ func TestSetupCRDs(t *testing.T) {
 			name:         "When is NOT TechPreviewNoUpgrade it should have a single nodepool CRD with the default annotation",
 			inputOptions: Options{},
 		},
+		{
+			name: "When PlatformOptions is set to Azure only Azure CAPI CRDs should be present",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"azure"},
+			},
+		},
+		{
+			name: "When PlatformOptions is set to AWS only AWS CAPI CRDs should be present",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"aws"},
+			},
+		},
+		{
+			name: "When PlatformOptions is set to AWS,Azure only AWS & Azure CAPI CRDs should be present",
+			inputOptions: Options{
+				PlatformsToInstall: []string{"aws", "azure"},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -141,7 +164,6 @@ func TestSetupCRDs(t *testing.T) {
 
 			// Smoke test to ensure that CRDs that should apply for any feature gate are present.
 			g.Expect(machineDeploymentCRD).ToNot(BeNil())
-			g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
 
 			// Validate the feature set specific CRDs are applied.
 			g.Expect(nodePoolCRDS).To(HaveLen(1))
@@ -149,6 +171,59 @@ func TestSetupCRDs(t *testing.T) {
 				g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("TechPreviewNoUpgrade"))
 				return
 			}
+
+			// Compute wanted and unwanted platforms based on the test input.
+			wantedPlatforms := ValidPlatforms
+			unwantedPlatforms := set.New[string]()
+			if tc.inputOptions.PlatformsToInstall != nil {
+				wantedPlatforms = set.New[string](tc.inputOptions.PlatformsToInstall...)
+				unwantedPlatforms = ValidPlatforms.Difference(wantedPlatforms)
+			}
+
+			// Validate that no unwanted platform CRDs are present.
+			for _, crd := range crds {
+				crdName := crd.GetName()
+
+				for unwantedPlatform := range unwantedPlatforms {
+					g.Expect(strings.ToLower(crdName)).NotTo(ContainSubstring(strings.ToLower(unwantedPlatform)), "Found unwanted platform CRD")
+				}
+
+				if strings.Contains(crdName, "awsendpointservices.hypershift.openshift.io") {
+					g.Expect(unwantedPlatforms.Has("AWS")).To(BeFalse())
+				}
+			}
+
+			// Validate that all wanted platform CRDs are present.
+			for platform := range wantedPlatforms {
+				wantedCAPICRDsPerPlatform, err := fs.ReadDir(assets.CRDS, "cluster-api-provider-"+strings.ToLower(platform))
+				if err == nil {
+					var yamlFiles []fs.DirEntry
+					for _, file := range wantedCAPICRDsPerPlatform {
+						if filepath.Ext(file.Name()) == ".yaml" {
+							yamlFiles = append(yamlFiles, file)
+						}
+					}
+					wantedCAPICRDsPerPlatform = yamlFiles
+				}
+				g.Expect(err).ToNot(HaveOccurred())
+
+				gotCRDsPerPlatform := make([]string, 0)
+				if platform == "ibmcloud" {
+					platform = "ibm"
+				}
+				for _, crd := range crds {
+					if strings.Contains(strings.ToLower(crd.GetName()), strings.ToLower(platform)) {
+						gotCRDsPerPlatform = append(gotCRDsPerPlatform, crd.GetName())
+					}
+				}
+
+				g.Expect(len(wantedCAPICRDsPerPlatform)).To(BeNumerically("<=", len(gotCRDsPerPlatform)), "Missing CRDs for platform %s", platform)
+			}
+
+			if wantedPlatforms.Has("AWS") {
+				g.Expect(awsEndpointServicesCRD).ToNot(BeNil())
+			}
+
 			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
 		})
 	}

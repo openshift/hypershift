@@ -46,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
@@ -58,6 +59,17 @@ const (
 	// ExternalDNSImage - This is specifically tag 1.1.0-3 from https://catalog.redhat.com/software/containers/edo/external-dns-rhel8/61d4c35023156829b87a434a?container-tabs=overview&tag=1.1.0-3&push_date=1671131187000
 	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
 	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:638fb6b5fc348f5cf52b9800d3d8e9f5315078fc9b1e57e800cb0a4a50f1b4b9"
+)
+
+// ValidPlatforms should contain all the CAPI provider types we support; see also crds in assests.go
+// https://github.com/openshift/hypershift/blob/3ea313694d386763578646b157a8d4d3d187e98e/cmd/install/assets/assets.go#L26
+var ValidPlatforms = set.New[string](
+	"aws",
+	"azure",
+	"ibmcloud",
+	"kubevirt",
+	"agent",
+	"openstack",
 )
 
 type Options struct {
@@ -113,6 +125,7 @@ type Options struct {
 	TechPreviewNoUpgrade                      bool
 	RegistryOverrides                         string
 	RenderNamespace                           bool
+	PlatformsToInstall                        []string
 }
 
 func (o *Options) Validate() error {
@@ -167,6 +180,14 @@ func (o *Options) Validate() error {
 
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
+	}
+
+	// Validate all the platforms in the list are valid
+	for _, platform := range o.PlatformsToInstall {
+		platformToCheck := strings.ToLower(platform)
+		if !ValidPlatforms.Has(platformToCheck) {
+			errs = append(errs, fmt.Errorf("not a valid platform type: %s", platform))
+		}
 	}
 	return errors.NewAggregate(errs)
 }
@@ -242,6 +263,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AroHCPKeyVaultUsersClientID, "aro-hcp-key-vault-users-client-id", opts.AroHCPKeyVaultUsersClientID, "The client ID of the managed identity which can access the Azure Key Vaults, in an AKS management cluster, to retrieve secrets and certificates.")
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
+	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -611,9 +633,11 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 				if strings.Contains(path, "etcd") && opts.ExcludeEtcdManifests {
 					return false
 				}
-
 				// If the feature generated CRD has any featureSet version then it has the format nodepool-<featureSet>.
 				if strings.Contains(path, "zz_generated.crd-manifests") {
+					if strings.Contains(path, "awsendpointservices") {
+						return isAWSPlatformEnabled(opts.PlatformsToInstall)
+					}
 					if opts.TechPreviewNoUpgrade {
 						// Skip all featureSets but TechPreviewNoUpgrade.
 						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
@@ -630,8 +654,21 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 						}
 					}
 				}
+				if strings.Contains(path, "hypershift-operator/") {
+					return true
+				}
+				if strings.Contains(path, "cluster-api/") {
+					return true
+				}
+				if len(opts.PlatformsToInstall) > 0 {
+					for _, platform := range opts.PlatformsToInstall {
+						if strings.Contains(path, strings.ToLower(platform)) {
+							return true
+						}
+					}
+					return false
+				}
 				return true
-
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
 				if crd.Spec.Group == "hypershift.openshift.io" {
 					if !opts.EnableConversionWebhook {
@@ -660,6 +697,18 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 		)...,
 	)
 	return crds
+}
+
+func isAWSPlatformEnabled(platformsToInstall []string) bool {
+	if len(platformsToInstall) == 0 {
+		return true
+	}
+	for _, platform := range platformsToInstall {
+		if strings.Contains("aws", strings.ToLower(platform)) {
+			return true
+		}
+	}
+	return false
 }
 
 // setupMonitoring creates the Prometheus resources for monitoring
