@@ -208,7 +208,7 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	}
 	featureGateYaml := featureGateBuffer.String()
 
-	util.UpdateContainer("init-bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	util.UpdateContainer("init-bootstrap-render", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",
