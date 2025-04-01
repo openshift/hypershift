@@ -1,0 +1,13 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: ignition-server
+spec:
+  namespaceSelector:
+    matchNames:
+    - HCP_NAMESPACE
+  podMetricsEndpoints:
+  - port: metrics
+  selector:
+    matchLabels:
+      app: ignition-server
