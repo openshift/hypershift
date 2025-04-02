@@ -9,7 +9,8 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "main"
-      && ( "control-plane-operator/***".pathChanged() || "support/***".pathChanged() || "/Containerfile.control-plane-operator".pathChanged() )
+      && ( "control-plane-operator/***".pathChanged() || "support/***".pathChanged()
+           || "/Containerfile.control-plane".pathChanged() || ".tekton/control-plane-operator-*".pathChanged() )
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: control-plane-operator
