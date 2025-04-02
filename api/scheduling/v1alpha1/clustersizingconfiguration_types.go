@@ -109,9 +109,13 @@ type NodeCountCriteria struct {
 type Effects struct {
 
 	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^\d+(B|KiB|MiB|GiB|TiB)?$`
+	// +kubebuilder:validation:MaxLength=20
 
 	// KASGoMemLimit is the value to set for the $GOMEMLIMIT of the Kube APIServer container
-	KASGoMemLimit *resource.Quantity `json:"kasGoMemLimit,omitempty"`
+	// Expected format is a number followed by a unit (B, KiB, MiB, GiB, TiB). See the Go runtime library for more
+	// information on the format - https://pkg.go.dev/runtime#hdr-Environment_Variables.
+	KASGoMemLimit *string `json:"kasGoMemLimit,omitempty"`
 
 	// +kubebuilder:validation:Optional
 

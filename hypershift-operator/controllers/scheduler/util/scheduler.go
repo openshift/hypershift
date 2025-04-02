@@ -10,6 +10,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -37,7 +38,7 @@ func setHostedClusterSchedulingAnnotations(hc *hyperv1.HostedCluster, size strin
 
 	goMemLimit := ""
 	if sizeConfig.Effects != nil && sizeConfig.Effects.KASGoMemLimit != nil {
-		goMemLimit = sizeConfig.Effects.KASGoMemLimit.String()
+		goMemLimit = ptr.Deref(sizeConfig.Effects.KASGoMemLimit, "")
 	}
 
 	// For AWS try and get the goMem limit from the nodes

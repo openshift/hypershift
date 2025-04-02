@@ -18,14 +18,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	resource "k8s.io/apimachinery/pkg/api/resource"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // EffectsApplyConfiguration represents an declarative configuration of the Effects type for use
 // with apply.
 type EffectsApplyConfiguration struct {
-	KASGoMemLimit                   *resource.Quantity                  `json:"kasGoMemLimit,omitempty"`
+	KASGoMemLimit                   *string                             `json:"kasGoMemLimit,omitempty"`
 	ControlPlanePriorityClassName   *string                             `json:"controlPlanePriorityClassName,omitempty"`
 	EtcdPriorityClassName           *string                             `json:"etcdPriorityClassName,omitempty"`
 	APICriticalPriorityClassName    *string                             `json:"APICriticalPriorityClassName,omitempty"`
@@ -44,7 +43,7 @@ func Effects() *EffectsApplyConfiguration {
 // WithKASGoMemLimit sets the KASGoMemLimit field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the KASGoMemLimit field is set to the value of the last call.
-func (b *EffectsApplyConfiguration) WithKASGoMemLimit(value resource.Quantity) *EffectsApplyConfiguration {
+func (b *EffectsApplyConfiguration) WithKASGoMemLimit(value string) *EffectsApplyConfiguration {
 	b.KASGoMemLimit = &value
 	return b
 }

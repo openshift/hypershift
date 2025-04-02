@@ -15,7 +15,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
@@ -291,15 +290,6 @@ func TestHostedClusterScheduler(t *testing.T) {
 }
 
 func TestHostedClusterSchedulerAndSizer(t *testing.T) {
-
-	mustQty := func(qty string) *resource.Quantity {
-		result, err := resource.ParseQuantity(qty)
-		if err != nil {
-			panic(err)
-		}
-		return &result
-	}
-
 	sizingConfig := &schedulingv1alpha1.ClusterSizingConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
@@ -316,7 +306,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 						Placeholders: 2,
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("1Gi"),
+						KASGoMemLimit: ptr.To("1GiB"),
 					},
 				},
 				{
@@ -326,7 +316,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 						To:   ptr.To(uint32(2)),
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("2Gi"),
+						KASGoMemLimit: ptr.To("2GiB"),
 					},
 				},
 				{
@@ -336,7 +326,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 						To:   nil,
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("3Gi"),
+						KASGoMemLimit: ptr.To("3GiB"),
 					},
 				},
 			},
@@ -382,7 +372,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 		hc.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation] = fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, sizeLabel)
 		for _, sizeCfg := range sizingConfig.Spec.Sizes {
 			if sizeCfg.Name == sizeLabel {
-				hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = sizeCfg.Effects.KASGoMemLimit.String()
+				hc.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation] = ptr.Deref(sizeCfg.Effects.KASGoMemLimit, "")
 				break
 			}
 		}
@@ -641,7 +631,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 				g.Expect(actual.Annotations[hyperv1.RequestServingNodeAdditionalSelectorAnnotation]).To(Equal(fmt.Sprintf("%s=%s", hyperv1.NodeSizeLabel, sizeLabel)))
 				for _, sizeCfg := range sizingConfig.Spec.Sizes {
 					if sizeCfg.Name == sizeLabel {
-						g.Expect(actual.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation]).To(Equal(sizeCfg.Effects.KASGoMemLimit.String()))
+						g.Expect(actual.Annotations[hyperv1.KubeAPIServerGOMemoryLimitAnnotation]).To(Equal(ptr.Deref(sizeCfg.Effects.KASGoMemLimit, "")))
 						break
 					}
 				}
