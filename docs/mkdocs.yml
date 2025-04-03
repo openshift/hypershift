@@ -265,7 +265,9 @@ nav:
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
-    - 'Shared Ingress in Azure Red Hat OpenShift': reference/aro/shared-ingress.md
+    - 'Managed Azure':
+        - reference/architecture/managed-azure/secrets-csi.md
+        - reference/architecture/managed-azure/shared-ingress.md
   - 'Manifests':
     - reference/manifests/index.md
     - 'IBM Cloud':
