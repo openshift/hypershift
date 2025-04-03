@@ -18,18 +18,15 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
+	context "context"
 
-	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
-	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	applyconfigurationcertificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // CertificateRevocationRequestsGetter has a method to return a CertificateRevocationRequestInterface.
@@ -40,216 +37,41 @@ type CertificateRevocationRequestsGetter interface {
 
 // CertificateRevocationRequestInterface has methods to work with CertificateRevocationRequest resources.
 type CertificateRevocationRequestInterface interface {
-	Create(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.CreateOptions) (*v1alpha1.CertificateRevocationRequest, error)
-	Update(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (*v1alpha1.CertificateRevocationRequest, error)
-	UpdateStatus(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (*v1alpha1.CertificateRevocationRequest, error)
+	Create(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequest, opts v1.CreateOptions) (*certificatesv1alpha1.CertificateRevocationRequest, error)
+	Update(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (*certificatesv1alpha1.CertificateRevocationRequest, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (*certificatesv1alpha1.CertificateRevocationRequest, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1alpha1.CertificateRevocationRequest, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.CertificateRevocationRequestList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*certificatesv1alpha1.CertificateRevocationRequest, error)
+	List(ctx context.Context, opts v1.ListOptions) (*certificatesv1alpha1.CertificateRevocationRequestList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.CertificateRevocationRequest, err error)
-	Apply(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error)
-	ApplyStatus(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *certificatesv1alpha1.CertificateRevocationRequest, err error)
+	Apply(ctx context.Context, certificateRevocationRequest *applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *certificatesv1alpha1.CertificateRevocationRequest, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+	ApplyStatus(ctx context.Context, certificateRevocationRequest *applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *certificatesv1alpha1.CertificateRevocationRequest, err error)
 	CertificateRevocationRequestExpansion
 }
 
 // certificateRevocationRequests implements CertificateRevocationRequestInterface
 type certificateRevocationRequests struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithListAndApply[*certificatesv1alpha1.CertificateRevocationRequest, *certificatesv1alpha1.CertificateRevocationRequestList, *applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestApplyConfiguration]
 }
 
 // newCertificateRevocationRequests returns a CertificateRevocationRequests
 func newCertificateRevocationRequests(c *CertificatesV1alpha1Client, namespace string) *certificateRevocationRequests {
 	return &certificateRevocationRequests{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithListAndApply[*certificatesv1alpha1.CertificateRevocationRequest, *certificatesv1alpha1.CertificateRevocationRequestList, *applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestApplyConfiguration](
+			"certificaterevocationrequests",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *certificatesv1alpha1.CertificateRevocationRequest {
+				return &certificatesv1alpha1.CertificateRevocationRequest{}
+			},
+			func() *certificatesv1alpha1.CertificateRevocationRequestList {
+				return &certificatesv1alpha1.CertificateRevocationRequestList{}
+			},
+		),
 	}
-}
-
-// Get takes name of the certificateRevocationRequest, and returns the corresponding certificateRevocationRequest object, and an error if there is any.
-func (c *certificateRevocationRequests) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of CertificateRevocationRequests that match those selectors.
-func (c *certificateRevocationRequests) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.CertificateRevocationRequestList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1alpha1.CertificateRevocationRequestList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested certificateRevocationRequests.
-func (c *certificateRevocationRequests) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a certificateRevocationRequest and creates it.  Returns the server's representation of the certificateRevocationRequest, and an error, if there is any.
-func (c *certificateRevocationRequests) Create(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.CreateOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateRevocationRequest).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a certificateRevocationRequest and updates it. Returns the server's representation of the certificateRevocationRequest, and an error, if there is any.
-func (c *certificateRevocationRequests) Update(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(certificateRevocationRequest.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateRevocationRequest).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *certificateRevocationRequests) UpdateStatus(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(certificateRevocationRequest.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateRevocationRequest).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the certificateRevocationRequest and deletes it. Returns an error if one occurs.
-func (c *certificateRevocationRequests) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *certificateRevocationRequests) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched certificateRevocationRequest.
-func (c *certificateRevocationRequests) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied certificateRevocationRequest.
-func (c *certificateRevocationRequests) Apply(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	if certificateRevocationRequest == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(certificateRevocationRequest)
-	if err != nil {
-		return nil, err
-	}
-	name := certificateRevocationRequest.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest.Name must be provided to Apply")
-	}
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *certificateRevocationRequests) ApplyStatus(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	if certificateRevocationRequest == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(certificateRevocationRequest)
-	if err != nil {
-		return nil, err
-	}
-
-	name := certificateRevocationRequest.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest.Name must be provided to Apply")
-	}
-
-	result = &v1alpha1.CertificateRevocationRequest{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("certificaterevocationrequests").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

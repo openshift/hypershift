@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// SubnetParamApplyConfiguration represents an declarative configuration of the SubnetParam type for use
+// SubnetParamApplyConfiguration represents a declarative configuration of the SubnetParam type for use
 // with apply.
 type SubnetParamApplyConfiguration struct {
 	ID     *string                         `json:"id,omitempty"`
 	Filter *SubnetFilterApplyConfiguration `json:"filter,omitempty"`
 }
 
-// SubnetParamApplyConfiguration constructs an declarative configuration of the SubnetParam type for use with
+// SubnetParamApplyConfiguration constructs a declarative configuration of the SubnetParam type for use with
 // apply.
 func SubnetParam() *SubnetParamApplyConfiguration {
 	return &SubnetParamApplyConfiguration{}

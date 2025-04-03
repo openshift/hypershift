@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// ManagedEtcdSpecApplyConfiguration represents an declarative configuration of the ManagedEtcdSpec type for use
+// ManagedEtcdSpecApplyConfiguration represents a declarative configuration of the ManagedEtcdSpec type for use
 // with apply.
 type ManagedEtcdSpecApplyConfiguration struct {
 	Storage *ManagedEtcdStorageSpecApplyConfiguration `json:"storage,omitempty"`
 }
 
-// ManagedEtcdSpecApplyConfiguration constructs an declarative configuration of the ManagedEtcdSpec type for use with
+// ManagedEtcdSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdSpec type for use with
 // apply.
 func ManagedEtcdSpec() *ManagedEtcdSpecApplyConfiguration {
 	return &ManagedEtcdSpecApplyConfiguration{}

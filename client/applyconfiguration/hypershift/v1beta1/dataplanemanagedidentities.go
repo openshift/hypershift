@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// DataPlaneManagedIdentitiesApplyConfiguration represents an declarative configuration of the DataPlaneManagedIdentities type for use
+// DataPlaneManagedIdentitiesApplyConfiguration represents a declarative configuration of the DataPlaneManagedIdentities type for use
 // with apply.
 type DataPlaneManagedIdentitiesApplyConfiguration struct {
 	ImageRegistryMSIClientID *string `json:"imageRegistryMSIClientID,omitempty"`
@@ -25,7 +25,7 @@ type DataPlaneManagedIdentitiesApplyConfiguration struct {
 	FileMSIClientID          *string `json:"fileMSIClientID,omitempty"`
 }
 
-// DataPlaneManagedIdentitiesApplyConfiguration constructs an declarative configuration of the DataPlaneManagedIdentities type for use with
+// DataPlaneManagedIdentitiesApplyConfiguration constructs a declarative configuration of the DataPlaneManagedIdentities type for use with
 // apply.
 func DataPlaneManagedIdentities() *DataPlaneManagedIdentitiesApplyConfiguration {
 	return &DataPlaneManagedIdentitiesApplyConfiguration{}

@@ -18,13 +18,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	apicertificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/hypershift/client/listers/certificates/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/client/listers/certificates/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // CertificateSigningRequestApprovals.
 type CertificateSigningRequestApprovalInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.CertificateSigningRequestApprovalLister
+	Lister() certificatesv1alpha1.CertificateSigningRequestApprovalLister
 }
 
 type certificateSigningRequestApprovalInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredCertificateSigningRequestApprovalInformer(client clientset.Inter
 				return client.CertificatesV1alpha1().CertificateSigningRequestApprovals(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&certificatesv1alpha1.CertificateSigningRequestApproval{},
+		&apicertificatesv1alpha1.CertificateSigningRequestApproval{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *certificateSigningRequestApprovalInformer) defaultInformer(client clien
 }
 
 func (f *certificateSigningRequestApprovalInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&certificatesv1alpha1.CertificateSigningRequestApproval{}, f.defaultInformer)
+	return f.factory.InformerFor(&apicertificatesv1alpha1.CertificateSigningRequestApproval{}, f.defaultInformer)
 }
 
-func (f *certificateSigningRequestApprovalInformer) Lister() v1alpha1.CertificateSigningRequestApprovalLister {
-	return v1alpha1.NewCertificateSigningRequestApprovalLister(f.Informer().GetIndexer())
+func (f *certificateSigningRequestApprovalInformer) Lister() certificatesv1alpha1.CertificateSigningRequestApprovalLister {
+	return certificatesv1alpha1.NewCertificateSigningRequestApprovalLister(f.Informer().GetIndexer())
 }

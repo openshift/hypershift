@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// OperatorConfigurationApplyConfiguration represents an declarative configuration of the OperatorConfiguration type for use
+// OperatorConfigurationApplyConfiguration represents a declarative configuration of the OperatorConfiguration type for use
 // with apply.
 type OperatorConfigurationApplyConfiguration struct {
 	ClusterVersionOperator *ClusterVersionOperatorSpecApplyConfiguration `json:"clusterVersionOperator,omitempty"`
 }
 
-// OperatorConfigurationApplyConfiguration constructs an declarative configuration of the OperatorConfiguration type for use with
+// OperatorConfigurationApplyConfiguration constructs a declarative configuration of the OperatorConfiguration type for use with
 // apply.
 func OperatorConfiguration() *OperatorConfigurationApplyConfiguration {
 	return &OperatorConfigurationApplyConfiguration{}

@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// EtcdSpecApplyConfiguration represents an declarative configuration of the EtcdSpec type for use
+// EtcdSpecApplyConfiguration represents a declarative configuration of the EtcdSpec type for use
 // with apply.
 type EtcdSpecApplyConfiguration struct {
-	ManagementType *v1beta1.EtcdManagementType          `json:"managementType,omitempty"`
-	Managed        *ManagedEtcdSpecApplyConfiguration   `json:"managed,omitempty"`
-	Unmanaged      *UnmanagedEtcdSpecApplyConfiguration `json:"unmanaged,omitempty"`
+	ManagementType *hypershiftv1beta1.EtcdManagementType `json:"managementType,omitempty"`
+	Managed        *ManagedEtcdSpecApplyConfiguration    `json:"managed,omitempty"`
+	Unmanaged      *UnmanagedEtcdSpecApplyConfiguration  `json:"unmanaged,omitempty"`
 }
 
-// EtcdSpecApplyConfiguration constructs an declarative configuration of the EtcdSpec type for use with
+// EtcdSpecApplyConfiguration constructs a declarative configuration of the EtcdSpec type for use with
 // apply.
 func EtcdSpec() *EtcdSpecApplyConfiguration {
 	return &EtcdSpecApplyConfiguration{}
@@ -38,7 +38,7 @@ func EtcdSpec() *EtcdSpecApplyConfiguration {
 // WithManagementType sets the ManagementType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ManagementType field is set to the value of the last call.
-func (b *EtcdSpecApplyConfiguration) WithManagementType(value v1beta1.EtcdManagementType) *EtcdSpecApplyConfiguration {
+func (b *EtcdSpecApplyConfiguration) WithManagementType(value hypershiftv1beta1.EtcdManagementType) *EtcdSpecApplyConfiguration {
 	b.ManagementType = &value
 	return b
 }

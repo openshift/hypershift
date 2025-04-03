@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ServicePublishingStrategyMappingApplyConfiguration represents an declarative configuration of the ServicePublishingStrategyMapping type for use
+// ServicePublishingStrategyMappingApplyConfiguration represents a declarative configuration of the ServicePublishingStrategyMapping type for use
 // with apply.
 type ServicePublishingStrategyMappingApplyConfiguration struct {
-	Service                                      *v1beta1.ServiceType `json:"service,omitempty"`
+	Service                                      *hypershiftv1beta1.ServiceType `json:"service,omitempty"`
 	*ServicePublishingStrategyApplyConfiguration `json:"servicePublishingStrategy,omitempty"`
 }
 
-// ServicePublishingStrategyMappingApplyConfiguration constructs an declarative configuration of the ServicePublishingStrategyMapping type for use with
+// ServicePublishingStrategyMappingApplyConfiguration constructs a declarative configuration of the ServicePublishingStrategyMapping type for use with
 // apply.
 func ServicePublishingStrategyMapping() *ServicePublishingStrategyMappingApplyConfiguration {
 	return &ServicePublishingStrategyMappingApplyConfiguration{}
@@ -37,7 +37,7 @@ func ServicePublishingStrategyMapping() *ServicePublishingStrategyMappingApplyCo
 // WithService sets the Service field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Service field is set to the value of the last call.
-func (b *ServicePublishingStrategyMappingApplyConfiguration) WithService(value v1beta1.ServiceType) *ServicePublishingStrategyMappingApplyConfiguration {
+func (b *ServicePublishingStrategyMappingApplyConfiguration) WithService(value hypershiftv1beta1.ServiceType) *ServicePublishingStrategyMappingApplyConfiguration {
 	b.Service = &value
 	return b
 }
@@ -45,9 +45,9 @@ func (b *ServicePublishingStrategyMappingApplyConfiguration) WithService(value v
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *ServicePublishingStrategyMappingApplyConfiguration) WithType(value v1beta1.PublishingStrategyType) *ServicePublishingStrategyMappingApplyConfiguration {
+func (b *ServicePublishingStrategyMappingApplyConfiguration) WithType(value hypershiftv1beta1.PublishingStrategyType) *ServicePublishingStrategyMappingApplyConfiguration {
 	b.ensureServicePublishingStrategyApplyConfigurationExists()
-	b.Type = &value
+	b.ServicePublishingStrategyApplyConfiguration.Type = &value
 	return b
 }
 
@@ -56,7 +56,7 @@ func (b *ServicePublishingStrategyMappingApplyConfiguration) WithType(value v1be
 // If called multiple times, the NodePort field is set to the value of the last call.
 func (b *ServicePublishingStrategyMappingApplyConfiguration) WithNodePort(value *NodePortPublishingStrategyApplyConfiguration) *ServicePublishingStrategyMappingApplyConfiguration {
 	b.ensureServicePublishingStrategyApplyConfigurationExists()
-	b.NodePort = value
+	b.ServicePublishingStrategyApplyConfiguration.NodePort = value
 	return b
 }
 
@@ -65,7 +65,7 @@ func (b *ServicePublishingStrategyMappingApplyConfiguration) WithNodePort(value 
 // If called multiple times, the LoadBalancer field is set to the value of the last call.
 func (b *ServicePublishingStrategyMappingApplyConfiguration) WithLoadBalancer(value *LoadBalancerPublishingStrategyApplyConfiguration) *ServicePublishingStrategyMappingApplyConfiguration {
 	b.ensureServicePublishingStrategyApplyConfigurationExists()
-	b.LoadBalancer = value
+	b.ServicePublishingStrategyApplyConfiguration.LoadBalancer = value
 	return b
 }
 
@@ -74,7 +74,7 @@ func (b *ServicePublishingStrategyMappingApplyConfiguration) WithLoadBalancer(va
 // If called multiple times, the Route field is set to the value of the last call.
 func (b *ServicePublishingStrategyMappingApplyConfiguration) WithRoute(value *RoutePublishingStrategyApplyConfiguration) *ServicePublishingStrategyMappingApplyConfiguration {
 	b.ensureServicePublishingStrategyApplyConfigurationExists()
-	b.Route = value
+	b.ServicePublishingStrategyApplyConfiguration.Route = value
 	return b
 }
 

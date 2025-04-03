@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// CertificateRevocationRequestStatusApplyConfiguration represents an declarative configuration of the CertificateRevocationRequestStatus type for use
+// CertificateRevocationRequestStatusApplyConfiguration represents a declarative configuration of the CertificateRevocationRequestStatus type for use
 // with apply.
 type CertificateRevocationRequestStatusApplyConfiguration struct {
 	RevocationTimestamp *v1.Time                             `json:"revocationTimestamp,omitempty"`
@@ -31,7 +31,7 @@ type CertificateRevocationRequestStatusApplyConfiguration struct {
 	Conditions          []metav1.ConditionApplyConfiguration `json:"conditions,omitempty"`
 }
 
-// CertificateRevocationRequestStatusApplyConfiguration constructs an declarative configuration of the CertificateRevocationRequestStatus type for use with
+// CertificateRevocationRequestStatusApplyConfiguration constructs a declarative configuration of the CertificateRevocationRequestStatus type for use with
 // apply.
 func CertificateRevocationRequestStatus() *CertificateRevocationRequestStatusApplyConfiguration {
 	return &CertificateRevocationRequestStatusApplyConfiguration{}

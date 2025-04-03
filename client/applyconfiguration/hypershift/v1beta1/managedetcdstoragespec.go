@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ManagedEtcdStorageSpecApplyConfiguration represents an declarative configuration of the ManagedEtcdStorageSpec type for use
+// ManagedEtcdStorageSpecApplyConfiguration represents a declarative configuration of the ManagedEtcdStorageSpec type for use
 // with apply.
 type ManagedEtcdStorageSpecApplyConfiguration struct {
-	Type               *v1beta1.ManagedEtcdStorageType                    `json:"type,omitempty"`
+	Type               *hypershiftv1beta1.ManagedEtcdStorageType          `json:"type,omitempty"`
 	PersistentVolume   *PersistentVolumeEtcdStorageSpecApplyConfiguration `json:"persistentVolume,omitempty"`
 	RestoreSnapshotURL []string                                           `json:"restoreSnapshotURL,omitempty"`
 }
 
-// ManagedEtcdStorageSpecApplyConfiguration constructs an declarative configuration of the ManagedEtcdStorageSpec type for use with
+// ManagedEtcdStorageSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdStorageSpec type for use with
 // apply.
 func ManagedEtcdStorageSpec() *ManagedEtcdStorageSpecApplyConfiguration {
 	return &ManagedEtcdStorageSpecApplyConfiguration{}
@@ -38,7 +38,7 @@ func ManagedEtcdStorageSpec() *ManagedEtcdStorageSpecApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *ManagedEtcdStorageSpecApplyConfiguration) WithType(value v1beta1.ManagedEtcdStorageType) *ManagedEtcdStorageSpecApplyConfiguration {
+func (b *ManagedEtcdStorageSpecApplyConfiguration) WithType(value hypershiftv1beta1.ManagedEtcdStorageType) *ManagedEtcdStorageSpecApplyConfiguration {
 	b.Type = &value
 	return b
 }

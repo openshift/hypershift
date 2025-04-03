@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtManualStorageDriverConfigApplyConfiguration represents an declarative configuration of the KubevirtManualStorageDriverConfig type for use
+// KubevirtManualStorageDriverConfigApplyConfiguration represents a declarative configuration of the KubevirtManualStorageDriverConfig type for use
 // with apply.
 type KubevirtManualStorageDriverConfigApplyConfiguration struct {
 	StorageClassMapping        []KubevirtStorageClassMappingApplyConfiguration        `json:"storageClassMapping,omitempty"`
 	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMappingApplyConfiguration `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
-// KubevirtManualStorageDriverConfigApplyConfiguration constructs an declarative configuration of the KubevirtManualStorageDriverConfig type for use with
+// KubevirtManualStorageDriverConfigApplyConfiguration constructs a declarative configuration of the KubevirtManualStorageDriverConfig type for use with
 // apply.
 func KubevirtManualStorageDriverConfig() *KubevirtManualStorageDriverConfigApplyConfiguration {
 	return &KubevirtManualStorageDriverConfigApplyConfiguration{}

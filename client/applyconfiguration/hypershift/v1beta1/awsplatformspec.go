@@ -21,7 +21,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// AWSPlatformSpecApplyConfiguration represents an declarative configuration of the AWSPlatformSpec type for use
+// AWSPlatformSpecApplyConfiguration represents a declarative configuration of the AWSPlatformSpec type for use
 // with apply.
 type AWSPlatformSpecApplyConfiguration struct {
 	Region                      *string                                   `json:"region,omitempty"`
@@ -35,7 +35,7 @@ type AWSPlatformSpecApplyConfiguration struct {
 	SharedVPC                   *AWSSharedVPCApplyConfiguration           `json:"sharedVPC,omitempty"`
 }
 
-// AWSPlatformSpecApplyConfiguration constructs an declarative configuration of the AWSPlatformSpec type for use with
+// AWSPlatformSpecApplyConfiguration constructs a declarative configuration of the AWSPlatformSpec type for use with
 // apply.
 func AWSPlatformSpec() *AWSPlatformSpecApplyConfiguration {
 	return &AWSPlatformSpecApplyConfiguration{}

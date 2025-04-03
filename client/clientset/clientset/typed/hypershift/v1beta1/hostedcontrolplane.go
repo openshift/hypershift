@@ -18,18 +18,15 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
+	context "context"
 
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	applyconfigurationhypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // HostedControlPlanesGetter has a method to return a HostedControlPlaneInterface.
@@ -40,216 +37,37 @@ type HostedControlPlanesGetter interface {
 
 // HostedControlPlaneInterface has methods to work with HostedControlPlane resources.
 type HostedControlPlaneInterface interface {
-	Create(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.CreateOptions) (*v1beta1.HostedControlPlane, error)
-	Update(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.UpdateOptions) (*v1beta1.HostedControlPlane, error)
-	UpdateStatus(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.UpdateOptions) (*v1beta1.HostedControlPlane, error)
+	Create(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlane, opts v1.CreateOptions) (*hypershiftv1beta1.HostedControlPlane, error)
+	Update(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlane, opts v1.UpdateOptions) (*hypershiftv1beta1.HostedControlPlane, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlane, opts v1.UpdateOptions) (*hypershiftv1beta1.HostedControlPlane, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.HostedControlPlane, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.HostedControlPlaneList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*hypershiftv1beta1.HostedControlPlane, error)
+	List(ctx context.Context, opts v1.ListOptions) (*hypershiftv1beta1.HostedControlPlaneList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.HostedControlPlane, err error)
-	Apply(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.HostedControlPlane, err error)
-	ApplyStatus(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.HostedControlPlane, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *hypershiftv1beta1.HostedControlPlane, err error)
+	Apply(ctx context.Context, hostedControlPlane *applyconfigurationhypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *hypershiftv1beta1.HostedControlPlane, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+	ApplyStatus(ctx context.Context, hostedControlPlane *applyconfigurationhypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *hypershiftv1beta1.HostedControlPlane, err error)
 	HostedControlPlaneExpansion
 }
 
 // hostedControlPlanes implements HostedControlPlaneInterface
 type hostedControlPlanes struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithListAndApply[*hypershiftv1beta1.HostedControlPlane, *hypershiftv1beta1.HostedControlPlaneList, *applyconfigurationhypershiftv1beta1.HostedControlPlaneApplyConfiguration]
 }
 
 // newHostedControlPlanes returns a HostedControlPlanes
 func newHostedControlPlanes(c *HypershiftV1beta1Client, namespace string) *hostedControlPlanes {
 	return &hostedControlPlanes{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithListAndApply[*hypershiftv1beta1.HostedControlPlane, *hypershiftv1beta1.HostedControlPlaneList, *applyconfigurationhypershiftv1beta1.HostedControlPlaneApplyConfiguration](
+			"hostedcontrolplanes",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *hypershiftv1beta1.HostedControlPlane { return &hypershiftv1beta1.HostedControlPlane{} },
+			func() *hypershiftv1beta1.HostedControlPlaneList { return &hypershiftv1beta1.HostedControlPlaneList{} },
+		),
 	}
-}
-
-// Get takes name of the hostedControlPlane, and returns the corresponding hostedControlPlane object, and an error if there is any.
-func (c *hostedControlPlanes) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.HostedControlPlane, err error) {
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of HostedControlPlanes that match those selectors.
-func (c *hostedControlPlanes) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.HostedControlPlaneList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1beta1.HostedControlPlaneList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested hostedControlPlanes.
-func (c *hostedControlPlanes) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a hostedControlPlane and creates it.  Returns the server's representation of the hostedControlPlane, and an error, if there is any.
-func (c *hostedControlPlanes) Create(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.CreateOptions) (result *v1beta1.HostedControlPlane, err error) {
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(hostedControlPlane).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a hostedControlPlane and updates it. Returns the server's representation of the hostedControlPlane, and an error, if there is any.
-func (c *hostedControlPlanes) Update(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.UpdateOptions) (result *v1beta1.HostedControlPlane, err error) {
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(hostedControlPlane.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(hostedControlPlane).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *hostedControlPlanes) UpdateStatus(ctx context.Context, hostedControlPlane *v1beta1.HostedControlPlane, opts v1.UpdateOptions) (result *v1beta1.HostedControlPlane, err error) {
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(hostedControlPlane.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(hostedControlPlane).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the hostedControlPlane and deletes it. Returns an error if one occurs.
-func (c *hostedControlPlanes) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *hostedControlPlanes) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched hostedControlPlane.
-func (c *hostedControlPlanes) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.HostedControlPlane, err error) {
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied hostedControlPlane.
-func (c *hostedControlPlanes) Apply(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.HostedControlPlane, err error) {
-	if hostedControlPlane == nil {
-		return nil, fmt.Errorf("hostedControlPlane provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(hostedControlPlane)
-	if err != nil {
-		return nil, err
-	}
-	name := hostedControlPlane.Name
-	if name == nil {
-		return nil, fmt.Errorf("hostedControlPlane.Name must be provided to Apply")
-	}
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *hostedControlPlanes) ApplyStatus(ctx context.Context, hostedControlPlane *hypershiftv1beta1.HostedControlPlaneApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.HostedControlPlane, err error) {
-	if hostedControlPlane == nil {
-		return nil, fmt.Errorf("hostedControlPlane provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(hostedControlPlane)
-	if err != nil {
-		return nil, err
-	}
-
-	name := hostedControlPlane.Name
-	if name == nil {
-		return nil, fmt.Errorf("hostedControlPlane.Name must be provided to Apply")
-	}
-
-	result = &v1beta1.HostedControlPlane{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("hostedcontrolplanes").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

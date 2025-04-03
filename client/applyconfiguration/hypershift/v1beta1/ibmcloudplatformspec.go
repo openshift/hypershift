@@ -21,13 +21,13 @@ import (
 	v1 "github.com/openshift/api/config/v1"
 )
 
-// IBMCloudPlatformSpecApplyConfiguration represents an declarative configuration of the IBMCloudPlatformSpec type for use
+// IBMCloudPlatformSpecApplyConfiguration represents a declarative configuration of the IBMCloudPlatformSpec type for use
 // with apply.
 type IBMCloudPlatformSpecApplyConfiguration struct {
 	ProviderType *v1.IBMCloudProviderType `json:"providerType,omitempty"`
 }
 
-// IBMCloudPlatformSpecApplyConfiguration constructs an declarative configuration of the IBMCloudPlatformSpec type for use with
+// IBMCloudPlatformSpecApplyConfiguration constructs a declarative configuration of the IBMCloudPlatformSpec type for use with
 // apply.
 func IBMCloudPlatformSpec() *IBMCloudPlatformSpecApplyConfiguration {
 	return &IBMCloudPlatformSpecApplyConfiguration{}

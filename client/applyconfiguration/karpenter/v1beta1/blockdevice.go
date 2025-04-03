@@ -21,7 +21,7 @@ import (
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// BlockDeviceApplyConfiguration represents an declarative configuration of the BlockDevice type for use
+// BlockDeviceApplyConfiguration represents a declarative configuration of the BlockDevice type for use
 // with apply.
 type BlockDeviceApplyConfiguration struct {
 	DeleteOnTermination *bool              `json:"deleteOnTermination,omitempty"`
@@ -34,7 +34,7 @@ type BlockDeviceApplyConfiguration struct {
 	VolumeType          *string            `json:"volumeType,omitempty"`
 }
 
-// BlockDeviceApplyConfiguration constructs an declarative configuration of the BlockDevice type for use with
+// BlockDeviceApplyConfiguration constructs a declarative configuration of the BlockDevice type for use with
 // apply.
 func BlockDevice() *BlockDeviceApplyConfiguration {
 	return &BlockDeviceApplyConfiguration{}

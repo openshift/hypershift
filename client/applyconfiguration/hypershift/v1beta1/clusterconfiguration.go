@@ -21,7 +21,7 @@ import (
 	v1 "github.com/openshift/api/config/v1"
 )
 
-// ClusterConfigurationApplyConfiguration represents an declarative configuration of the ClusterConfiguration type for use
+// ClusterConfigurationApplyConfiguration represents a declarative configuration of the ClusterConfiguration type for use
 // with apply.
 type ClusterConfigurationApplyConfiguration struct {
 	APIServer      *v1.APIServerSpec      `json:"apiServer,omitempty"`
@@ -36,7 +36,7 @@ type ClusterConfigurationApplyConfiguration struct {
 	Proxy          *v1.ProxySpec          `json:"proxy,omitempty"`
 }
 
-// ClusterConfigurationApplyConfiguration constructs an declarative configuration of the ClusterConfiguration type for use with
+// ClusterConfigurationApplyConfiguration constructs a declarative configuration of the ClusterConfiguration type for use with
 // apply.
 func ClusterConfiguration() *ClusterConfigurationApplyConfiguration {
 	return &ClusterConfigurationApplyConfiguration{}

@@ -18,13 +18,13 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// NodePoolPlatformApplyConfiguration represents an declarative configuration of the NodePoolPlatform type for use
+// NodePoolPlatformApplyConfiguration represents a declarative configuration of the NodePoolPlatform type for use
 // with apply.
 type NodePoolPlatformApplyConfiguration struct {
-	Type      *v1beta1.PlatformType                        `json:"type,omitempty"`
+	Type      *hypershiftv1beta1.PlatformType              `json:"type,omitempty"`
 	AWS       *AWSNodePoolPlatformApplyConfiguration       `json:"aws,omitempty"`
 	IBMCloud  *IBMCloudPlatformSpecApplyConfiguration      `json:"ibmcloud,omitempty"`
 	Kubevirt  *KubevirtNodePoolPlatformApplyConfiguration  `json:"kubevirt,omitempty"`
@@ -34,7 +34,7 @@ type NodePoolPlatformApplyConfiguration struct {
 	OpenStack *OpenStackNodePoolPlatformApplyConfiguration `json:"openstack,omitempty"`
 }
 
-// NodePoolPlatformApplyConfiguration constructs an declarative configuration of the NodePoolPlatform type for use with
+// NodePoolPlatformApplyConfiguration constructs a declarative configuration of the NodePoolPlatform type for use with
 // apply.
 func NodePoolPlatform() *NodePoolPlatformApplyConfiguration {
 	return &NodePoolPlatformApplyConfiguration{}
@@ -43,7 +43,7 @@ func NodePoolPlatform() *NodePoolPlatformApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *NodePoolPlatformApplyConfiguration) WithType(value v1beta1.PlatformType) *NodePoolPlatformApplyConfiguration {
+func (b *NodePoolPlatformApplyConfiguration) WithType(value hypershiftv1beta1.PlatformType) *NodePoolPlatformApplyConfiguration {
 	b.Type = &value
 	return b
 }

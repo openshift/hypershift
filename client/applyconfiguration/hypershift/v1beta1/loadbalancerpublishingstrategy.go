@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// LoadBalancerPublishingStrategyApplyConfiguration represents an declarative configuration of the LoadBalancerPublishingStrategy type for use
+// LoadBalancerPublishingStrategyApplyConfiguration represents a declarative configuration of the LoadBalancerPublishingStrategy type for use
 // with apply.
 type LoadBalancerPublishingStrategyApplyConfiguration struct {
 	Hostname *string `json:"hostname,omitempty"`
 }
 
-// LoadBalancerPublishingStrategyApplyConfiguration constructs an declarative configuration of the LoadBalancerPublishingStrategy type for use with
+// LoadBalancerPublishingStrategyApplyConfiguration constructs a declarative configuration of the LoadBalancerPublishingStrategy type for use with
 // apply.
 func LoadBalancerPublishingStrategy() *LoadBalancerPublishingStrategyApplyConfiguration {
 	return &LoadBalancerPublishingStrategyApplyConfiguration{}

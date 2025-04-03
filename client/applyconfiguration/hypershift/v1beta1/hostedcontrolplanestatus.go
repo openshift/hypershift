@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// HostedControlPlaneStatusApplyConfiguration represents an declarative configuration of the HostedControlPlaneStatus type for use
+// HostedControlPlaneStatusApplyConfiguration represents a declarative configuration of the HostedControlPlaneStatus type for use
 // with apply.
 type HostedControlPlaneStatusApplyConfiguration struct {
 	Ready                          *bool                                   `json:"ready,omitempty"`
@@ -43,7 +43,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	NodeCount                      *int                                    `json:"nodeCount,omitempty"`
 }
 
-// HostedControlPlaneStatusApplyConfiguration constructs an declarative configuration of the HostedControlPlaneStatus type for use with
+// HostedControlPlaneStatusApplyConfiguration constructs a declarative configuration of the HostedControlPlaneStatus type for use with
 // apply.
 func HostedControlPlaneStatus() *HostedControlPlaneStatusApplyConfiguration {
 	return &HostedControlPlaneStatusApplyConfiguration{}

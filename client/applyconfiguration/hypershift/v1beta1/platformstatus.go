@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// PlatformStatusApplyConfiguration represents an declarative configuration of the PlatformStatus type for use
+// PlatformStatusApplyConfiguration represents a declarative configuration of the PlatformStatus type for use
 // with apply.
 type PlatformStatusApplyConfiguration struct {
 	AWS *AWSPlatformStatusApplyConfiguration `json:"aws,omitempty"`
 }
 
-// PlatformStatusApplyConfiguration constructs an declarative configuration of the PlatformStatus type for use with
+// PlatformStatusApplyConfiguration constructs a declarative configuration of the PlatformStatus type for use with
 // apply.
 func PlatformStatus() *PlatformStatusApplyConfiguration {
 	return &PlatformStatusApplyConfiguration{}

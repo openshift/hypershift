@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// IBMCloudKMSSpecApplyConfiguration represents an declarative configuration of the IBMCloudKMSSpec type for use
+// IBMCloudKMSSpecApplyConfiguration represents a declarative configuration of the IBMCloudKMSSpec type for use
 // with apply.
 type IBMCloudKMSSpecApplyConfiguration struct {
 	Region  *string                                 `json:"region,omitempty"`
@@ -25,7 +25,7 @@ type IBMCloudKMSSpecApplyConfiguration struct {
 	KeyList []IBMCloudKMSKeyEntryApplyConfiguration `json:"keyList,omitempty"`
 }
 
-// IBMCloudKMSSpecApplyConfiguration constructs an declarative configuration of the IBMCloudKMSSpec type for use with
+// IBMCloudKMSSpecApplyConfiguration constructs a declarative configuration of the IBMCloudKMSSpec type for use with
 // apply.
 func IBMCloudKMSSpec() *IBMCloudKMSSpecApplyConfiguration {
 	return &IBMCloudKMSSpecApplyConfiguration{}

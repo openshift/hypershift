@@ -22,7 +22,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EffectsApplyConfiguration represents an declarative configuration of the Effects type for use
+// EffectsApplyConfiguration represents a declarative configuration of the Effects type for use
 // with apply.
 type EffectsApplyConfiguration struct {
 	KASGoMemLimit                   *resource.Quantity                  `json:"kasGoMemLimit,omitempty"`
@@ -35,7 +35,7 @@ type EffectsApplyConfiguration struct {
 	MaximumMutatingRequestsInflight *int                                `json:"maximumMutatingRequestsInflight,omitempty"`
 }
 
-// EffectsApplyConfiguration constructs an declarative configuration of the Effects type for use with
+// EffectsApplyConfiguration constructs a declarative configuration of the Effects type for use with
 // apply.
 func Effects() *EffectsApplyConfiguration {
 	return &EffectsApplyConfiguration{}

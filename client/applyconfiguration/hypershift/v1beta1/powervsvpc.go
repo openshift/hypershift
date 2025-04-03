@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// PowerVSVPCApplyConfiguration represents an declarative configuration of the PowerVSVPC type for use
+// PowerVSVPCApplyConfiguration represents a declarative configuration of the PowerVSVPC type for use
 // with apply.
 type PowerVSVPCApplyConfiguration struct {
 	Name   *string `json:"name,omitempty"`
@@ -26,7 +26,7 @@ type PowerVSVPCApplyConfiguration struct {
 	Subnet *string `json:"subnet,omitempty"`
 }
 
-// PowerVSVPCApplyConfiguration constructs an declarative configuration of the PowerVSVPC type for use with
+// PowerVSVPCApplyConfiguration constructs a declarative configuration of the PowerVSVPC type for use with
 // apply.
 func PowerVSVPC() *PowerVSVPCApplyConfiguration {
 	return &PowerVSVPCApplyConfiguration{}

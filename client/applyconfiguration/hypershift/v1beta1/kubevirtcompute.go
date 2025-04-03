@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// KubevirtComputeApplyConfiguration represents an declarative configuration of the KubevirtCompute type for use
+// KubevirtComputeApplyConfiguration represents a declarative configuration of the KubevirtCompute type for use
 // with apply.
 type KubevirtComputeApplyConfiguration struct {
-	Memory   *resource.Quantity `json:"memory,omitempty"`
-	Cores    *uint32            `json:"cores,omitempty"`
-	QosClass *v1beta1.QoSClass  `json:"qosClass,omitempty"`
+	Memory   *resource.Quantity          `json:"memory,omitempty"`
+	Cores    *uint32                     `json:"cores,omitempty"`
+	QosClass *hypershiftv1beta1.QoSClass `json:"qosClass,omitempty"`
 }
 
-// KubevirtComputeApplyConfiguration constructs an declarative configuration of the KubevirtCompute type for use with
+// KubevirtComputeApplyConfiguration constructs a declarative configuration of the KubevirtCompute type for use with
 // apply.
 func KubevirtCompute() *KubevirtComputeApplyConfiguration {
 	return &KubevirtComputeApplyConfiguration{}
@@ -55,7 +55,7 @@ func (b *KubevirtComputeApplyConfiguration) WithCores(value uint32) *KubevirtCom
 // WithQosClass sets the QosClass field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the QosClass field is set to the value of the last call.
-func (b *KubevirtComputeApplyConfiguration) WithQosClass(value v1beta1.QoSClass) *KubevirtComputeApplyConfiguration {
+func (b *KubevirtComputeApplyConfiguration) WithQosClass(value hypershiftv1beta1.QoSClass) *KubevirtComputeApplyConfiguration {
 	b.QosClass = &value
 	return b
 }

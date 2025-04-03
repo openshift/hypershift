@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AWSServiceEndpointApplyConfiguration represents an declarative configuration of the AWSServiceEndpoint type for use
+// AWSServiceEndpointApplyConfiguration represents a declarative configuration of the AWSServiceEndpoint type for use
 // with apply.
 type AWSServiceEndpointApplyConfiguration struct {
 	Name *string `json:"name,omitempty"`
 	URL  *string `json:"url,omitempty"`
 }
 
-// AWSServiceEndpointApplyConfiguration constructs an declarative configuration of the AWSServiceEndpoint type for use with
+// AWSServiceEndpointApplyConfiguration constructs a declarative configuration of the AWSServiceEndpoint type for use with
 // apply.
 func AWSServiceEndpoint() *AWSServiceEndpointApplyConfiguration {
 	return &AWSServiceEndpointApplyConfiguration{}

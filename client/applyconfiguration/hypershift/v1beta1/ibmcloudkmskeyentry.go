@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// IBMCloudKMSKeyEntryApplyConfiguration represents an declarative configuration of the IBMCloudKMSKeyEntry type for use
+// IBMCloudKMSKeyEntryApplyConfiguration represents a declarative configuration of the IBMCloudKMSKeyEntry type for use
 // with apply.
 type IBMCloudKMSKeyEntryApplyConfiguration struct {
 	CRKID         *string `json:"crkID,omitempty"`
@@ -27,7 +27,7 @@ type IBMCloudKMSKeyEntryApplyConfiguration struct {
 	KeyVersion    *int    `json:"keyVersion,omitempty"`
 }
 
-// IBMCloudKMSKeyEntryApplyConfiguration constructs an declarative configuration of the IBMCloudKMSKeyEntry type for use with
+// IBMCloudKMSKeyEntryApplyConfiguration constructs a declarative configuration of the IBMCloudKMSKeyEntry type for use with
 // apply.
 func IBMCloudKMSKeyEntry() *IBMCloudKMSKeyEntryApplyConfiguration {
 	return &IBMCloudKMSKeyEntryApplyConfiguration{}

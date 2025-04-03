@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// ClusterAutoscalingApplyConfiguration represents an declarative configuration of the ClusterAutoscaling type for use
+// ClusterAutoscalingApplyConfiguration represents a declarative configuration of the ClusterAutoscaling type for use
 // with apply.
 type ClusterAutoscalingApplyConfiguration struct {
 	MaxNodesTotal        *int32  `json:"maxNodesTotal,omitempty"`
@@ -26,7 +26,7 @@ type ClusterAutoscalingApplyConfiguration struct {
 	PodPriorityThreshold *int32  `json:"podPriorityThreshold,omitempty"`
 }
 
-// ClusterAutoscalingApplyConfiguration constructs an declarative configuration of the ClusterAutoscaling type for use with
+// ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
 // apply.
 func ClusterAutoscaling() *ClusterAutoscalingApplyConfiguration {
 	return &ClusterAutoscalingApplyConfiguration{}

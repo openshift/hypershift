@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// NodePoolManagementApplyConfiguration represents an declarative configuration of the NodePoolManagement type for use
+// NodePoolManagementApplyConfiguration represents a declarative configuration of the NodePoolManagement type for use
 // with apply.
 type NodePoolManagementApplyConfiguration struct {
-	UpgradeType *v1beta1.UpgradeType              `json:"upgradeType,omitempty"`
+	UpgradeType *hypershiftv1beta1.UpgradeType    `json:"upgradeType,omitempty"`
 	Replace     *ReplaceUpgradeApplyConfiguration `json:"replace,omitempty"`
 	InPlace     *InPlaceUpgradeApplyConfiguration `json:"inPlace,omitempty"`
 	AutoRepair  *bool                             `json:"autoRepair,omitempty"`
 }
 
-// NodePoolManagementApplyConfiguration constructs an declarative configuration of the NodePoolManagement type for use with
+// NodePoolManagementApplyConfiguration constructs a declarative configuration of the NodePoolManagement type for use with
 // apply.
 func NodePoolManagement() *NodePoolManagementApplyConfiguration {
 	return &NodePoolManagementApplyConfiguration{}
@@ -39,7 +39,7 @@ func NodePoolManagement() *NodePoolManagementApplyConfiguration {
 // WithUpgradeType sets the UpgradeType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the UpgradeType field is set to the value of the last call.
-func (b *NodePoolManagementApplyConfiguration) WithUpgradeType(value v1beta1.UpgradeType) *NodePoolManagementApplyConfiguration {
+func (b *NodePoolManagementApplyConfiguration) WithUpgradeType(value hypershiftv1beta1.UpgradeType) *NodePoolManagementApplyConfiguration {
 	b.UpgradeType = &value
 	return b
 }

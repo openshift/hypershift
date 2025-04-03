@@ -21,14 +21,14 @@ import (
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// ManagementApplyConfiguration represents an declarative configuration of the Management type for use
+// ManagementApplyConfiguration represents a declarative configuration of the Management type for use
 // with apply.
 type ManagementApplyConfiguration struct {
 	Placeholders                  *int               `json:"placeholders,omitempty"`
 	NonRequestServingNodesPerZone *resource.Quantity `json:"nonRequestServingNodesPerZone,omitempty"`
 }
 
-// ManagementApplyConfiguration constructs an declarative configuration of the Management type for use with
+// ManagementApplyConfiguration constructs a declarative configuration of the Management type for use with
 // apply.
 func Management() *ManagementApplyConfiguration {
 	return &ManagementApplyConfiguration{}

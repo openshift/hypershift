@@ -18,13 +18,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	apischedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/hypershift/client/listers/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/client/listers/scheduling/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // ClusterSizingConfigurations.
 type ClusterSizingConfigurationInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.ClusterSizingConfigurationLister
+	Lister() schedulingv1alpha1.ClusterSizingConfigurationLister
 }
 
 type clusterSizingConfigurationInformer struct {
@@ -69,7 +69,7 @@ func NewFilteredClusterSizingConfigurationInformer(client clientset.Interface, r
 				return client.SchedulingV1alpha1().ClusterSizingConfigurations().Watch(context.TODO(), options)
 			},
 		},
-		&schedulingv1alpha1.ClusterSizingConfiguration{},
+		&apischedulingv1alpha1.ClusterSizingConfiguration{},
 		resyncPeriod,
 		indexers,
 	)
@@ -80,9 +80,9 @@ func (f *clusterSizingConfigurationInformer) defaultInformer(client clientset.In
 }
 
 func (f *clusterSizingConfigurationInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&schedulingv1alpha1.ClusterSizingConfiguration{}, f.defaultInformer)
+	return f.factory.InformerFor(&apischedulingv1alpha1.ClusterSizingConfiguration{}, f.defaultInformer)
 }
 
-func (f *clusterSizingConfigurationInformer) Lister() v1alpha1.ClusterSizingConfigurationLister {
-	return v1alpha1.NewClusterSizingConfigurationLister(f.Informer().GetIndexer())
+func (f *clusterSizingConfigurationInformer) Lister() schedulingv1alpha1.ClusterSizingConfigurationLister {
+	return schedulingv1alpha1.NewClusterSizingConfigurationLister(f.Informer().GetIndexer())
 }

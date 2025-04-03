@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// KubeconfigSecretRefApplyConfiguration represents an declarative configuration of the KubeconfigSecretRef type for use
+// KubeconfigSecretRefApplyConfiguration represents a declarative configuration of the KubeconfigSecretRef type for use
 // with apply.
 type KubeconfigSecretRefApplyConfiguration struct {
 	Name *string `json:"name,omitempty"`
 	Key  *string `json:"key,omitempty"`
 }
 
-// KubeconfigSecretRefApplyConfiguration constructs an declarative configuration of the KubeconfigSecretRef type for use with
+// KubeconfigSecretRefApplyConfiguration constructs a declarative configuration of the KubeconfigSecretRef type for use with
 // apply.
 func KubeconfigSecretRef() *KubeconfigSecretRefApplyConfiguration {
 	return &KubeconfigSecretRefApplyConfiguration{}

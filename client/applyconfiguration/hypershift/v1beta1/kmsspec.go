@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// KMSSpecApplyConfiguration represents an declarative configuration of the KMSSpec type for use
+// KMSSpecApplyConfiguration represents a declarative configuration of the KMSSpec type for use
 // with apply.
 type KMSSpecApplyConfiguration struct {
-	Provider *v1beta1.KMSProvider               `json:"provider,omitempty"`
+	Provider *hypershiftv1beta1.KMSProvider     `json:"provider,omitempty"`
 	IBMCloud *IBMCloudKMSSpecApplyConfiguration `json:"ibmcloud,omitempty"`
 	AWS      *AWSKMSSpecApplyConfiguration      `json:"aws,omitempty"`
 	Azure    *AzureKMSSpecApplyConfiguration    `json:"azure,omitempty"`
 }
 
-// KMSSpecApplyConfiguration constructs an declarative configuration of the KMSSpec type for use with
+// KMSSpecApplyConfiguration constructs a declarative configuration of the KMSSpec type for use with
 // apply.
 func KMSSpec() *KMSSpecApplyConfiguration {
 	return &KMSSpecApplyConfiguration{}
@@ -39,7 +39,7 @@ func KMSSpec() *KMSSpecApplyConfiguration {
 // WithProvider sets the Provider field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Provider field is set to the value of the last call.
-func (b *KMSSpecApplyConfiguration) WithProvider(value v1beta1.KMSProvider) *KMSSpecApplyConfiguration {
+func (b *KMSSpecApplyConfiguration) WithProvider(value hypershiftv1beta1.KMSProvider) *KMSSpecApplyConfiguration {
 	b.Provider = &value
 	return b
 }

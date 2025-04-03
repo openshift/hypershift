@@ -21,7 +21,7 @@ import (
 	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 )
 
-// OpenshiftEC2NodeClassSpecApplyConfiguration represents an declarative configuration of the OpenshiftEC2NodeClassSpec type for use
+// OpenshiftEC2NodeClassSpecApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassSpec type for use
 // with apply.
 type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	SubnetSelectorTerms        []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
@@ -33,7 +33,7 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	DetailedMonitoring         *bool                                         `json:"detailedMonitoring,omitempty"`
 }
 
-// OpenshiftEC2NodeClassSpecApplyConfiguration constructs an declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
+// OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
 // apply.
 func OpenshiftEC2NodeClassSpec() *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	return &OpenshiftEC2NodeClassSpecApplyConfiguration{}

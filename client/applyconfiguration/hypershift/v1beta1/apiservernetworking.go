@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// APIServerNetworkingApplyConfiguration represents an declarative configuration of the APIServerNetworking type for use
+// APIServerNetworkingApplyConfiguration represents a declarative configuration of the APIServerNetworking type for use
 // with apply.
 type APIServerNetworkingApplyConfiguration struct {
-	AdvertiseAddress  *string             `json:"advertiseAddress,omitempty"`
-	Port              *int32              `json:"port,omitempty"`
-	AllowedCIDRBlocks []v1beta1.CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
+	AdvertiseAddress  *string                       `json:"advertiseAddress,omitempty"`
+	Port              *int32                        `json:"port,omitempty"`
+	AllowedCIDRBlocks []hypershiftv1beta1.CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
 }
 
-// APIServerNetworkingApplyConfiguration constructs an declarative configuration of the APIServerNetworking type for use with
+// APIServerNetworkingApplyConfiguration constructs a declarative configuration of the APIServerNetworking type for use with
 // apply.
 func APIServerNetworking() *APIServerNetworkingApplyConfiguration {
 	return &APIServerNetworkingApplyConfiguration{}
@@ -54,7 +54,7 @@ func (b *APIServerNetworkingApplyConfiguration) WithPort(value int32) *APIServer
 // WithAllowedCIDRBlocks adds the given value to the AllowedCIDRBlocks field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the AllowedCIDRBlocks field.
-func (b *APIServerNetworkingApplyConfiguration) WithAllowedCIDRBlocks(values ...v1beta1.CIDRBlock) *APIServerNetworkingApplyConfiguration {
+func (b *APIServerNetworkingApplyConfiguration) WithAllowedCIDRBlocks(values ...hypershiftv1beta1.CIDRBlock) *APIServerNetworkingApplyConfiguration {
 	for i := range values {
 		b.AllowedCIDRBlocks = append(b.AllowedCIDRBlocks, values[i])
 	}

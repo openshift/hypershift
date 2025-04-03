@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AzureResourceManagedIdentitiesApplyConfiguration represents an declarative configuration of the AzureResourceManagedIdentities type for use
+// AzureResourceManagedIdentitiesApplyConfiguration represents a declarative configuration of the AzureResourceManagedIdentities type for use
 // with apply.
 type AzureResourceManagedIdentitiesApplyConfiguration struct {
 	ControlPlane *ControlPlaneManagedIdentitiesApplyConfiguration `json:"controlPlane,omitempty"`
 	DataPlane    *DataPlaneManagedIdentitiesApplyConfiguration    `json:"dataPlane,omitempty"`
 }
 
-// AzureResourceManagedIdentitiesApplyConfiguration constructs an declarative configuration of the AzureResourceManagedIdentities type for use with
+// AzureResourceManagedIdentitiesApplyConfiguration constructs a declarative configuration of the AzureResourceManagedIdentities type for use with
 // apply.
 func AzureResourceManagedIdentities() *AzureResourceManagedIdentitiesApplyConfiguration {
 	return &AzureResourceManagedIdentitiesApplyConfiguration{}
