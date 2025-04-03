@@ -108,6 +108,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported value is ImageRegistry.")
+	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -168,6 +169,7 @@ type RawCreateOptions struct {
 	OLMDisableDefaultSources         bool
 	FeatureSet                       string
 	DisableClusterCapabilities       []string
+	KubeAPIServerDNSName             string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -511,6 +513,13 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		}
 	}
 
+	if len(opts.KubeAPIServerDNSName) > 0 {
+		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
+			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
+		}
+		prototype.Cluster.Spec.KubeAPIServerDNSName = opts.KubeAPIServerDNSName
+	}
+
 	return prototype, nil
 }
 
@@ -680,6 +689,12 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		acceptedValues := []string{"ImageRegistry"}
 		if !reflect.DeepEqual(opts.DisableClusterCapabilities, acceptedValues) {
 			return nil, fmt.Errorf("unknown capability, accepted values are: %v", acceptedValues)
+		}
+	}
+
+	if len(opts.KubeAPIServerDNSName) > 0 {
+		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
+			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
 		}
 	}
 
