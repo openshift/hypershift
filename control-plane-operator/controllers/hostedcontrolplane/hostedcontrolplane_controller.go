@@ -86,6 +86,7 @@ import (
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
@@ -165,9 +166,7 @@ const (
 	azureCredentials = "AzureCredentials"
 )
 
-var (
-	catalogImages map[string]string
-)
+var catalogImages map[string]string
 
 type HostedControlPlaneReconciler struct {
 	client.Client
@@ -355,6 +354,19 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	r.Log = ctrl.LoggerFrom(ctx)
 	r.Log.Info("Reconciling")
+
+	// Testing featuregates logic
+	// ----
+	if featuregates.Gate().Enabled(featuregates.Foo) {
+		// Foo is a gate that should be enabled in both TP and default featuresets
+		r.Log.Info("FEATURE_GATE_TEST -- FOO")
+	}
+
+	if featuregates.Gate().Enabled(featuregates.Bar) {
+		// Bar is a gate that should only be enables in TP featureset
+		r.Log.Info("FEATURE_GATE_TEST -- BAR")
+	}
+	// ----
 
 	// Fetch the hostedControlPlane instance
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
@@ -928,11 +940,9 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
 	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
-
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
-
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
 	r.Log.Info("Reconciling infrastructure services")
@@ -4850,7 +4860,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Reason:  hyperv1.EtcdWaitingForQuorumReason,
 		Message: message,
 	}, nil
-
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -4947,10 +4956,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		r.Log.Info("creating kubevirt cloud-config ConfigMap")
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
-
 			r.Log.Info("reconciling kubevirt CCM ConfigMap")
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
-
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud config: %w", hcp.Spec.Platform.Type, err)
 		}
@@ -5010,7 +5017,6 @@ func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlan
 }
 
 func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Removing cloud resources")
 
