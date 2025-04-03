@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	GoMemLimitLabel = "hypershift.openshift.io/kas-go-mem-limit"
+	GoMemLimitLabel = "hypershift.openshift.io/request-serving-gomemlimit"
 	LBSubnetsLabel  = "hypershift.openshift.io/request-serving-subnets"
 )
 
