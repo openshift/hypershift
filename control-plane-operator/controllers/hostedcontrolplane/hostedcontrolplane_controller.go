@@ -68,6 +68,8 @@ import (
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
+	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
@@ -87,6 +89,7 @@ import (
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
@@ -265,6 +268,8 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),
 		konnectivityv2.NewComponent(),
+		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
+		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
@@ -1015,6 +1020,18 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return err
 	}
 
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		role := ignitionmanifests.ProxyRole(hcp.Namespace)
+		sa := ignitionmanifests.ProxyServiceAccount(hcp.Namespace)
+		roleBinding := ignitionmanifests.ProxyRoleBinding(hcp.Namespace)
+
+		for _, resource := range []client.Object{role, sa, roleBinding} {
+			if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
+				r.Log.Error(err, "Failed to delete deprecated resource", "resource", client.ObjectKeyFromObject(resource).String())
+			}
+		}
+	}
+
 	cpContext := component.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1203,31 +1220,33 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
-		r.Log.Info("Reconciling ignition server")
-		if err := ignitionserver.ReconcileIgnitionServer(ctx,
-			r.Client,
-			createOrUpdate,
-			releaseImageProvider.Version(),
-			releaseImageProvider.GetImage(util.CPOImageName),
-			releaseImageProvider.ComponentImages(),
-			hostedControlPlane,
-			r.DefaultIngressDomain,
-			// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
-			// so we know it always exists here.
-			true,
-			r.ReleaseProvider.GetRegistryOverrides(),
-			util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
-			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-			config.OwnerRefFrom(hostedControlPlane),
-			openShiftTrustedCABundleConfigMapForCPOExists,
-			r.ReleaseProvider.GetMirroredReleaseImage(),
-			labelHCPRoutes(hostedControlPlane),
-		); err != nil {
-			return fmt.Errorf("failed to reconcile ignition server: %w", err)
+	if !r.IsCPOV2 {
+		if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+			r.Log.Info("Reconciling ignition server")
+			if err := ignitionserver.ReconcileIgnitionServer(ctx,
+				r.Client,
+				createOrUpdate,
+				releaseImageProvider.Version(),
+				releaseImageProvider.GetImage(util.CPOImageName),
+				releaseImageProvider.ComponentImages(),
+				hostedControlPlane,
+				r.DefaultIngressDomain,
+				// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
+				// so we know it always exists here.
+				true,
+				r.ReleaseProvider.GetRegistryOverrides(),
+				util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+				r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+				config.OwnerRefFrom(hostedControlPlane),
+				openShiftTrustedCABundleConfigMapForCPOExists,
+				r.ReleaseProvider.GetMirroredReleaseImage(),
+				labelHCPRoutes(hostedControlPlane),
+			); err != nil {
+				return fmt.Errorf("failed to reconcile ignition server: %w", err)
+			}
+		} else {
+			r.Log.Info("Skipping ignition server reconciliation as specified")
 		}
-	} else {
-		r.Log.Info("Skipping ignition server reconciliation as specified")
 	}
 
 	if !r.IsCPOV2 {

@@ -524,7 +524,7 @@ func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateK
 
 func hasKeys(secret *corev1.Secret, keys ...string) bool {
 	for _, key := range keys {
-		if _, hasKey := secret.Data[key]; !hasKey {
+		if value, hasKey := secret.Data[key]; !hasKey || string(value) == "" {
 			return false
 		}
 	}

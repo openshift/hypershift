@@ -18,6 +18,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
+	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
@@ -1799,6 +1801,14 @@ func TestControlPlaneComponents(t *testing.T) {
 			Configuration: &hyperv1.ClusterConfiguration{
 				FeatureGate: &configv1.FeatureGateSpec{},
 			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
 					{
@@ -2028,6 +2038,11 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 	if componentName != oapiv2.ComponentName {
 		fakeComponentTemplate.Name = oapiv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+	}
+
+	if componentName == ignitionproxyv2.ComponentName {
+		fakeComponentTemplate.Name = ignitionserverv2.ComponentName
 		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
 
