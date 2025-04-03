@@ -7,8 +7,10 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "main"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push"
+      && target_branch == "main"
+      && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE)$'))
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: hypershift-operator
@@ -27,8 +29,10 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/arm64
+    #- linux/ppc64le
   - name: dockerfile
-    value: Dockerfile
+    value: Containerfile.operator
   - name: path-context
     value: .
   pipelineSpec:
