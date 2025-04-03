@@ -114,6 +114,7 @@ spec:
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
         - --feature-gates=ConsolePluginContentSecurityPolicy=true
+        - --feature-gates=GatewayAPI=true
         - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=BuildCSIVolumes=true
@@ -177,6 +178,11 @@ spec:
         - --feature-gates=NutanixMultiSubnets=true
         - --feature-gates=KMSEncryptionProvider=true
         - --feature-gates=HighlyAvailableArbiter=true
+        - --feature-gates=GCPCustomAPIEndpoints=true
+        - --feature-gates=DyanmicServiceEndpointIBMCloud=true
+        - --feature-gates=DualReplica=true
+        - --feature-gates=GatewayAPIController=true
+        - --feature-gates=VSphereConfigurableMaxAllowedBlockVolumesPerNode=true
         - --feature-gates=ServiceAccountTokenNodeBinding=true
         - --feature-gates=ValidatingAdmissionPolicy=true
         - --feature-gates=NodeSwap=true
@@ -191,16 +197,20 @@ spec:
         - --feature-gates=UserNamespacesSupport=true
         - --feature-gates=UserNamespacesPodSecurityStandards=true
         - --feature-gates=ProcMountType=true
-        - --feature-gates=GatewayAPI=false
+        - --feature-gates=SigstoreImageVerificationPKI=false
         - --feature-gates=MachineAPIOperatorDisableMachineHealthCheckController=false
         - --feature-gates=ClusterAPIInstall=false
         - --feature-gates=Example2=false
         - --feature-gates=NewOLM=false
+        - --feature-gates=NewOLMCatalogdAPIV1Metas=false
         - --feature-gates=ClusterAPIInstallIBMCloud=false
         - --feature-gates=MachineAPIMigration=false
         - --feature-gates=MultiArchInstallAzure=false
         - --feature-gates=ClusterVersionOperatorConfiguration=false
+        - --feature-gates=ShortCertRotation=false
         - --feature-gates=EventedPLEG=false
+        - --feature-gates=SELinuxChangePolicy=false
+        - --feature-gates=SELinuxMount=false
         command:
         - hyperkube
         - kube-controller-manager

@@ -123,6 +123,7 @@ spec:
         - --feature-gates=VSphereMultiVCenters=true
         - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=AdminNetworkPolicy=true
+        - --feature-gates=NetworkSegmentation=true
         - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
@@ -150,11 +151,11 @@ spec:
         - --feature-gates=InsightsConfigAPI=false
         - --feature-gates=InsightsRuntimeExtractor=false
         - --feature-gates=SigstoreImageVerification=false
+        - --feature-gates=SigstoreImageVerificationPKI=false
         - --feature-gates=VSphereHostVMGroupZonal=false
         - --feature-gates=VSphereMultiDisk=false
         - --feature-gates=RouteExternalCertificate=false
         - --feature-gates=CPMSMachineNamePrefix=false
-        - --feature-gates=NetworkSegmentation=false
         - --feature-gates=RouteAdvertisements=false
         - --feature-gates=OVNObservability=false
         - --feature-gates=EtcdBackendQuota=false
@@ -175,6 +176,7 @@ spec:
         - --feature-gates=Example2=false
         - --feature-gates=PlatformOperators=false
         - --feature-gates=NewOLM=false
+        - --feature-gates=NewOLMCatalogdAPIV1Metas=false
         - --feature-gates=InsightsOnDemandDataGather=false
         - --feature-gates=InsightsConfig=false
         - --feature-gates=MetricsCollectionProfiles=false
@@ -190,6 +192,12 @@ spec:
         - --feature-gates=KMSEncryptionProvider=false
         - --feature-gates=HighlyAvailableArbiter=false
         - --feature-gates=ClusterVersionOperatorConfiguration=false
+        - --feature-gates=GCPCustomAPIEndpoints=false
+        - --feature-gates=DyanmicServiceEndpointIBMCloud=false
+        - --feature-gates=DualReplica=false
+        - --feature-gates=GatewayAPIController=false
+        - --feature-gates=ShortCertRotation=false
+        - --feature-gates=VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
         - --feature-gates=ServiceAccountTokenNodeBinding=false
         - --feature-gates=NodeSwap=false
         - --feature-gates=DynamicResourceAllocation=false
@@ -201,6 +209,8 @@ spec:
         - --feature-gates=UserNamespacesSupport=false
         - --feature-gates=UserNamespacesPodSecurityStandards=false
         - --feature-gates=ProcMountType=false
+        - --feature-gates=SELinuxChangePolicy=false
+        - --feature-gates=SELinuxMount=false
         command:
         - hyperkube
         - kube-controller-manager
