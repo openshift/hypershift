@@ -2,6 +2,10 @@ package emptypartialschemas
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/google/go-cmp/cmp"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -9,9 +13,6 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
-	"os"
-	"path/filepath"
-	"strings"
 )
 
 func createFeatureGatedCRDManifests(allCRDInfo map[string]*CRDInfo, outputDir string, verify bool) error {
@@ -128,12 +129,9 @@ func ensureNoExtraFields(minimalCRD, existingCRD *apiextensionsv1.CustomResource
 func minimalCRDFor(crdInfo *CRDInfo, featureGate string) *apiextensionsv1.CustomResourceDefinition {
 	ret := &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: crdInfo.CRDName,
-			Annotations: map[string]string{
-				// notice that this produces a "" featuregate to mean ungated
-				fmt.Sprintf("feature-gate.release.openshift.io/%s", featureGate): "true",
-			},
-			Labels: map[string]string{},
+			Name:        crdInfo.CRDName,
+			Annotations: map[string]string{},
+			Labels:      map[string]string{},
 		},
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: crdInfo.GroupName,
@@ -160,6 +158,12 @@ func minimalCRDFor(crdInfo *CRDInfo, featureGate string) *apiextensionsv1.Custom
 			PreserveUnknownFields: false,
 		},
 	}
+
+	for _, fg := range strings.Split(featureGate, "+") {
+		// notice that this produces a "" featuregate to mean ungated
+		ret.Annotations[fmt.Sprintf("feature-gate.release.openshift.io/%s", fg)] = "true"
+	}
+
 	if len(crdInfo.FilenameRunLevel) > 0 {
 		ret.Annotations["api.openshift.io/filename-cvo-runlevel"] = crdInfo.FilenameRunLevel
 	}

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	_ "unsafe" // for go:linkname hack
 
 	"golang.org/x/tools/go/types/typeutil"
 	"golang.org/x/tools/internal/typeparams"
@@ -84,21 +85,22 @@ func isRuneSlice(t types.Type) bool {
 	return false
 }
 
-// isBasicConvTypes returns true when a type set can be
-// one side of a Convert operation. This is when:
+// isBasicConvTypes returns true when the type set of a type
+// can be one side of a Convert operation. This is when:
 // - All are basic, []byte, or []rune.
 // - At least 1 is basic.
 // - At most 1 is []byte or []rune.
-func isBasicConvTypes(tset termList) bool {
-	basics := 0
-	all := underIs(tset, func(t types.Type) bool {
+func isBasicConvTypes(typ types.Type) bool {
+	basics, cnt := 0, 0
+	ok := underIs(typ, func(t types.Type) bool {
+		cnt++
 		if isBasic(t) {
 			basics++
 			return true
 		}
 		return isByteSlice(t) || isRuneSlice(t)
 	})
-	return all && basics >= 1 && tset.Len()-basics <= 1
+	return ok && basics >= 1 && cnt-basics <= 1
 }
 
 // isPointer reports whether t's underlying type is a pointer.
@@ -408,14 +410,6 @@ func (canon *canonizer) instantiateMethod(m *types.Func, targs []types.Type, ctx
 }
 
 // Exposed to ssautil using the linkname hack.
+//
+//go:linkname isSyntactic golang.org/x/tools/go/ssa.isSyntactic
 func isSyntactic(pkg *Package) bool { return pkg.syntax }
-
-// mapValues returns a new unordered array of map values.
-func mapValues[K comparable, V any](m map[K]V) []V {
-	vals := make([]V, 0, len(m))
-	for _, fn := range m {
-		vals = append(vals, fn)
-	}
-	return vals
-
-}
