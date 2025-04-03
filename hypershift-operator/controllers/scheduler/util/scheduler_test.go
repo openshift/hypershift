@@ -48,7 +48,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 						{
 							Name: "medium",
 							Effects: &schedulingv1alpha1.Effects{
-								KASGoMemLimit: resource.NewQuantity(1024, resource.BinarySI),
+								KASGoMemLimit: ptr.To("1KiB"),
 							},
 						},
 					},
@@ -59,7 +59,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						hyperv1.HostedClusterScheduledAnnotation:     "true",
-						hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "1Ki",
+						hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "1KiB",
 					},
 				},
 			},
@@ -79,7 +79,7 @@ func TestSetHostedClusterSchedulingAnnotations(t *testing.T) {
 						{
 							Name: "large",
 							Effects: &schedulingv1alpha1.Effects{
-								KASGoMemLimit: resource.NewQuantity(2048, resource.BinarySI),
+								KASGoMemLimit: ptr.To("2048MiB"),
 							},
 						},
 					},

@@ -5737,7 +5737,7 @@ func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedContro
 			Key:  DefaultAdminKubeconfigKey,
 		}
 	} else {
-		// Cleanning up custom kubeconfig status
+		// Cleaning up custom kubeconfig status
 		hcp.Status.CustomKubeconfig = nil
 	}
 
