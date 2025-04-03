@@ -100,6 +100,7 @@ hostedclusters.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
@@ -154,6 +155,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""

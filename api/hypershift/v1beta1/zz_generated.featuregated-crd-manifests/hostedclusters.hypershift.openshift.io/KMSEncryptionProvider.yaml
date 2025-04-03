@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/OpenStack: "true"
+    feature-gate.release.openshift.io/KMSEncryptionProvider: "true"
   name: hostedclusters.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -326,6 +326,71 @@ spec:
                         description: encryption allows the configuration of encryption
                           of resources at the datastore layer.
                         properties:
+                          kms:
+                            description: |-
+                              kms defines the configuration for the external KMS instance that manages the encryption keys,
+                              when KMS encryption is enabled sensitive resources will be encrypted using keys managed by an
+                              externally configured KMS instance.
+
+                              The Key Management Service (KMS) instance provides symmetric encryption and is responsible for
+                              managing the lifecyle of the encryption keys outside of the control plane.
+                              This allows integration with an external provider to manage the data encryption keys securely.
+                            properties:
+                              aws:
+                                description: |-
+                                  aws defines the key config for using an AWS KMS instance
+                                  for the encryption. The AWS KMS instance is managed
+                                  by the user outside the purview of the control plane.
+                                properties:
+                                  keyARN:
+                                    description: |-
+                                      keyARN specifies the Amazon Resource Name (ARN) of the AWS KMS key used for encryption.
+                                      The value must adhere to the format `arn:aws:kms:<region>:<account_id>:key/<key_id>`, where:
+                                      - `<region>` is the AWS region consisting of lowercase letters and hyphens followed by a number.
+                                      - `<account_id>` is a 12-digit numeric identifier for the AWS account.
+                                      - `<key_id>` is a unique identifier for the KMS key, consisting of lowercase hexadecimal characters and hyphens.
+                                    maxLength: 128
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: keyARN must follow the format `arn:aws:kms:<region>:<account_id>:key/<key_id>`.
+                                        The account ID must be a 12 digit number and
+                                        the region and key ID should consist only
+                                        of lowercase hexadecimal characters and hyphens
+                                        (-).
+                                      rule: self.matches('^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/[a-f0-9-]+$')
+                                  region:
+                                    description: |-
+                                      region specifies the AWS region where the KMS instance exists, and follows the format
+                                      `<region-prefix>-<region-name>-<number>`, e.g.: `us-east-1`.
+                                      Only lowercase letters and hyphens followed by numbers are allowed.
+                                    maxLength: 64
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: region must be a valid AWS region,
+                                        consisting of lowercase characters, digits
+                                        and hyphens (-) only.
+                                      rule: self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+                                required:
+                                - keyARN
+                                - region
+                                type: object
+                              type:
+                                description: |-
+                                  type defines the kind of platform for the KMS provider.
+                                  Available provider types are AWS only.
+                                enum:
+                                - AWS
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: aws config is required when kms provider type
+                                is AWS, and forbidden otherwise
+                              rule: 'has(self.type) && self.type == ''AWS'' ?  has(self.aws)
+                                : !has(self.aws)'
                           type:
                             description: |-
                               type defines what encryption type should be used to encrypt resources at the datastore layer.
@@ -341,8 +406,19 @@ spec:
                                 3. routes.route.openshift.io
                                 4. oauthaccesstokens.oauth.openshift.io
                                 5. oauthauthorizetokens.oauth.openshift.io
+                            enum:
+                            - ""
+                            - identity
+                            - aescbc
+                            - aesgcm
+                            - KMS
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: kms config is required when encryption type is
+                            KMS, and forbidden otherwise
+                          rule: 'has(self.type) && self.type == ''KMS'' ?  has(self.kms)
+                            : !has(self.kms)'
                       servingCerts:
                         description: |-
                           servingCert is the TLS cert info for serving secure traffic. If not specified, operator managed certificates
@@ -3918,485 +3994,6 @@ spec:
                     x-kubernetes-validations:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
-                  openstack:
-                    description: OpenStack specifies configuration for clusters running
-                      on OpenStack.
-                    properties:
-                      disableExternalNetwork:
-                        description: |-
-                          DisableExternalNetwork specifies whether or not to attempt to connect the cluster
-                          to an external network. This allows for the creation of clusters when connecting
-                          to an external network is not possible or desirable, e.g. if using a provider network.
-                        type: boolean
-                      externalNetwork:
-                        description: |-
-                          ExternalNetwork is the OpenStack Network to be used to get public internet to the VMs.
-                          This option is ignored if DisableExternalNetwork is set to true.
-
-                          If ExternalNetwork is defined it must refer to exactly one external network.
-
-                          If ExternalNetwork is not defined or is empty the controller will use any
-                          existing external network as long as there is only one. It is an
-                          error if ExternalNetwork is not defined and there are multiple
-                          external networks unless DisableExternalNetwork is also set.
-
-                          If ExternalNetwork is not defined and there are no external networks
-                          the controller will proceed as though DisableExternalNetwork was set.
-                        maxProperties: 1
-                        minProperties: 1
-                        properties:
-                          filter:
-                            description: Filter specifies a filter to select an OpenStack
-                              network. If provided, cannot be empty.
-                            minProperties: 1
-                            properties:
-                              description:
-                                description: Description is the description of the
-                                  network to filter by.
-                                type: string
-                              name:
-                                description: Name is the name of the network to filter
-                                  by.
-                                type: string
-                              notTags:
-                                description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
-                                  contain all of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              notTagsAny:
-                                description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
-                                  which contain any of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              projectID:
-                                description: ProjectID is the project ID of the network
-                                  to filter by.
-                                type: string
-                              tags:
-                                description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
-                                  have all of the tags specified to be included in the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              tagsAny:
-                                description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
-                                  must have at least one of the tags specified to be included in the
-                                  result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                            type: object
-                          id:
-                            description: ID is the ID of the network to use. If ID
-                              is provided, the other filters cannot be provided. Must
-                              be in UUID format.
-                            format: uuid
-                            type: string
-                        type: object
-                      identityRef:
-                        description: |-
-                          IdentityRef is a reference to a secret holding OpenStack credentials
-                          to be used when reconciling the hosted cluster.
-                        properties:
-                          cloudName:
-                            description: CloudName specifies the name of the entry
-                              in the clouds.yaml file to use.
-                            type: string
-                          name:
-                            description: |-
-                              Name is the name of a secret in the same namespace as the resource being provisioned.
-                              The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
-                              The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
-                            type: string
-                        required:
-                        - cloudName
-                        - name
-                        type: object
-                      ingressFloatingIP:
-                        description: |-
-                          IngressFloatingIP is an available floating IP in your OpenStack cluster that will
-                          be associated with the OpenShift ingress port.
-                          When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
-                          When specified, the floating IP has to be pre-created.  If the
-                          specified value is not a floating IP or is already claimed, the
-                          OpenStack cloud provider won't be able to provision the load
-                          balancer.
-                          This value must be a valid IPv4 or IPv6 address.
-                        type: string
-                        x-kubernetes-validations:
-                        - message: floatingIP must be a valid IPv4 or IPv6 address
-                          rule: isIP(self)
-                      managedSubnets:
-                        description: |-
-                          ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
-                          and a subnet with the defined DNSNameservers, AllocationPools and the CIDR defined in the HostedCluster
-                          MachineNetwork, and a router connected to the subnet. Currently only one IPv4
-                          subnet is supported.
-                        items:
-                          properties:
-                            allocationPools:
-                              description: |-
-                                AllocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
-                                If set, OpenStack will only allocate these IPs for Machines. It will still be possible to create ports from
-                                outside of these ranges manually.
-                              items:
-                                properties:
-                                  end:
-                                    description: End represents the end of the AlloctionPool,
-                                      that is the highest IP of the pool.
-                                    type: string
-                                  start:
-                                    description: Start represents the start of the
-                                      AllocationPool, that is the lowest IP of the
-                                      pool.
-                                    type: string
-                                required:
-                                - end
-                                - start
-                                type: object
-                              type: array
-                            dnsNameservers:
-                              description: |-
-                                DNSNameservers holds a list of DNS server addresses that will be provided when creating
-                                the subnet. These addresses need to have the same IP version as CIDR.
-                              items:
-                                type: string
-                              type: array
-                          type: object
-                        maxItems: 1
-                        type: array
-                        x-kubernetes-list-type: atomic
-                      network:
-                        description: |-
-                          Network specifies an existing network to use if no ManagedSubnets
-                          are specified.
-                        maxProperties: 1
-                        minProperties: 1
-                        properties:
-                          filter:
-                            description: Filter specifies a filter to select an OpenStack
-                              network. If provided, cannot be empty.
-                            minProperties: 1
-                            properties:
-                              description:
-                                description: Description is the description of the
-                                  network to filter by.
-                                type: string
-                              name:
-                                description: Name is the name of the network to filter
-                                  by.
-                                type: string
-                              notTags:
-                                description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
-                                  contain all of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              notTagsAny:
-                                description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
-                                  which contain any of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              projectID:
-                                description: ProjectID is the project ID of the network
-                                  to filter by.
-                                type: string
-                              tags:
-                                description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
-                                  have all of the tags specified to be included in the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              tagsAny:
-                                description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
-                                  must have at least one of the tags specified to be included in the
-                                  result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                            type: object
-                          id:
-                            description: ID is the ID of the network to use. If ID
-                              is provided, the other filters cannot be provided. Must
-                              be in UUID format.
-                            format: uuid
-                            type: string
-                        type: object
-                      networkMTU:
-                        description: |-
-                          NetworkMTU sets the maximum transmission unit (MTU) value to address fragmentation for the private network ID.
-                          This value will be used only if the Cluster actuator creates the network.
-                          If left empty, the network will have the default MTU defined in Openstack network service.
-                          To use this field, the Openstack installation requires the net-mtu neutron API extension.
-                        type: integer
-                      router:
-                        description: |-
-                          Router specifies an existing router to be used if ManagedSubnets are
-                          specified. If specified, no new router will be created.
-                        maxProperties: 1
-                        minProperties: 1
-                        properties:
-                          filter:
-                            description: Filter specifies a filter to select an OpenStack
-                              router. If provided, cannot be empty.
-                            minProperties: 1
-                            properties:
-                              description:
-                                description: Description is the description of the
-                                  router to filter by.
-                                type: string
-                              name:
-                                description: Name is the name of the router to filter
-                                  by.
-                                type: string
-                              notTags:
-                                description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
-                                  contain all of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              notTagsAny:
-                                description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
-                                  which contain any of the given tags will be excluded from the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              projectID:
-                                description: ProjectID is the project ID of the router
-                                  to filter by.
-                                type: string
-                              tags:
-                                description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
-                                  have all of the tags specified to be included in the result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                              tagsAny:
-                                description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
-                                  must have at least one of the tags specified to be included in the
-                                  result.
-                                items:
-                                  description: |-
-                                    NeutronTag represents a tag on a Neutron resource.
-                                    It may not be empty and may not contain commas.
-                                  minLength: 1
-                                  pattern: ^[^,]+$
-                                  type: string
-                                type: array
-                                x-kubernetes-list-type: set
-                            type: object
-                          id:
-                            description: ID is the ID of the router to use. If ID
-                              is provided, the other filters cannot be provided. Must
-                              be in UUID format.
-                            format: uuid
-                            type: string
-                        type: object
-                      subnets:
-                        description: |-
-                          Subnets specifies existing subnets to use if not ManagedSubnets are
-                          specified. All subnets must be in the network specified by Network.
-                          There can be zero, one, or two subnets. If no subnets are specified,
-                          all subnets in Network will be used. If 2 subnets are specified, one
-                          must be IPv4 and the other IPv6.
-                        items:
-                          description: SubnetParam specifies an OpenStack subnet to
-                            use. It may be specified by either ID or filter, but not
-                            both.
-                          maxProperties: 1
-                          minProperties: 1
-                          properties:
-                            filter:
-                              description: Filter specifies a filter to select the
-                                subnet. It must match exactly one subnet.
-                              minProperties: 1
-                              properties:
-                                cidr:
-                                  description: CIDR is the CIDR of the subnet to filter
-                                    by.
-                                  type: string
-                                description:
-                                  description: Description is the description of the
-                                    subnet to filter by.
-                                  type: string
-                                gatewayIP:
-                                  description: GatewayIP is the gateway IP of the
-                                    subnet to filter by.
-                                  type: string
-                                ipVersion:
-                                  description: IPVersion is the IP version of the
-                                    subnet to filter by.
-                                  type: integer
-                                ipv6AddressMode:
-                                  description: IPv6AddressMode is the IPv6 address
-                                    mode of the subnet to filter by.
-                                  type: string
-                                ipv6RAMode:
-                                  description: IPv6RAMode is the IPv6 RA mode of the
-                                    subnet to filter by.
-                                  type: string
-                                name:
-                                  description: Name is the name of the subnet to filter
-                                    by.
-                                  type: string
-                                notTags:
-                                  description: |-
-                                    NotTags is a list of tags to filter by. If specified, resources which
-                                    contain all of the given tags will be excluded from the result.
-                                  items:
-                                    description: |-
-                                      NeutronTag represents a tag on a Neutron resource.
-                                      It may not be empty and may not contain commas.
-                                    minLength: 1
-                                    pattern: ^[^,]+$
-                                    type: string
-                                  type: array
-                                  x-kubernetes-list-type: set
-                                notTagsAny:
-                                  description: |-
-                                    NotTagsAny is a list of tags to filter by. If specified, resources
-                                    which contain any of the given tags will be excluded from the result.
-                                  items:
-                                    description: |-
-                                      NeutronTag represents a tag on a Neutron resource.
-                                      It may not be empty and may not contain commas.
-                                    minLength: 1
-                                    pattern: ^[^,]+$
-                                    type: string
-                                  type: array
-                                  x-kubernetes-list-type: set
-                                projectID:
-                                  description: ProjectID is the project ID of the
-                                    subnet to filter by.
-                                  type: string
-                                tags:
-                                  description: |-
-                                    Tags is a list of tags to filter by. If specified, the resource must
-                                    have all of the tags specified to be included in the result.
-                                  items:
-                                    description: |-
-                                      NeutronTag represents a tag on a Neutron resource.
-                                      It may not be empty and may not contain commas.
-                                    minLength: 1
-                                    pattern: ^[^,]+$
-                                    type: string
-                                  type: array
-                                  x-kubernetes-list-type: set
-                                tagsAny:
-                                  description: |-
-                                    TagsAny is a list of tags to filter by. If specified, the resource
-                                    must have at least one of the tags specified to be included in the
-                                    result.
-                                  items:
-                                    description: |-
-                                      NeutronTag represents a tag on a Neutron resource.
-                                      It may not be empty and may not contain commas.
-                                    minLength: 1
-                                    pattern: ^[^,]+$
-                                    type: string
-                                  type: array
-                                  x-kubernetes-list-type: set
-                              type: object
-                            id:
-                              description: ID is the uuid of the subnet. It will not
-                                be validated.
-                              format: uuid
-                              type: string
-                          type: object
-                        maxItems: 2
-                        type: array
-                        x-kubernetes-list-type: atomic
-                      tags:
-                        description: Tags to set on all resources in cluster which
-                          support tags
-                        items:
-                          type: string
-                        type: array
-                        x-kubernetes-list-type: set
-                    required:
-                    - identityRef
-                    type: object
                   powervs:
                     description: |-
                       PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
@@ -4587,15 +4184,6 @@ spec:
                   type:
                     description: Type is the type of infrastructure provider for the
                       cluster.
-                    enum:
-                    - AWS
-                    - Azure
-                    - IBMCloud
-                    - KubeVirt
-                    - Agent
-                    - PowerVS
-                    - None
-                    - OpenStack
                     type: string
                     x-kubernetes-validations:
                     - message: Type is immutable
