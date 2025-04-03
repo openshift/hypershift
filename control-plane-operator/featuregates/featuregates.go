@@ -17,7 +17,7 @@ const (
 
 var (
 	fooFeature = NewFeature(Foo, WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
-	barFeature = NewFeature("Bar", WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	barFeature = NewFeature(Bar, WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
