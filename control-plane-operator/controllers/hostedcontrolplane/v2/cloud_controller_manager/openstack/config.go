@@ -45,6 +45,13 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 
 	caCertData := GetCACertFromCredentialsSecret(credentialsSecret)
 	if caCertData != nil {
+		// NOTE(stephenfin): While we (OpenStack) would prefer that this used
+		// 'cacert' like everything else, CCCMO expects the CA cert to be found
+		// at 'ca-bundle.pem' since it will combine this cert with an optional
+		// cert bundle. This is done for more platforms that OpenStack so we
+		// don't want to change that. See the below for more information.
+		//
+		// https://github.com/openshift/cluster-cloud-controller-manager-operator/blob/master/docs/dev/trusted_ca_bundle_sync.md
 		cm.Data[CABundleKey] = string(caCertData)
 	}
 
