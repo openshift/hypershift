@@ -179,6 +179,7 @@ nodepools.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - CapacityReservation
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
