@@ -318,6 +318,9 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	}()
 
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
+	// We want to make sure all conditions are met and in a deterministic known state before running the tests to avoid false positives.
+	// https://issues.redhat.com/browse/OCPBUGS-52983.
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
 
 	// TestNTOPerformanceProfile fails on 4.16 and older if we don't wait for the rollout here with
 	// ValidationFailed(ConfigMap "pp-test" not found)
