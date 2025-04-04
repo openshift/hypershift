@@ -82,7 +82,7 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 		return nil, fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
+	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey], hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get catalog images: %w", err)
 	}
@@ -105,9 +105,9 @@ func getCatalogImagesOverrides(cpContext component.WorkloadContext, capabilityIm
 	return catalogOverrides, nil
 }
 
-func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte) (map[string]string, error) {
+func getCatalogImages(cpContext component.WorkloadContext, pullSecret []byte, oLMCatalogPlacementManagement bool) (map[string]string, error) {
 	registryOverrides := util.ConvertImageRegistryOverrideStringToMap(cpContext.HCP.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
-	return catalogs.GetCatalogImages(cpContext, *cpContext.HCP, pullSecret, cpContext.ImageMetadataProvider, registryOverrides)
+	return catalogs.GetCatalogImages(cpContext, *cpContext.HCP, pullSecret, cpContext.ImageMetadataProvider, registryOverrides, oLMCatalogPlacementManagement)
 }
 
 func checkCatalogImageOverides(images map[string]string) (bool, error) {

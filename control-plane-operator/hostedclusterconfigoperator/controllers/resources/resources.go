@@ -1716,7 +1716,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	p, err := olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.ImageMetaDataProvider)
+	p, err := olm.NewOperatorLifecycleManagerParams(ctx, hcp, pullSecret, r.ImageMetaDataProvider, hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement)
 	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to create OperatorLifecycleManagerParams: %w", err))
 	}

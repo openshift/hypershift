@@ -19,9 +19,9 @@ type OperatorLifecycleManagerParams struct {
 	OLMCatalogPlacement     hyperv1.OLMCatalogPlacement
 }
 
-func NewOperatorLifecycleManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret, imageMetadataProvider util.ImageMetadataProvider) (*OperatorLifecycleManagerParams, error) {
+func NewOperatorLifecycleManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret, imageMetadataProvider util.ImageMetadataProvider, oLMCatalogPlacementManagement bool) (*OperatorLifecycleManagerParams, error) {
 	isImageRegistryOverrides := util.ConvertImageRegistryOverrideStringToMap(hcp.Annotations[hyperv1.OLMCatalogsISRegistryOverridesAnnotation])
-	catalogImages, err := catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], imageMetadataProvider, isImageRegistryOverrides)
+	catalogImages, err := catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], imageMetadataProvider, isImageRegistryOverrides, oLMCatalogPlacementManagement)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get catalog images: %w", err)
 	}
