@@ -25,7 +25,7 @@ var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
 	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
-	openStackFeature = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -54,7 +54,7 @@ func FeatureSet() configv1.FeatureSet {
 func ConfigureFeatureSet(featureSet string) {
 	featureGate, err := allFeatures.FeatureGatesForFeatureSet(configv1.FeatureSet(featureSet))
 	if err != nil {
-        // If we encounter an error due to an unknown featureset, just assume the default
+		// If we encounter an error due to an unknown featureset, just assume the default
 		return
 	}
 

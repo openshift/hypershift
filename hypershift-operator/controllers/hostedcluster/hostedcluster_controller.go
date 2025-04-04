@@ -2545,7 +2545,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			r.MetricsSet,
 			certRotationScale,
 			r.EnableCVOManagementClusterMetricsAccess,
-            r.FeatureSet)
+			r.FeatureSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -2713,7 +2713,7 @@ func reconcileControlPlaneOperatorDeployment(
 	metricsSet metrics.MetricsSet,
 	certRotationScale time.Duration,
 	enableCVOManagementClusterMetricsAccess bool,
-    hypershiftFeatureSet configv1.FeatureSet,
+	hypershiftFeatureSet configv1.FeatureSet,
 ) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -2826,10 +2826,10 @@ func reconcileControlPlaneOperatorDeployment(
 								Value: utilitiesImage,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
-                            {
-                                Name: "HYPERSHIFT_FEATURESET",
-                                Value: string(hypershiftFeatureSet),
-                            },
+							{
+								Name:  "HYPERSHIFT_FEATURESET",
+								Value: string(hypershiftFeatureSet),
+							},
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    args,
