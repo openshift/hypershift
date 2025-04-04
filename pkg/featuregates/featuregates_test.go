@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/control-plane-operator/featuregates"
+	"github.com/openshift/hypershift/pkg/featuregates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/component-base/featuregate"
@@ -90,6 +90,7 @@ func TestCreatingFeatureGates(t *testing.T) {
 }
 
 func TestConfiguringUnknownFeatureSetErrors(t *testing.T) {
-    err := featuregates.ConfigureFeatureSet("FooBar")
-    assert.Error(t, err, "configuring an unknown featureset should result in an error")
+	features := featuregates.NewFeatureSetAwareFeatures()
+	_, err := features.FeatureGatesForFeatureSet("FooBar")
+	assert.Error(t, err, "configuring an unknown featureset should result in an error")
 }
