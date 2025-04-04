@@ -33,7 +33,7 @@ spec:
     value:
     - linux/x86_64
     - linux/arm64
-    #- linux/ppc64le
+    - linux/ppc64le
   - name: dockerfile
     value: Containerfile.operator
   - name: path-context
