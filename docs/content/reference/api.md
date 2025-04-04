@@ -639,6 +639,21 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -3389,6 +3404,45 @@ Valid values are ImageID and AzureMarketplace.</p>
 </p>
 <p>
 </p>
+###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
+</p>
+<p>
+<p>capabilities allows disabling optional components at install time.
+Once set, it cannot be changed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>disabled</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
+and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+This effectively disables that capability on the hosted cluster.</p>
+<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version.</p>
+<p>Once set, this field cannot be changed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
 (<em>Appears on:</em>
@@ -5378,6 +5432,21 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedClusterStatus { #hypershift.openshift.io/v1beta1.HostedClusterStatus }
@@ -5963,6 +6032,21 @@ Valid values are those in <a href="https://kubernetes.io/docs/concepts/overview/
 <p>-kubebuilder:validation:XValidation:rule=<code>self.all(key, size(key) &lt;= 317 &amp;&amp; key.matches('^(([A-Za-z0-9]+(\\.[A-Za-z0-9]+)?)*[A-Za-z0-9]\\/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'))</code>, message=&ldquo;label key must have two segments: an optional prefix and name, separated by a slash (/). The name segment is required and must be 63 characters or less, beginning and ending with an alphanumeric character ([a-z0-9A-Z]) with dashes (-), underscores (<em>), dots (.), and alphanumerics between. The prefix is optional. If specified, the prefix must be a DNS subdomain: a series of DNS labels separated by dots (.), not longer than 253 characters in total, followed by a slash (/)&rdquo;
 -kubebuilder:validation:XValidation:rule=<code>self.all(key, size(self[key]) &lt;= 63 &amp;&amp; self[key].matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$'))</code>, message=&ldquo;label value must be 63 characters or less (can be empty), consist of alphanumeric characters, dashes (-), underscores (</em>) or dots (.), and begin and end with an alphanumeric character&rdquo;
 TODO: key/value validations break cost budget for &lt;=4.17. We should figure why and enable it back.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capabilities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">
+Capabilities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capabilities allows for disabling optional components at cluster install time.
+This field is optional and once set cannot be changed.</p>
 </td>
 </tr>
 </tbody>
@@ -9129,6 +9213,24 @@ This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###OptionalCapability { #hypershift.openshift.io/v1beta1.OptionalCapability }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.Capabilities">Capabilities</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr></tbody>
 </table>
 ###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
 <p>

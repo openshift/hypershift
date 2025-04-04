@@ -23,6 +23,9 @@
                     },
                     {
                         "name": "HCPPodsLabels"
+                    },
+                    {
+                        "name": "DisableClusterCapabilities"
                     }
                 ],
                 "enabled": [

@@ -349,6 +349,30 @@ const (
 	ControlPlaneOperatorV2EnvVar = "CPO_V2"
 )
 
+// +kubebuilder:validation:Enum=ImageRegistry
+type OptionalCapability string
+
+const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
+
+// capabilities allows disabling optional components at install time.
+// Once set, it cannot be changed.
+type Capabilities struct {
+	// disabled when specified, sets the cluster version baselineCapabilitySet to None
+	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+	// This effectively disables that capability on the hosted cluster.
+	//
+	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+	// OpenShift version.
+	//
+	// Once set, this field cannot be changed.
+	//
+	// +listType=atomic
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Disabled []OptionalCapability `json:"disabled,omitempty"`
+}
+
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
@@ -625,6 +649,14 @@ type HostedClusterSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=HCPPodsLabels
 	Labels map[string]string `json:"labels,omitempty"`
+
+	// capabilities allows for disabling optional components at cluster install time.
+	// This field is optional and once set cannot be changed.
+	// +immutable
+	// +optional
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
+	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.

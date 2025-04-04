@@ -123,6 +123,16 @@ func TestCreateCluster(t *testing.T) {
 				"--availability-zones=1,2",
 			},
 		},
+		{
+			name: "with disabled capabilities",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--rhcos-image=whatever",
+				"--render-sensitive",
+				"--disable-cluster-capabilities=ImageRegistry",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()

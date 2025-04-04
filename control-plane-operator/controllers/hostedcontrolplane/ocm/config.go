@@ -10,9 +10,11 @@ import (
 	buildv1 "github.com/openshift/api/build/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
@@ -22,7 +24,7 @@ const (
 	ConfigKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
@@ -35,7 +37,8 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 			return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 		}
 	}
-	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion, cipherSuites, imageConfig, buildConfig, networkConfig); err != nil {
+	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion,
+		cipherSuites, imageConfig, buildConfig, networkConfig, caps); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -46,7 +49,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -56,16 +59,18 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 		APIVersion: openshiftcpv1.GroupVersion.String(),
 	}
 
-	// Do not modify cfg.Controllers!
-	// This field is currently owned by the HCCO.
-	// When we add Capabilities support, we will set Controllers here
-	// but we have to remove setting it in the HCCO at the same time.
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
+	}
 
 	cfg.Build.ImageTemplateFormat.Format = dockerBuilderImage
 	cfg.Deployer.ImageTemplateFormat.Format = deployerImage
 
 	// registry config
-	cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	if capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cfg.DockerPullSecret.InternalRegistryHostname = config.DefaultImageRegistryHostname
+	}
+
 	if imageConfig != nil {
 		cfg.DockerPullSecret.RegistryURLs = imageConfig.ExternalRegistryHostnames
 	}

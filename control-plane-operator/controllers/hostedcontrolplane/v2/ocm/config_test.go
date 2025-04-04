@@ -17,66 +17,78 @@ import (
 )
 
 func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test",
-			Namespace: "test-namespace",
-		},
-		Spec: hyperv1.HostedControlPlaneSpec{
-			ReleaseImage: "quay.io/ocp-dev/test-release-image:latest",
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-			},
-			IssuerURL: "https://www.example.com",
-			Configuration: &hyperv1.ClusterConfiguration{
-				Image: &v1.ImageSpec{},
-				Network: &v1.NetworkSpec{
-					ExternalIP: &v1.ExternalIPConfig{
-						AutoAssignCIDRs: []string{"99.1.0.0/24"},
+	testFunc := func(capabilities *hyperv1.Capabilities) func(*testing.T) {
+		return func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ReleaseImage: "quay.io/ocp-dev/test-release-image:latest",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					IssuerURL: "https://www.example.com",
+					Configuration: &hyperv1.ClusterConfiguration{
+						Image: &v1.ImageSpec{},
+						Network: &v1.NetworkSpec{
+							ExternalIP: &v1.ExternalIPConfig{
+								AutoAssignCIDRs: []string{"99.1.0.0/24"},
+							},
+						},
+					},
+					Capabilities: capabilities,
+				},
+			}
+			images := map[string]string{
+				"openshift-controller-manager": "quay.io/test/openshift-controller-manager",
+				"docker-builder":               "quay.io/test/docker-builder",
+				"deployer":                     "quay.io/test/deployer",
+			}
+			imageProvider := imageprovider.NewFromImages(images)
+
+			buildConfig := &v1.Build{
+				Spec: v1.BuildSpec{
+					BuildDefaults: v1.BuildDefaults{
+						Env: []corev1.EnvVar{
+							{
+								Name:  "TEST_VAR",
+								Value: "TEST_VALUE",
+							},
+						},
 					},
 				},
-			},
-		},
-	}
-	images := map[string]string{
-		"openshift-controller-manager": "quay.io/test/openshift-controller-manager",
-		"docker-builder":               "quay.io/test/docker-builder",
-		"deployer":                     "quay.io/test/deployer",
-	}
-	imageProvider := imageprovider.NewFromImages(images)
+			}
 
-	buildConfig := &v1.Build{
-		Spec: v1.BuildSpec{
-			BuildDefaults: v1.BuildDefaults{
-				Env: []corev1.EnvVar{
-					{
-						Name:  "TEST_VAR",
-						Value: "TEST_VALUE",
-					},
-				},
-			},
-		},
-	}
+			configMap := &corev1.ConfigMap{}
+			controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
 
-	configMap := &corev1.ConfigMap{}
-	controlplanecomponent.LoadManifestInto(ComponentName, "config.yaml", configMap)
+			config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+			err := util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
+			if err != nil {
+				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
+			}
 
-	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	err := util.DeserializeResource(configMap.Data[configKey], config, api.Scheme)
-	if err != nil {
-		t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
+			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities)
+			configStr, err := util.SerializeResource(config, api.Scheme)
+			if err != nil {
+				t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)
+			}
+			configMap.Data[configKey] = configStr
+
+			configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			testutil.CompareWithFixture(t, configMapYaml)
+		}
 	}
 
-	adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig)
-	configStr, err := util.SerializeResource(config, api.Scheme)
-	if err != nil {
-		t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)
+	caps := &hyperv1.Capabilities{
+		Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
 	}
-	configMap.Data[configKey] = configStr
 
-	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, configMapYaml)
+	t.Run("WithAllCapabilitiesEnabled", testFunc(nil))
+	t.Run("WithImageRegistryCapabilityDisabled", testFunc(caps))
 }

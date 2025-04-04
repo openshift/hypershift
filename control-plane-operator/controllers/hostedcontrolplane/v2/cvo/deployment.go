@@ -1,6 +1,7 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -8,9 +9,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -37,17 +41,48 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.ControlPl
 		return fmt.Errorf("failed to discover CVO release images: %w", err)
 	}
 
+	featureSet := configv1.Default
+	if cpContext.HCP.Spec.Configuration != nil && cpContext.HCP.Spec.Configuration.FeatureGate != nil {
+		featureSet = cpContext.HCP.Spec.Configuration.FeatureGate.FeatureSet
+	}
+
 	util.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP)),
+			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet),
 		}
 		c.Image = controlPlaneReleaseImage
 	})
+
+	// the ClusterVersion resource is created by the CVO bootstrap container.
+	// we marshal it to json as a means to validate its formatting, which protects
+	// us against easily preventable mistakes, such as typos.
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
+		},
+	}
+	if !capabilities.IsImageRegistryCapabilityEnabled(cpContext.HCP.Spec.Capabilities) {
+		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
+		}
+	}
+	clusterVersionJSON, err := json.Marshal(cv)
+	if err != nil {
+		return err
+	}
 	util.UpdateContainer("bootstrap", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env, corev1.EnvVar{
-			Name:  "CLUSTER_ID",
-			Value: cpContext.HCP.Spec.ClusterID,
+			Name:  "CLUSTER_VERSION_JSON",
+			Value: string(clusterVersionJSON),
 		})
 	})
 
@@ -129,7 +164,7 @@ var (
 	}
 )
 
-func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) string {
+func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet) string {
 	payloadDir := "/var/payload"
 	var stmts []string
 
@@ -139,6 +174,37 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool) 
 		fmt.Sprintf("rm %s/manifests/*_servicemonitor.yaml", payloadDir),
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
+
+	// NOTE: We would need part of the manifest.Include logic (https://github.com/openshift/library-go/blob/0064ad7bd060b9fd52f7840972c1d3e72186d0f0/pkg/manifest/manifest.go#L190-L196)
+	// to properly evaluate which CVO manifests to select based on featureset. In the absence of that logic, use simple filename filtering, which is not ideal
+	// but better than nothing.  Ideally, we filter based on the feature-set annotation in the manifests.
+	switch featureSet {
+	case configv1.Default, "":
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.CustomNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.DevPreviewNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	case configv1.TechPreviewNoUpgrade:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+		)
+	}
+
 	for _, manifest := range manifestsToOmit {
 		if platformType == hyperv1.IBMCloudPlatform || platformType == hyperv1.PowerVSPlatform {
 			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {
