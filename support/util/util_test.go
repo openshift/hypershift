@@ -769,3 +769,34 @@ func TestIsIPv4Address(t *testing.T) {
 		})
 	}
 }
+
+func TestHostFromURL(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{"http://example.com", "example.com", false},
+		{"https://example.com:443", "example.com", false},
+		{"http://localhost:8080", "localhost", false},
+		{"https://127.0.0.1:9000", "127.0.0.1", false},
+		{"ftp://example.org:21", "example.org", false},
+		{"http://[::1]:8080", "::1", false},                // IPv6 localhost
+		{"http://[2001:db8::1]:443", "2001:db8::1", false}, // IPv6 example
+		{"??", "", true},           // Invalid URL
+		{"http://:8080", "", true}, // Missing hostname
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			g := NewWithT(t)
+			result, err := HostFromURL(tt.input)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}

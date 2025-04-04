@@ -2,7 +2,6 @@ package oapi
 
 import (
 	"fmt"
-	"net/url"
 	"path"
 	"strings"
 
@@ -44,11 +43,10 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 
 	etcdHostname := "etcd-client"
 	if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		etcdUrl, err := url.Parse(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint)
+		etcdHostname, err = util.HostFromURL(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint)
 		if err != nil {
-			return fmt.Errorf("failed to parse etcd url: %w", err)
+			return err
 		}
-		etcdHostname = strings.Split(etcdUrl.Host, ":")[0]
 	}
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,

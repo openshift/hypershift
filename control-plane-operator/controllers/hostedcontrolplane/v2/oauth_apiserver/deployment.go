@@ -3,9 +3,11 @@ package oapi
 import (
 	"fmt"
 	"path"
+	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 
@@ -19,6 +21,21 @@ const (
 )
 
 func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
+
+	var err error
+	etcdHostname := "etcd-client"
+	if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+		etcdHostname, err = util.HostFromURL(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint)
+		if err != nil {
+			return err
+		}
+	}
+	noProxy := []string{
+		manifests.KubeAPIServerService("").Name,
+		etcdHostname,
+		config.AuditWebhookService,
+	}
+
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		etcdURL := config.DefaultEtcdURL
 		if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
@@ -41,6 +58,10 @@ func adaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1
 			tokenInactivityTimeout := configuration.OAuth.TokenConfig.AccessTokenInactivityTimeout.Duration.String()
 			c.Args = append(c.Args, fmt.Sprintf("--accesstoken-inactivity-timeout=%s", tokenInactivityTimeout))
 		}
+		util.UpsertEnvVar(c, corev1.EnvVar{
+			Name:  "NO_PROXY",
+			Value: strings.Join(noProxy, ","),
+		})
 	})
 
 	if cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
