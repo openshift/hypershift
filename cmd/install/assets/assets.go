@@ -23,7 +23,7 @@ import (
 //go:embed cluster-api-provider-agent/*
 //go:embed cluster-api-provider-azure/*
 //go:embed cluster-api-provider-openstack/*
-var crds embed.FS
+var CRDS embed.FS
 
 //go:embed recordingrules/*
 var recordingRules embed.FS
@@ -82,14 +82,14 @@ func getContents(fs embed.FS, file string) []byte {
 // CustomResourceDefinitions returns all existing CRDs as controller-runtime objects
 func CustomResourceDefinitions(include func(path string, crd *apiextensionsv1.CustomResourceDefinition) bool, transform func(*apiextensionsv1.CustomResourceDefinition)) []crclient.Object {
 	var allCrds []crclient.Object
-	err := fs.WalkDir(crds, ".", func(path string, d fs.DirEntry, err error) error {
+	err := fs.WalkDir(CRDS, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			panic(err)
 		}
 		if filepath.Ext(path) != ".yaml" {
 			return nil
 		}
-		crd := getCustomResourceDefinition(crds, path)
+		crd := getCustomResourceDefinition(CRDS, path)
 		if include(path, crd) {
 
 			if transform != nil {
