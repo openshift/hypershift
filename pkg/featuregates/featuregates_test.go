@@ -3,11 +3,14 @@ package featuregates_test
 import (
 	"testing"
 
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/pkg/featuregates"
+
+	configv1 "github.com/openshift/api/config/v1"
+
+	"k8s.io/component-base/featuregate"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"k8s.io/component-base/featuregate"
 )
 
 func TestCreatingFeatureGates(t *testing.T) {
