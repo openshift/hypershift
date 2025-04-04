@@ -2099,14 +2099,13 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 
 			// aws-ebs-csi-driver-operator tolerations are set through CSO and are different from the ones in the DC
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
-				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations))
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations), "pod %s", pod.Name)
 			} else {
-				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations))
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations), "pod %s", pod.Name)
 			}
 
-			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
-			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution))
-
+			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
+			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
 		}
 	})
 }
