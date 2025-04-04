@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// AWSPlatformStatusApplyConfiguration represents an declarative configuration of the AWSPlatformStatus type for use
+// AWSPlatformStatusApplyConfiguration represents a declarative configuration of the AWSPlatformStatus type for use
 // with apply.
 type AWSPlatformStatusApplyConfiguration struct {
 	DefaultWorkerSecurityGroupID *string `json:"defaultWorkerSecurityGroupID,omitempty"`
 }
 
-// AWSPlatformStatusApplyConfiguration constructs an declarative configuration of the AWSPlatformStatus type for use with
+// AWSPlatformStatusApplyConfiguration constructs a declarative configuration of the AWSPlatformStatus type for use with
 // apply.
 func AWSPlatformStatus() *AWSPlatformStatusApplyConfiguration {
 	return &AWSPlatformStatusApplyConfiguration{}

@@ -18,10 +18,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // NodePoolLister helps list NodePools.
@@ -29,7 +29,7 @@ import (
 type NodePoolLister interface {
 	// List lists all NodePools in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.NodePool, err error)
+	List(selector labels.Selector) (ret []*hypershiftv1beta1.NodePool, err error)
 	// NodePools returns an object that can list and get NodePools.
 	NodePools(namespace string) NodePoolNamespaceLister
 	NodePoolListerExpansion
@@ -37,25 +37,17 @@ type NodePoolLister interface {
 
 // nodePoolLister implements the NodePoolLister interface.
 type nodePoolLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*hypershiftv1beta1.NodePool]
 }
 
 // NewNodePoolLister returns a new NodePoolLister.
 func NewNodePoolLister(indexer cache.Indexer) NodePoolLister {
-	return &nodePoolLister{indexer: indexer}
-}
-
-// List lists all NodePools in the indexer.
-func (s *nodePoolLister) List(selector labels.Selector) (ret []*v1beta1.NodePool, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.NodePool))
-	})
-	return ret, err
+	return &nodePoolLister{listers.New[*hypershiftv1beta1.NodePool](indexer, hypershiftv1beta1.Resource("nodepool"))}
 }
 
 // NodePools returns an object that can list and get NodePools.
 func (s *nodePoolLister) NodePools(namespace string) NodePoolNamespaceLister {
-	return nodePoolNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return nodePoolNamespaceLister{listers.NewNamespaced[*hypershiftv1beta1.NodePool](s.ResourceIndexer, namespace)}
 }
 
 // NodePoolNamespaceLister helps list and get NodePools.
@@ -63,36 +55,15 @@ func (s *nodePoolLister) NodePools(namespace string) NodePoolNamespaceLister {
 type NodePoolNamespaceLister interface {
 	// List lists all NodePools in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.NodePool, err error)
+	List(selector labels.Selector) (ret []*hypershiftv1beta1.NodePool, err error)
 	// Get retrieves the NodePool from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1beta1.NodePool, error)
+	Get(name string) (*hypershiftv1beta1.NodePool, error)
 	NodePoolNamespaceListerExpansion
 }
 
 // nodePoolNamespaceLister implements the NodePoolNamespaceLister
 // interface.
 type nodePoolNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all NodePools in the indexer for a given namespace.
-func (s nodePoolNamespaceLister) List(selector labels.Selector) (ret []*v1beta1.NodePool, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.NodePool))
-	})
-	return ret, err
-}
-
-// Get retrieves the NodePool from the indexer for a given namespace and name.
-func (s nodePoolNamespaceLister) Get(name string) (*v1beta1.NodePool, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("nodepool"), name)
-	}
-	return obj.(*v1beta1.NodePool), nil
+	listers.ResourceIndexer[*hypershiftv1beta1.NodePool]
 }

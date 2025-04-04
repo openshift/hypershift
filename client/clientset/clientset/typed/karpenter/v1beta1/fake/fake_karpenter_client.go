@@ -28,7 +28,7 @@ type FakeKarpenterV1beta1 struct {
 }
 
 func (c *FakeKarpenterV1beta1) OpenshiftEC2NodeClasses(namespace string) v1beta1.OpenshiftEC2NodeClassInterface {
-	return &FakeOpenshiftEC2NodeClasses{c, namespace}
+	return newFakeOpenshiftEC2NodeClasses(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

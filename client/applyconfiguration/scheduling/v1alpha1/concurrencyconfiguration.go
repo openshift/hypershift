@@ -21,14 +21,14 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// ConcurrencyConfigurationApplyConfiguration represents an declarative configuration of the ConcurrencyConfiguration type for use
+// ConcurrencyConfigurationApplyConfiguration represents a declarative configuration of the ConcurrencyConfiguration type for use
 // with apply.
 type ConcurrencyConfigurationApplyConfiguration struct {
 	SlidingWindow *v1.Duration `json:"slidingWindow,omitempty"`
 	Limit         *int32       `json:"limit,omitempty"`
 }
 
-// ConcurrencyConfigurationApplyConfiguration constructs an declarative configuration of the ConcurrencyConfiguration type for use with
+// ConcurrencyConfigurationApplyConfiguration constructs a declarative configuration of the ConcurrencyConfiguration type for use with
 // apply.
 func ConcurrencyConfiguration() *ConcurrencyConfigurationApplyConfiguration {
 	return &ConcurrencyConfigurationApplyConfiguration{}

@@ -23,7 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// HostedControlPlaneSpecApplyConfiguration represents an declarative configuration of the HostedControlPlaneSpec type for use
+// HostedControlPlaneSpecApplyConfiguration represents a declarative configuration of the HostedControlPlaneSpec type for use
 // with apply.
 type HostedControlPlaneSpecApplyConfiguration struct {
 	ReleaseImage                     *string                                              `json:"releaseImage,omitempty"`
@@ -62,7 +62,7 @@ type HostedControlPlaneSpecApplyConfiguration struct {
 	Capabilities                     *CapabilitiesApplyConfiguration                      `json:"capabilities,omitempty"`
 }
 
-// HostedControlPlaneSpecApplyConfiguration constructs an declarative configuration of the HostedControlPlaneSpec type for use with
+// HostedControlPlaneSpecApplyConfiguration constructs a declarative configuration of the HostedControlPlaneSpec type for use with
 // apply.
 func HostedControlPlaneSpec() *HostedControlPlaneSpecApplyConfiguration {
 	return &HostedControlPlaneSpecApplyConfiguration{}

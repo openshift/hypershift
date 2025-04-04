@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// IBMCloudKMSAuthSpecApplyConfiguration represents an declarative configuration of the IBMCloudKMSAuthSpec type for use
+// IBMCloudKMSAuthSpecApplyConfiguration represents a declarative configuration of the IBMCloudKMSAuthSpec type for use
 // with apply.
 type IBMCloudKMSAuthSpecApplyConfiguration struct {
-	Type      *v1beta1.IBMCloudKMSAuthType                    `json:"type,omitempty"`
+	Type      *hypershiftv1beta1.IBMCloudKMSAuthType          `json:"type,omitempty"`
 	Unmanaged *IBMCloudKMSUnmanagedAuthSpecApplyConfiguration `json:"unmanaged,omitempty"`
-	Managed   *v1beta1.IBMCloudKMSManagedAuthSpec             `json:"managed,omitempty"`
+	Managed   *hypershiftv1beta1.IBMCloudKMSManagedAuthSpec   `json:"managed,omitempty"`
 }
 
-// IBMCloudKMSAuthSpecApplyConfiguration constructs an declarative configuration of the IBMCloudKMSAuthSpec type for use with
+// IBMCloudKMSAuthSpecApplyConfiguration constructs a declarative configuration of the IBMCloudKMSAuthSpec type for use with
 // apply.
 func IBMCloudKMSAuthSpec() *IBMCloudKMSAuthSpecApplyConfiguration {
 	return &IBMCloudKMSAuthSpecApplyConfiguration{}
@@ -38,7 +38,7 @@ func IBMCloudKMSAuthSpec() *IBMCloudKMSAuthSpecApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *IBMCloudKMSAuthSpecApplyConfiguration) WithType(value v1beta1.IBMCloudKMSAuthType) *IBMCloudKMSAuthSpecApplyConfiguration {
+func (b *IBMCloudKMSAuthSpecApplyConfiguration) WithType(value hypershiftv1beta1.IBMCloudKMSAuthType) *IBMCloudKMSAuthSpecApplyConfiguration {
 	b.Type = &value
 	return b
 }
@@ -54,7 +54,7 @@ func (b *IBMCloudKMSAuthSpecApplyConfiguration) WithUnmanaged(value *IBMCloudKMS
 // WithManaged sets the Managed field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Managed field is set to the value of the last call.
-func (b *IBMCloudKMSAuthSpecApplyConfiguration) WithManaged(value v1beta1.IBMCloudKMSManagedAuthSpec) *IBMCloudKMSAuthSpecApplyConfiguration {
+func (b *IBMCloudKMSAuthSpecApplyConfiguration) WithManaged(value hypershiftv1beta1.IBMCloudKMSManagedAuthSpec) *IBMCloudKMSAuthSpecApplyConfiguration {
 	b.Managed = &value
 	return b
 }

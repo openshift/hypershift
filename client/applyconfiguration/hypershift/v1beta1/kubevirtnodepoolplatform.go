@@ -21,7 +21,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// KubevirtNodePoolPlatformApplyConfiguration represents an declarative configuration of the KubevirtNodePoolPlatform type for use
+// KubevirtNodePoolPlatformApplyConfiguration represents a declarative configuration of the KubevirtNodePoolPlatform type for use
 // with apply.
 type KubevirtNodePoolPlatformApplyConfiguration struct {
 	RootVolume                 *KubevirtRootVolumeApplyConfiguration  `json:"rootVolume,omitempty"`
@@ -33,7 +33,7 @@ type KubevirtNodePoolPlatformApplyConfiguration struct {
 	KubevirtHostDevices        []KubevirtHostDeviceApplyConfiguration `json:"hostDevices,omitempty"`
 }
 
-// KubevirtNodePoolPlatformApplyConfiguration constructs an declarative configuration of the KubevirtNodePoolPlatform type for use with
+// KubevirtNodePoolPlatformApplyConfiguration constructs a declarative configuration of the KubevirtNodePoolPlatform type for use with
 // apply.
 func KubevirtNodePoolPlatform() *KubevirtNodePoolPlatformApplyConfiguration {
 	return &KubevirtNodePoolPlatformApplyConfiguration{}

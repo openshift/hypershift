@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// AutoNodeApplyConfiguration represents an declarative configuration of the AutoNode type for use
+// AutoNodeApplyConfiguration represents a declarative configuration of the AutoNode type for use
 // with apply.
 type AutoNodeApplyConfiguration struct {
 	Provisioner *ProvisionerConfigApplyConfiguration `json:"provisionerConfig,omitempty"`
 }
 
-// AutoNodeApplyConfiguration constructs an declarative configuration of the AutoNode type for use with
+// AutoNodeApplyConfiguration constructs a declarative configuration of the AutoNode type for use with
 // apply.
 func AutoNode() *AutoNodeApplyConfiguration {
 	return &AutoNodeApplyConfiguration{}

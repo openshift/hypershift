@@ -21,7 +21,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// OpenshiftEC2NodeClassStatusApplyConfiguration represents an declarative configuration of the OpenshiftEC2NodeClassStatus type for use
+// OpenshiftEC2NodeClassStatusApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassStatus type for use
 // with apply.
 type OpenshiftEC2NodeClassStatusApplyConfiguration struct {
 	Subnets        []SubnetApplyConfiguration        `json:"subnets,omitempty"`
@@ -29,7 +29,7 @@ type OpenshiftEC2NodeClassStatusApplyConfiguration struct {
 	Conditions     []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
 }
 
-// OpenshiftEC2NodeClassStatusApplyConfiguration constructs an declarative configuration of the OpenshiftEC2NodeClassStatus type for use with
+// OpenshiftEC2NodeClassStatusApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassStatus type for use with
 // apply.
 func OpenshiftEC2NodeClassStatus() *OpenshiftEC2NodeClassStatusApplyConfiguration {
 	return &OpenshiftEC2NodeClassStatusApplyConfiguration{}

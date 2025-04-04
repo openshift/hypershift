@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AWSKMSSpecApplyConfiguration represents an declarative configuration of the AWSKMSSpec type for use
+// AWSKMSSpecApplyConfiguration represents a declarative configuration of the AWSKMSSpec type for use
 // with apply.
 type AWSKMSSpecApplyConfiguration struct {
 	Region    *string                           `json:"region,omitempty"`
@@ -26,7 +26,7 @@ type AWSKMSSpecApplyConfiguration struct {
 	Auth      *AWSKMSAuthSpecApplyConfiguration `json:"auth,omitempty"`
 }
 
-// AWSKMSSpecApplyConfiguration constructs an declarative configuration of the AWSKMSSpec type for use with
+// AWSKMSSpecApplyConfiguration constructs a declarative configuration of the AWSKMSSpec type for use with
 // apply.
 func AWSKMSSpec() *AWSKMSSpecApplyConfiguration {
 	return &AWSKMSSpecApplyConfiguration{}

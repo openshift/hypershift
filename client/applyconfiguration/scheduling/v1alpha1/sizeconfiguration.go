@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1alpha1
 
-// SizeConfigurationApplyConfiguration represents an declarative configuration of the SizeConfiguration type for use
+// SizeConfigurationApplyConfiguration represents a declarative configuration of the SizeConfiguration type for use
 // with apply.
 type SizeConfigurationApplyConfiguration struct {
 	Name       *string                              `json:"name,omitempty"`
@@ -26,7 +26,7 @@ type SizeConfigurationApplyConfiguration struct {
 	Management *ManagementApplyConfiguration        `json:"management,omitempty"`
 }
 
-// SizeConfigurationApplyConfiguration constructs an declarative configuration of the SizeConfiguration type for use with
+// SizeConfigurationApplyConfiguration constructs a declarative configuration of the SizeConfiguration type for use with
 // apply.
 func SizeConfiguration() *SizeConfigurationApplyConfiguration {
 	return &SizeConfigurationApplyConfiguration{}

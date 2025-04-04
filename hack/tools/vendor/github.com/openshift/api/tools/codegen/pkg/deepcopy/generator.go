@@ -10,7 +10,7 @@ import (
 
 const (
 	// DefaultOutputFileBaseName is the default output file base name for the generated deepcopy functions.
-	DefaultOutputFileBaseName = "zz_generated.deepcopy"
+	DefaultOutputFileBaseName = "zz_generated.deepcopy.go"
 )
 
 // Options contains the configuration required for the compatibility generator.
@@ -78,10 +78,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the deepcopy generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping deepcopy generation for %s", groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	// If there is no header file, create an empty file and pass that through.
@@ -89,7 +89,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	if headerFilePath == "" {
 		tmpFile, err := os.CreateTemp("", "deepcopy-header-*.txt")
 		if err != nil {
-			return fmt.Errorf("failed to create temporary file: %w", err)
+			return nil, fmt.Errorf("failed to create temporary file: %w", err)
 		}
 		tmpFile.Close()
 
@@ -107,9 +107,9 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 		klog.V(1).Infof("%s deepcopy functions for for %s/%s", action, groupCtx.Name, version.Name)
 
 		if err := generateDeepcopyFunctions(version.Path, version.PackagePath, g.outputBaseFileName, headerFilePath, g.verify); err != nil {
-			return fmt.Errorf("could not generate deepcopy functions for %s/%s: %w", groupCtx.Name, version.Name, err)
+			return nil, fmt.Errorf("could not generate deepcopy functions for %s/%s: %w", groupCtx.Name, version.Name, err)
 		}
 	}
 
-	return nil
+	return nil, nil
 }

@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// RouterParamApplyConfiguration represents an declarative configuration of the RouterParam type for use
+// RouterParamApplyConfiguration represents a declarative configuration of the RouterParam type for use
 // with apply.
 type RouterParamApplyConfiguration struct {
 	ID     *string                         `json:"id,omitempty"`
 	Filter *RouterFilterApplyConfiguration `json:"filter,omitempty"`
 }
 
-// RouterParamApplyConfiguration constructs an declarative configuration of the RouterParam type for use with
+// RouterParamApplyConfiguration constructs a declarative configuration of the RouterParam type for use with
 // apply.
 func RouterParam() *RouterParamApplyConfiguration {
 	return &RouterParamApplyConfiguration{}

@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// AzureVMImageApplyConfiguration represents an declarative configuration of the AzureVMImage type for use
+// AzureVMImageApplyConfiguration represents a declarative configuration of the AzureVMImage type for use
 // with apply.
 type AzureVMImageApplyConfiguration struct {
-	Type             *v1beta1.AzureVMImageType                `json:"type,omitempty"`
+	Type             *hypershiftv1beta1.AzureVMImageType      `json:"type,omitempty"`
 	ImageID          *string                                  `json:"imageID,omitempty"`
 	AzureMarketplace *AzureMarketplaceImageApplyConfiguration `json:"azureMarketplace,omitempty"`
 }
 
-// AzureVMImageApplyConfiguration constructs an declarative configuration of the AzureVMImage type for use with
+// AzureVMImageApplyConfiguration constructs a declarative configuration of the AzureVMImage type for use with
 // apply.
 func AzureVMImage() *AzureVMImageApplyConfiguration {
 	return &AzureVMImageApplyConfiguration{}
@@ -38,7 +38,7 @@ func AzureVMImage() *AzureVMImageApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *AzureVMImageApplyConfiguration) WithType(value v1beta1.AzureVMImageType) *AzureVMImageApplyConfiguration {
+func (b *AzureVMImageApplyConfiguration) WithType(value hypershiftv1beta1.AzureVMImageType) *AzureVMImageApplyConfiguration {
 	b.Type = &value
 	return b
 }

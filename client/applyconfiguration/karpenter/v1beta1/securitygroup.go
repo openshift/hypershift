@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// SecurityGroupApplyConfiguration represents an declarative configuration of the SecurityGroup type for use
+// SecurityGroupApplyConfiguration represents a declarative configuration of the SecurityGroup type for use
 // with apply.
 type SecurityGroupApplyConfiguration struct {
 	ID   *string `json:"id,omitempty"`
 	Name *string `json:"name,omitempty"`
 }
 
-// SecurityGroupApplyConfiguration constructs an declarative configuration of the SecurityGroup type for use with
+// SecurityGroupApplyConfiguration constructs a declarative configuration of the SecurityGroup type for use with
 // apply.
 func SecurityGroup() *SecurityGroupApplyConfiguration {
 	return &SecurityGroupApplyConfiguration{}

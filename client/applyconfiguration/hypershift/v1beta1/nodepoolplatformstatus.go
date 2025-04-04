@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// NodePoolPlatformStatusApplyConfiguration represents an declarative configuration of the NodePoolPlatformStatus type for use
+// NodePoolPlatformStatusApplyConfiguration represents a declarative configuration of the NodePoolPlatformStatus type for use
 // with apply.
 type NodePoolPlatformStatusApplyConfiguration struct {
 	KubeVirt *KubeVirtNodePoolStatusApplyConfiguration `json:"kubeVirt,omitempty"`
 }
 
-// NodePoolPlatformStatusApplyConfiguration constructs an declarative configuration of the NodePoolPlatformStatus type for use with
+// NodePoolPlatformStatusApplyConfiguration constructs a declarative configuration of the NodePoolPlatformStatus type for use with
 // apply.
 func NodePoolPlatformStatus() *NodePoolPlatformStatusApplyConfiguration {
 	return &NodePoolPlatformStatusApplyConfiguration{}

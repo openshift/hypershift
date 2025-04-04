@@ -18,23 +18,23 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// PowerVSNodePoolPlatformApplyConfiguration represents an declarative configuration of the PowerVSNodePoolPlatform type for use
+// PowerVSNodePoolPlatformApplyConfiguration represents a declarative configuration of the PowerVSNodePoolPlatform type for use
 // with apply.
 type PowerVSNodePoolPlatformApplyConfiguration struct {
-	SystemType        *string                                     `json:"systemType,omitempty"`
-	ProcessorType     *v1beta1.PowerVSNodePoolProcType            `json:"processorType,omitempty"`
-	Processors        *intstr.IntOrString                         `json:"processors,omitempty"`
-	MemoryGiB         *int32                                      `json:"memoryGiB,omitempty"`
-	Image             *PowerVSResourceReferenceApplyConfiguration `json:"image,omitempty"`
-	StorageType       *v1beta1.PowerVSNodePoolStorageType         `json:"storageType,omitempty"`
-	ImageDeletePolicy *v1beta1.PowerVSNodePoolImageDeletePolicy   `json:"imageDeletePolicy,omitempty"`
+	SystemType        *string                                             `json:"systemType,omitempty"`
+	ProcessorType     *hypershiftv1beta1.PowerVSNodePoolProcType          `json:"processorType,omitempty"`
+	Processors        *intstr.IntOrString                                 `json:"processors,omitempty"`
+	MemoryGiB         *int32                                              `json:"memoryGiB,omitempty"`
+	Image             *PowerVSResourceReferenceApplyConfiguration         `json:"image,omitempty"`
+	StorageType       *hypershiftv1beta1.PowerVSNodePoolStorageType       `json:"storageType,omitempty"`
+	ImageDeletePolicy *hypershiftv1beta1.PowerVSNodePoolImageDeletePolicy `json:"imageDeletePolicy,omitempty"`
 }
 
-// PowerVSNodePoolPlatformApplyConfiguration constructs an declarative configuration of the PowerVSNodePoolPlatform type for use with
+// PowerVSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the PowerVSNodePoolPlatform type for use with
 // apply.
 func PowerVSNodePoolPlatform() *PowerVSNodePoolPlatformApplyConfiguration {
 	return &PowerVSNodePoolPlatformApplyConfiguration{}
@@ -51,7 +51,7 @@ func (b *PowerVSNodePoolPlatformApplyConfiguration) WithSystemType(value string)
 // WithProcessorType sets the ProcessorType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ProcessorType field is set to the value of the last call.
-func (b *PowerVSNodePoolPlatformApplyConfiguration) WithProcessorType(value v1beta1.PowerVSNodePoolProcType) *PowerVSNodePoolPlatformApplyConfiguration {
+func (b *PowerVSNodePoolPlatformApplyConfiguration) WithProcessorType(value hypershiftv1beta1.PowerVSNodePoolProcType) *PowerVSNodePoolPlatformApplyConfiguration {
 	b.ProcessorType = &value
 	return b
 }
@@ -83,7 +83,7 @@ func (b *PowerVSNodePoolPlatformApplyConfiguration) WithImage(value *PowerVSReso
 // WithStorageType sets the StorageType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the StorageType field is set to the value of the last call.
-func (b *PowerVSNodePoolPlatformApplyConfiguration) WithStorageType(value v1beta1.PowerVSNodePoolStorageType) *PowerVSNodePoolPlatformApplyConfiguration {
+func (b *PowerVSNodePoolPlatformApplyConfiguration) WithStorageType(value hypershiftv1beta1.PowerVSNodePoolStorageType) *PowerVSNodePoolPlatformApplyConfiguration {
 	b.StorageType = &value
 	return b
 }
@@ -91,7 +91,7 @@ func (b *PowerVSNodePoolPlatformApplyConfiguration) WithStorageType(value v1beta
 // WithImageDeletePolicy sets the ImageDeletePolicy field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ImageDeletePolicy field is set to the value of the last call.
-func (b *PowerVSNodePoolPlatformApplyConfiguration) WithImageDeletePolicy(value v1beta1.PowerVSNodePoolImageDeletePolicy) *PowerVSNodePoolPlatformApplyConfiguration {
+func (b *PowerVSNodePoolPlatformApplyConfiguration) WithImageDeletePolicy(value hypershiftv1beta1.PowerVSNodePoolImageDeletePolicy) *PowerVSNodePoolPlatformApplyConfiguration {
 	b.ImageDeletePolicy = &value
 	return b
 }

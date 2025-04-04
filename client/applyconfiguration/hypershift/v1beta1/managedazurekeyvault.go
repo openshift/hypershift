@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// ManagedAzureKeyVaultApplyConfiguration represents an declarative configuration of the ManagedAzureKeyVault type for use
+// ManagedAzureKeyVaultApplyConfiguration represents a declarative configuration of the ManagedAzureKeyVault type for use
 // with apply.
 type ManagedAzureKeyVaultApplyConfiguration struct {
 	Name     *string `json:"name,omitempty"`
 	TenantID *string `json:"tenantID,omitempty"`
 }
 
-// ManagedAzureKeyVaultApplyConfiguration constructs an declarative configuration of the ManagedAzureKeyVault type for use with
+// ManagedAzureKeyVaultApplyConfiguration constructs a declarative configuration of the ManagedAzureKeyVault type for use with
 // apply.
 func ManagedAzureKeyVault() *ManagedAzureKeyVaultApplyConfiguration {
 	return &ManagedAzureKeyVaultApplyConfiguration{}

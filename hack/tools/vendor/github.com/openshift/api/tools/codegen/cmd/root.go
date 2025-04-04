@@ -80,6 +80,7 @@ func init() {
 // Subsequent groups will continue to generate.
 func executeGenerators(genCtx generation.Context, generators ...generation.Generator) error {
 	errs := []error{}
+	resultsByGroup := map[string][]generation.Result{}
 
 	for _, group := range genCtx.APIGroups {
 		klog.Infof("Running generators for %s", group.Name)
@@ -90,13 +91,17 @@ func executeGenerators(genCtx generation.Context, generators ...generation.Gener
 				g = g.ApplyConfig(group.Config)
 			}
 
-			if err := g.GenGroup(group); err != nil {
+			results, err := g.GenGroup(group)
+			if err != nil {
 				errs = append(errs, fmt.Errorf("error running generator %s on group %s: %w", gen.Name(), group.Name, err))
-
-				// Don't run any later generators for this group.
-				break
 			}
+
+			resultsByGroup[group.Name] = append(resultsByGroup[group.Name], results...)
 		}
+	}
+
+	if err := utils.PrintResults(resultsByGroup); err != nil {
+		errs = append(errs, err)
 	}
 
 	if len(errs) > 0 {

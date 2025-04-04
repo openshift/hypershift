@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// HostedClusterStatusApplyConfiguration represents an declarative configuration of the HostedClusterStatus type for use
+// HostedClusterStatusApplyConfiguration represents a declarative configuration of the HostedClusterStatus type for use
 // with apply.
 type HostedClusterStatusApplyConfiguration struct {
 	Version                  *ClusterVersionStatusApplyConfiguration `json:"version,omitempty"`
@@ -38,7 +38,7 @@ type HostedClusterStatusApplyConfiguration struct {
 	Platform                 *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 }
 
-// HostedClusterStatusApplyConfiguration constructs an declarative configuration of the HostedClusterStatus type for use with
+// HostedClusterStatusApplyConfiguration constructs a declarative configuration of the HostedClusterStatus type for use with
 // apply.
 func HostedClusterStatus() *HostedClusterStatusApplyConfiguration {
 	return &HostedClusterStatusApplyConfiguration{}

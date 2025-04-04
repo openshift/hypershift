@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ProvisionerConfigApplyConfiguration represents an declarative configuration of the ProvisionerConfig type for use
+// ProvisionerConfigApplyConfiguration represents a declarative configuration of the ProvisionerConfig type for use
 // with apply.
 type ProvisionerConfigApplyConfiguration struct {
-	Name      *v1beta1.Provisioner               `json:"name,omitempty"`
+	Name      *hypershiftv1beta1.Provisioner     `json:"name,omitempty"`
 	Karpenter *KarpenterConfigApplyConfiguration `json:"karpenter,omitempty"`
 }
 
-// ProvisionerConfigApplyConfiguration constructs an declarative configuration of the ProvisionerConfig type for use with
+// ProvisionerConfigApplyConfiguration constructs a declarative configuration of the ProvisionerConfig type for use with
 // apply.
 func ProvisionerConfig() *ProvisionerConfigApplyConfiguration {
 	return &ProvisionerConfigApplyConfiguration{}
@@ -37,7 +37,7 @@ func ProvisionerConfig() *ProvisionerConfigApplyConfiguration {
 // WithName sets the Name field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Name field is set to the value of the last call.
-func (b *ProvisionerConfigApplyConfiguration) WithName(value v1beta1.Provisioner) *ProvisionerConfigApplyConfiguration {
+func (b *ProvisionerConfigApplyConfiguration) WithName(value hypershiftv1beta1.Provisioner) *ProvisionerConfigApplyConfiguration {
 	b.Name = &value
 	return b
 }

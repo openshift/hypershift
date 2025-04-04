@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// AWSKMSAuthSpecApplyConfiguration represents an declarative configuration of the AWSKMSAuthSpec type for use
+// AWSKMSAuthSpecApplyConfiguration represents a declarative configuration of the AWSKMSAuthSpec type for use
 // with apply.
 type AWSKMSAuthSpecApplyConfiguration struct {
 	AWSKMSRoleARN *string `json:"awsKms,omitempty"`
 }
 
-// AWSKMSAuthSpecApplyConfiguration constructs an declarative configuration of the AWSKMSAuthSpec type for use with
+// AWSKMSAuthSpecApplyConfiguration constructs a declarative configuration of the AWSKMSAuthSpec type for use with
 // apply.
 func AWSKMSAuthSpec() *AWSKMSAuthSpecApplyConfiguration {
 	return &AWSKMSAuthSpecApplyConfiguration{}

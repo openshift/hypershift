@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1alpha1
 
-// NodeCountCriteriaApplyConfiguration represents an declarative configuration of the NodeCountCriteria type for use
+// NodeCountCriteriaApplyConfiguration represents a declarative configuration of the NodeCountCriteria type for use
 // with apply.
 type NodeCountCriteriaApplyConfiguration struct {
 	From *uint32 `json:"from,omitempty"`
 	To   *uint32 `json:"to,omitempty"`
 }
 
-// NodeCountCriteriaApplyConfiguration constructs an declarative configuration of the NodeCountCriteria type for use with
+// NodeCountCriteriaApplyConfiguration constructs a declarative configuration of the NodeCountCriteria type for use with
 // apply.
 func NodeCountCriteria() *NodeCountCriteriaApplyConfiguration {
 	return &NodeCountCriteriaApplyConfiguration{}

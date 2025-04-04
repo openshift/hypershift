@@ -21,14 +21,14 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// AESCBCSpecApplyConfiguration represents an declarative configuration of the AESCBCSpec type for use
+// AESCBCSpecApplyConfiguration represents a declarative configuration of the AESCBCSpec type for use
 // with apply.
 type AESCBCSpecApplyConfiguration struct {
 	ActiveKey *v1.LocalObjectReference `json:"activeKey,omitempty"`
 	BackupKey *v1.LocalObjectReference `json:"backupKey,omitempty"`
 }
 
-// AESCBCSpecApplyConfiguration constructs an declarative configuration of the AESCBCSpec type for use with
+// AESCBCSpecApplyConfiguration constructs a declarative configuration of the AESCBCSpec type for use with
 // apply.
 func AESCBCSpec() *AESCBCSpecApplyConfiguration {
 	return &AESCBCSpecApplyConfiguration{}

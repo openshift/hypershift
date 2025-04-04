@@ -21,14 +21,14 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TransitionDelayConfigurationApplyConfiguration represents an declarative configuration of the TransitionDelayConfiguration type for use
+// TransitionDelayConfigurationApplyConfiguration represents a declarative configuration of the TransitionDelayConfiguration type for use
 // with apply.
 type TransitionDelayConfigurationApplyConfiguration struct {
 	Increase *v1.Duration `json:"increase,omitempty"`
 	Decrease *v1.Duration `json:"decrease,omitempty"`
 }
 
-// TransitionDelayConfigurationApplyConfiguration constructs an declarative configuration of the TransitionDelayConfiguration type for use with
+// TransitionDelayConfigurationApplyConfiguration constructs a declarative configuration of the TransitionDelayConfiguration type for use with
 // apply.
 func TransitionDelayConfiguration() *TransitionDelayConfigurationApplyConfiguration {
 	return &TransitionDelayConfigurationApplyConfiguration{}

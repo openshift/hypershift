@@ -21,7 +21,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// NetworkFilterApplyConfiguration represents an declarative configuration of the NetworkFilter type for use
+// NetworkFilterApplyConfiguration represents a declarative configuration of the NetworkFilter type for use
 // with apply.
 type NetworkFilterApplyConfiguration struct {
 	Name                                  *string `json:"name,omitempty"`
@@ -30,7 +30,7 @@ type NetworkFilterApplyConfiguration struct {
 	FilterByNeutronTagsApplyConfiguration `json:",inline"`
 }
 
-// NetworkFilterApplyConfiguration constructs an declarative configuration of the NetworkFilter type for use with
+// NetworkFilterApplyConfiguration constructs a declarative configuration of the NetworkFilter type for use with
 // apply.
 func NetworkFilter() *NetworkFilterApplyConfiguration {
 	return &NetworkFilterApplyConfiguration{}
@@ -65,7 +65,7 @@ func (b *NetworkFilterApplyConfiguration) WithProjectID(value string) *NetworkFi
 // If called multiple times, values provided by each call will be appended to the Tags field.
 func (b *NetworkFilterApplyConfiguration) WithTags(values ...hypershiftv1beta1.NeutronTag) *NetworkFilterApplyConfiguration {
 	for i := range values {
-		b.Tags = append(b.Tags, values[i])
+		b.FilterByNeutronTagsApplyConfiguration.Tags = append(b.FilterByNeutronTagsApplyConfiguration.Tags, values[i])
 	}
 	return b
 }
@@ -75,7 +75,7 @@ func (b *NetworkFilterApplyConfiguration) WithTags(values ...hypershiftv1beta1.N
 // If called multiple times, values provided by each call will be appended to the TagsAny field.
 func (b *NetworkFilterApplyConfiguration) WithTagsAny(values ...hypershiftv1beta1.NeutronTag) *NetworkFilterApplyConfiguration {
 	for i := range values {
-		b.TagsAny = append(b.TagsAny, values[i])
+		b.FilterByNeutronTagsApplyConfiguration.TagsAny = append(b.FilterByNeutronTagsApplyConfiguration.TagsAny, values[i])
 	}
 	return b
 }
@@ -85,7 +85,7 @@ func (b *NetworkFilterApplyConfiguration) WithTagsAny(values ...hypershiftv1beta
 // If called multiple times, values provided by each call will be appended to the NotTags field.
 func (b *NetworkFilterApplyConfiguration) WithNotTags(values ...hypershiftv1beta1.NeutronTag) *NetworkFilterApplyConfiguration {
 	for i := range values {
-		b.NotTags = append(b.NotTags, values[i])
+		b.FilterByNeutronTagsApplyConfiguration.NotTags = append(b.FilterByNeutronTagsApplyConfiguration.NotTags, values[i])
 	}
 	return b
 }
@@ -95,7 +95,7 @@ func (b *NetworkFilterApplyConfiguration) WithNotTags(values ...hypershiftv1beta
 // If called multiple times, values provided by each call will be appended to the NotTagsAny field.
 func (b *NetworkFilterApplyConfiguration) WithNotTagsAny(values ...hypershiftv1beta1.NeutronTag) *NetworkFilterApplyConfiguration {
 	for i := range values {
-		b.NotTagsAny = append(b.NotTagsAny, values[i])
+		b.FilterByNeutronTagsApplyConfiguration.NotTagsAny = append(b.FilterByNeutronTagsApplyConfiguration.NotTagsAny, values[i])
 	}
 	return b
 }

@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// SubnetSelectorTermApplyConfiguration represents an declarative configuration of the SubnetSelectorTerm type for use
+// SubnetSelectorTermApplyConfiguration represents a declarative configuration of the SubnetSelectorTerm type for use
 // with apply.
 type SubnetSelectorTermApplyConfiguration struct {
 	Tags map[string]string `json:"tags,omitempty"`
 	ID   *string           `json:"id,omitempty"`
 }
 
-// SubnetSelectorTermApplyConfiguration constructs an declarative configuration of the SubnetSelectorTerm type for use with
+// SubnetSelectorTermApplyConfiguration constructs a declarative configuration of the SubnetSelectorTerm type for use with
 // apply.
 func SubnetSelectorTerm() *SubnetSelectorTermApplyConfiguration {
 	return &SubnetSelectorTermApplyConfiguration{}

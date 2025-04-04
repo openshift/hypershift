@@ -18,18 +18,15 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
+	context "context"
 
-	v1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
-	karpenterv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/karpenter/v1beta1"
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	applyconfigurationkarpenterv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/karpenter/v1beta1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // OpenshiftEC2NodeClassesGetter has a method to return a OpenshiftEC2NodeClassInterface.
@@ -40,216 +37,39 @@ type OpenshiftEC2NodeClassesGetter interface {
 
 // OpenshiftEC2NodeClassInterface has methods to work with OpenshiftEC2NodeClass resources.
 type OpenshiftEC2NodeClassInterface interface {
-	Create(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.CreateOptions) (*v1beta1.OpenshiftEC2NodeClass, error)
-	Update(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (*v1beta1.OpenshiftEC2NodeClass, error)
-	UpdateStatus(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (*v1beta1.OpenshiftEC2NodeClass, error)
+	Create(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClass, opts v1.CreateOptions) (*karpenterv1beta1.OpenshiftEC2NodeClass, error)
+	Update(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (*karpenterv1beta1.OpenshiftEC2NodeClass, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (*karpenterv1beta1.OpenshiftEC2NodeClass, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.OpenshiftEC2NodeClass, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.OpenshiftEC2NodeClassList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*karpenterv1beta1.OpenshiftEC2NodeClass, error)
+	List(ctx context.Context, opts v1.ListOptions) (*karpenterv1beta1.OpenshiftEC2NodeClassList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.OpenshiftEC2NodeClass, err error)
-	Apply(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error)
-	ApplyStatus(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *karpenterv1beta1.OpenshiftEC2NodeClass, err error)
+	Apply(ctx context.Context, openshiftEC2NodeClass *applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *karpenterv1beta1.OpenshiftEC2NodeClass, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+	ApplyStatus(ctx context.Context, openshiftEC2NodeClass *applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *karpenterv1beta1.OpenshiftEC2NodeClass, err error)
 	OpenshiftEC2NodeClassExpansion
 }
 
 // openshiftEC2NodeClasses implements OpenshiftEC2NodeClassInterface
 type openshiftEC2NodeClasses struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithListAndApply[*karpenterv1beta1.OpenshiftEC2NodeClass, *karpenterv1beta1.OpenshiftEC2NodeClassList, *applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration]
 }
 
 // newOpenshiftEC2NodeClasses returns a OpenshiftEC2NodeClasses
 func newOpenshiftEC2NodeClasses(c *KarpenterV1beta1Client, namespace string) *openshiftEC2NodeClasses {
 	return &openshiftEC2NodeClasses{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithListAndApply[*karpenterv1beta1.OpenshiftEC2NodeClass, *karpenterv1beta1.OpenshiftEC2NodeClassList, *applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration](
+			"openshiftec2nodeclasses",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *karpenterv1beta1.OpenshiftEC2NodeClass { return &karpenterv1beta1.OpenshiftEC2NodeClass{} },
+			func() *karpenterv1beta1.OpenshiftEC2NodeClassList {
+				return &karpenterv1beta1.OpenshiftEC2NodeClassList{}
+			},
+		),
 	}
-}
-
-// Get takes name of the openshiftEC2NodeClass, and returns the corresponding openshiftEC2NodeClass object, and an error if there is any.
-func (c *openshiftEC2NodeClasses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of OpenshiftEC2NodeClasses that match those selectors.
-func (c *openshiftEC2NodeClasses) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.OpenshiftEC2NodeClassList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1beta1.OpenshiftEC2NodeClassList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested openshiftEC2NodeClasses.
-func (c *openshiftEC2NodeClasses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a openshiftEC2NodeClass and creates it.  Returns the server's representation of the openshiftEC2NodeClass, and an error, if there is any.
-func (c *openshiftEC2NodeClasses) Create(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.CreateOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(openshiftEC2NodeClass).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a openshiftEC2NodeClass and updates it. Returns the server's representation of the openshiftEC2NodeClass, and an error, if there is any.
-func (c *openshiftEC2NodeClasses) Update(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(openshiftEC2NodeClass.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(openshiftEC2NodeClass).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *openshiftEC2NodeClasses) UpdateStatus(ctx context.Context, openshiftEC2NodeClass *v1beta1.OpenshiftEC2NodeClass, opts v1.UpdateOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(openshiftEC2NodeClass.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(openshiftEC2NodeClass).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the openshiftEC2NodeClass and deletes it. Returns an error if one occurs.
-func (c *openshiftEC2NodeClasses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *openshiftEC2NodeClasses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched openshiftEC2NodeClass.
-func (c *openshiftEC2NodeClasses) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied openshiftEC2NodeClass.
-func (c *openshiftEC2NodeClasses) Apply(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	if openshiftEC2NodeClass == nil {
-		return nil, fmt.Errorf("openshiftEC2NodeClass provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(openshiftEC2NodeClass)
-	if err != nil {
-		return nil, err
-	}
-	name := openshiftEC2NodeClass.Name
-	if name == nil {
-		return nil, fmt.Errorf("openshiftEC2NodeClass.Name must be provided to Apply")
-	}
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *openshiftEC2NodeClasses) ApplyStatus(ctx context.Context, openshiftEC2NodeClass *karpenterv1beta1.OpenshiftEC2NodeClassApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.OpenshiftEC2NodeClass, err error) {
-	if openshiftEC2NodeClass == nil {
-		return nil, fmt.Errorf("openshiftEC2NodeClass provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(openshiftEC2NodeClass)
-	if err != nil {
-		return nil, err
-	}
-
-	name := openshiftEC2NodeClass.Name
-	if name == nil {
-		return nil, fmt.Errorf("openshiftEC2NodeClass.Name must be provided to Apply")
-	}
-
-	result = &v1beta1.OpenshiftEC2NodeClass{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("openshiftec2nodeclasses").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

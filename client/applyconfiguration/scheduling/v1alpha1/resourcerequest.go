@@ -21,7 +21,7 @@ import (
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// ResourceRequestApplyConfiguration represents an declarative configuration of the ResourceRequest type for use
+// ResourceRequestApplyConfiguration represents a declarative configuration of the ResourceRequest type for use
 // with apply.
 type ResourceRequestApplyConfiguration struct {
 	DeploymentName *string            `json:"deploymentName,omitempty"`
@@ -30,7 +30,7 @@ type ResourceRequestApplyConfiguration struct {
 	CPU            *resource.Quantity `json:"cpu,omitempty"`
 }
 
-// ResourceRequestApplyConfiguration constructs an declarative configuration of the ResourceRequest type for use with
+// ResourceRequestApplyConfiguration constructs a declarative configuration of the ResourceRequest type for use with
 // apply.
 func ResourceRequest() *ResourceRequestApplyConfiguration {
 	return &ResourceRequestApplyConfiguration{}

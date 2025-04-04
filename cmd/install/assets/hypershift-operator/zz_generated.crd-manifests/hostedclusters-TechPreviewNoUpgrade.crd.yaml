@@ -272,6 +272,7 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
                       audit:
                         default:
                           profile: Default
@@ -417,6 +418,7 @@ spec:
                                   items:
                                     type: string
                                   type: array
+                                  x-kubernetes-list-type: atomic
                                 servingCertificate:
                                   description: |-
                                     servingCertificate references a kubernetes.io/tls type secret containing the TLS cert info for serving secure traffic.
@@ -433,6 +435,7 @@ spec:
                                   type: object
                               type: object
                             type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       tlsSecurityProfile:
                         description: |-
@@ -1141,6 +1144,11 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                        x-kubernetes-validations:
+                        - message: Only one of blockedRegistries or allowedRegistries
+                            may be set
+                          rule: 'has(self.blockedRegistries) ? !has(self.allowedRegistries)
+                            : true'
                     type: object
                   ingress:
                     description: |-

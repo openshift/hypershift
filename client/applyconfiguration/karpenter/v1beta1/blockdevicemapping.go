@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// BlockDeviceMappingApplyConfiguration represents an declarative configuration of the BlockDeviceMapping type for use
+// BlockDeviceMappingApplyConfiguration represents a declarative configuration of the BlockDeviceMapping type for use
 // with apply.
 type BlockDeviceMappingApplyConfiguration struct {
 	DeviceName *string                        `json:"deviceName,omitempty"`
@@ -25,7 +25,7 @@ type BlockDeviceMappingApplyConfiguration struct {
 	RootVolume *bool                          `json:"rootVolume,omitempty"`
 }
 
-// BlockDeviceMappingApplyConfiguration constructs an declarative configuration of the BlockDeviceMapping type for use with
+// BlockDeviceMappingApplyConfiguration constructs a declarative configuration of the BlockDeviceMapping type for use with
 // apply.
 func BlockDeviceMapping() *BlockDeviceMappingApplyConfiguration {
 	return &BlockDeviceMappingApplyConfiguration{}

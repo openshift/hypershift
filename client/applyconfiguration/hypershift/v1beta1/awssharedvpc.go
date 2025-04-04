@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AWSSharedVPCApplyConfiguration represents an declarative configuration of the AWSSharedVPC type for use
+// AWSSharedVPCApplyConfiguration represents a declarative configuration of the AWSSharedVPC type for use
 // with apply.
 type AWSSharedVPCApplyConfiguration struct {
 	RolesRef    *AWSSharedVPCRolesRefApplyConfiguration `json:"rolesRef,omitempty"`
 	LocalZoneID *string                                 `json:"localZoneID,omitempty"`
 }
 
-// AWSSharedVPCApplyConfiguration constructs an declarative configuration of the AWSSharedVPC type for use with
+// AWSSharedVPCApplyConfiguration constructs a declarative configuration of the AWSSharedVPC type for use with
 // apply.
 func AWSSharedVPC() *AWSSharedVPCApplyConfiguration {
 	return &AWSSharedVPCApplyConfiguration{}

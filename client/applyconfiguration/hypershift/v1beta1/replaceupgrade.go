@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ReplaceUpgradeApplyConfiguration represents an declarative configuration of the ReplaceUpgrade type for use
+// ReplaceUpgradeApplyConfiguration represents a declarative configuration of the ReplaceUpgrade type for use
 // with apply.
 type ReplaceUpgradeApplyConfiguration struct {
-	Strategy      *v1beta1.UpgradeStrategy         `json:"strategy,omitempty"`
-	RollingUpdate *RollingUpdateApplyConfiguration `json:"rollingUpdate,omitempty"`
+	Strategy      *hypershiftv1beta1.UpgradeStrategy `json:"strategy,omitempty"`
+	RollingUpdate *RollingUpdateApplyConfiguration   `json:"rollingUpdate,omitempty"`
 }
 
-// ReplaceUpgradeApplyConfiguration constructs an declarative configuration of the ReplaceUpgrade type for use with
+// ReplaceUpgradeApplyConfiguration constructs a declarative configuration of the ReplaceUpgrade type for use with
 // apply.
 func ReplaceUpgrade() *ReplaceUpgradeApplyConfiguration {
 	return &ReplaceUpgradeApplyConfiguration{}
@@ -37,7 +37,7 @@ func ReplaceUpgrade() *ReplaceUpgradeApplyConfiguration {
 // WithStrategy sets the Strategy field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Strategy field is set to the value of the last call.
-func (b *ReplaceUpgradeApplyConfiguration) WithStrategy(value v1beta1.UpgradeStrategy) *ReplaceUpgradeApplyConfiguration {
+func (b *ReplaceUpgradeApplyConfiguration) WithStrategy(value hypershiftv1beta1.UpgradeStrategy) *ReplaceUpgradeApplyConfiguration {
 	b.Strategy = &value
 	return b
 }

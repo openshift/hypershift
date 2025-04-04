@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// UnmanagedEtcdSpecApplyConfiguration represents an declarative configuration of the UnmanagedEtcdSpec type for use
+// UnmanagedEtcdSpecApplyConfiguration represents a declarative configuration of the UnmanagedEtcdSpec type for use
 // with apply.
 type UnmanagedEtcdSpecApplyConfiguration struct {
 	Endpoint *string                          `json:"endpoint,omitempty"`
 	TLS      *EtcdTLSConfigApplyConfiguration `json:"tls,omitempty"`
 }
 
-// UnmanagedEtcdSpecApplyConfiguration constructs an declarative configuration of the UnmanagedEtcdSpec type for use with
+// UnmanagedEtcdSpecApplyConfiguration constructs a declarative configuration of the UnmanagedEtcdSpec type for use with
 // apply.
 func UnmanagedEtcdSpec() *UnmanagedEtcdSpecApplyConfiguration {
 	return &UnmanagedEtcdSpecApplyConfiguration{}

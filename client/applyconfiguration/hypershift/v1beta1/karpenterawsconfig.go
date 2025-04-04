@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// KarpenterAWSConfigApplyConfiguration represents an declarative configuration of the KarpenterAWSConfig type for use
+// KarpenterAWSConfigApplyConfiguration represents a declarative configuration of the KarpenterAWSConfig type for use
 // with apply.
 type KarpenterAWSConfigApplyConfiguration struct {
 	RoleARN *string `json:"roleARN,omitempty"`
 }
 
-// KarpenterAWSConfigApplyConfiguration constructs an declarative configuration of the KarpenterAWSConfig type for use with
+// KarpenterAWSConfigApplyConfiguration constructs a declarative configuration of the KarpenterAWSConfig type for use with
 // apply.
 func KarpenterAWSConfig() *KarpenterAWSConfigApplyConfiguration {
 	return &KarpenterAWSConfigApplyConfiguration{}

@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// RoutePublishingStrategyApplyConfiguration represents an declarative configuration of the RoutePublishingStrategy type for use
+// RoutePublishingStrategyApplyConfiguration represents a declarative configuration of the RoutePublishingStrategy type for use
 // with apply.
 type RoutePublishingStrategyApplyConfiguration struct {
 	Hostname *string `json:"hostname,omitempty"`
 }
 
-// RoutePublishingStrategyApplyConfiguration constructs an declarative configuration of the RoutePublishingStrategy type for use with
+// RoutePublishingStrategyApplyConfiguration constructs a declarative configuration of the RoutePublishingStrategy type for use with
 // apply.
 func RoutePublishingStrategy() *RoutePublishingStrategyApplyConfiguration {
 	return &RoutePublishingStrategyApplyConfiguration{}
