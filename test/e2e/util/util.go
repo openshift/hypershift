@@ -921,11 +921,6 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 		})
 
 		t.Run("EnsureLimitedEgressTrafficToManagementKAS", func(t *testing.T) {
-			// MagamementKASNetworkPolicy only applied on AWS.
-			if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-				t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
-			}
-
 			g := NewWithT(t)
 
 			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
@@ -954,9 +949,13 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
 			g.Expect(err).To(HaveOccurred())
 
-			// Validate private router is not allowed to access management KAS.
-			_, err = RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
-			g.Expect(err).To(HaveOccurred())
+			// private-router policy only applied on AWS and Azure.
+			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform ||
+				hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+				// Validate private router is not allowed to access management KAS.
+				_, err = RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
+				g.Expect(err).To(HaveOccurred())
+			}
 
 			// Validate cluster api is allowed to access management KAS.
 			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
