@@ -824,3 +824,29 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 
 	return condition, nil
 }
+
+// createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.
+func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	condition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidPlatformConfigConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            hyperv1.AllIsWellMessage,
+		ObservedGeneration: nodePool.Generation,
+	}
+	oldCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformConfigConditionType)
+
+	// TODO: add validation for other platforms
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		err := r.validateAWSPlatformConfig(ctx, nodePool, hc, oldCondition)
+		if err != nil {
+			condition.Status = corev1.ConditionFalse
+			condition.Reason = hyperv1.AWSErrorReason
+			condition.Message = err.Error()
+		}
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, *condition)
+	return nil, nil
+}
