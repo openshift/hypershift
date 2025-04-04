@@ -99,6 +99,7 @@ hostedclusters.hypershift.openshift.io:
   - ClusterVersionOperatorConfiguration
   - DynamicResourceAllocation
   - ExternalOIDC
+  - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
@@ -153,6 +154,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ClusterVersionOperatorConfiguration
   - DynamicResourceAllocation
   - ExternalOIDC
+  - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
   - NetworkDiagnosticsConfig
   - OpenStack
