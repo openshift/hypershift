@@ -29,6 +29,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -69,6 +70,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -998,11 +1000,16 @@ func TestEventHandling(t *testing.T) {
 	if !readyInfraStatus.IsReady() {
 		t.Fatal("readyInfraStatus fixture is not actually ready")
 	}
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
@@ -1353,13 +1360,18 @@ func TestReconcileRouter(t *testing.T) {
 }
 
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return infra.InfrastructureStatus{}, nil
@@ -1783,8 +1795,16 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 // TestControlPlaneComponents is a generic test which generates a fixture for each registered component's deployment/statefulset.
 // This is helpful to allow to inspect the final manifest yaml result after all the pre/post-processing is applied.
 func TestControlPlaneComponents(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
 	reconciler := &HostedControlPlaneReconciler{
-		ReleaseProvider:               &fakereleaseprovider.FakeReleaseProvider{},
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 	}
 	reconciler.registerComponents()
