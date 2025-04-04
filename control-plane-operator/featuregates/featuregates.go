@@ -3,7 +3,6 @@ package featuregates
 import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/pkg/featuregates"
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/component-base/featuregate"
 )
 
@@ -26,8 +25,7 @@ func init() {
 	allFeatures.AddFeature(barFeature)
 
 	// Default to configuring the Default featureset
-	runtime.Must(ConfigureFeatureSet(string(configv1.Default)))
-	globalFeatureSet = configv1.Default
+	ConfigureFeatureSet(string(configv1.Default))
 }
 
 var globalGate featuregate.FeatureGate
@@ -36,20 +34,12 @@ func Gate() featuregate.FeatureGate {
 	return globalGate
 }
 
-var globalFeatureSet configv1.FeatureSet
-
-func FeatureSet() configv1.FeatureSet {
-	return globalFeatureSet
-}
-
-func ConfigureFeatureSet(featureSet string) error {
+func ConfigureFeatureSet(featureSet string) {
 	featureGate, err := allFeatures.FeatureGatesForFeatureSet(configv1.FeatureSet(featureSet))
 	if err != nil {
-		return err
+		// If we encounter an error due to an unknown featureset, just assume the default
+		return
 	}
 
-	globalFeatureSet = configv1.FeatureSet(featureSet)
-
 	globalGate = featureGate
-	return nil
 }

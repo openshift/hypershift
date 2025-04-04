@@ -264,7 +264,7 @@ func NewStartCommand() *cobra.Command {
 			"SOCKS5_PROXY_IMAGE":                   &socks5ProxyImage,
 			"AVAILABILITY_PROBER_IMAGE":            &availabilityProberImage,
 			"TOKEN_MINTER_IMAGE":                   &tokenMinterImage,
-			"FEATURE_SET":                          &featureSet,
+			"HYPERSHIFT_FEATURESET":                &featureSet,
 		} {
 			if value := os.Getenv(env); value != "" {
 				*into = value
@@ -272,10 +272,7 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		// configure the featuregates based on featureset
-		if err := featuregates.ConfigureFeatureSet(featureSet); err != nil {
-			setupLog.Error(err, "failed to configure desired featureset", "featureset", featureSet)
-			os.Exit(1)
-		}
+		featuregates.ConfigureFeatureSet(featureSet)
 
 		// For now, since the hosted cluster config operator is treated like any other
 		// release payload component but isn't actually part of a release payload,
