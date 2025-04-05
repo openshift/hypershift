@@ -15,11 +15,11 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - description: Glance image ID
+    - description: Resource ID
       jsonPath: .status.id
       name: ID
       type: string
-    - description: Availability status of image
+    - description: Availability status of resource
       jsonPath: .status.conditions[?(@.type=='Available')].status
       name: Available
       type: string
@@ -34,7 +34,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Image is the Schema for the ORC images API.
+        description: Image is the Schema for an ORC resource.
         properties:
           apiVersion:
             description: |-
@@ -54,7 +54,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: ImageSpec defines the desired state of an Image.
+            description: ImageSpec defines the desired state of an ORC object.
             properties:
               cloudCredentialsRef:
                 description: CloudCredentialsRef points to a secret containing OpenStack
@@ -80,14 +80,14 @@ spec:
                 type: object
               import:
                 description: |-
-                  Import refers to an existing image which will be imported instead of
-                  creating a new image.
+                  Import refers to an existing OpenStack resource which will be imported instead of
+                  creating a new one.
                 maxProperties: 1
                 minProperties: 1
                 properties:
                   filter:
                     description: |-
-                      Filter contains an image query which is expected to return a single
+                      Filter contains a resource query which is expected to return a single
                       result. The controller will continue to retry if filter returns no
                       results. If filter returns multiple results the controller will set an
                       error state and will not continue to retry.
@@ -101,9 +101,9 @@ spec:
                     type: object
                   id:
                     description: |-
-                      ID contains the unique identifier of an existing Glance image. Note that
-                      when specifying an image import by ID, the image MUST already exist. The
-                      Image will enter an error state if the image does not exist.
+                      ID contains the unique identifier of an existing OpenStack resource. Note
+                      that when specifying an import by ID, the resource MUST already exist.
+                      The ORC object will enter an error state if the resource does not exist.
                     format: uuid
                     type: string
                 type: object
@@ -128,7 +128,7 @@ spec:
                 description: |-
                   ManagementPolicy defines how ORC will treat the object. Valid values are
                   `managed`: ORC will create, update, and delete the resource; `unmanaged`:
-                  ORC will import an existing image, and will not apply updates to it or
+                  ORC will import an existing resource, and will not apply updates to it or
                   delete it.
                 enum:
                 - managed
@@ -139,11 +139,11 @@ spec:
                   rule: self == oldSelf
               resource:
                 description: |-
-                  Resource specifies the desired state of the Glance image.
+                  Resource specifies the desired state of the resource.
 
                   Resource may not be specified if the management policy is `unmanaged`.
 
-                  Resource must be specified when the management policy is `managed`.
+                  Resource must be specified if the management policy is `managed`.
                 properties:
                   content:
                     description: Content specifies how to obtain the image content.
@@ -454,22 +454,23 @@ spec:
             - message: resource content must be specified when not importing
               rule: '!has(self.__import__) ? has(self.resource.content) : true'
           status:
-            description: ImageStatus defines the observed state of an Image.
+            description: ImageStatus defines the observed state of an ORC resource.
             properties:
               conditions:
                 description: |-
                   Conditions represents the observed status of the object.
                   Known .status.conditions.type are: "Available", "Progressing"
 
-                  Available represents the availability of the Glance image. If it is
-                  true then the image is ready for use in Glance, and its hash has been
-                  verified.
+                  Available represents the availability of the OpenStack resource. If it is
+                  true then the resource is ready for use.
 
-                  Progressing indicates the state of the Glance image does not currently
-                  reflect the desired state, but that reconciliation is progressing.
-                  Progressing will be False either because the desired state has been
-                  achieved, or some terminal error prevents it from being achieved and the
-                  controller is no longer attempting to reconcile.
+                  Progressing indicates whether the controller is still attempting to
+                  reconcile the current state of the OpenStack resource to the desired
+                  state. Progressing will be False either because the desired state has
+                  been achieved, or because some terminal error prevents it from ever being
+                  achieved and the controller is no longer attempting to reconcile. If
+                  Progressing is True, an observer waiting on the resource should continue
+                  to wait.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -533,10 +534,11 @@ spec:
                   has attempted to download the image contents
                 type: integer
               id:
-                description: ID is the unique identifier of the Glance image
+                description: ID is the unique identifier of the OpenStack resource.
                 type: string
               resource:
-                description: Resource contains the observed state of the Glance image
+                description: Resource contains the observed state of the OpenStack
+                  resource.
                 properties:
                   hash:
                     description: |-
