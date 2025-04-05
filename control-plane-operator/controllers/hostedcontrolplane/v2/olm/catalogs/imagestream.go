@@ -31,7 +31,7 @@ func adaptImageStream(cpContext component.WorkloadContext, imageStream *imagev1.
 		return fmt.Errorf("failed to get pull secret: %w", err)
 	}
 
-	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey])
+	catalogImages, err := getCatalogImages(cpContext, pullSecret.Data[corev1.DockerConfigJsonKey], cpContext.HCP.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement)
 	if err != nil {
 		return fmt.Errorf("failed to get catalog images: %w", err)
 	}

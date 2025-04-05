@@ -49,12 +49,15 @@ func (c *imagesCache) setImages(images map[string]string, inputsHash string) {
 var catalogImagesCache = &imagesCache{}
 
 // GetCatalogImages uses a simple cache to prevent frequent registry lookups for catalog images
-func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider, registryOverrides map[string][]string) (map[string]string, error) {
-	return getCatalogImagesWithCache(
-		imageLookupCacheKeyFn(&hcp, pullSecret, registryOverrides),
-		releaseVersionFn(ctx, &hcp, pullSecret, imageMetadataProvider),
-		imageExistsFn(ctx, pullSecret, imageMetadataProvider),
-		registryOverrides)
+func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider, registryOverrides map[string][]string, oLMCatalogPlacementManagement bool) (map[string]string, error) {
+	if oLMCatalogPlacementManagement {
+		return getCatalogImagesWithCache(
+			imageLookupCacheKeyFn(&hcp, pullSecret, registryOverrides),
+			releaseVersionFn(ctx, &hcp, pullSecret, imageMetadataProvider),
+			imageExistsFn(ctx, pullSecret, imageMetadataProvider),
+			registryOverrides)
+	}
+	return getStaticCatalogImages(ctx, hcp, pullSecret, imageMetadataProvider)
 }
 
 func getCatalogImagesWithCache(cacheKey func() any, releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), registryOverrides map[string][]string) (map[string]string, error) {
@@ -174,4 +177,25 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 		}
 	}
 	return catalogs, nil
+}
+
+func getStaticCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider) (map[string]string, error) {
+	imageRef := hcp.Spec.ReleaseImage
+	imageConfig, _, _, err := imageMetadataProvider.GetMetadata(ctx, imageRef, pullSecret)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image metadata: %w", err)
+	}
+
+	version, err := semver.Parse(imageConfig.Config.Labels["io.openshift.release"])
+	if err != nil {
+		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
+	}
+
+	return map[string]string{
+		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor),
+		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%d.%d", version.Major, version.Minor),
+		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%d.%d", version.Major, version.Minor),
+		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%d.%d", version.Major, version.Minor),
+	}, nil
+
 }

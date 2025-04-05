@@ -4059,7 +4059,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 			}
 
-			catalogImages, err = catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
+			catalogImages, err = catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides, hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement)
 			if err != nil {
 				return fmt.Errorf("failed to get catalog images: %w", err)
 			}
