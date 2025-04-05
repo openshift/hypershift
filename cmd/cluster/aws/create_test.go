@@ -203,6 +203,17 @@ func TestCreateCluster(t *testing.T) {
 				"--render-sensitive",
 			},
 		},
+		{
+			name: "minimal with KubeAPIServerDNSName",
+			args: []string{
+				"--sts-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--iam-json=" + iamFile,
+				"--role-arn=fakeRoleARN",
+				"--pull-secret=" + pullSecretFile,
+				"--kas-dns-name=test-dns-name.example.com",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)

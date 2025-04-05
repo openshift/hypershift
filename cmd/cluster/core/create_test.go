@@ -164,6 +164,7 @@ func TestPrototypeResources(t *testing.T) {
 				validatedCreateOptions: &validatedCreateOptions{
 					RawCreateOptions: &RawCreateOptions{
 						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+						KubeAPIServerDNSName:       "test-dns-name.example.com",
 					},
 				},
 			},
@@ -173,6 +174,7 @@ func TestPrototypeResources(t *testing.T) {
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
 		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
 }
 
 func TestValidate(t *testing.T) {
@@ -200,6 +202,26 @@ func TestValidate(t *testing.T) {
 				Namespace:                  "test-hc",
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails with an invalid DNS name as KubeAPIServerDNSName",
+			rawOpts: &RawCreateOptions{
+				Name:                 "test-hc",
+				Namespace:            "test-hc",
+				Arch:                 "amd64",
+				KubeAPIServerDNSName: "INVALID-DNS-NAME.example.com",
+			},
+			expectedErr: "KubeAPIServerDNSName failed DNS validation: a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name: "passes with KubeAPIServerDNSName",
+			rawOpts: &RawCreateOptions{
+				Name:                 "test-hc",
+				Namespace:            "test-hc",
+				Arch:                 "amd64",
+				KubeAPIServerDNSName: "test-dns-name.example.com",
 			},
 			expectedErr: "",
 		},

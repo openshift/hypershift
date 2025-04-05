@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  autoscaling: {}
+  configuration:
+    proxy:
+      httpProxy: fakeProxyAddr
+      httpsProxy: fakeProxyAddr
+      trustedCA:
+        name: ""
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: fakeBaseDomain
+    baseDomainPrefix: fakeBaseDomainPrefix
+    privateZoneID: fakePrivateZoneID
+    publicZoneID: fakePublicZoneID
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+          storageClassName: gp3-csi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: fakeInfraID
+  issuerURL: fakeIssuerURL
+  kubeAPIServerDNSName: test-dns-name.example.com
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: 192.0.2.0/24
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    aws:
+      cloudProviderConfig:
+        subnet:
+          id: fakeSubnetID
+        vpc: fakeVPCID
+        zone: fakeName
+      endpointAccess: Public
+      multiArch: false
+      region: us-east-1
+      rolesRef:
+        controlPlaneOperatorARN: fakeControlPlaneOperatorARN
+        imageRegistryARN: fakeImageRegistryARN
+        ingressARN: fakeIngressARN
+        kubeCloudControllerARN: fakeKubeCloudControllerARN
+        networkARN: fakeNetworkARN
+        nodePoolManagementARN: fakeNodePoolManagementARN
+        storageARN: fakeStorageARN
+    type: AWS
+  pullSecret:
+    name: example-pull-secret
+  release:
+    image: ""
+  secretEncryption:
+    kms:
+      aws:
+        activeKey:
+          arn: fakeKMSKeyARN
+        auth:
+          awsKms: fakeKMSProviderRoleARN
+        region: us-east-1
+      provider: AWS
+    type: kms
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  sshKey: {}
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: example-fakeName
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    aws:
+      instanceProfile: fakeProfileName
+      instanceType: m5.large
+      rootVolume:
+        size: 120
+        type: gp3
+      subnet:
+        id: fakeSubnetID
+    type: AWS
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---
