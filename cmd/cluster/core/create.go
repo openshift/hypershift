@@ -559,7 +559,7 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 
 	if waitForRollout {
 		l.Info("Waiting for cluster rollout")
-		return wait.PollInfiniteWithContext(ctx, 30*time.Second, func(ctx context.Context) (bool, error) {
+		return wait.PollUntilContextCancel(ctx, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 			hostedCluster := hostedCluster.DeepCopy()
 			if err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
 				return false, fmt.Errorf("failed to get hostedcluster %s: %w", crclient.ObjectKeyFromObject(hostedCluster), err)
