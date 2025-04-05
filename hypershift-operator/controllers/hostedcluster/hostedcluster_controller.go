@@ -2912,6 +2912,8 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			Resources: []string{
 				"virtualmachineinstances/addvolume",
 				"virtualmachineinstances/removevolume",
+				"virtualmachines/addvolume",
+				"virtualmachines/removevolume",
 			},
 			Verbs: []string{
 				"update",
