@@ -275,6 +275,14 @@ func ReconcileRole(role *rbacv1.Role, ownerRef config.OwnerRef, networkType hype
 				},
 				Verbs: []string{"*"},
 			},
+			{
+				APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
+				Resources: []string{
+					"servicemonitors",
+					"prometheusrules",
+				},
+				Verbs: []string{"*"},
+			},
 		}
 		return nil
 	}
