@@ -407,7 +407,7 @@ type HyperShiftOperatorDeployment struct {
 // String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
 func featureGateString() string {
 	featureGates := make([]string, 0)
-	for feature := range featuregate.MutableGates.GetAll() {
+	for feature := range featuregate.Gate().GetAll() {
 		featureGates = append(featureGates, fmt.Sprintf("%s=true", feature))
 	}
 
@@ -427,6 +427,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
 	}
 	if o.TechPreviewNoUpgrade {
+		// TODO: How can we change this behavior in a backwards compatible way?
+		// Ideally we aren't always enabling _all_ feature gates when put into tech preview and are instead
+		// only enabling the tech preview featureset, which enables all feature gates that are
+		// explicitly enabled in the TPNU featureset.
 		args = append(args, fmt.Sprintf("--feature-gates=%s", featureGateString()))
 	}
 	if o.RegistryOverrides != "" {
@@ -458,6 +462,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+	}
+
+	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.
+	if o.TechPreviewNoUpgrade {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HYPERSHIFT_FEATURESET",
+			Value: string(configv1.TechPreviewNoUpgrade),
+		})
 	}
 
 	if o.EnableWebhook {
