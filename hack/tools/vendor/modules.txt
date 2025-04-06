@@ -938,7 +938,7 @@ github.com/nunnatsa/ginkgolinter/version
 # github.com/olekukonko/tablewriter v0.0.5
 ## explicit; go 1.12
 github.com/olekukonko/tablewriter
-# github.com/openshift/api/tools v0.0.0-20250402150121-50cb52d04f83
+# github.com/openshift/api/tools v0.0.0-20250405052455-aa882942241d
 ## explicit; go 1.23.0
 github.com/openshift/api/tools
 github.com/openshift/api/tools/codegen/cmd
