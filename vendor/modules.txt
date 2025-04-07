@@ -1174,7 +1174,7 @@ go.uber.org/zap/internal/ztest
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
 go.uber.org/zap/zaptest
-# golang.org/x/crypto v0.32.0
+# golang.org/x/crypto v0.32.0 => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 ## explicit; go 1.20
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b
@@ -1222,21 +1222,21 @@ golang.org/x/net/websocket
 ## explicit; go 1.18
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
-# golang.org/x/sync v0.10.0
+# golang.org/x/sync v0.11.0
 ## explicit; go 1.18
 golang.org/x/sync/errgroup
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.29.0
+# golang.org/x/sys v0.30.0
 ## explicit; go 1.18
 golang.org/x/sys/cpu
 golang.org/x/sys/plan9
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 golang.org/x/sys/windows/registry
-# golang.org/x/term v0.28.0
+# golang.org/x/term v0.29.0
 ## explicit; go 1.18
 golang.org/x/term
-# golang.org/x/text v0.21.0
+# golang.org/x/text v0.22.0
 ## explicit; go 1.18
 golang.org/x/text/encoding
 golang.org/x/text/encoding/charmap
@@ -2383,5 +2383,5 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/prometheus/common => github.com/prometheus/common v0.45.0
 # github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20241018150903-d5cd16872111
 # golang.org/x/oauth2 => github.com/openshift/golang-oauth2 v0.26.1-0.20250310184649-06a918c6239d
-# golang/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
+# golang.org/x/crypto => github.com/openshift/golang-crypto v0.33.1-0.20250310193910-9003f682e581
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
