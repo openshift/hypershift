@@ -792,7 +792,13 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 			{
 				Key:      "name",
 				Operator: "NotIn",
-				Values:   []string{"aws-ebs-csi-driver-operator"},
+				Values: []string{
+					"aws-ebs-csi-driver-operator",
+					"azure-disk-csi-driver-operator",
+					"azure-file-csi-driver-operator",
+					"openstack-cinder-csi-driver-operator",
+					"manila-csi-driver-operator",
+				},
 			},
 		},
 	}

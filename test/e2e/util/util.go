@@ -946,19 +946,19 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
-			g.Expect(err).To(HaveOccurred())
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
+			g.Expect(err).To(HaveOccurred(), fmt.Sprintf("cluster-version-operator pod was unexpectedly allowed to reach the management KAS. stdOut: %s.", stdOut))
 
 			// private-router policy only applied on AWS and Azure.
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform ||
 				hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
 				// Validate private router is not allowed to access management KAS.
-				_, err = RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
-				g.Expect(err).To(HaveOccurred())
+				stdOut, err = RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
+				g.Expect(err).To(HaveOccurred(), fmt.Sprintf("private-router pod was unexpectedly allowed to reach the management KAS. stdOut: %s.", stdOut))
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
+			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
