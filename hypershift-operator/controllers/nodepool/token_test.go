@@ -327,6 +327,16 @@ func TestTokenCleanupOutdated(t *testing.T) {
 		},
 	}
 
+	tokenSecretWithTimestamp := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlplaneNamespace,
+			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, nodePoolName, outdatedHash),
+			Annotations: map[string]string{
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+			},
+		},
+	}
+
 	testCases := []struct {
 		name          string
 		token         *Token
@@ -382,6 +392,31 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			fakeObjects:   []crclient.Object{},
 			expectedError: "",
 		},
+		{
+			name: "When token secret exists, but already has an expiration timestamp annotation, it should succeed",
+			token: &Token{
+				ConfigGenerator: &ConfigGenerator{
+					nodePool: &hyperv1.NodePool{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: nodePoolName,
+							Annotations: map[string]string{
+								nodePoolAnnotationCurrentConfigVersion: outdatedHash,
+							},
+						},
+						Spec: hyperv1.NodePoolSpec{
+							Platform: hyperv1.NodePoolPlatform{
+								Type: hyperv1.AzurePlatform,
+							},
+						},
+					},
+					controlplaneNamespace: controlplaneNamespace,
+				},
+			},
+			fakeObjects: []crclient.Object{
+				tokenSecretWithTimestamp,
+			},
+			expectedError: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -428,8 +463,9 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 	fakeCurrentTokenVal := "tokenval1"
 
 	testCases := []struct {
-		name        string
-		inputSecret *corev1.Secret
+		name              string
+		inputSecret       *corev1.Secret
+		expectedTimestamp string
 	}{
 		{
 			name: "when set expiration timestamp on token is called on a secret then the expiration timestamp is set",
@@ -442,6 +478,23 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 					TokenSecretTokenKey: []byte(fakeCurrentTokenVal),
 				},
 			},
+			expectedTimestamp: theTime.Add(2 * time.Hour).Format(time.RFC3339),
+		},
+		{
+			name: "when set expiration timestamp on token is called on a secret that already has an expiration timestamp, timestamp is not reset",
+			inputSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeName,
+					Namespace: fakeNamespace,
+					Annotations: map[string]string{
+						hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: theTime.Add(1 * time.Hour).Format(time.RFC3339),
+					},
+				},
+				Data: map[string][]byte{
+					TokenSecretTokenKey: []byte(fakeCurrentTokenVal),
+				},
+			},
+			expectedTimestamp: theTime.Add(1 * time.Hour).Format(time.RFC3339),
 		},
 	}
 	for _, tc := range testCases {
@@ -459,7 +512,7 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(actualSecretData), actualSecretData)
 			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(actualSecretData.Annotations).To(testutil.MatchExpected(map[string]string{
-				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: theTime.Add(2 * time.Hour).Format(time.RFC3339),
+				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: tc.expectedTimestamp,
 			}))
 		})
 	}
