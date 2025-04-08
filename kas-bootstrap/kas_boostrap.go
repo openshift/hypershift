@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	wait "k8s.io/apimachinery/pkg/util/wait"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -52,7 +54,17 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
-	if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
+	// This binary is meant to run next to the KAS container within the same pod.
+	// We briefly poll here to retry on race and transient network issues.
+	// This to avoid unncessary restarts of this container.
+	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 20*time.Second, true,
+		func(ctx context.Context) (done bool, err error) {
+			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
+				logger.Error(err, "failed to apply bootstrap resources, retrying")
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
 		return fmt.Errorf("failed to apply bootstrap resources: %w", err)
 	}
 
@@ -66,7 +78,14 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to parse featureGate file: %w", err)
 	}
 
-	if err := reconcileFeatureGate(ctx, c, renderedFeatureGate); err != nil {
+	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 20*time.Second, true,
+		func(ctx context.Context) (done bool, err error) {
+			if err := reconcileFeatureGate(ctx, c, renderedFeatureGate); err != nil {
+				logger.Error(err, "failed to reconcile featureGate, retrying")
+				return false, nil
+			}
+			return true, nil
+		}); err != nil {
 		return fmt.Errorf("failed to reconcile featureGate: %w", err)
 	}
 
