@@ -57,7 +57,10 @@ nav:
 - 'How-to guides':
   - how-to/index.md
   - how-to/feature-gates.md
-  - how-to/cluster-configuration.md
+  - 'Configure OCP components':
+    - how-to/configure-ocp-components/index.md
+    - how-to/configure-ocp-components/kubeapi-server.md
+    - how-to/configure-ocp-components/custom-kas-kubeconfig.md
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
