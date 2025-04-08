@@ -34,14 +34,14 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Setup(t *testing.T) {
 	if npPrevTest.release == "" {
 		t.Skip("previous release wasn't set, skipping")
 	}
+
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(npPrevTest.release, npPrevTest.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		t.Skip("nodepool release is not compatible with the current hostedCluster release, skipping")
+	}
 }
 
 func (npPrevTest *NodePoolPrevReleaseCreateTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
-	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(npPrevTest.release, npPrevTest.hostedCluster.Spec.Release.Image)
-	if err != nil || !isCompatible {
-		return nil, err
-	}
-
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      npPrevTest.hostedCluster.Name + "-" + utilrand.String(5),
