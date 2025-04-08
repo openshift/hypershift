@@ -80,7 +80,7 @@ func ReconcileCatalogOperatorDeployment(deployment *appsv1.Deployment, ownerRef 
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 			deployment.Spec.Template.Spec.Containers[i].Resources.Requests = corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("15Mi"),
+				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			}
 		}
 	}
@@ -148,7 +148,7 @@ func ReconcileOLMOperatorDeployment(deployment *appsv1.Deployment, ownerRef conf
 			deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 			deployment.Spec.Template.Spec.Containers[i].Resources.Requests = corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("15Mi"),
+				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			}
 		}
 	}

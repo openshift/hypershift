@@ -392,7 +392,7 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 
 	kProxyResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
+			corev1.ResourceMemory: resource.MustParse("30Mi"),
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 		},
 	}
