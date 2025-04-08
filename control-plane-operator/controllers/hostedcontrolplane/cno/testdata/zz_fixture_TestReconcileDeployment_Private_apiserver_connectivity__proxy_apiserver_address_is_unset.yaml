@@ -112,7 +112,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
@@ -139,7 +139,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
@@ -202,7 +202,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
