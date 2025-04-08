@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// ReleaseApplyConfiguration represents an declarative configuration of the Release type for use
+// ReleaseApplyConfiguration represents a declarative configuration of the Release type for use
 // with apply.
 type ReleaseApplyConfiguration struct {
 	Image *string `json:"image,omitempty"`
 }
 
-// ReleaseApplyConfiguration constructs an declarative configuration of the Release type for use with
+// ReleaseApplyConfiguration constructs a declarative configuration of the Release type for use with
 // apply.
 func Release() *ReleaseApplyConfiguration {
 	return &ReleaseApplyConfiguration{}

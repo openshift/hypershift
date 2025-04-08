@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// DNSSpecApplyConfiguration represents an declarative configuration of the DNSSpec type for use
+// DNSSpecApplyConfiguration represents a declarative configuration of the DNSSpec type for use
 // with apply.
 type DNSSpecApplyConfiguration struct {
 	BaseDomain       *string `json:"baseDomain,omitempty"`
@@ -26,7 +26,7 @@ type DNSSpecApplyConfiguration struct {
 	PrivateZoneID    *string `json:"privateZoneID,omitempty"`
 }
 
-// DNSSpecApplyConfiguration constructs an declarative configuration of the DNSSpec type for use with
+// DNSSpecApplyConfiguration constructs a declarative configuration of the DNSSpec type for use with
 // apply.
 func DNSSpec() *DNSSpecApplyConfiguration {
 	return &DNSSpecApplyConfiguration{}

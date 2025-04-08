@@ -7,8 +7,6 @@ metadata:
   namespace: HCP_NAMESPACE
 spec:
   internalTrafficPolicy: Cluster
-  ipFamilies:
-  - IPv4
   ipFamilyPolicy: PreferDualStack
   ports:
   - name: https

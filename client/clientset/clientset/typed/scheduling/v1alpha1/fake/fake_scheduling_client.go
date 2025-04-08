@@ -28,7 +28,7 @@ type FakeSchedulingV1alpha1 struct {
 }
 
 func (c *FakeSchedulingV1alpha1) ClusterSizingConfigurations() v1alpha1.ClusterSizingConfigurationInterface {
-	return &FakeClusterSizingConfigurations{c}
+	return newFakeClusterSizingConfigurations(c)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

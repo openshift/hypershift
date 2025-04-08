@@ -14,7 +14,7 @@ import (
 	"github.com/dave/dst"
 	"github.com/dave/dst/decorator"
 	"github.com/dave/dst/dstutil"
-	"k8s.io/gengo/types"
+	"k8s.io/gengo/v2"
 	"k8s.io/klog/v2"
 )
 
@@ -252,7 +252,7 @@ func (g *compatibilityLevelCommentGenerator) applyCompatibilityLevelComment() ds
 }
 
 func extractCompatibilityLevel(spec *dst.GenDecl) (int, bool) {
-	tags := types.ExtractCommentTags("// +", spec.Decorations().Start.All())
+	tags := gengo.ExtractCommentTags("// +", spec.Decorations().Start.All())
 	value, ok := tags[levelTagName]
 	if !ok {
 		return 0, false
@@ -270,7 +270,7 @@ func extractCompatibilityLevel(spec *dst.GenDecl) (int, bool) {
 }
 
 func extractIsInternal(spec *dst.GenDecl) bool {
-	tags := types.ExtractCommentTags("// +", spec.Decorations().Start.All())
+	tags := gengo.ExtractCommentTags("// +", spec.Decorations().Start.All())
 	value, ok := tags[internalTagName]
 	if !ok {
 		return false

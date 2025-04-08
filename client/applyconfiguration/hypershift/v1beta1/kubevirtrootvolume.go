@@ -21,7 +21,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// KubevirtRootVolumeApplyConfiguration represents an declarative configuration of the KubevirtRootVolume type for use
+// KubevirtRootVolumeApplyConfiguration represents a declarative configuration of the KubevirtRootVolume type for use
 // with apply.
 type KubevirtRootVolumeApplyConfiguration struct {
 	Image                            *KubevirtDiskImageApplyConfiguration `json:"diskImage,omitempty"`
@@ -29,7 +29,7 @@ type KubevirtRootVolumeApplyConfiguration struct {
 	CacheStrategy                    *KubevirtCachingStrategyApplyConfiguration `json:"cacheStrategy,omitempty"`
 }
 
-// KubevirtRootVolumeApplyConfiguration constructs an declarative configuration of the KubevirtRootVolume type for use with
+// KubevirtRootVolumeApplyConfiguration constructs a declarative configuration of the KubevirtRootVolume type for use with
 // apply.
 func KubevirtRootVolume() *KubevirtRootVolumeApplyConfiguration {
 	return &KubevirtRootVolumeApplyConfiguration{}
@@ -47,7 +47,7 @@ func (b *KubevirtRootVolumeApplyConfiguration) WithImage(value *KubevirtDiskImag
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
 func (b *KubevirtRootVolumeApplyConfiguration) WithType(value hypershiftv1beta1.KubevirtVolumeType) *KubevirtRootVolumeApplyConfiguration {
-	b.Type = &value
+	b.KubevirtVolumeApplyConfiguration.Type = &value
 	return b
 }
 
@@ -55,7 +55,7 @@ func (b *KubevirtRootVolumeApplyConfiguration) WithType(value hypershiftv1beta1.
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Persistent field is set to the value of the last call.
 func (b *KubevirtRootVolumeApplyConfiguration) WithPersistent(value *KubevirtPersistentVolumeApplyConfiguration) *KubevirtRootVolumeApplyConfiguration {
-	b.Persistent = value
+	b.KubevirtVolumeApplyConfiguration.Persistent = value
 	return b
 }
 

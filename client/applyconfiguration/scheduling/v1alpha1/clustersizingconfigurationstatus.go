@@ -21,13 +21,13 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// ClusterSizingConfigurationStatusApplyConfiguration represents an declarative configuration of the ClusterSizingConfigurationStatus type for use
+// ClusterSizingConfigurationStatusApplyConfiguration represents a declarative configuration of the ClusterSizingConfigurationStatus type for use
 // with apply.
 type ClusterSizingConfigurationStatusApplyConfiguration struct {
 	Conditions []v1.ConditionApplyConfiguration `json:"conditions,omitempty"`
 }
 
-// ClusterSizingConfigurationStatusApplyConfiguration constructs an declarative configuration of the ClusterSizingConfigurationStatus type for use with
+// ClusterSizingConfigurationStatusApplyConfiguration constructs a declarative configuration of the ClusterSizingConfigurationStatus type for use with
 // apply.
 func ClusterSizingConfigurationStatus() *ClusterSizingConfigurationStatusApplyConfiguration {
 	return &ClusterSizingConfigurationStatusApplyConfiguration{}

@@ -66,16 +66,6 @@ func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string
 	return b
 }
 
-func (b *controlPlaneWorkloadBuilder[T]) RolloutOnSecretChange(name ...string) *controlPlaneWorkloadBuilder[T] {
-	b.workload.rolloutSecretsNames = append(b.workload.rolloutSecretsNames, name...)
-	return b
-}
-
-func (b *controlPlaneWorkloadBuilder[T]) RolloutOnConfigMapChange(name ...string) *controlPlaneWorkloadBuilder[T] {
-	b.workload.rolloutConfigMapsNames = append(b.workload.rolloutSecretsNames, name...)
-	return b
-}
-
 func (b *controlPlaneWorkloadBuilder[T]) WithDependencies(dependencies ...string) *controlPlaneWorkloadBuilder[T] {
 	b.workload.dependencies = append(b.workload.dependencies, dependencies...)
 	return b

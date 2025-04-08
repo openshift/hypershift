@@ -28,19 +28,19 @@ type FakeHypershiftV1beta1 struct {
 }
 
 func (c *FakeHypershiftV1beta1) CertificateSigningRequestApprovals(namespace string) v1beta1.CertificateSigningRequestApprovalInterface {
-	return &FakeCertificateSigningRequestApprovals{c, namespace}
+	return newFakeCertificateSigningRequestApprovals(c, namespace)
 }
 
 func (c *FakeHypershiftV1beta1) HostedClusters(namespace string) v1beta1.HostedClusterInterface {
-	return &FakeHostedClusters{c, namespace}
+	return newFakeHostedClusters(c, namespace)
 }
 
 func (c *FakeHypershiftV1beta1) HostedControlPlanes(namespace string) v1beta1.HostedControlPlaneInterface {
-	return &FakeHostedControlPlanes{c, namespace}
+	return newFakeHostedControlPlanes(c, namespace)
 }
 
 func (c *FakeHypershiftV1beta1) NodePools(namespace string) v1beta1.NodePoolInterface {
-	return &FakeNodePools{c, namespace}
+	return newFakeNodePools(c, namespace)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

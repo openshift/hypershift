@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// OpenStackPlatformSpecApplyConfiguration represents an declarative configuration of the OpenStackPlatformSpec type for use
+// OpenStackPlatformSpecApplyConfiguration represents a declarative configuration of the OpenStackPlatformSpec type for use
 // with apply.
 type OpenStackPlatformSpecApplyConfiguration struct {
 	IdentityRef            *OpenStackIdentityReferenceApplyConfiguration `json:"identityRef,omitempty"`
@@ -32,7 +32,7 @@ type OpenStackPlatformSpecApplyConfiguration struct {
 	IngressFloatingIP      *string                                       `json:"ingressFloatingIP,omitempty"`
 }
 
-// OpenStackPlatformSpecApplyConfiguration constructs an declarative configuration of the OpenStackPlatformSpec type for use with
+// OpenStackPlatformSpecApplyConfiguration constructs a declarative configuration of the OpenStackPlatformSpec type for use with
 // apply.
 func OpenStackPlatformSpec() *OpenStackPlatformSpecApplyConfiguration {
 	return &OpenStackPlatformSpecApplyConfiguration{}

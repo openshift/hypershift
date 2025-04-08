@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// UserManagedDiagnosticsApplyConfiguration represents an declarative configuration of the UserManagedDiagnostics type for use
+// UserManagedDiagnosticsApplyConfiguration represents a declarative configuration of the UserManagedDiagnostics type for use
 // with apply.
 type UserManagedDiagnosticsApplyConfiguration struct {
 	StorageAccountURI *string `json:"storageAccountURI,omitempty"`
 }
 
-// UserManagedDiagnosticsApplyConfiguration constructs an declarative configuration of the UserManagedDiagnostics type for use with
+// UserManagedDiagnosticsApplyConfiguration constructs a declarative configuration of the UserManagedDiagnostics type for use with
 // apply.
 func UserManagedDiagnostics() *UserManagedDiagnosticsApplyConfiguration {
 	return &UserManagedDiagnosticsApplyConfiguration{}

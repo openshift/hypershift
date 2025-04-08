@@ -26,6 +26,7 @@ spec:
   template:
     metadata:
       annotations:
+        component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -367,9 +368,7 @@ spec:
       partition: 0
     type: RollingUpdate
   volumeClaimTemplates:
-  - apiVersion: v1
-    kind: PersistentVolumeClaim
-    metadata:
+  - metadata:
       creationTimestamp: null
       name: data
     spec:

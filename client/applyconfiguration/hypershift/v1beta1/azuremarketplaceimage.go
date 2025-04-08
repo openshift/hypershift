@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AzureMarketplaceImageApplyConfiguration represents an declarative configuration of the AzureMarketplaceImage type for use
+// AzureMarketplaceImageApplyConfiguration represents a declarative configuration of the AzureMarketplaceImage type for use
 // with apply.
 type AzureMarketplaceImageApplyConfiguration struct {
 	Publisher *string `json:"publisher,omitempty"`
@@ -26,7 +26,7 @@ type AzureMarketplaceImageApplyConfiguration struct {
 	Version   *string `json:"version,omitempty"`
 }
 
-// AzureMarketplaceImageApplyConfiguration constructs an declarative configuration of the AzureMarketplaceImage type for use with
+// AzureMarketplaceImageApplyConfiguration constructs a declarative configuration of the AzureMarketplaceImage type for use with
 // apply.
 func AzureMarketplaceImage() *AzureMarketplaceImageApplyConfiguration {
 	return &AzureMarketplaceImageApplyConfiguration{}

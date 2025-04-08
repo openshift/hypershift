@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AWSResourceReferenceApplyConfiguration represents an declarative configuration of the AWSResourceReference type for use
+// AWSResourceReferenceApplyConfiguration represents a declarative configuration of the AWSResourceReference type for use
 // with apply.
 type AWSResourceReferenceApplyConfiguration struct {
 	ID      *string                    `json:"id,omitempty"`
 	Filters []FilterApplyConfiguration `json:"filters,omitempty"`
 }
 
-// AWSResourceReferenceApplyConfiguration constructs an declarative configuration of the AWSResourceReference type for use with
+// AWSResourceReferenceApplyConfiguration constructs a declarative configuration of the AWSResourceReference type for use with
 // apply.
 func AWSResourceReference() *AWSResourceReferenceApplyConfiguration {
 	return &AWSResourceReferenceApplyConfiguration{}

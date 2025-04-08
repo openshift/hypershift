@@ -21,14 +21,14 @@ import (
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// RollingUpdateApplyConfiguration represents an declarative configuration of the RollingUpdate type for use
+// RollingUpdateApplyConfiguration represents a declarative configuration of the RollingUpdate type for use
 // with apply.
 type RollingUpdateApplyConfiguration struct {
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 	MaxSurge       *intstr.IntOrString `json:"maxSurge,omitempty"`
 }
 
-// RollingUpdateApplyConfiguration constructs an declarative configuration of the RollingUpdate type for use with
+// RollingUpdateApplyConfiguration constructs a declarative configuration of the RollingUpdate type for use with
 // apply.
 func RollingUpdate() *RollingUpdateApplyConfiguration {
 	return &RollingUpdateApplyConfiguration{}

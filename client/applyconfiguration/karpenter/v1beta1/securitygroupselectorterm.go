@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// SecurityGroupSelectorTermApplyConfiguration represents an declarative configuration of the SecurityGroupSelectorTerm type for use
+// SecurityGroupSelectorTermApplyConfiguration represents a declarative configuration of the SecurityGroupSelectorTerm type for use
 // with apply.
 type SecurityGroupSelectorTermApplyConfiguration struct {
 	Tags map[string]string `json:"tags,omitempty"`
@@ -25,7 +25,7 @@ type SecurityGroupSelectorTermApplyConfiguration struct {
 	Name *string           `json:"name,omitempty"`
 }
 
-// SecurityGroupSelectorTermApplyConfiguration constructs an declarative configuration of the SecurityGroupSelectorTerm type for use with
+// SecurityGroupSelectorTermApplyConfiguration constructs a declarative configuration of the SecurityGroupSelectorTerm type for use with
 // apply.
 func SecurityGroupSelectorTerm() *SecurityGroupSelectorTermApplyConfiguration {
 	return &SecurityGroupSelectorTermApplyConfiguration{}

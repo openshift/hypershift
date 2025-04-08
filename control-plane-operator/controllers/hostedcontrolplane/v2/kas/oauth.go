@@ -57,13 +57,12 @@ func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadCon
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(authenticatorCertSecret), authenticatorCertSecret); err != nil {
 		return fmt.Errorf("failed to get authenticator cert secret: %w", err)
 	}
-	rootCA := manifests.RootCAConfigMap(cpContext.HCP.Namespace)
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca cert secret: %w", err)
 	}
 
-	var ca string
-	var crt, key []byte
+	var ca, crt, key []byte
 	var ok bool
 	if ca, ok = rootCA.Data[certs.CASignerCertMapKey]; !ok {
 		return fmt.Errorf("expected %s key in the root CA configMap", certs.CASignerCertMapKey)
@@ -75,7 +74,7 @@ func adaptAuthenticationTokenWebhookConfigSecret(cpContext component.WorkloadCon
 		return fmt.Errorf("expected %s key in authenticator secret", corev1.TLSPrivateKeyKey)
 	}
 	url := fmt.Sprintf("https://openshift-oauth-apiserver.%s.svc:443/apis/oauth.openshift.io/v1/tokenreviews", secret.GetNamespace())
-	kubeConfigBytes, err := generateAuthenticationTokenWebhookConfig(url, crt, key, []byte(ca))
+	kubeConfigBytes, err := generateAuthenticationTokenWebhookConfig(url, crt, key, ca)
 	if err != nil {
 		return err
 	}

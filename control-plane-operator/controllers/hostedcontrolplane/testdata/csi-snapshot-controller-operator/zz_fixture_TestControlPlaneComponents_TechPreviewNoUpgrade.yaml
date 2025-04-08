@@ -25,6 +25,7 @@ spec:
   template:
     metadata:
       annotations:
+        component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
@@ -68,8 +69,6 @@ spec:
         env:
         - name: OPERAND_IMAGE
           value: csi-snapshot-controller
-        - name: WEBHOOK_IMAGE
-          value: csi-snapshot-validation-webhook
         - name: OPERATOR_IMAGE_VERSION
           value: 4.18.0
         - name: OPERAND_IMAGE_VERSION

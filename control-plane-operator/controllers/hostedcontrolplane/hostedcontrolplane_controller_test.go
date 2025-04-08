@@ -2,7 +2,6 @@ package hostedcontrolplane
 
 import (
 	"context"
-	"crypto/x509/pkix"
 	"fmt"
 	"testing"
 	"time"
@@ -19,6 +18,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
+	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
@@ -1073,10 +1074,13 @@ func TestReconcileRouter(t *testing.T) {
 
 	const namespace = "test"
 	routerCfg := manifests.RouterConfigurationConfigMap(namespace)
-	ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+	err := ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 		Name:      "hcp",
 		Namespace: namespace,
 	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
+	if err != nil {
+		t.Fatalf("%s", err.Error())
+	}
 
 	testCases := []struct {
 		name                         string
@@ -1096,7 +1100,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1121,7 +1125,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1147,7 +1151,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1176,7 +1180,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1200,7 +1204,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1230,7 +1234,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1260,7 +1264,7 @@ func TestReconcileRouter(t *testing.T) {
 						Namespace: namespace,
 						Name:      "router",
 					}}
-					ingress.ReconcileRouterDeployment(dep,
+					_ = ingress.ReconcileRouterDeployment(dep,
 						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
 							Name:      "hcp",
 							Namespace: namespace,
@@ -1510,6 +1514,172 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 }
 
+func TestSetKASCustomKubeconfigStatus(t *testing.T) {
+	hcp := sampleHCP(t)
+	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	tests := []struct {
+		name                 string
+		KubeAPIServerDNSName string
+		expectedStatus       *hyperv1.KubeconfigSecretRef
+	}{
+		{
+			name:                 "KubeAPIServerDNSName is empty",
+			KubeAPIServerDNSName: "",
+			expectedStatus:       nil,
+		},
+		{
+			name:                 "KubeAPIServerDNSName has a valid value",
+			KubeAPIServerDNSName: "testapi.example.com",
+			expectedStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp.Spec.KubeAPIServerDNSName = tc.KubeAPIServerDNSName
+
+			err := setKASCustomKubeconfigStatus(ctx, hcp, c)
+			g.Expect(err).To(BeNil(), fmt.Errorf("error setting custom kubeconfig status failed: %v", err))
+			g.Expect(hcp.Status.CustomKubeconfig).To(Equal(tc.expectedStatus))
+		})
+	}
+}
+
+func TestIncludeServingCertificates(t *testing.T) {
+	ctx := context.Background()
+	hcp := sampleHCP(t)
+	rootCA := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "root-ca",
+			Namespace: hcp.Namespace,
+		},
+		Data: map[string]string{
+			"ca.crt": "root-ca-cert",
+		},
+	}
+
+	tests := []struct {
+		name           string
+		servingCerts   *configv1.APIServerServingCerts
+		servingSecrets []*corev1.Secret
+		expectedCert   string
+		expectError    bool
+	}{
+		{
+			name:         "APIServer servingCerts is nil",
+			servingCerts: &configv1.APIServerServingCerts{},
+			expectedCert: "root-ca-cert",
+		},
+		{
+			name: "APIServer servingCerts configuration with one named certificates",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-1",
+						},
+					},
+				},
+			},
+			servingSecrets: []*corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-1",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-1"),
+					},
+				},
+			},
+			expectedCert: "root-ca-cert\ncert-1",
+		},
+		{
+			name: "APIServer servingCerts configuration with multiple named certificates",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-1",
+						},
+					},
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "serving-cert-2",
+						},
+					},
+				},
+			},
+			servingSecrets: []*corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-1",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-1"),
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "serving-cert-2",
+						Namespace: hcp.Namespace,
+					},
+					Data: map[string][]byte{
+						"tls.crt": []byte("cert-2"),
+					},
+				},
+			},
+			expectedCert: "root-ca-cert\ncert-1\ncert-2",
+		},
+		{
+			name: "APIServer servingCerts configuration with missing named certificate",
+			servingCerts: &configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "missing-cert",
+						},
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+				APIServer: &configv1.APIServerSpec{
+					ServingCerts: *tc.servingCerts,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(rootCA).Build()
+			for _, secret := range tc.servingSecrets {
+				_ = fakeClient.Create(ctx, secret)
+			}
+
+			newRootCA, err := includeServingCertificates(ctx, fakeClient, hcp, rootCA)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(newRootCA.Data["ca.crt"]).To(Equal(tc.expectedCert))
+			}
+		})
+	}
+}
+
 type fakeMessageCollector struct {
 	msg string
 }
@@ -1631,6 +1801,14 @@ func TestControlPlaneComponents(t *testing.T) {
 			Configuration: &hyperv1.ClusterConfiguration{
 				FeatureGate: &configv1.FeatureGateSpec{},
 			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
 			Networking: hyperv1.ClusterNetworking{
 				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
 					{
@@ -1664,7 +1842,6 @@ func TestControlPlaneComponents(t *testing.T) {
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),
-		CreateOrUpdateProviderV2: upsert.NewV2(false),
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
@@ -1677,11 +1854,14 @@ func TestControlPlaneComponents(t *testing.T) {
 			},
 			Manifest: fakeimagemetadataprovider.FakeManifest{},
 		},
-		HCP:           hcp,
-		SkipPredicate: true,
+		HCP:                    hcp,
+		SkipPredicate:          true,
+		SkipCertificateSigning: true,
 	}
 	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
 		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
+		// This needs to be defined here, to avoid loopDetector reporting a no-op update, as changing the featureset will actually cause an update.
+		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
 			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
@@ -1694,8 +1874,9 @@ func TestControlPlaneComponents(t *testing.T) {
 				Build()
 			cpContext.Client = fakeClient
 
-			// Reconcile multiple times to make sure multiple runs don't produce different results.
-			for i := 0; i < 2; i++ {
+			// Reconcile multiple times to make sure multiple runs don't produce different results,
+			// and to check if resources are making a no-op update calls.
+			for range 2 {
 				if err := component.Reconcile(cpContext); err != nil {
 					t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
 				}
@@ -1764,13 +1945,18 @@ func TestControlPlaneComponents(t *testing.T) {
 			}
 			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 		}
+
+		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+			t.Fatalf("update loop detected: %v", err)
+		}
 	}
+
 }
 
 func componentsFakeObjects(namespace string) ([]client.Object, error) {
-	rootCA := manifests.RootCAConfigMap(namespace)
-	rootCA.Data = map[string]string{
-		certs.CASignerCertMapKey: "fake",
+	rootCA := manifests.RootCASecret(namespace)
+	rootCA.Data = map[string][]byte{
+		certs.CASignerCertMapKey: []byte("fake"),
 	}
 	authenticatorCertSecret := manifests.OpenshiftAuthenticatorCertSecret(namespace)
 	authenticatorCertSecret.Data = map[string][]byte{
@@ -1807,15 +1993,10 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		},
 	}
 
-	caCfg := certs.CertCfg{IsCA: true, Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"ou"}}}
-	key, cert, err := certs.GenerateSelfSignedCertificate(&caCfg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate self signed CA: %v", err)
-	}
 	csrSigner := manifests.CSRSignerCASecret(namespace)
 	csrSigner.Data = map[string][]byte{
-		certs.CASignerCertMapKey: certs.CertToPem(cert),
-		certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(key),
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
 
 	return []client.Object{
@@ -1857,6 +2038,11 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 	if componentName != oapiv2.ComponentName {
 		fakeComponentTemplate.Name = oapiv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+	}
+
+	if componentName == ignitionproxyv2.ComponentName {
+		fakeComponentTemplate.Name = ignitionserverv2.ComponentName
 		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
 

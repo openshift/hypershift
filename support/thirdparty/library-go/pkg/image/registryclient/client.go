@@ -246,7 +246,9 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	versions := auth.APIVersions(resp, "Docker-Distribution-API-Version")
 	if len(versions) == 0 {
@@ -263,7 +265,10 @@ func (c *Context) ping(registry url.URL, insecure bool, transport http.RoundTrip
 		}
 	}
 
-	c.Challenges.AddResponse(resp)
+	err = c.Challenges.AddResponse(resp)
+	if err != nil {
+		return nil, err
+	}
 
 	return nil, nil
 }

@@ -64,8 +64,6 @@ spec:
         env:
         - name: OPERAND_IMAGE
           value: quay.io/openshift/csi-snapshot-controller:latest
-        - name: WEBHOOK_IMAGE
-          value: quay.io/openshift/csi-snapshot-validation-webhook:latest
         - name: OPERATOR_IMAGE_VERSION
           value: 1.0.0
         - name: OPERAND_IMAGE_VERSION

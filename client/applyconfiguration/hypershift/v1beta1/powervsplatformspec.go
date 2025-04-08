@@ -21,7 +21,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// PowerVSPlatformSpecApplyConfiguration represents an declarative configuration of the PowerVSPlatformSpec type for use
+// PowerVSPlatformSpecApplyConfiguration represents a declarative configuration of the PowerVSPlatformSpec type for use
 // with apply.
 type PowerVSPlatformSpecApplyConfiguration struct {
 	AccountID                       *string                                     `json:"accountID,omitempty"`
@@ -39,7 +39,7 @@ type PowerVSPlatformSpecApplyConfiguration struct {
 	ImageRegistryOperatorCloudCreds *v1.LocalObjectReference                    `json:"imageRegistryOperatorCloudCreds,omitempty"`
 }
 
-// PowerVSPlatformSpecApplyConfiguration constructs an declarative configuration of the PowerVSPlatformSpec type for use with
+// PowerVSPlatformSpecApplyConfiguration constructs a declarative configuration of the PowerVSPlatformSpec type for use with
 // apply.
 func PowerVSPlatformSpec() *PowerVSPlatformSpecApplyConfiguration {
 	return &PowerVSPlatformSpecApplyConfiguration{}

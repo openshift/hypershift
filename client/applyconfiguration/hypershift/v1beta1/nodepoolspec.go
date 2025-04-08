@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// NodePoolSpecApplyConfiguration represents an declarative configuration of the NodePoolSpec type for use
+// NodePoolSpecApplyConfiguration represents a declarative configuration of the NodePoolSpec type for use
 // with apply.
 type NodePoolSpecApplyConfiguration struct {
 	ClusterName             *string                                `json:"clusterName,omitempty"`
@@ -41,7 +41,7 @@ type NodePoolSpecApplyConfiguration struct {
 	Arch                    *string                                `json:"arch,omitempty"`
 }
 
-// NodePoolSpecApplyConfiguration constructs an declarative configuration of the NodePoolSpec type for use with
+// NodePoolSpecApplyConfiguration constructs a declarative configuration of the NodePoolSpec type for use with
 // apply.
 func NodePoolSpec() *NodePoolSpecApplyConfiguration {
 	return &NodePoolSpecApplyConfiguration{}

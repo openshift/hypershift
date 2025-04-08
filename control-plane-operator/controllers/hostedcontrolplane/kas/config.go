@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -37,12 +38,20 @@ const (
 	DefaultEtcdPort         = 2379
 )
 
-func ReconcileConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
+func ReconcileConfig(config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(config)
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	kasConfig := generateConfig(p)
+	kasConfig, err := generateConfig(p)
+	if err != nil {
+		return err
+	}
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		kasConfig.ImagePolicyConfig.InternalRegistryHostname = ""
+	}
+
 	serializedConfig, err := json.Marshal(kasConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver config: %w", err)
@@ -59,7 +68,7 @@ func (a kubeAPIServerArgs) Set(name string, values ...string) {
 	a[name] = v
 }
 
-func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
+func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, error) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(kasContainerMain().Name, volume), file)
 	}
@@ -71,6 +80,14 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 			KeyFile:  cpath(kasVolumeServerPrivateCert().Name, corev1.TLSPrivateKeyKey),
 		},
 	})
+	externalIPConfig, err := externalIPRangerConfig(p.ExternalIPConfig)
+	if err != nil {
+		return nil, err
+	}
+	restrictedEndPointAdmissionConfig, err := restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork)
+	if err != nil {
+		return nil, err
+	}
 	config := &kcpv1.KubeAPIServerConfig{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "KubeAPIServerConfig",
@@ -82,13 +99,13 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 					"network.openshift.io/ExternalIPRanger": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: externalIPRangerConfig(p.ExternalIPConfig),
+							Object: externalIPConfig,
 						},
 					},
 					"network.openshift.io/RestrictedEndpointsAdmission": {
 						Location: "",
 						Configuration: runtime.RawExtension{
-							Object: restrictedEndpointsAdmission(p.ClusterNetwork, p.ServiceNetwork),
+							Object: restrictedEndPointAdmissionConfig,
 						},
 					},
 					"PodSecurity": {
@@ -225,6 +242,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("service-account-signing-key-file", cpath(kasVolumeServiceAccountKey().Name, pki.ServiceSignerPrivateKey))
 	args.Set("service-node-port-range", p.NodePortRange)
 	args.Set("shutdown-delay-duration", "70s")
+	args.Set("shutdown-watch-termination-grace-period", "25s")
 	args.Set("shutdown-send-retry-after", "true")
 	args.Set("storage-backend", "etcd3")
 	args.Set("storage-media-type", "application/vnd.kubernetes.protobuf")
@@ -232,7 +250,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	args.Set("tls-cert-file", cpath(kasVolumeServerCert().Name, corev1.TLSCertKey))
 	args.Set("tls-private-key-file", cpath(kasVolumeServerCert().Name, corev1.TLSPrivateKeyKey))
 	config.APIServerArguments = args
-	return config
+	return config, nil
 }
 
 func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
@@ -243,7 +261,7 @@ func cloudProviderConfig(cloudProviderConfigName, cloudProvider string) string {
 	return ""
 }
 
-func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime.Object {
+func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) (runtime.Object, error) {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("ExternalIPRangerAdmissionConfig")
@@ -254,21 +272,30 @@ func externalIPRangerConfig(externalIPConfig *configv1.ExternalIPConfig) runtime
 		}
 		conf = append(conf, externalIPConfig.Policy.AllowedCIDRs...)
 	}
-	unstructured.SetNestedStringSlice(cfg.Object, conf, "externalIPNetworkCIDRs")
+	err := unstructured.SetNestedStringSlice(cfg.Object, conf, "externalIPNetworkCIDRs")
+	if err != nil {
+		return nil, err
+	}
 	allowIngressIP := externalIPConfig != nil && len(externalIPConfig.AutoAssignCIDRs) > 0
-	unstructured.SetNestedField(cfg.Object, allowIngressIP, "allowIngressIP")
-	return cfg
+	err = unstructured.SetNestedField(cfg.Object, allowIngressIP, "allowIngressIP")
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
-func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) runtime.Object {
+func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) (runtime.Object, error) {
 	cfg := &unstructured.Unstructured{}
 	cfg.SetAPIVersion("network.openshift.io/v1")
 	cfg.SetKind("RestrictedEndpointsAdmissionConfig")
 	var restrictedCIDRs []string
 	restrictedCIDRs = append(restrictedCIDRs, clusterNetwork...)
 	restrictedCIDRs = append(restrictedCIDRs, serviceNetwork...)
-	unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
-	return cfg
+	err := unstructured.SetNestedStringSlice(cfg.Object, restrictedCIDRs, "restrictedCIDRs")
+	if err != nil {
+		return nil, err
+	}
+	return cfg, nil
 }
 
 func admissionPlugins() []string {

@@ -18,16 +18,16 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ClusterVersionOperatorSpecApplyConfiguration represents an declarative configuration of the ClusterVersionOperatorSpec type for use
+// ClusterVersionOperatorSpecApplyConfiguration represents a declarative configuration of the ClusterVersionOperatorSpec type for use
 // with apply.
 type ClusterVersionOperatorSpecApplyConfiguration struct {
-	OperatorLogLevel *v1beta1.LogLevel `json:"operatorLogLevel,omitempty"`
+	OperatorLogLevel *hypershiftv1beta1.LogLevel `json:"operatorLogLevel,omitempty"`
 }
 
-// ClusterVersionOperatorSpecApplyConfiguration constructs an declarative configuration of the ClusterVersionOperatorSpec type for use with
+// ClusterVersionOperatorSpecApplyConfiguration constructs a declarative configuration of the ClusterVersionOperatorSpec type for use with
 // apply.
 func ClusterVersionOperatorSpec() *ClusterVersionOperatorSpecApplyConfiguration {
 	return &ClusterVersionOperatorSpecApplyConfiguration{}
@@ -36,7 +36,7 @@ func ClusterVersionOperatorSpec() *ClusterVersionOperatorSpecApplyConfiguration 
 // WithOperatorLogLevel sets the OperatorLogLevel field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the OperatorLogLevel field is set to the value of the last call.
-func (b *ClusterVersionOperatorSpecApplyConfiguration) WithOperatorLogLevel(value v1beta1.LogLevel) *ClusterVersionOperatorSpecApplyConfiguration {
+func (b *ClusterVersionOperatorSpecApplyConfiguration) WithOperatorLogLevel(value hypershiftv1beta1.LogLevel) *ClusterVersionOperatorSpecApplyConfiguration {
 	b.OperatorLogLevel = &value
 	return b
 }

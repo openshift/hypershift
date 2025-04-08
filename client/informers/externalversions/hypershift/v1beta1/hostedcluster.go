@@ -18,13 +18,13 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	apihypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // HostedClusters.
 type HostedClusterInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.HostedClusterLister
+	Lister() hypershiftv1beta1.HostedClusterLister
 }
 
 type hostedClusterInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredHostedClusterInformer(client clientset.Interface, namespace stri
 				return client.HypershiftV1beta1().HostedClusters(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&hypershiftv1beta1.HostedCluster{},
+		&apihypershiftv1beta1.HostedCluster{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *hostedClusterInformer) defaultInformer(client clientset.Interface, resy
 }
 
 func (f *hostedClusterInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&hypershiftv1beta1.HostedCluster{}, f.defaultInformer)
+	return f.factory.InformerFor(&apihypershiftv1beta1.HostedCluster{}, f.defaultInformer)
 }
 
-func (f *hostedClusterInformer) Lister() v1beta1.HostedClusterLister {
-	return v1beta1.NewHostedClusterLister(f.Informer().GetIndexer())
+func (f *hostedClusterInformer) Lister() hypershiftv1beta1.HostedClusterLister {
+	return hypershiftv1beta1.NewHostedClusterLister(f.Informer().GetIndexer())
 }

@@ -165,9 +165,7 @@ func getImageContentSourcePolicies(ctx context.Context, client client.Client) (m
 		for _, mirror := range item.Spec.RepositoryDigestMirrors {
 			source := mirror.Source
 
-			for n := range mirror.Mirrors {
-				icspRegistryOverrides[source] = append(icspRegistryOverrides[source], mirror.Mirrors[n])
-			}
+			icspRegistryOverrides[source] = append(icspRegistryOverrides[source], mirror.Mirrors...)
 		}
 	}
 

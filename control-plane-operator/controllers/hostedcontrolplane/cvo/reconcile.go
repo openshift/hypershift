@@ -1,6 +1,7 @@
 package cvo
 
 import (
+	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -118,7 +120,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -132,6 +134,35 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 			MatchLabels: cvoLabels(),
 		}
 	}
+
+	// the ClusterVersion resource is created by the CVO bootstrap container.
+	// we marshal it to json as a means to validate its formatting, which protects
+	// us against easily preventable mistakes, such as typos.
+	cv := &configv1.ClusterVersion{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterVersion",
+			APIVersion: "config.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: configv1.ClusterID(clusterID),
+		},
+	}
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(caps) {
+		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(caps),
+		}
+	}
+
+	clusterVersionJSON, err := json.Marshal(cv)
+	if err != nil {
+		return err
+	}
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: selector,
 		Template: corev1.PodTemplateSpec{
@@ -142,7 +173,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 				AutomountServiceAccountToken: ptr.To(false),
 				InitContainers: []corev1.Container{
 					util.BuildContainer(cvoContainerPrepPayload(), buildCVOContainerPrepPayload(dataPlaneReleaseImage, platformType, oauthEnabled, featureSet)),
-					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterID)),
+					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterVersionJSON)),
 				},
 				Containers: []corev1.Container{
 					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
@@ -203,13 +234,13 @@ func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformTyp
 	}
 }
 
-func buildCVOContainerBootstrap(image, clusterID string) func(*corev1.Container) {
+func buildCVOContainerBootstrap(image string, clusterVersionJSON []byte) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
-			cvoBootrapScript(clusterID),
+			cvoBootstrapScript(clusterVersionJSON),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -338,31 +369,28 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 	return strings.Join(stmts, "\n")
 }
 
-func cvoBootrapScript(clusterID string) string {
+func cvoBootstrapScript(clusterVersionJSON []byte) string {
 	payloadDir := volumeMounts.Path(cvoContainerBootstrap().Name, cvoVolumePayload().Name)
 	var scriptTemplate = `#!/bin/bash
 set -euo pipefail
-cat > /tmp/clusterversion.yaml <<EOF
-apiVersion: config.openshift.io/v1
-kind: ClusterVersion
-metadata:
-  name: version
-spec:
-  clusterID: %s
+MANIFEST_DIR=%s/manifests
+cat > /tmp/clusterversion.json <<EOF
+%s
 EOF
 oc get ns openshift-config &> /dev/null || oc create ns openshift-config
 oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
+oc apply -f ${MANIFEST_DIR}/0000_00_cluster-version-operator_01_clusterversions*
+oc apply -f /tmp/clusterversion.json
 while true; do
-  echo "Applying CVO bootstrap manifests"
-  if oc apply -f %s/manifests; then
+  echo "Applying CVO bootstrap manifests..."
+  if oc apply -f ${MANIFEST_DIR}; then
     echo "Bootstrap manifests applied successfully."
     break
   fi
   sleep 1
 done
-oc get clusterversion/version &> /dev/null || oc create -f /tmp/clusterversion.yaml
 `
-	return fmt.Sprintf(scriptTemplate, clusterID, payloadDir)
+	return fmt.Sprintf(scriptTemplate, payloadDir, string(clusterVersionJSON))
 }
 
 func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {

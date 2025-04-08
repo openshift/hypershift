@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtVolumeSnapshotClassMappingApplyConfiguration represents an declarative configuration of the KubevirtVolumeSnapshotClassMapping type for use
+// KubevirtVolumeSnapshotClassMappingApplyConfiguration represents a declarative configuration of the KubevirtVolumeSnapshotClassMapping type for use
 // with apply.
 type KubevirtVolumeSnapshotClassMappingApplyConfiguration struct {
 	Group                        *string `json:"group,omitempty"`
@@ -25,7 +25,7 @@ type KubevirtVolumeSnapshotClassMappingApplyConfiguration struct {
 	GuestVolumeSnapshotClassName *string `json:"guestVolumeSnapshotClassName,omitempty"`
 }
 
-// KubevirtVolumeSnapshotClassMappingApplyConfiguration constructs an declarative configuration of the KubevirtVolumeSnapshotClassMapping type for use with
+// KubevirtVolumeSnapshotClassMappingApplyConfiguration constructs a declarative configuration of the KubevirtVolumeSnapshotClassMapping type for use with
 // apply.
 func KubevirtVolumeSnapshotClassMapping() *KubevirtVolumeSnapshotClassMappingApplyConfiguration {
 	return &KubevirtVolumeSnapshotClassMappingApplyConfiguration{}

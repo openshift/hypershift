@@ -193,7 +193,7 @@ func (r *DefragController) runDefrag(ctx context.Context) error {
 				// Defrag can timeout if defragmentation takes longer than etcdcli.DefragDialTimeout.
 				r.log.Error(err, "DefragController Defragment Failed", "member", member.Name, "ID", member.ID)
 				errMsg := fmt.Sprintf("failed defrag on member: %s, memberID: %x: %v", member.Name, member.ID, err)
-				errs = append(errs, fmt.Errorf(errMsg))
+				errs = append(errs, fmt.Errorf("%s", errMsg))
 				continue
 			}
 

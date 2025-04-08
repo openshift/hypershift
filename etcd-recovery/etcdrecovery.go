@@ -59,7 +59,7 @@ func NewRecoveryCommand() *cobra.Command {
 		Short:        "Commands to report on etcd status and recover member that is not functional",
 		SilenceUsage: true,
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}

@@ -9,6 +9,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
+	"github.com/google/uuid"
 )
 
 // AzureCreds is the file format we expect for credentials. It is copied from the installer
@@ -82,4 +83,11 @@ func ValidateMarketplaceFlags(marketplaceFlags map[string]*string) error {
 	}
 
 	return nil
+}
+
+// GenerateRoleAssignmentName generates a unique GUID based on the cluster infra ID, component, and scope; this allows us
+// to create the same GUID that we can then later regenerate to delete the role assignment.
+func GenerateRoleAssignmentName(infraID, component, scope string) string {
+	uniqueRoleName := fmt.Sprintf("%s-%s-%s", infraID, component, scope)
+	return uuid.NewSHA1(uuid.NameSpaceDNS, []byte(uniqueRoleName)).String()
 }

@@ -21,13 +21,13 @@ import (
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// InPlaceUpgradeApplyConfiguration represents an declarative configuration of the InPlaceUpgrade type for use
+// InPlaceUpgradeApplyConfiguration represents a declarative configuration of the InPlaceUpgrade type for use
 // with apply.
 type InPlaceUpgradeApplyConfiguration struct {
 	MaxUnavailable *intstr.IntOrString `json:"maxUnavailable,omitempty"`
 }
 
-// InPlaceUpgradeApplyConfiguration constructs an declarative configuration of the InPlaceUpgrade type for use with
+// InPlaceUpgradeApplyConfiguration constructs a declarative configuration of the InPlaceUpgrade type for use with
 // apply.
 func InPlaceUpgrade() *InPlaceUpgradeApplyConfiguration {
 	return &InPlaceUpgradeApplyConfiguration{}

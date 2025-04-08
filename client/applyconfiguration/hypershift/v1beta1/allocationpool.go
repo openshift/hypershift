@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AllocationPoolApplyConfiguration represents an declarative configuration of the AllocationPool type for use
+// AllocationPoolApplyConfiguration represents a declarative configuration of the AllocationPool type for use
 // with apply.
 type AllocationPoolApplyConfiguration struct {
 	Start *string `json:"start,omitempty"`
 	End   *string `json:"end,omitempty"`
 }
 
-// AllocationPoolApplyConfiguration constructs an declarative configuration of the AllocationPool type for use with
+// AllocationPoolApplyConfiguration constructs a declarative configuration of the AllocationPool type for use with
 // apply.
 func AllocationPool() *AllocationPoolApplyConfiguration {
 	return &AllocationPoolApplyConfiguration{}

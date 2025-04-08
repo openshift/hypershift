@@ -21,13 +21,13 @@ import (
 	ipnet "github.com/openshift/hypershift/api/util/ipnet"
 )
 
-// MachineNetworkEntryApplyConfiguration represents an declarative configuration of the MachineNetworkEntry type for use
+// MachineNetworkEntryApplyConfiguration represents a declarative configuration of the MachineNetworkEntry type for use
 // with apply.
 type MachineNetworkEntryApplyConfiguration struct {
 	CIDR *ipnet.IPNet `json:"cidr,omitempty"`
 }
 
-// MachineNetworkEntryApplyConfiguration constructs an declarative configuration of the MachineNetworkEntry type for use with
+// MachineNetworkEntryApplyConfiguration constructs a declarative configuration of the MachineNetworkEntry type for use with
 // apply.
 func MachineNetworkEntry() *MachineNetworkEntryApplyConfiguration {
 	return &MachineNetworkEntryApplyConfiguration{}

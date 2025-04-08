@@ -48,7 +48,7 @@ func (opts *AWSCredentialsOptions) BindFlags(flags *pflag.FlagSet) {
 	opts.BindProductFlags(flags)
 
 	flags.StringVar(&opts.AWSCredentialsFile, "aws-creds", opts.AWSCredentialsFile, "Path to an AWS credentials file")
-	flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
+	_ = flags.MarkDeprecated("aws-creds", "please use '--sts-creds' with '--role-arn' instead")
 }
 
 func (opts *AWSCredentialsOptions) BindVPCOwnerFlags(flags *pflag.FlagSet) {

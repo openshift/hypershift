@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AzureKMSSpecApplyConfiguration represents an declarative configuration of the AzureKMSSpec type for use
+// AzureKMSSpecApplyConfiguration represents a declarative configuration of the AzureKMSSpec type for use
 // with apply.
 type AzureKMSSpecApplyConfiguration struct {
 	ActiveKey *AzureKMSKeyApplyConfiguration     `json:"activeKey,omitempty"`
@@ -25,7 +25,7 @@ type AzureKMSSpecApplyConfiguration struct {
 	KMS       *ManagedIdentityApplyConfiguration `json:"kms,omitempty"`
 }
 
-// AzureKMSSpecApplyConfiguration constructs an declarative configuration of the AzureKMSSpec type for use with
+// AzureKMSSpecApplyConfiguration constructs a declarative configuration of the AzureKMSSpec type for use with
 // apply.
 func AzureKMSSpec() *AzureKMSSpecApplyConfiguration {
 	return &AzureKMSSpecApplyConfiguration{}

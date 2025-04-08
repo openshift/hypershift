@@ -23,7 +23,7 @@ import (
 	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// HostedControlPlaneStatusApplyConfiguration represents an declarative configuration of the HostedControlPlaneStatus type for use
+// HostedControlPlaneStatusApplyConfiguration represents a declarative configuration of the HostedControlPlaneStatus type for use
 // with apply.
 type HostedControlPlaneStatusApplyConfiguration struct {
 	Ready                          *bool                                   `json:"ready,omitempty"`
@@ -36,13 +36,14 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	ReleaseImage                   *string                                 `json:"releaseImage,omitempty"`
 	LastReleaseImageTransitionTime *v1.Time                                `json:"lastReleaseImageTransitionTime,omitempty"`
 	KubeConfig                     *KubeconfigSecretRefApplyConfiguration  `json:"kubeConfig,omitempty"`
+	CustomKubeconfig               *KubeconfigSecretRefApplyConfiguration  `json:"customKubeconfig,omitempty"`
 	KubeadminPassword              *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
 	Conditions                     []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
 	Platform                       *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 	NodeCount                      *int                                    `json:"nodeCount,omitempty"`
 }
 
-// HostedControlPlaneStatusApplyConfiguration constructs an declarative configuration of the HostedControlPlaneStatus type for use with
+// HostedControlPlaneStatusApplyConfiguration constructs a declarative configuration of the HostedControlPlaneStatus type for use with
 // apply.
 func HostedControlPlaneStatus() *HostedControlPlaneStatusApplyConfiguration {
 	return &HostedControlPlaneStatusApplyConfiguration{}
@@ -125,6 +126,14 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithLastReleaseImageTransit
 // If called multiple times, the KubeConfig field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithKubeConfig(value *KubeconfigSecretRefApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
 	b.KubeConfig = value
+	return b
+}
+
+// WithCustomKubeconfig sets the CustomKubeconfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CustomKubeconfig field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithCustomKubeconfig(value *KubeconfigSecretRefApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.CustomKubeconfig = value
 	return b
 }
 

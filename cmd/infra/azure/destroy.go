@@ -78,6 +78,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
+	// Delete the resource group
 	var resourceGroups []string
 	resourceGroups = append(resourceGroups, o.GetResourceGroupName())
 

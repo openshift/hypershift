@@ -148,6 +148,8 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 		return r.setAWSConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	case hyperv1.PowerVSPlatform:
 		return r.setPowerVSconditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
+	case hyperv1.OpenStackPlatform:
+		return r.setOpenStackConditions(ctx, nodePool, hcluster, controlPlaneNamespace, releaseImage)
 	default:
 		return nil
 	}
@@ -550,7 +552,10 @@ func (r *NodePoolReconciler) setMachineAndNodeConditions(ctx context.Context, no
 
 	r.setAllNodesHealthyCondition(nodePool, machines)
 
-	r.setCIDRConflictCondition(nodePool, machines, hc)
+	err = r.setCIDRConflictCondition(nodePool, machines, hc)
+	if err != nil {
+		return err
+	}
 
 	if nodePool.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		err = r.setAllMachinesLMCondition(ctx, nodePool, hc)

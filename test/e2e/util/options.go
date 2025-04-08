@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
@@ -226,7 +227,6 @@ func (p *Options) DefaultOpenStackOptions() hypershiftopenstack.RawCreateOptions
 		NodePoolOpts: &openstacknodepool.RawOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: &openstacknodepool.OpenStackPlatformOptions{
 				Flavor:         p.ConfigurableClusterOptions.OpenStackNodeFlavor,
-				ImageName:      p.ConfigurableClusterOptions.OpenStackNodeImageName,
 				AvailabityZone: p.ConfigurableClusterOptions.OpenStackNodeAvailabilityZone,
 			},
 		},
@@ -253,6 +253,20 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 	}
 	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
+	}
+
+	// Set an expiration date tag if it's not already set
+	expirationDateTagSet := false
+	for _, tag := range o.AdditionalTags {
+		key := strings.Split(tag, "=")[0]
+		if key == "expirationDate" {
+			expirationDateTagSet = true
+			break
+		}
+	}
+	if !expirationDateTagSet {
+		// Set the expiration date tag to be 4 hours from now
+		o.AdditionalTags = append(o.AdditionalTags, fmt.Sprintf("expirationDate=%s", time.Now().Add(4*time.Hour).UTC().Format(time.RFC3339)))
 	}
 
 	opts.AdditionalTags = append(opts.AdditionalTags, o.AdditionalTags...)

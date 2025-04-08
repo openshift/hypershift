@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  .dockerconfigjson: null
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-pull-secret
+  namespace: clusters
+---
+apiVersion: v1
+data:
+  AZURE_SUBSCRIPTION_ID: ZmFrZVN1YnNjcmlwdGlvbklE
+  AZURE_TENANT_ID: ZmFrZVRlbmFudElE
+kind: Secret
+metadata:
+  creationTimestamp: null
+  name: example-cloud-credentials
+  namespace: clusters
+---
+apiVersion: v1
+data:
+  key: qO1Sny2IAcCrq0VGlEp7O6WsknhpszO7eSLmXjsPDxs=
+kind: Secret
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  autoscaling: {}
+  configuration: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: fakeBaseDomain
+    privateZoneID: fakePrivateZoneID
+    publicZoneID: fakePublicZoneID
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: fakeInfraID
+  kubeAPIServerDNSName: test-dns-name.example.com
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    azure:
+      location: fakeLocation
+      managedIdentities:
+        controlPlane:
+          cloudProvider:
+            objectEncoding: utf-8
+          controlPlaneOperator:
+            objectEncoding: utf-8
+          disk:
+            objectEncoding: utf-8
+          file:
+            objectEncoding: utf-8
+          imageRegistry:
+            objectEncoding: utf-8
+          ingress:
+            objectEncoding: utf-8
+          managedIdentitiesKeyVault:
+            name: ""
+            tenantID: ""
+          network:
+            objectEncoding: utf-8
+          nodePoolManagement:
+            objectEncoding: utf-8
+        dataPlane:
+          diskMSIClientID: ""
+          fileMSIClientID: ""
+          imageRegistryMSIClientID: ""
+      resourceGroup: fakeResourceGroupName
+      securityGroupID: fakeSecurityGroupID
+      subnetID: fakeSubnetID
+      subscriptionID: fakeSubscriptionID
+      tenantID: fakeTenantID
+      vnetID: fakeVNetID
+    type: Azure
+  pullSecret:
+    name: example-pull-secret
+  release:
+    image: ""
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: example-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  sshKey: {}
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    azure:
+      image:
+        imageID: fakeBootImageID
+        type: ImageID
+      osDisk:
+        diskStorageAccountType: Premium_LRS
+        sizeGiB: 120
+      subnetID: fakeSubnetID
+      vmSize: Standard_D4s_v3
+    type: Azure
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---

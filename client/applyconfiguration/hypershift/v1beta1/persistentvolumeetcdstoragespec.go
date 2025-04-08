@@ -21,14 +21,14 @@ import (
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// PersistentVolumeEtcdStorageSpecApplyConfiguration represents an declarative configuration of the PersistentVolumeEtcdStorageSpec type for use
+// PersistentVolumeEtcdStorageSpecApplyConfiguration represents a declarative configuration of the PersistentVolumeEtcdStorageSpec type for use
 // with apply.
 type PersistentVolumeEtcdStorageSpecApplyConfiguration struct {
 	StorageClassName *string            `json:"storageClassName,omitempty"`
 	Size             *resource.Quantity `json:"size,omitempty"`
 }
 
-// PersistentVolumeEtcdStorageSpecApplyConfiguration constructs an declarative configuration of the PersistentVolumeEtcdStorageSpec type for use with
+// PersistentVolumeEtcdStorageSpecApplyConfiguration constructs a declarative configuration of the PersistentVolumeEtcdStorageSpec type for use with
 // apply.
 func PersistentVolumeEtcdStorageSpec() *PersistentVolumeEtcdStorageSpecApplyConfiguration {
 	return &PersistentVolumeEtcdStorageSpecApplyConfiguration{}

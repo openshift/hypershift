@@ -18,18 +18,15 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
+	context "context"
 
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	applyconfigurationhypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // CertificateSigningRequestApprovalsGetter has a method to return a CertificateSigningRequestApprovalInterface.
@@ -40,216 +37,41 @@ type CertificateSigningRequestApprovalsGetter interface {
 
 // CertificateSigningRequestApprovalInterface has methods to work with CertificateSigningRequestApproval resources.
 type CertificateSigningRequestApprovalInterface interface {
-	Create(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.CreateOptions) (*v1beta1.CertificateSigningRequestApproval, error)
-	Update(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*v1beta1.CertificateSigningRequestApproval, error)
-	UpdateStatus(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*v1beta1.CertificateSigningRequestApproval, error)
+	Create(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApproval, opts v1.CreateOptions) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
+	Update(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1beta1.CertificateSigningRequestApproval, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1beta1.CertificateSigningRequestApprovalList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*hypershiftv1beta1.CertificateSigningRequestApproval, error)
+	List(ctx context.Context, opts v1.ListOptions) (*hypershiftv1beta1.CertificateSigningRequestApprovalList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.CertificateSigningRequestApproval, err error)
-	Apply(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error)
-	ApplyStatus(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *hypershiftv1beta1.CertificateSigningRequestApproval, err error)
+	Apply(ctx context.Context, certificateSigningRequestApproval *applyconfigurationhypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *hypershiftv1beta1.CertificateSigningRequestApproval, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+	ApplyStatus(ctx context.Context, certificateSigningRequestApproval *applyconfigurationhypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *hypershiftv1beta1.CertificateSigningRequestApproval, err error)
 	CertificateSigningRequestApprovalExpansion
 }
 
 // certificateSigningRequestApprovals implements CertificateSigningRequestApprovalInterface
 type certificateSigningRequestApprovals struct {
-	client rest.Interface
-	ns     string
+	*gentype.ClientWithListAndApply[*hypershiftv1beta1.CertificateSigningRequestApproval, *hypershiftv1beta1.CertificateSigningRequestApprovalList, *applyconfigurationhypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration]
 }
 
 // newCertificateSigningRequestApprovals returns a CertificateSigningRequestApprovals
 func newCertificateSigningRequestApprovals(c *HypershiftV1beta1Client, namespace string) *certificateSigningRequestApprovals {
 	return &certificateSigningRequestApprovals{
-		client: c.RESTClient(),
-		ns:     namespace,
+		gentype.NewClientWithListAndApply[*hypershiftv1beta1.CertificateSigningRequestApproval, *hypershiftv1beta1.CertificateSigningRequestApprovalList, *applyconfigurationhypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration](
+			"certificatesigningrequestapprovals",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			namespace,
+			func() *hypershiftv1beta1.CertificateSigningRequestApproval {
+				return &hypershiftv1beta1.CertificateSigningRequestApproval{}
+			},
+			func() *hypershiftv1beta1.CertificateSigningRequestApprovalList {
+				return &hypershiftv1beta1.CertificateSigningRequestApprovalList{}
+			},
+		),
 	}
-}
-
-// Get takes name of the certificateSigningRequestApproval, and returns the corresponding certificateSigningRequestApproval object, and an error if there is any.
-func (c *certificateSigningRequestApprovals) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of CertificateSigningRequestApprovals that match those selectors.
-func (c *certificateSigningRequestApprovals) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.CertificateSigningRequestApprovalList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1beta1.CertificateSigningRequestApprovalList{}
-	err = c.client.Get().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested certificateSigningRequestApprovals.
-func (c *certificateSigningRequestApprovals) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a certificateSigningRequestApproval and creates it.  Returns the server's representation of the certificateSigningRequestApproval, and an error, if there is any.
-func (c *certificateSigningRequestApprovals) Create(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.CreateOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Post().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateSigningRequestApproval).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a certificateSigningRequestApproval and updates it. Returns the server's representation of the certificateSigningRequestApproval, and an error, if there is any.
-func (c *certificateSigningRequestApprovals) Update(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(certificateSigningRequestApproval.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateSigningRequestApproval).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *certificateSigningRequestApprovals) UpdateStatus(ctx context.Context, certificateSigningRequestApproval *v1beta1.CertificateSigningRequestApproval, opts v1.UpdateOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Put().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(certificateSigningRequestApproval.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(certificateSigningRequestApproval).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the certificateSigningRequestApproval and deletes it. Returns an error if one occurs.
-func (c *certificateSigningRequestApprovals) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *certificateSigningRequestApprovals) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched certificateSigningRequestApproval.
-func (c *certificateSigningRequestApprovals) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Patch(pt).
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied certificateSigningRequestApproval.
-func (c *certificateSigningRequestApprovals) Apply(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	if certificateSigningRequestApproval == nil {
-		return nil, fmt.Errorf("certificateSigningRequestApproval provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(certificateSigningRequestApproval)
-	if err != nil {
-		return nil, err
-	}
-	name := certificateSigningRequestApproval.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateSigningRequestApproval.Name must be provided to Apply")
-	}
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *certificateSigningRequestApprovals) ApplyStatus(ctx context.Context, certificateSigningRequestApproval *hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.CertificateSigningRequestApproval, err error) {
-	if certificateSigningRequestApproval == nil {
-		return nil, fmt.Errorf("certificateSigningRequestApproval provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(certificateSigningRequestApproval)
-	if err != nil {
-		return nil, err
-	}
-
-	name := certificateSigningRequestApproval.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateSigningRequestApproval.Name must be provided to Apply")
-	}
-
-	result = &v1beta1.CertificateSigningRequestApproval{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Namespace(c.ns).
-		Resource("certificatesigningrequestapprovals").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

@@ -166,14 +166,15 @@ spec:
                     type: integer
                 type: object
               capabilities:
+                default: {}
                 description: |-
                   capabilities allows for disabling optional components at cluster install time.
                   This field is optional and once set cannot be changed.
                 properties:
-                  disabledCapabilities:
+                  disabled:
                     description: |-
-                      disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+                      disabled when specified, sets the cluster version baselineCapabilitySet to None
+                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
                       This effectively disables that capability on the hosted cluster.
 
                       When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
@@ -187,12 +188,14 @@ spec:
                     type: array
                     x-kubernetes-list-type: atomic
                     x-kubernetes-validations:
-                    - message: disabledCapabilities is immutable
+                    - message: Disabled is immutable. Changes might result in unpredictable
+                        and disruptive behavior.
                       rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
-                - message: disabledCapabilities is required once set
-                  rule: '!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)'
+                - message: Capabilities is immutable. Changes might result in unpredictable
+                    and disruptive behavior.
+                  rule: self == oldSelf
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default
@@ -226,6 +229,7 @@ spec:
                         items:
                           type: string
                         type: array
+                        x-kubernetes-list-type: atomic
                       audit:
                         default:
                           profile: Default
@@ -371,6 +375,7 @@ spec:
                                   items:
                                     type: string
                                   type: array
+                                  x-kubernetes-list-type: atomic
                                 servingCertificate:
                                   description: |-
                                     servingCertificate references a kubernetes.io/tls type secret containing the TLS cert info for serving secure traffic.
@@ -387,6 +392,7 @@ spec:
                                   type: object
                               type: object
                             type: array
+                            x-kubernetes-list-type: atomic
                         type: object
                       tlsSecurityProfile:
                         description: |-
@@ -1095,6 +1101,11 @@ spec:
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
+                        x-kubernetes-validations:
+                        - message: Only one of blockedRegistries or allowedRegistries
+                            may be set
+                          rule: 'has(self.blockedRegistries) ? !has(self.allowedRegistries)
+                            : true'
                     type: object
                   ingress:
                     description: |-
@@ -2743,6 +2754,20 @@ spec:
                   default value is kubernetes.default.svc, which only works for in-cluster
                   validation.
                 type: string
+              kubeAPIServerDNSName:
+                description: |-
+                  kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+                  When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+                  If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+                  The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+                  This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+                  access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+                  for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+                maxLength: 253
+                type: string
+                x-kubernetes-validations:
+                - message: kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)
+                  rule: self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')
               kubeconfig:
                 description: KubeConfig specifies the name and key for the kubeconfig
                   secret
@@ -3469,9 +3494,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3530,9 +3554,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3590,9 +3613,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3650,9 +3672,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3710,9 +3731,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3770,9 +3790,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3852,9 +3871,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3913,9 +3931,8 @@ spec:
                                     type: string
                                   clientID:
                                     description: |-
-                                      clientID is the client ID of a managed identity.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                      clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                      mainly used for CI purposes.
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -5156,9 +5173,8 @@ spec:
                                 type: string
                               clientID:
                                 description: |-
-                                  clientID is the client ID of a managed identity.
-                                  Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                  removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                  clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+                                  mainly used for CI purposes.
                                 type: string
                                 x-kubernetes-validations:
                                 - message: the client ID of a managed identity must
@@ -5459,7 +5475,6 @@ spec:
                   - servicePublishingStrategy
                   type: object
                 maxItems: 6
-                minItems: 4
                 type: array
               sshKey:
                 description: |-
@@ -5533,6 +5548,11 @@ spec:
             - services
             - sshKey
             type: object
+            x-kubernetes-validations:
+            - message: spec.services in body should have at least 4 items or 3 for
+                IBMCloud
+              rule: 'self.platform.type == ''IBMCloud'' ? size(self.services) >= 3
+                : size(self.services) >= 4'
           status:
             description: HostedControlPlaneStatus defines the observed state of HostedControlPlane
             properties:
@@ -5614,6 +5634,23 @@ spec:
                 required:
                 - host
                 - port
+                type: object
+              customKubeconfig:
+                description: |-
+                  customKubeconfig references an external custom kubeconfig secret.
+                  This field is populated in the status when a custom kubeconfig secret has been generated
+                  for the hosted cluster. It contains the name and key of the secret located in the
+                  hostedCluster namespace. This field is only populated when kubeApiExternalName is set.
+                  If this field is removed during a day 2 operation, the referenced secret will be deleted
+                  and this field will be removed from the hostedCluster status.
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                required:
+                - key
+                - name
                 type: object
               externalManagedControlPlane:
                 default: true

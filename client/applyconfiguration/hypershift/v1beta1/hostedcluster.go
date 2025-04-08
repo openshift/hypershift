@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// HostedClusterApplyConfiguration represents an declarative configuration of the HostedCluster type for use
+// HostedClusterApplyConfiguration represents a declarative configuration of the HostedCluster type for use
 // with apply.
 type HostedClusterApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -32,7 +32,7 @@ type HostedClusterApplyConfiguration struct {
 	Status                           *HostedClusterStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// HostedCluster constructs an declarative configuration of the HostedCluster type for use with
+// HostedCluster constructs a declarative configuration of the HostedCluster type for use with
 // apply.
 func HostedCluster(name, namespace string) *HostedClusterApplyConfiguration {
 	b := &HostedClusterApplyConfiguration{}
@@ -47,7 +47,7 @@ func HostedCluster(name, namespace string) *HostedClusterApplyConfiguration {
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Kind field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithKind(value string) *HostedClusterApplyConfiguration {
-	b.Kind = &value
+	b.TypeMetaApplyConfiguration.Kind = &value
 	return b
 }
 
@@ -55,7 +55,7 @@ func (b *HostedClusterApplyConfiguration) WithKind(value string) *HostedClusterA
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the APIVersion field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithAPIVersion(value string) *HostedClusterApplyConfiguration {
-	b.APIVersion = &value
+	b.TypeMetaApplyConfiguration.APIVersion = &value
 	return b
 }
 
@@ -64,7 +64,7 @@ func (b *HostedClusterApplyConfiguration) WithAPIVersion(value string) *HostedCl
 // If called multiple times, the Name field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithName(value string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Name = &value
+	b.ObjectMetaApplyConfiguration.Name = &value
 	return b
 }
 
@@ -73,7 +73,7 @@ func (b *HostedClusterApplyConfiguration) WithName(value string) *HostedClusterA
 // If called multiple times, the GenerateName field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithGenerateName(value string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.GenerateName = &value
+	b.ObjectMetaApplyConfiguration.GenerateName = &value
 	return b
 }
 
@@ -82,7 +82,7 @@ func (b *HostedClusterApplyConfiguration) WithGenerateName(value string) *Hosted
 // If called multiple times, the Namespace field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithNamespace(value string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Namespace = &value
+	b.ObjectMetaApplyConfiguration.Namespace = &value
 	return b
 }
 
@@ -91,7 +91,7 @@ func (b *HostedClusterApplyConfiguration) WithNamespace(value string) *HostedClu
 // If called multiple times, the UID field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithUID(value types.UID) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.UID = &value
+	b.ObjectMetaApplyConfiguration.UID = &value
 	return b
 }
 
@@ -100,7 +100,7 @@ func (b *HostedClusterApplyConfiguration) WithUID(value types.UID) *HostedCluste
 // If called multiple times, the ResourceVersion field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithResourceVersion(value string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.ResourceVersion = &value
+	b.ObjectMetaApplyConfiguration.ResourceVersion = &value
 	return b
 }
 
@@ -109,7 +109,7 @@ func (b *HostedClusterApplyConfiguration) WithResourceVersion(value string) *Hos
 // If called multiple times, the Generation field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithGeneration(value int64) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Generation = &value
+	b.ObjectMetaApplyConfiguration.Generation = &value
 	return b
 }
 
@@ -118,7 +118,7 @@ func (b *HostedClusterApplyConfiguration) WithGeneration(value int64) *HostedClu
 // If called multiple times, the CreationTimestamp field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithCreationTimestamp(value metav1.Time) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.CreationTimestamp = &value
+	b.ObjectMetaApplyConfiguration.CreationTimestamp = &value
 	return b
 }
 
@@ -127,7 +127,7 @@ func (b *HostedClusterApplyConfiguration) WithCreationTimestamp(value metav1.Tim
 // If called multiple times, the DeletionTimestamp field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithDeletionTimestamp(value metav1.Time) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.DeletionTimestamp = &value
+	b.ObjectMetaApplyConfiguration.DeletionTimestamp = &value
 	return b
 }
 
@@ -136,7 +136,7 @@ func (b *HostedClusterApplyConfiguration) WithDeletionTimestamp(value metav1.Tim
 // If called multiple times, the DeletionGracePeriodSeconds field is set to the value of the last call.
 func (b *HostedClusterApplyConfiguration) WithDeletionGracePeriodSeconds(value int64) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.DeletionGracePeriodSeconds = &value
+	b.ObjectMetaApplyConfiguration.DeletionGracePeriodSeconds = &value
 	return b
 }
 
@@ -146,11 +146,11 @@ func (b *HostedClusterApplyConfiguration) WithDeletionGracePeriodSeconds(value i
 // overwriting an existing map entries in Labels field with the same key.
 func (b *HostedClusterApplyConfiguration) WithLabels(entries map[string]string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Labels == nil && len(entries) > 0 {
-		b.Labels = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Labels == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Labels = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Labels[k] = v
+		b.ObjectMetaApplyConfiguration.Labels[k] = v
 	}
 	return b
 }
@@ -161,11 +161,11 @@ func (b *HostedClusterApplyConfiguration) WithLabels(entries map[string]string) 
 // overwriting an existing map entries in Annotations field with the same key.
 func (b *HostedClusterApplyConfiguration) WithAnnotations(entries map[string]string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Annotations == nil && len(entries) > 0 {
-		b.Annotations = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Annotations == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Annotations = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Annotations[k] = v
+		b.ObjectMetaApplyConfiguration.Annotations[k] = v
 	}
 	return b
 }
@@ -179,7 +179,7 @@ func (b *HostedClusterApplyConfiguration) WithOwnerReferences(values ...*v1.Owne
 		if values[i] == nil {
 			panic("nil value passed to WithOwnerReferences")
 		}
-		b.OwnerReferences = append(b.OwnerReferences, *values[i])
+		b.ObjectMetaApplyConfiguration.OwnerReferences = append(b.ObjectMetaApplyConfiguration.OwnerReferences, *values[i])
 	}
 	return b
 }
@@ -190,7 +190,7 @@ func (b *HostedClusterApplyConfiguration) WithOwnerReferences(values ...*v1.Owne
 func (b *HostedClusterApplyConfiguration) WithFinalizers(values ...string) *HostedClusterApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	for i := range values {
-		b.Finalizers = append(b.Finalizers, values[i])
+		b.ObjectMetaApplyConfiguration.Finalizers = append(b.ObjectMetaApplyConfiguration.Finalizers, values[i])
 	}
 	return b
 }
@@ -215,4 +215,10 @@ func (b *HostedClusterApplyConfiguration) WithSpec(value *HostedClusterSpecApply
 func (b *HostedClusterApplyConfiguration) WithStatus(value *HostedClusterStatusApplyConfiguration) *HostedClusterApplyConfiguration {
 	b.Status = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *HostedClusterApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.ObjectMetaApplyConfiguration.Name
 }

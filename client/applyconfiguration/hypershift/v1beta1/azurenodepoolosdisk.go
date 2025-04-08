@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// AzureNodePoolOSDiskApplyConfiguration represents an declarative configuration of the AzureNodePoolOSDisk type for use
+// AzureNodePoolOSDiskApplyConfiguration represents a declarative configuration of the AzureNodePoolOSDisk type for use
 // with apply.
 type AzureNodePoolOSDiskApplyConfiguration struct {
-	SizeGiB                *int32                               `json:"sizeGiB,omitempty"`
-	DiskStorageAccountType *v1beta1.AzureDiskStorageAccountType `json:"diskStorageAccountType,omitempty"`
-	EncryptionSetID        *string                              `json:"encryptionSetID,omitempty"`
-	Persistence            *v1beta1.AzureDiskPersistence        `json:"persistence,omitempty"`
+	SizeGiB                *int32                                         `json:"sizeGiB,omitempty"`
+	DiskStorageAccountType *hypershiftv1beta1.AzureDiskStorageAccountType `json:"diskStorageAccountType,omitempty"`
+	EncryptionSetID        *string                                        `json:"encryptionSetID,omitempty"`
+	Persistence            *hypershiftv1beta1.AzureDiskPersistence        `json:"persistence,omitempty"`
 }
 
-// AzureNodePoolOSDiskApplyConfiguration constructs an declarative configuration of the AzureNodePoolOSDisk type for use with
+// AzureNodePoolOSDiskApplyConfiguration constructs a declarative configuration of the AzureNodePoolOSDisk type for use with
 // apply.
 func AzureNodePoolOSDisk() *AzureNodePoolOSDiskApplyConfiguration {
 	return &AzureNodePoolOSDiskApplyConfiguration{}
@@ -47,7 +47,7 @@ func (b *AzureNodePoolOSDiskApplyConfiguration) WithSizeGiB(value int32) *AzureN
 // WithDiskStorageAccountType sets the DiskStorageAccountType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the DiskStorageAccountType field is set to the value of the last call.
-func (b *AzureNodePoolOSDiskApplyConfiguration) WithDiskStorageAccountType(value v1beta1.AzureDiskStorageAccountType) *AzureNodePoolOSDiskApplyConfiguration {
+func (b *AzureNodePoolOSDiskApplyConfiguration) WithDiskStorageAccountType(value hypershiftv1beta1.AzureDiskStorageAccountType) *AzureNodePoolOSDiskApplyConfiguration {
 	b.DiskStorageAccountType = &value
 	return b
 }
@@ -63,7 +63,7 @@ func (b *AzureNodePoolOSDiskApplyConfiguration) WithEncryptionSetID(value string
 // WithPersistence sets the Persistence field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Persistence field is set to the value of the last call.
-func (b *AzureNodePoolOSDiskApplyConfiguration) WithPersistence(value v1beta1.AzureDiskPersistence) *AzureNodePoolOSDiskApplyConfiguration {
+func (b *AzureNodePoolOSDiskApplyConfiguration) WithPersistence(value hypershiftv1beta1.AzureDiskPersistence) *AzureNodePoolOSDiskApplyConfiguration {
 	b.Persistence = &value
 	return b
 }

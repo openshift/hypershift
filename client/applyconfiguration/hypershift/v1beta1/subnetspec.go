@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// SubnetSpecApplyConfiguration represents an declarative configuration of the SubnetSpec type for use
+// SubnetSpecApplyConfiguration represents a declarative configuration of the SubnetSpec type for use
 // with apply.
 type SubnetSpecApplyConfiguration struct {
 	DNSNameservers  []string                           `json:"dnsNameservers,omitempty"`
 	AllocationPools []AllocationPoolApplyConfiguration `json:"allocationPools,omitempty"`
 }
 
-// SubnetSpecApplyConfiguration constructs an declarative configuration of the SubnetSpec type for use with
+// SubnetSpecApplyConfiguration constructs a declarative configuration of the SubnetSpec type for use with
 // apply.
 func SubnetSpec() *SubnetSpecApplyConfiguration {
 	return &SubnetSpecApplyConfiguration{}

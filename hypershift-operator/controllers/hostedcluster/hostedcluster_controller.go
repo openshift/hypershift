@@ -21,6 +21,7 @@ import (
 	"crypto/x509/pkix"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"os"
@@ -127,8 +128,9 @@ const (
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
 	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
 
-	controlPlaneOperatorSubcommandsLabel = "io.openshift.hypershift.control-plane-operator-subcommands"
-	ignitionServerHealthzHandlerLabel    = "io.openshift.hypershift.ignition-server-healthz-handler"
+	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
+	ignitionServerHealthzHandlerLabel                    = "io.openshift.hypershift.ignition-server-healthz-handler"
+	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
 
 	controlplaneOperatorManagesIgnitionServerLabel             = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
 	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
@@ -613,6 +615,36 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
+	}
+	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
+	}
+
+	_, cpoSupportsKASCustomKubeconfig := controlPlaneOperatorImageLabels[controlPlaneOperatorSupportsKASCustomKubeconfigLabel]
+
+	if cpoSupportsKASCustomKubeconfig {
+		if len(hcluster.Spec.KubeAPIServerDNSName) > 0 {
+			CustomKubeconfigSecret := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
+			err := r.Client.Get(ctx, client.ObjectKeyFromObject(CustomKubeconfigSecret), CustomKubeconfigSecret)
+			if err != nil {
+				if !apierrors.IsNotFound(err) {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
+				}
+			} else {
+				hcluster.Status.CustomKubeconfig = &corev1.LocalObjectReference{Name: CustomKubeconfigSecret.Name}
+			}
+		}
+	}
+
 	// Set kubeadminPassword status
 	{
 		explicitOauthConfig := hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.OAuth != nil
@@ -1066,10 +1098,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	hcluster.Status.PayloadArch = payloadArch
-	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
 
 	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
@@ -1167,7 +1195,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		validReleaseImage := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidReleaseImage))
 		if validReleaseImage != nil && validReleaseImage.Status == metav1.ConditionFalse {
 			if validReleaseImage.Reason == hyperv1.SecretNotFoundReason {
-				return ctrl.Result{}, fmt.Errorf(validReleaseImage.Message)
+				return ctrl.Result{}, fmt.Errorf("%s", validReleaseImage.Message)
 			}
 			log.Error(fmt.Errorf("release image is invalid"), "reconciliation is blocked", "message", validReleaseImage.Message)
 			return ctrl.Result{}, nil
@@ -1182,15 +1210,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				log.Info(msg)
 			}
 		}
-	}
-
-	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
-	}
-	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
 
 	cpoHasUtilities := false
@@ -1681,6 +1700,62 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	if cpoSupportsKASCustomKubeconfig {
+		// Reconcile the HostedControlPlane external kubeconfig if one is reported
+		if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
+			if hcp.Status.CustomKubeconfig != nil {
+				src := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hcp.Namespace,
+						Name:      hcp.Status.CustomKubeconfig.Name,
+					},
+				}
+				err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+				}
+				dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
+				_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+					key := hcp.Status.CustomKubeconfig.Key
+					srcData, srcHasData := src.Data[key]
+					if !srcHasData {
+						return fmt.Errorf("controlplane custom external kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
+					}
+					dest.Labels = hcluster.Labels
+					dest.Type = corev1.SecretTypeOpaque
+					if dest.Data == nil {
+						dest.Data = map[string][]byte{}
+					}
+					dest.Data["kubeconfig"] = srcData
+					dest.SetOwnerReferences([]metav1.OwnerReference{{
+						APIVersion: hyperv1.GroupVersion.String(),
+						Kind:       "HostedCluster",
+						Name:       hcluster.Name,
+						UID:        hcluster.UID,
+					}})
+					return nil
+				})
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
+				}
+			}
+		} else {
+			// Delete the custom external kubeconfig secret if it exists and the external name is not set
+			if hcluster.Status.CustomKubeconfig != nil {
+				customKubeconfig := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hcluster.Namespace,
+						Name:      hcluster.Status.CustomKubeconfig.Name,
+					},
+				}
+				if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
+				}
+				hcluster.Status.CustomKubeconfig = nil
+			}
+		}
+	}
+
 	// Reconcile the HostedControlPlane kubeadminPassword
 	if hcp.Status.KubeadminPassword != nil {
 		src := &corev1.Secret{
@@ -1832,16 +1907,29 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
+		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
+		hcVersion := releaseImageVersion
+		hcVersion.Pre = nil
+		hcVersion.Build = nil
+
+		// Reconcile CPO SecretProviderClass CR
 		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
 		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
 			// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-			hcVersion := releaseImageVersion
-			hcVersion.Pre = nil
-			hcVersion.Build = nil
 			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator, hcVersion.GE(config.Version419))
 			return nil
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
+		}
+
+		// Reconcile CAPZ SecretProviderClass CR
+		nodepoolMgmtSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, hcp.Namespace)
+		if _, err = createOrUpdate(ctx, r, nodepoolMgmtSecretProviderClass, func() error {
+			// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement, hcVersion.GE(config.Version419))
+			return nil
+		}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
 		}
 	}
 
@@ -1979,9 +2067,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Versio
 	}
 }
 
-// reconcileHostedControlPlane reconciles the given HostedControlPlane, which
-// will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
 
 	if hcp.Annotations == nil {
 		hcp.Annotations = map[string]string{}
@@ -2029,14 +2115,30 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		val, hasVal := hcluster.Annotations[key]
 		if hasVal {
 			hcp.Annotations[key] = val
+		} else {
+			delete(hcp.Annotations, key)
 		}
 	}
 
-	// All annotations on the HostedCluster with this special prefix are copied
+	prefixesToSync := []string{
+		hyperv1.IdentityProviderOverridesAnnotationPrefix,
+		hyperv1.ResourceRequestOverrideAnnotationPrefix,
+	}
+
+	// All annotations on the HostedCluster with prefixes to sync
+	// should be synced
+	for key := range hcp.Annotations {
+		for _, prefix := range prefixesToSync {
+			if strings.HasPrefix(key, prefix) {
+				delete(hcp.Annotations, key)
+			}
+		}
+	}
 	for key, val := range hcluster.Annotations {
-		if strings.HasPrefix(key, hyperv1.IdentityProviderOverridesAnnotationPrefix) ||
-			strings.HasPrefix(key, hyperv1.ResourceRequestOverrideAnnotationPrefix) {
-			hcp.Annotations[key] = val
+		for _, prefix := range prefixesToSync {
+			if strings.HasPrefix(key, prefix) {
+				hcp.Annotations[key] = val
+			}
 		}
 	}
 
@@ -2055,15 +2157,24 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if err != nil {
 		return err
 	}
-	for k, v := range certAnnotations {
-		hcp.Annotations[k] = v
-	}
+	maps.Copy(hcp.Annotations, certAnnotations)
 
 	// Set the DisableClusterAutoscalerAnnotation if autoscaling is not needed
 	if !isAutoscalingNeeded {
 		hcp.Annotations[hyperv1.DisableClusterAutoscalerAnnotation] = "true"
 	} else {
 		delete(hcp.Annotations, hyperv1.DisableClusterAutoscalerAnnotation)
+	}
+
+	return nil
+}
+
+// reconcileHostedControlPlane reconciles the given HostedControlPlane, which
+// will be mutated.
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+
+	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, certRenewalAnnotations); err != nil {
+		return err
 	}
 
 	if hcp.Labels == nil {
@@ -2123,6 +2234,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
 	}
 
+	hcp.Spec.KubeAPIServerDNSName = hcluster.Spec.KubeAPIServerDNSName
 	hcp.Spec.PausedUntil = hcluster.Spec.PausedUntil
 	hcp.Spec.OLMCatalogPlacement = hcluster.Spec.OLMCatalogPlacement
 	hcp.Spec.Autoscaling = hcluster.Spec.Autoscaling
@@ -2145,6 +2257,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	} else {
 		hcp.Spec.Configuration = nil
 	}
+
+	hcp.Spec.Capabilities = hcluster.Spec.Capabilities
 
 	return nil
 }
@@ -2239,11 +2353,11 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager deployment
 	var capiImage string
+	version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to lookup payload version: %w", err)
+	}
 	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
-		version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
-		if err != nil {
-			return fmt.Errorf("failed to lookup payload version: %w", err)
-		}
 		// Use environment variable image only if using HCP release < 4.12
 		if version.Major == 4 && version.Minor < 12 {
 			capiImage = envImage
@@ -2261,7 +2375,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
 		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
 		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext)
+		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext, version)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
@@ -3106,6 +3220,8 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 			Resources: []string{
 				"virtualmachineinstances/addvolume",
 				"virtualmachineinstances/removevolume",
+				"virtualmachines/addvolume",
+				"virtualmachines/removevolume",
 			},
 			Verbs: []string{
 				"update",
@@ -3354,7 +3470,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	return nil
 }
 
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool) error {
+func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool, hcVersion *semver.Version) error {
 	defaultMode := int32(0o640)
 	selectorLabels := map[string]string{
 		"name":                             "cluster-api",
@@ -3470,6 +3586,14 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 			},
 		},
 	}
+
+	if hcVersion.GE(config.Version419) {
+		deployment.Spec.Template.Spec.Containers[0].Args = append(
+			deployment.Spec.Template.Spec.Containers[0].Args,
+			"--feature-gates=MachineSetPreflightChecks=false",
+		)
+	}
+
 	// set security context
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{

@@ -241,7 +241,7 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 			Driver:   config.ManagedAzureSecretsStoreCSIDriver,
 			ReadOnly: ptr.To(true),
 			VolumeAttributes: map[string]string{
-				config.ManagedAzureSecretProviderClass: config.ManagedAzureKMSSecretStoreVolumeName,
+				config.ManagedAzureSecretProviderClass: config.ManagedAzureKMSSecretProviderClassName,
 			},
 		},
 	}

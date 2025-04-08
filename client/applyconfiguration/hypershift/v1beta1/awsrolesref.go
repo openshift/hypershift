@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AWSRolesRefApplyConfiguration represents an declarative configuration of the AWSRolesRef type for use
+// AWSRolesRefApplyConfiguration represents a declarative configuration of the AWSRolesRef type for use
 // with apply.
 type AWSRolesRefApplyConfiguration struct {
 	IngressARN              *string `json:"ingressARN,omitempty"`
@@ -29,7 +29,7 @@ type AWSRolesRefApplyConfiguration struct {
 	ControlPlaneOperatorARN *string `json:"controlPlaneOperatorARN,omitempty"`
 }
 
-// AWSRolesRefApplyConfiguration constructs an declarative configuration of the AWSRolesRef type for use with
+// AWSRolesRefApplyConfiguration constructs a declarative configuration of the AWSRolesRef type for use with
 // apply.
 func AWSRolesRef() *AWSRolesRefApplyConfiguration {
 	return &AWSRolesRefApplyConfiguration{}

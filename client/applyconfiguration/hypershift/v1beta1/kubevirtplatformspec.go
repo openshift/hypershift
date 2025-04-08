@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtPlatformSpecApplyConfiguration represents an declarative configuration of the KubevirtPlatformSpec type for use
+// KubevirtPlatformSpecApplyConfiguration represents a declarative configuration of the KubevirtPlatformSpec type for use
 // with apply.
 type KubevirtPlatformSpecApplyConfiguration struct {
 	BaseDomainPassthrough *bool                                          `json:"baseDomainPassthrough,omitempty"`
@@ -26,7 +26,7 @@ type KubevirtPlatformSpecApplyConfiguration struct {
 	StorageDriver         *KubevirtStorageDriverSpecApplyConfiguration   `json:"storageDriver,omitempty"`
 }
 
-// KubevirtPlatformSpecApplyConfiguration constructs an declarative configuration of the KubevirtPlatformSpec type for use with
+// KubevirtPlatformSpecApplyConfiguration constructs a declarative configuration of the KubevirtPlatformSpec type for use with
 // apply.
 func KubevirtPlatformSpec() *KubevirtPlatformSpecApplyConfiguration {
 	return &KubevirtPlatformSpecApplyConfiguration{}

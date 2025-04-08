@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// PlacementOptionsApplyConfiguration represents an declarative configuration of the PlacementOptions type for use
+// PlacementOptionsApplyConfiguration represents a declarative configuration of the PlacementOptions type for use
 // with apply.
 type PlacementOptionsApplyConfiguration struct {
 	Tenancy *string `json:"tenancy,omitempty"`
 }
 
-// PlacementOptionsApplyConfiguration constructs an declarative configuration of the PlacementOptions type for use with
+// PlacementOptionsApplyConfiguration constructs a declarative configuration of the PlacementOptions type for use with
 // apply.
 func PlacementOptions() *PlacementOptionsApplyConfiguration {
 	return &PlacementOptionsApplyConfiguration{}

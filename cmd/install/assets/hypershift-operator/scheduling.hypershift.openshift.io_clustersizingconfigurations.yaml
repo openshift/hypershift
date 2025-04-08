@@ -132,13 +132,13 @@ spec:
                             to use for etcd pods
                           type: string
                         kasGoMemLimit:
-                          anyOf:
-                          - type: integer
-                          - type: string
-                          description: KASGoMemLimit is the value to set for the $GOMEMLIMIT
-                            of the Kube APIServer container
-                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                          x-kubernetes-int-or-string: true
+                          description: |-
+                            KASGoMemLimit is the value to set for the $GOMEMLIMIT of the Kube APIServer container
+                            Expected format is a number followed by a unit (B, KiB, MiB, GiB, TiB). See the Go runtime library for more
+                            information on the format - https://pkg.go.dev/runtime#hdr-Environment_Variables.
+                          maxLength: 20
+                          pattern: ^\d+(B|KiB|MiB|GiB|TiB)?$
+                          type: string
                         machineHealthCheckTimeout:
                           description: |-
                             MachineHealthCheckTimeout specifies an optional timeout for machinehealthchecks created

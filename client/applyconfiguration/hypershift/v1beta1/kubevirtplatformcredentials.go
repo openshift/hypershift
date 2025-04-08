@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtPlatformCredentialsApplyConfiguration represents an declarative configuration of the KubevirtPlatformCredentials type for use
+// KubevirtPlatformCredentialsApplyConfiguration represents a declarative configuration of the KubevirtPlatformCredentials type for use
 // with apply.
 type KubevirtPlatformCredentialsApplyConfiguration struct {
 	InfraKubeConfigSecret *KubeconfigSecretRefApplyConfiguration `json:"infraKubeConfigSecret,omitempty"`
 	InfraNamespace        *string                                `json:"infraNamespace,omitempty"`
 }
 
-// KubevirtPlatformCredentialsApplyConfiguration constructs an declarative configuration of the KubevirtPlatformCredentials type for use with
+// KubevirtPlatformCredentialsApplyConfiguration constructs a declarative configuration of the KubevirtPlatformCredentials type for use with
 // apply.
 func KubevirtPlatformCredentials() *KubevirtPlatformCredentialsApplyConfiguration {
 	return &KubevirtPlatformCredentialsApplyConfiguration{}

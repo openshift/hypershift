@@ -18,18 +18,18 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// SecretEncryptionSpecApplyConfiguration represents an declarative configuration of the SecretEncryptionSpec type for use
+// SecretEncryptionSpecApplyConfiguration represents a declarative configuration of the SecretEncryptionSpec type for use
 // with apply.
 type SecretEncryptionSpecApplyConfiguration struct {
-	Type   *v1beta1.SecretEncryptionType `json:"type,omitempty"`
-	KMS    *KMSSpecApplyConfiguration    `json:"kms,omitempty"`
-	AESCBC *AESCBCSpecApplyConfiguration `json:"aescbc,omitempty"`
+	Type   *hypershiftv1beta1.SecretEncryptionType `json:"type,omitempty"`
+	KMS    *KMSSpecApplyConfiguration              `json:"kms,omitempty"`
+	AESCBC *AESCBCSpecApplyConfiguration           `json:"aescbc,omitempty"`
 }
 
-// SecretEncryptionSpecApplyConfiguration constructs an declarative configuration of the SecretEncryptionSpec type for use with
+// SecretEncryptionSpecApplyConfiguration constructs a declarative configuration of the SecretEncryptionSpec type for use with
 // apply.
 func SecretEncryptionSpec() *SecretEncryptionSpecApplyConfiguration {
 	return &SecretEncryptionSpecApplyConfiguration{}
@@ -38,7 +38,7 @@ func SecretEncryptionSpec() *SecretEncryptionSpecApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *SecretEncryptionSpecApplyConfiguration) WithType(value v1beta1.SecretEncryptionType) *SecretEncryptionSpecApplyConfiguration {
+func (b *SecretEncryptionSpecApplyConfiguration) WithType(value hypershiftv1beta1.SecretEncryptionType) *SecretEncryptionSpecApplyConfiguration {
 	b.Type = &value
 	return b
 }

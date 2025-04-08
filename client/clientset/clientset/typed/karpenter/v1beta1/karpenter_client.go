@@ -18,10 +18,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	"net/http"
+	http "net/http"
 
-	v1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
-	"github.com/openshift/hypershift/client/clientset/clientset/scheme"
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	rest "k8s.io/client-go/rest"
 )
 
@@ -84,10 +84,10 @@ func New(c rest.Interface) *KarpenterV1beta1Client {
 }
 
 func setConfigDefaults(config *rest.Config) error {
-	gv := v1beta1.SchemeGroupVersion
+	gv := karpenterv1beta1.SchemeGroupVersion
 	config.GroupVersion = &gv
 	config.APIPath = "/apis"
-	config.NegotiatedSerializer = scheme.Codecs.WithoutConversion()
+	config.NegotiatedSerializer = rest.CodecFactoryForGeneratedClient(scheme.Scheme, scheme.Codecs).WithoutConversion()
 
 	if config.UserAgent == "" {
 		config.UserAgent = rest.DefaultKubernetesUserAgent()

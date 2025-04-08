@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// NodePoolConditionApplyConfiguration represents an declarative configuration of the NodePoolCondition type for use
+// NodePoolConditionApplyConfiguration represents a declarative configuration of the NodePoolCondition type for use
 // with apply.
 type NodePoolConditionApplyConfiguration struct {
 	Type               *string             `json:"type,omitempty"`
@@ -34,7 +34,7 @@ type NodePoolConditionApplyConfiguration struct {
 	ObservedGeneration *int64              `json:"observedGeneration,omitempty"`
 }
 
-// NodePoolConditionApplyConfiguration constructs an declarative configuration of the NodePoolCondition type for use with
+// NodePoolConditionApplyConfiguration constructs a declarative configuration of the NodePoolCondition type for use with
 // apply.
 func NodePoolCondition() *NodePoolConditionApplyConfiguration {
 	return &NodePoolConditionApplyConfiguration{}

@@ -18,21 +18,21 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
-// KubevirtPersistentVolumeApplyConfiguration represents an declarative configuration of the KubevirtPersistentVolume type for use
+// KubevirtPersistentVolumeApplyConfiguration represents a declarative configuration of the KubevirtPersistentVolume type for use
 // with apply.
 type KubevirtPersistentVolumeApplyConfiguration struct {
-	Size         *resource.Quantity                   `json:"size,omitempty"`
-	StorageClass *string                              `json:"storageClass,omitempty"`
-	AccessModes  []v1beta1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
-	VolumeMode   *v1.PersistentVolumeMode             `json:"volumeMode,omitempty"`
+	Size         *resource.Quantity                             `json:"size,omitempty"`
+	StorageClass *string                                        `json:"storageClass,omitempty"`
+	AccessModes  []hypershiftv1beta1.PersistentVolumeAccessMode `json:"accessModes,omitempty"`
+	VolumeMode   *v1.PersistentVolumeMode                       `json:"volumeMode,omitempty"`
 }
 
-// KubevirtPersistentVolumeApplyConfiguration constructs an declarative configuration of the KubevirtPersistentVolume type for use with
+// KubevirtPersistentVolumeApplyConfiguration constructs a declarative configuration of the KubevirtPersistentVolume type for use with
 // apply.
 func KubevirtPersistentVolume() *KubevirtPersistentVolumeApplyConfiguration {
 	return &KubevirtPersistentVolumeApplyConfiguration{}
@@ -57,7 +57,7 @@ func (b *KubevirtPersistentVolumeApplyConfiguration) WithStorageClass(value stri
 // WithAccessModes adds the given value to the AccessModes field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the AccessModes field.
-func (b *KubevirtPersistentVolumeApplyConfiguration) WithAccessModes(values ...v1beta1.PersistentVolumeAccessMode) *KubevirtPersistentVolumeApplyConfiguration {
+func (b *KubevirtPersistentVolumeApplyConfiguration) WithAccessModes(values ...hypershiftv1beta1.PersistentVolumeAccessMode) *KubevirtPersistentVolumeApplyConfiguration {
 	for i := range values {
 		b.AccessModes = append(b.AccessModes, values[i])
 	}

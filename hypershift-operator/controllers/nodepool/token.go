@@ -206,6 +206,12 @@ func setExpirationTimestampOnToken(ctx context.Context, c client.Client, tokenSe
 		now = time.Now
 	}
 
+	// there's no need to set the expiration timestamp annotation again if already set
+	_, hasExpirationTimestamp := tokenSecret.Annotations[hyperv1.IgnitionServerTokenExpirationTimestampAnnotation]
+	if hasExpirationTimestamp {
+		return nil
+	}
+
 	// this should be a reasonable value to allow all in flight provisions to complete.
 	timeUntilExpiry := 2 * time.Hour
 	if tokenSecret.Annotations == nil {

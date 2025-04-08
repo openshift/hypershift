@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// PowerVSResourceReferenceApplyConfiguration represents an declarative configuration of the PowerVSResourceReference type for use
+// PowerVSResourceReferenceApplyConfiguration represents a declarative configuration of the PowerVSResourceReference type for use
 // with apply.
 type PowerVSResourceReferenceApplyConfiguration struct {
 	ID   *string `json:"id,omitempty"`
 	Name *string `json:"name,omitempty"`
 }
 
-// PowerVSResourceReferenceApplyConfiguration constructs an declarative configuration of the PowerVSResourceReference type for use with
+// PowerVSResourceReferenceApplyConfiguration constructs a declarative configuration of the PowerVSResourceReference type for use with
 // apply.
 func PowerVSResourceReference() *PowerVSResourceReferenceApplyConfiguration {
 	return &PowerVSResourceReferenceApplyConfiguration{}
