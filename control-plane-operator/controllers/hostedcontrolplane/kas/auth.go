@@ -3,6 +3,7 @@ package kas
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	hcpconfig "github.com/openshift/hypershift/support/config"
@@ -11,12 +12,15 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	AuthConfigMapKey = "auth.json"
+	AuthConfigMapKey                 = "auth.json"
+	certificateAuthorityConfigMapKey = "ca-bundle.crt"
 )
 
 func ReconcileAuthConfig(ctx context.Context, c crclient.Client, config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
@@ -48,50 +52,256 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, 
 		return config, nil
 	}
 	for _, provider := range spec.OIDCProviders {
-		caData := ""
-		if provider.Issuer.CertificateAuthority.Name != "" {
-			ca := &corev1.ConfigMap{}
-			if err := c.Get(ctx, crclient.ObjectKey{Name: provider.Issuer.CertificateAuthority.Name, Namespace: namespace}, ca); err != nil {
-				return nil, fmt.Errorf("failed to get issuer certificate authority configmap: %w", err)
-			}
-			var ok bool
-			caData, ok = ca.Data["ca-bundle.crt"]
-			if !ok {
-				return nil, fmt.Errorf("issuer certificate authority configmap does not contain key ca-bundle.crt")
-			}
-		}
-		jwt := JWTAuthenticator{
-			Issuer: Issuer{
-				URL:                  provider.Issuer.URL,
-				CertificateAuthority: caData,
-			},
-		}
-		audience := []string{}
-		for _, a := range provider.Issuer.Audiences {
-			audience = append(audience, string(a))
-		}
-		jwt.Issuer.Audiences = audience
-		jwt.Issuer.AudienceMatchPolicy = AudienceMatchPolicyMatchAny
-		jwt.ClaimMappings.Username.Claim = provider.ClaimMappings.Username.Claim
-		if provider.ClaimMappings.Username.PrefixPolicy == configv1.Prefix {
-			jwt.ClaimMappings.Username.Prefix = &provider.ClaimMappings.Username.Prefix.PrefixString
-		} else {
-			noPrefix := ""
-			jwt.ClaimMappings.Username.Prefix = &noPrefix
-		}
-		jwt.ClaimMappings.Groups.Claim = provider.ClaimMappings.Groups.Claim
-		jwt.ClaimMappings.Groups.Prefix = &provider.ClaimMappings.Groups.Prefix
-		for _, rule := range provider.ClaimValidationRules {
-			switch rule.Type {
-			case configv1.TokenValidationRuleTypeRequiredClaim:
-				jwtRule := ClaimValidationRule{
-					Claim:         rule.RequiredClaim.Claim,
-					RequiredValue: rule.RequiredClaim.RequiredValue,
-				}
-				jwt.ClaimValidationRules = append(jwt.ClaimValidationRules, jwtRule)
-			}
+		jwt, err := generateJWTForProvider(ctx, provider, c, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("generating JWT authenticator for provider %q: %v", provider.Name, err)
 		}
 		config.JWT = append(config.JWT, jwt)
 	}
 	return config, nil
+}
+
+func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider, client crclient.Client, namespace string) (JWTAuthenticator, error) {
+	out := JWTAuthenticator{}
+
+	issuer, err := generateIssuer(ctx, provider.Issuer, client, namespace)
+	if err != nil {
+		return out, fmt.Errorf("generating issuer: %v", err)
+	}
+
+	claimMappings, err := generateClaimMappings(provider.ClaimMappings, issuer.URL)
+	if err != nil {
+		return out, fmt.Errorf("generating claim mappings: %v", err)
+	}
+
+	claimValidationRules, err := generateClaimValidationRules(provider.ClaimValidationRules...)
+	if err != nil {
+		return out, fmt.Errorf("generating claim validation rules: %v", err)
+	}
+
+	out.Issuer = issuer
+	out.ClaimMappings = claimMappings
+	out.ClaimValidationRules = claimValidationRules
+
+	return out, nil
+}
+
+func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crclient.Client, namespace string) (Issuer, error) {
+	out := Issuer{}
+
+	out.URL = issuer.URL
+	out.AudienceMatchPolicy = AudienceMatchPolicyMatchAny
+
+	for _, audience := range issuer.Audiences {
+		out.Audiences = append(out.Audiences, string(audience))
+	}
+
+	if len(issuer.CertificateAuthority.Name) > 0 {
+		ca, err := getCertificateAuthorityFromConfigMap(ctx, client, issuer.CertificateAuthority.Name, namespace)
+		if err != nil {
+			return out, fmt.Errorf("getting certificate authority for issuer: %v", err)
+		}
+		out.CertificateAuthority = ca
+	}
+
+	return out, nil
+}
+
+func getCertificateAuthorityFromConfigMap(ctx context.Context, client crclient.Client, caName, namespace string) (string, error) {
+	ca := &corev1.ConfigMap{}
+	if err := client.Get(ctx, crclient.ObjectKey{Name: caName, Namespace: namespace}, ca); err != nil {
+		return "", fmt.Errorf("failed to get issuer certificate authority configmap: %w", err)
+	}
+
+	caData, ok := ca.Data[certificateAuthorityConfigMapKey]
+	if !ok {
+		return "", fmt.Errorf("issuer certificate authority configmap does not contain key %q", certificateAuthorityConfigMapKey)
+	}
+
+	return caData, nil
+}
+
+func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL string) (ClaimMappings, error) {
+	out := ClaimMappings{}
+
+	username, err := generateUsernameClaimMapping(claimMappings.Username, issuerURL)
+	if err != nil {
+		return out, fmt.Errorf("generating username claim mapping: %v", err)
+	}
+
+	groups := generateGroupsClaimMapping(claimMappings.Groups)
+
+	out.Username = username
+	out.Groups = groups
+
+	// TODO(everettraven): wrap this in a featuregate check
+	// ----
+	uid, err := generateUIDClaimMapping(claimMappings.UID)
+	if err != nil {
+		return out, fmt.Errorf("generating uid claim mapping: %v", err)
+	}
+
+	extras, err := generateExtraClaimMapping(claimMappings.Extra...)
+	if err != nil {
+		return out, fmt.Errorf("generating extra claim mapping: %v", err)
+	}
+
+	out.UID = uid
+	out.Extra = extras
+	// ----
+
+	return out, nil
+}
+
+func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuerURL string) (PrefixedClaimOrExpression, error) {
+	out := PrefixedClaimOrExpression{}
+
+	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
+	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
+	// but for now just set the claim.
+	out.Claim = username.Claim
+
+	switch username.PrefixPolicy {
+	case configv1.Prefix:
+		if username.Prefix == nil {
+			return out, fmt.Errorf("prefix policy is set to %q but no prefix is specified", configv1.Prefix)
+		}
+		out.Prefix = &username.Prefix.PrefixString
+	case configv1.NoOpinion:
+		prefix := ""
+		if username.Claim != "email" {
+			prefix = fmt.Sprintf("%s#", issuerURL)
+		}
+		out.Prefix = &prefix
+	case configv1.NoPrefix:
+		out.Prefix = ptr.To("")
+	default:
+		return out, fmt.Errorf("unknown prefix policy %q", username.PrefixPolicy)
+	}
+
+	return out, nil
+}
+
+func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedClaimOrExpression {
+	out := PrefixedClaimOrExpression{}
+
+	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
+	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
+	// but for now just set the claim.
+	out.Claim = groups.Claim
+	out.Prefix = &groups.Prefix
+
+	return out
+}
+
+func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
+	out := ClaimOrExpression{}
+
+	// UID mapping can only specify either claim or expression, not both.
+	// This should be rejected at admission time of the authentications.config.openshift.io CRD.
+	// Even though this is the case, we still perform a runtime validation to ensure we never
+	// attempt to create an invalid configuration.
+	// If neither claim or expression is specified, default the claim to "sub"
+
+	switch {
+	case uid == nil:
+		out.Claim = "sub"
+	case uid.Claim != "" && uid.Expression == "":
+		out.Claim = uid.Claim
+	case uid.Expression != "" && uid.Claim == "":
+		err := validateClaimMappingExpression(uid.Expression)
+		if err != nil {
+			return out, fmt.Errorf("validating CEL expression: %v", err)
+		}
+		out.Expression = uid.Expression
+	case uid.Claim != "" && uid.Expression != "":
+		return out, fmt.Errorf("uid mapping must set either claim or expression, not both: %v", uid)
+	default:
+		return out, fmt.Errorf("unable to handle uid mapping: %v", uid)
+	}
+
+	return out, nil
+}
+
+func generateExtraClaimMapping(extras ...configv1.ExtraMapping) ([]ExtraMapping, error) {
+	out := []ExtraMapping{}
+	errs := []error{}
+	for _, extra := range extras {
+		outExtra, err := generateExtraMapping(extra)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		out = append(out, outExtra)
+	}
+
+	return out, errors.Join(errs...)
+}
+
+func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
+	out := ExtraMapping{}
+
+	if extra.Key == "" {
+		return out, errors.New("extra mapping must specify a key, but none was provided")
+	}
+
+	if extra.ValueExpression == "" {
+		return out, errors.New("extra mapping must specify a valueExpression, but none was provided")
+	}
+
+	err := validateExtraMappingExpression(extra.ValueExpression)
+	if err != nil {
+		return out, fmt.Errorf("validating valueExpression: %v", err)
+	}
+
+	out.Key = extra.Key
+	out.ValueExpression = extra.ValueExpression
+
+	return out, nil
+}
+
+func generateClaimValidationRules(claimValidationRules ...configv1.TokenClaimValidationRule) ([]ClaimValidationRule, error) {
+	out := []ClaimValidationRule{}
+	errs := []error{}
+	for _, claimValidationRule := range claimValidationRules {
+		outRule, err := generateClaimValidationRule(claimValidationRule)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		out = append(out, outRule)
+	}
+
+	return out, errors.Join(errs...)
+}
+
+func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidationRule) (ClaimValidationRule, error) {
+	out := ClaimValidationRule{}
+
+	// Currently, the authentications.config.openshift.io CRD only allows setting a claim and required value for the
+	// validation rule and does not allow setting a CEL expression and message like the upstream.
+	// This is likely to change in the near future to also allow setting a CEL expression.
+	switch claimValidationRule.Type {
+	case configv1.TokenValidationRuleTypeRequiredClaim:
+		if claimValidationRule.RequiredClaim == nil {
+			return out, fmt.Errorf("claimValidationRule.type is %s and requiredClaim is not set", configv1.TokenValidationRuleTypeRequiredClaim)
+		}
+
+		out.Claim = claimValidationRule.RequiredClaim.Claim
+		out.RequiredValue = claimValidationRule.RequiredClaim.RequiredValue
+	default:
+		return out, fmt.Errorf("unknown claimValidationRule type %q", claimValidationRule.Type)
+	}
+
+	return out, nil
+}
+
+func validateClaimMappingExpression(expression string) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ClaimMappingExpression{Expression: expression})
+	return err
+}
+
+func validateExtraMappingExpression(expression string) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ExtraMappingExpression{Expression: expression})
+	return err
 }
