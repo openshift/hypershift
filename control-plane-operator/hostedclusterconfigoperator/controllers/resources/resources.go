@@ -389,8 +389,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 			}
-			// TODO(fmissi): remove this when Hypershift Capabilities becomes GA
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+
+			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
+			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
 				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
 				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
