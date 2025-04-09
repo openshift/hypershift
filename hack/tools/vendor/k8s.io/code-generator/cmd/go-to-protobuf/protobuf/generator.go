@@ -145,7 +145,10 @@ func isOptionalAlias(t *types.Type) bool {
 	if t.Underlying == nil || (t.Underlying.Kind != types.Map && t.Underlying.Kind != types.Slice) {
 		return false
 	}
-	return extractBoolTagOrDie("protobuf.nullable", t.CommentLines)
+	if extractBoolTagOrDie("protobuf.nullable", t.CommentLines) == false {
+		return false
+	}
+	return true
 }
 
 func (g *genProtoIDL) Imports(c *generator.Context) (imports []string) {
@@ -184,7 +187,7 @@ func (g *genProtoIDL) GenerateType(c *generator.Context, t *types.Type, w io.Wri
 	case types.Struct:
 		return b.doStruct(sw)
 	default:
-		return b.unknown()
+		return b.unknown(sw)
 	}
 }
 
@@ -259,7 +262,7 @@ type bodyGen struct {
 	t *types.Type
 }
 
-func (b bodyGen) unknown() error {
+func (b bodyGen) unknown(sw *generator.SnippetWriter) error {
 	return fmt.Errorf("not sure how to generate: %#v", b.t)
 }
 
