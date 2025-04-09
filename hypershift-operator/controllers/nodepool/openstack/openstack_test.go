@@ -60,6 +60,53 @@ func TestOpenStackMachineTemplate(t *testing.T) {
 			},
 		},
 		{
+			name: "basic additional port",
+			nodePool: hyperv1.NodePoolSpec{
+				ClusterName: "",
+				Replicas:    nil,
+				Config:      nil,
+				Management:  hyperv1.NodePoolManagement{},
+				AutoScaling: nil,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.OpenStackPlatform,
+					OpenStack: &hyperv1.OpenStackNodePoolPlatform{
+						Flavor:    flavor,
+						ImageName: imageName,
+						AdditionalPorts: []hyperv1.PortSpec{
+							{
+								Network: &hyperv1.NetworkParam{
+									ID: ptr.To("123"),
+								},
+							},
+						},
+					},
+				},
+				Release: hyperv1.Release{},
+			},
+
+			expected: &capiopenstackv1beta1.OpenStackMachineTemplateSpec{
+				Template: capiopenstackv1beta1.OpenStackMachineTemplateResource{
+					Spec: capiopenstackv1beta1.OpenStackMachineSpec{
+						Flavor: ptr.To(flavor),
+						Image: capiopenstackv1beta1.ImageParam{
+							Filter: &capiopenstackv1beta1.ImageFilter{
+								Name: ptr.To(imageName),
+							},
+						},
+						Ports: []capiopenstackv1beta1.PortOpts{
+							{},
+							{
+								Description: ptr.To("Additional port for Hypershift node pool tests"),
+								Network: &capiopenstackv1beta1.NetworkParam{
+									ID: ptr.To("123"),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "additional port for SR-IOV",
 			nodePool: hyperv1.NodePoolSpec{
 				ClusterName: "",
