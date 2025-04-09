@@ -4,6 +4,8 @@ import (
 	"embed"
 )
 
+const DefaultKarpenterProviderAWSImage = "public.ecr.aws/karpenter/controller:1.2.3"
+
 //go:embed *.yaml
 var f embed.FS
 

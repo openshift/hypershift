@@ -47,6 +47,7 @@ type Reconciler struct {
 	GuestClient               client.Client
 	Namespace                 string
 	ControlPlaneOperatorImage string
+	KarpenterProviderAWSImage string
 	upsert.CreateOrUpdateProvider
 }
 
