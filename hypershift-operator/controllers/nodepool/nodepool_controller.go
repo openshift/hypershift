@@ -21,6 +21,8 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,6 +93,8 @@ type NodePoolReconciler struct {
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
+
+	EC2Client ec2iface.EC2API
 }
 
 type NotReadyError struct {
@@ -261,6 +265,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		hyperv1.NodePoolValidGeneratedPayloadConditionType: r.validGeneratedPayloadCondition,
 		hyperv1.NodePoolReachedIgnitionEndpoint:            r.reachedIgnitionEndpointCondition,
 		hyperv1.NodePoolAllMachinesReadyConditionType:      r.machineAndNodeConditions,
+		hyperv1.NodePoolValidPlatformConfigConditionType:   r.validPlatformConfigCondition,
 		// TODO(alberto): consider moving here:
 		// NodePoolUpdatingPlatformMachineTemplateConditionType,
 		// NodePoolAutorepairEnabledConditionType.

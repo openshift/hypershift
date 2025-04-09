@@ -94,7 +94,7 @@ require (
 	kubevirt.io/api v1.4.0
 	kubevirt.io/containerized-data-importer-api v1.61.1
 	sigs.k8s.io/cluster-api v1.9.6
-	sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1
+	sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.1
 	sigs.k8s.io/cluster-api-provider-azure v1.19.2
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9

@@ -393,6 +393,16 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
+	var ec2Client ec2iface.EC2API
+
+	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
+		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
+		awsConfig := awsutil.NewConfig()
+		ec2Client = ec2.New(awsSession, awsConfig)
+	}
+
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
 		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
@@ -402,20 +412,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 		},
 		KubevirtInfraClients: kvinfra.NewKubevirtInfraClientMap(),
+		EC2Client:            ec2Client,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
-	}
-
-	{
-		var ec2Client ec2iface.EC2API
-
-		if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
-			awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
-			awsConfig := awsutil.NewConfig()
-			ec2Client = ec2.New(awsSession, awsConfig)
-		}
-
-		npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
 	}
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {

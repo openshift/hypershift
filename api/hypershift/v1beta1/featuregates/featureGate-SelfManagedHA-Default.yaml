@@ -29,6 +29,9 @@
                     },
                     {
                         "name": "ClusterVersionOperatorConfiguration"
+                    },
+                    {
+                        "name": "CapacityReservation"
                     }
                 ],
                 "enabled": [
