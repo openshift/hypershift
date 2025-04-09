@@ -86,7 +86,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
-						Path:   "healthz",
+						Path:   "livez?exclude=etcd",
 					},
 				},
 				InitialDelaySeconds: 30,
@@ -102,13 +102,29 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 					HTTPGet: &corev1.HTTPGetAction{
 						Scheme: corev1.URISchemeHTTPS,
 						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
-						Path:   "healthz",
+						Path:   "readyz?exclude=etcd&exclude=etcd-readiness",
 					},
 				},
 				TimeoutSeconds:   1,
 				PeriodSeconds:    10,
 				SuccessThreshold: 1,
 				FailureThreshold: 10,
+			},
+		},
+		StartupProbes: config.StartupProbes{
+			oasContainerMain().Name: {
+				ProbeHandler: corev1.ProbeHandler{
+					HTTPGet: &corev1.HTTPGetAction{
+						Scheme: corev1.URISchemeHTTPS,
+						Port:   intstr.FromInt(int(OpenShiftAPIServerPort)),
+						Path:   "livez",
+					},
+				},
+				InitialDelaySeconds: 0,
+				PeriodSeconds:       5,
+				TimeoutSeconds:      10,
+				SuccessThreshold:    1,
+				FailureThreshold:    30,
 			},
 		},
 		Resources: map[string]corev1.ResourceRequirements{
