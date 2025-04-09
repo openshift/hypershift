@@ -183,6 +183,8 @@ func TestHasBeenAvailable(t *testing.T) {
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
 			clock := clocktesting.NewFakeClock(tc.timestamp)
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 			r := &HostedClusterReconciler{
 				Client:                        client,
 				Clock:                         clock,
@@ -4041,6 +4043,8 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				WithStatusSubresource(&hyperv1.HostedCluster{}).
 				Build()}
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 			r := &HostedClusterReconciler{
 				Client:            client,
 				Clock:             clock.RealClock{},

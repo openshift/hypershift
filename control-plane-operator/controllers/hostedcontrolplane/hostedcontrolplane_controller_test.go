@@ -1805,6 +1805,8 @@ func TestControlPlaneComponents(t *testing.T) {
 		GetRegistryOverrides().Return(nil).AnyTimes()
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
 	reconciler := &HostedControlPlaneReconciler{
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
