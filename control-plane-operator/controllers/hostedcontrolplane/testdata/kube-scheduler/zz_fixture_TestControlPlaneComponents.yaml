@@ -87,7 +87,6 @@ spec:
         - -v=2
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
-        - --feature-gates=GatewayAPI=true
         - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=BuildCSIVolumes=true
@@ -96,12 +95,14 @@ spec:
         - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
         - --feature-gates=VSphereMultiVCenters=true
+        - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=AdminNetworkPolicy=true
         - --feature-gates=NetworkSegmentation=true
         - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
         - --feature-gates=HardwareSpeed=true
+        - --feature-gates=VSphereControlPlaneMachineSet=true
         - --feature-gates=ManagedBootImages=true
         - --feature-gates=ManagedBootImagesAWS=true
         - --feature-gates=ExternalOIDC=true
@@ -119,6 +120,7 @@ spec:
         - --feature-gates=DisableKubeletCloudCredentialProviders=true
         - --feature-gates=KMSv1=true
         - --feature-gates=ConsolePluginContentSecurityPolicy=false
+        - --feature-gates=GatewayAPI=false
         - --feature-gates=MachineAPIProviderOpenStack=false
         - --feature-gates=InsightsConfigAPI=false
         - --feature-gates=InsightsRuntimeExtractor=false
@@ -144,12 +146,12 @@ spec:
         - --feature-gates=SignatureStores=false
         - --feature-gates=PinnedImages=false
         - --feature-gates=UpgradeStatus=false
+        - --feature-gates=ExternalOIDCWithUIDAndExtraClaimMappings=false
         - --feature-gates=Example=false
         - --feature-gates=Example2=false
         - --feature-gates=PlatformOperators=false
         - --feature-gates=NewOLM=false
         - --feature-gates=NewOLMCatalogdAPIV1Metas=false
-        - --feature-gates=NewOLMPreflightPermissionChecks=false
         - --feature-gates=InsightsOnDemandDataGather=false
         - --feature-gates=InsightsConfig=false
         - --feature-gates=MetricsCollectionProfiles=false

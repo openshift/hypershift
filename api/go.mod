@@ -9,6 +9,8 @@ require (
 	k8s.io/apimachinery v0.32.2
 )
 
+replace github.com/openshift/api => ../../api/
+
 require (
 	github.com/aws/aws-sdk-go v1.55.6 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20240805231134-67d0acfb6306 // indirect
