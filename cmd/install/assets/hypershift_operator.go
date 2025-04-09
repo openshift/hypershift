@@ -1051,8 +1051,13 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},
-				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},
-				Verbs:     []string{rbacv1.VerbAll},
+				Resources: []string{
+					"virtualmachineinstances/addvolume",
+					"virtualmachineinstances/removevolume",
+					"virtualmachines/addvolume",
+					"virtualmachines/removevolume",
+				},
+				Verbs: []string{"update"},
 			},
 			{ // This allows the kubevirt csi driver to mirror guest PVCs to the mgmt/infra cluster
 				APIGroups: []string{"cdi.kubevirt.io"},

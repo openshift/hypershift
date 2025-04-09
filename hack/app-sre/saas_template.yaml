@@ -246,8 +246,10 @@ objects:
     resources:
     - virtualmachineinstances/addvolume
     - virtualmachineinstances/removevolume
+    - virtualmachines/addvolume
+    - virtualmachines/removevolume
     verbs:
-    - '*'
+    - update
   - apiGroups:
     - cdi.kubevirt.io
     resources:
