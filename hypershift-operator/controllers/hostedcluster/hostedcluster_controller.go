@@ -206,6 +206,8 @@ type HostedClusterReconciler struct {
 	EnableCVOManagementClusterMetricsAccess bool
 
 	EnableEtcdRecovery bool
+
+	FeatureSet configv1.FeatureSet
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -1955,7 +1957,8 @@ func annotationsForCertRenewal(
 	hcp *hyperv1.HostedControlPlane,
 	shouldCheckForStaleCerts func() bool,
 	kasServingCertHashFromSecret func() (string, error),
-	kasServingCertHashFromEndpoint func() (string, error)) func() (map[string]string, error) {
+	kasServingCertHashFromEndpoint func() (string, error),
+) func() (map[string]string, error) {
 	return func() (map[string]string, error) {
 		if !shouldCheckForStaleCerts() {
 			return nil, nil
@@ -2069,7 +2072,6 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Versio
 }
 
 func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
-
 	if hcp.Annotations == nil {
 		hcp.Annotations = map[string]string{}
 	}
@@ -2173,7 +2175,6 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
 func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
-
 	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, certRenewalAnnotations); err != nil {
 		return err
 	}
@@ -2544,7 +2545,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			cpoHasUtilities,
 			r.MetricsSet,
 			certRotationScale,
-			r.EnableCVOManagementClusterMetricsAccess)
+			r.EnableCVOManagementClusterMetricsAccess,
+			r.FeatureSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -2712,6 +2714,7 @@ func reconcileControlPlaneOperatorDeployment(
 	metricsSet metrics.MetricsSet,
 	certRotationScale time.Duration,
 	enableCVOManagementClusterMetricsAccess bool,
+	hypershiftFeatureSet configv1.FeatureSet,
 ) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -2824,6 +2827,10 @@ func reconcileControlPlaneOperatorDeployment(
 								Value: utilitiesImage,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
+							{
+								Name:  "HYPERSHIFT_FEATURESET",
+								Value: string(hypershiftFeatureSet),
+							},
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    args,

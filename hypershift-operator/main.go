@@ -155,7 +155,18 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
-	featuregate.MutableGates.AddFlag(cmd.Flags())
+
+	// Attempt to determine featureset prior to adding featuregate flags.
+	// It is safe to get the empty string from this as the empty string is the default featureset.
+	// This should _generally_ be safe to do here because any unknown featureset provided in the environment
+	// variable should result in using the default featureset.
+	featureSet := os.Getenv("HYPERSHIFT_FEATURESET")
+	// Doing this call first should explicitly configure the default gate state
+	// for the provided featureset. This makes it so that specifying feature gates
+	// via the `--feature-gates` flag will always override whatever has been configured
+	// by the featureset.
+	featuregate.ConfigureFeatureSet(featureSet)
+	featuregate.Gate().AddFlag(cmd.Flags())
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(ctrl.SetupSignalHandler())
@@ -178,7 +189,6 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
-
 	log.Info("Starting hypershift-operator-manager", "version", version.String())
 
 	restConfig := ctrl.GetConfigOrDie()
@@ -343,6 +353,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		CertRotationScale:                       certRotationScale,
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		EnableEtcdRecovery:                      enableEtcdRecovery,
+		FeatureSet:                              featuregate.FeatureSet(),
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

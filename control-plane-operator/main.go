@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
@@ -56,9 +57,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	setupLog = ctrl.Log.WithName("setup")
-)
+var setupLog = ctrl.Log.WithName("setup")
 
 func main() {
 	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -73,7 +72,6 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-
 }
 
 func commandFor(name string) *cobra.Command {
@@ -145,7 +143,6 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(etcdbackup.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	return cmd
-
 }
 
 func NewStartCommand() *cobra.Command {
@@ -168,6 +165,7 @@ func NewStartCommand() *cobra.Command {
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
 		imageOverrides                   map[string]string
+		featureSet                       string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
@@ -266,11 +264,15 @@ func NewStartCommand() *cobra.Command {
 			"SOCKS5_PROXY_IMAGE":                   &socks5ProxyImage,
 			"AVAILABILITY_PROBER_IMAGE":            &availabilityProberImage,
 			"TOKEN_MINTER_IMAGE":                   &tokenMinterImage,
+			"HYPERSHIFT_FEATURESET":                &featureSet,
 		} {
 			if value := os.Getenv(env); value != "" {
 				*into = value
 			}
 		}
+
+		// configure the featuregates based on featureset
+		featuregates.ConfigureFeatureSet(featureSet)
 
 		// For now, since the hosted cluster config operator is treated like any other
 		// release payload component but isn't actually part of a release payload,
