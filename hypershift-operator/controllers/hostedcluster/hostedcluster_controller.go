@@ -940,57 +940,59 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set Ignition Server endpoint
 	{
-		serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
-		if serviceStrategy == nil {
-			// We don't return the error here as reconciling won't solve the input problem.
-			// An update event will trigger reconciliation.
-			log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
-			return ctrl.Result{}, nil
-		}
-		switch serviceStrategy.Type {
-		case hyperv1.Route:
-			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
-				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
-			} else {
-				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
-				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
-					if !apierrors.IsNotFound(err) {
-						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
-					}
-				}
-				if ignitionServerRoute.Spec.Host != "" {
-					hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
-				}
-			}
-		case hyperv1.NodePort:
-			if serviceStrategy.NodePort == nil {
+		if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+			serviceStrategy := servicePublishingStrategyByType(hcluster, hyperv1.Ignition)
+			if serviceStrategy == nil {
 				// We don't return the error here as reconciling won't solve the input problem.
 				// An update event will trigger reconciliation.
-				log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
+				log.Error(fmt.Errorf("ignition server service strategy not specified"), "")
 				return ctrl.Result{}, nil
 			}
-			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
-			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
+			switch serviceStrategy.Type {
+			case hyperv1.Route:
+				if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
+					hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
 				} else {
-					// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
-					ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
-					if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+					ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
+					if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
 						if !apierrors.IsNotFound(err) {
-							return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+							return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
+						}
+					}
+					if ignitionServerRoute.Spec.Host != "" {
+						hcluster.Status.IgnitionEndpoint = ignitionServerRoute.Spec.Host
+					}
+				}
+			case hyperv1.NodePort:
+				if serviceStrategy.NodePort == nil {
+					// We don't return the error here as reconciling won't solve the input problem.
+					// An update event will trigger reconciliation.
+					log.Error(fmt.Errorf("nodeport metadata not specified for ignition service"), "")
+					return ctrl.Result{}, nil
+				}
+				ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
+				if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+					if !apierrors.IsNotFound(err) {
+						return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
+					} else {
+						// ignition-server-proxy service not found, possible IBM platform or older CPO that doesn't create the service
+						ignitionService = ignitionserver.Service(controlPlaneNamespace.GetName())
+						if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+							if !apierrors.IsNotFound(err) {
+								return ctrl.Result{}, fmt.Errorf("failed to get ignition service: %w", err)
+							}
 						}
 					}
 				}
+				if err == nil && serviceFirstNodePortAvailable(ignitionService) {
+					hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
+				}
+			default:
+				// We don't return the error here as reconciling won't solve the input problem.
+				// An update event will trigger reconciliation.
+				log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
+				return ctrl.Result{}, nil
 			}
-			if err == nil && serviceFirstNodePortAvailable(ignitionService) {
-				hcluster.Status.IgnitionEndpoint = fmt.Sprintf("%s:%d", serviceStrategy.NodePort.Address, ignitionService.Spec.Ports[0].NodePort)
-			}
-		default:
-			// We don't return the error here as reconciling won't solve the input problem.
-			// An update event will trigger reconciliation.
-			log.Error(fmt.Errorf("unknown service strategy type for ignition service: %s", serviceStrategy.Type), "")
-			return ctrl.Result{}, nil
 		}
 	}
 
@@ -1010,47 +1012,49 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Set the ignition server availability condition by checking its deployment.
 	{
-		// Assume the server is unavailable unless proven otherwise.
-		newCondition := metav1.Condition{
-			Type:   string(hyperv1.IgnitionEndpointAvailable),
-			Status: metav1.ConditionUnknown,
-			Reason: hyperv1.StatusUnknownReason,
-		}
-		// Check to ensure the deployment exists and is available.
-		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
-			if apierrors.IsNotFound(err) {
+		if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+			// Assume the server is unavailable unless proven otherwise.
+			newCondition := metav1.Condition{
+				Type:   string(hyperv1.IgnitionEndpointAvailable),
+				Status: metav1.ConditionUnknown,
+				Reason: hyperv1.StatusUnknownReason,
+			}
+			// Check to ensure the deployment exists and is available.
+			deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
+			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+				if apierrors.IsNotFound(err) {
+					newCondition = metav1.Condition{
+						Type:    string(hyperv1.IgnitionEndpointAvailable),
+						Status:  metav1.ConditionFalse,
+						Reason:  hyperv1.NotFoundReason,
+						Message: "Ignition server deployment not found",
+					}
+				} else {
+					return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
+				}
+			} else {
+				// Assume the deployment is unavailable until proven otherwise.
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.IgnitionEndpointAvailable),
 					Status:  metav1.ConditionFalse,
-					Reason:  hyperv1.NotFoundReason,
-					Message: "Ignition server deployment not found",
+					Reason:  hyperv1.WaitingForAvailableReason,
+					Message: "Ignition server deployment is not yet available",
 				}
-			} else {
-				return ctrl.Result{}, fmt.Errorf("failed to get ignition server deployment: %w", err)
-			}
-		} else {
-			// Assume the deployment is unavailable until proven otherwise.
-			newCondition = metav1.Condition{
-				Type:    string(hyperv1.IgnitionEndpointAvailable),
-				Status:  metav1.ConditionFalse,
-				Reason:  hyperv1.WaitingForAvailableReason,
-				Message: "Ignition server deployment is not yet available",
-			}
-			for _, cond := range deployment.Status.Conditions {
-				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
-					newCondition = metav1.Condition{
-						Type:    string(hyperv1.IgnitionEndpointAvailable),
-						Status:  metav1.ConditionTrue,
-						Reason:  hyperv1.AsExpectedReason,
-						Message: "Ignition server deployment is available",
+				for _, cond := range deployment.Status.Conditions {
+					if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+						newCondition = metav1.Condition{
+							Type:    string(hyperv1.IgnitionEndpointAvailable),
+							Status:  metav1.ConditionTrue,
+							Reason:  hyperv1.AsExpectedReason,
+							Message: "Ignition server deployment is available",
+						}
+						break
 					}
-					break
 				}
 			}
+			newCondition.ObservedGeneration = hcluster.Generation
+			meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 		}
-		newCondition.ObservedGeneration = hcluster.Generation
-		meta.SetStatusCondition(&hcluster.Status.Conditions, newCondition)
 	}
 	meta.SetStatusCondition(&hcluster.Status.Conditions, hyperutil.GenerateReconciliationActiveCondition(hcluster.Spec.PausedUntil, hcluster.Generation))
 
