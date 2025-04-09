@@ -29,7 +29,7 @@ spec:
         name: web-app
         resources:
           requests:
-            cpu: "1"
+            cpu: "250m"
             memory: 256M
         securityContext:
           allowPrivilegeEscalation: false

@@ -23,7 +23,9 @@ import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
@@ -40,6 +42,8 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1beta1"
+	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
@@ -114,4 +118,12 @@ func init() {
 	_ = secretsstorev1.AddToScheme(Scheme)
 	_ = kcpv1.AddToScheme(Scheme)
 	_ = orcv1alpha1.AddToScheme(Scheme)
+	karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
+	metav1.AddToGroupVersion(Scheme, karpenterGroupVersion)
+	Scheme.AddKnownTypes(karpenterGroupVersion,
+		&karpenterv1.NodeClaim{},
+		&karpenterv1.NodeClaimList{},
+		&karpenterv1.NodePool{},
+		&karpenterv1.NodePoolList{},
+	)
 }
