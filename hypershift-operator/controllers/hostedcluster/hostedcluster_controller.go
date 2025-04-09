@@ -197,6 +197,8 @@ type HostedClusterReconciler struct {
 	EnableCVOManagementClusterMetricsAccess bool
 
 	EnableEtcdRecovery bool
+
+	FeatureSet configv1.FeatureSet
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -2263,7 +2265,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 			cpoHasUtilities,
 			r.MetricsSet,
 			certRotationScale,
-			r.EnableCVOManagementClusterMetricsAccess)
+			r.EnableCVOManagementClusterMetricsAccess,
+			r.FeatureSet)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
@@ -2502,6 +2505,7 @@ func reconcileControlPlaneOperatorDeployment(
 	metricsSet metrics.MetricsSet,
 	certRotationScale time.Duration,
 	enableCVOManagementClusterMetricsAccess bool,
+	hypershiftFeatureSet configv1.FeatureSet,
 ) error {
 	cpoResources := corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{
@@ -2614,6 +2618,10 @@ func reconcileControlPlaneOperatorDeployment(
 								Value: utilitiesImage,
 							},
 							metrics.MetricsSetToEnv(metricsSet),
+							{
+								Name:  "HYPERSHIFT_FEATURESET",
+								Value: string(hypershiftFeatureSet),
+							},
 						},
 						Command: []string{"/usr/bin/control-plane-operator"},
 						Args:    args,

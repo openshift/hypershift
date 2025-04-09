@@ -3,16 +3,12 @@ package assets
 import (
 	_ "embed"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
-
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/google/uuid"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/hypershift/hypershift-operator/featuregate"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	cmdutil "github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
@@ -401,17 +397,6 @@ type HyperShiftOperatorDeployment struct {
 	RegistryOverrides                       string
 }
 
-// String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
-func featureGateString() string {
-	featureGates := make([]string, 0)
-	for feature := range featuregate.MutableGates.GetAll() {
-		featureGates = append(featureGates, fmt.Sprintf("%s=true", feature))
-	}
-
-	sort.Strings(featureGates)
-	return strings.Join(featureGates, ",")
-}
-
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	args := []string{
 		"run",
@@ -422,9 +407,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
-	}
-	if o.TechPreviewNoUpgrade {
-		args = append(args, fmt.Sprintf("--feature-gates=%s", featureGateString()))
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
@@ -455,6 +437,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+	}
+
+	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.
+	if o.TechPreviewNoUpgrade {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HYPERSHIFT_FEATURESET",
+			Value: string(configv1.TechPreviewNoUpgrade),
+		})
 	}
 
 	if o.EnableWebhook {
@@ -962,10 +952,11 @@ func (o ExternalDNSPodMonitor) Build() *prometheusoperatorv1.PodMonitor {
 					"name": ExternalDNSDeploymentName,
 				},
 			},
-			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{{
-				Port:     "metrics",
-				Interval: "30s",
-			},
+			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{
+				{
+					Port:     "metrics",
+					Interval: "30s",
+				},
 			},
 		},
 	}
