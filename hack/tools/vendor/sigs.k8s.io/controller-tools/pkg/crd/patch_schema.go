@@ -3,6 +3,7 @@ package crd
 import (
 	"fmt"
 
+	"k8s.io/apimachinery/pkg/util/sets"
 	crdmarkers "sigs.k8s.io/controller-tools/pkg/crd/markers"
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -26,14 +27,24 @@ func mayHandleField(field markers.FieldInfo) bool {
 		return false
 	}
 
-	if uncastFeatureGate := field.Markers.Get(crdmarkers.OpenShiftFeatureGateMarkerName); uncastFeatureGate != nil {
-		featureGatesForField, ok := uncastFeatureGate.([]string)
-		if !ok {
-			panic(fmt.Sprintf("actually got %t", uncastFeatureGate))
-		}
-		// we actually want to compare the golang marker's value against the manifest's annotation value
-		return crdmarkers.FeatureGatesForCurrentFile.HasAny(featureGatesForField...)
+	// fetch the values for all feature gate markers on the field. If any
+	// of the specified feature gates for the field matches the manifest's declared
+	// feature gates, include the field.
+	featureGateMarkerValues, ok := field.Markers[crdmarkers.OpenShiftFeatureGateMarkerName]
+	if !ok {
+		// This field is not gated by any feature gates and therefore should be included
+		return true
 	}
 
-	return true
+	featureGateValuesSet := sets.New[string]()
+	for _, featureGateMarkerValue := range featureGateMarkerValues {
+		switch vals := featureGateMarkerValue.(type) {
+		case []string:
+			featureGateValuesSet.Insert(vals...)
+		default:
+			panic(fmt.Sprintf("recieved unexpected value type for marker %q, got %t", crdmarkers.OpenShiftFeatureGateMarkerName, vals))
+		}
+	}
+
+	return crdmarkers.FeatureGatesForCurrentFile.HasAny(featureGateValuesSet.UnsortedList()...)
 }
