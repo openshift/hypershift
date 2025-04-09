@@ -7,15 +7,17 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/component-base/featuregate"
+	fgtesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// TODO(everettraven): Add featuregate testing support
 func TestReconcileAuthConfig(t *testing.T) {
 	type testCase struct {
 		name                                string
@@ -23,6 +25,7 @@ func TestReconcileAuthConfig(t *testing.T) {
 		expectedAuthenticationConfiguration *AuthenticationConfiguration
 		kasParams                           KubeAPIServerConfigParams
 		shouldError                         bool
+		featureGates                        []featuregate.Feature
 	}
 
 	testCases := []testCase{
@@ -468,6 +471,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty expression provided, no error, successful mapping",
@@ -517,6 +523,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty claim and expression provided, error",
@@ -540,6 +549,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, empty claim, non-empty but invalid expression provided, error",
@@ -562,6 +574,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
@@ -620,6 +635,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key, invalid valueExpression, error",
@@ -645,6 +663,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, empty key provided, error",
@@ -669,6 +690,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and empty valueExpression provided, error",
@@ -693,6 +717,9 @@ func TestReconcileAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
+			},
 		},
 		{
 			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim is set, no error, successful mapping",
@@ -828,6 +855,12 @@ func TestReconcileAuthConfig(t *testing.T) {
 
 			ownerRef := hcpconfig.OwnerRef{
 				Reference: nil,
+			}
+
+			if len(tc.featureGates) > 0 {
+				for _, feature := range tc.featureGates {
+					fgtesting.SetFeatureGateDuringTest(t, featuregates.Gate(), feature, true)
+				}
 			}
 
 			ctx := context.TODO()
