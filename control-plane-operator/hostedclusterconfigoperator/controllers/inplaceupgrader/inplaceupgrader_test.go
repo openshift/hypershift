@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -518,6 +519,65 @@ func TestGetAvailableCandidates(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			g.Expect(getAvailableCandidates(tc.inputNodes, tc.targetConfig, tc.capacity)).To(Equal(tc.selectedNodes))
+		})
+	}
+}
+
+func TestCreateUpgradePod(t *testing.T) {
+	testCases := []struct {
+		name         string
+		node         *corev1.Node
+		proxy        *configv1.Proxy
+		expectedEnvs []corev1.EnvVar
+	}{
+		{
+			name: "when proxy is configured, it should create a pod with proxy environment variables",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+			proxy: &configv1.Proxy{
+				Status: configv1.ProxyStatus{
+					HTTPProxy:  "http://proxy.example.com:8080",
+					HTTPSProxy: "https://proxy.example.com:8443",
+					NoProxy:    "localhost,127.0.0.1",
+				},
+			},
+			expectedEnvs: []corev1.EnvVar{
+				{Name: "HTTP_PROXY", Value: "http://proxy.example.com:8080"},
+				{Name: "HTTPS_PROXY", Value: "https://proxy.example.com:8443"},
+				{Name: "NO_PROXY", Value: "localhost,127.0.0.1"},
+			},
+		},
+		{
+			name: "when no proxy is configured it should create a pod without proxy environment variables",
+			node: &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &Reconciler{}
+			pod := inPlaceUpgradePod("ns", "name")
+			err := r.createUpgradePod(pod, "nodeName", "poolName", "image", tc.proxy)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(len(pod.Spec.Containers)).To(BeNumerically(">", 0))
+			g.Expect(pod.Spec.Containers[0].Image).To(Equal("image"))
+			g.Expect(pod.Spec.Containers[0].Args).To(ContainElement("--node-name=nodeName"))
+
+			gotEnvVars := pod.Spec.Containers[0].Env
+			g.Expect(len(gotEnvVars)).To(Equal(len(tc.expectedEnvs)), "Expected %d environment variables, got %d", len(tc.expectedEnvs), len(gotEnvVars))
+			for _, expectedEnv := range gotEnvVars {
+				g.Expect(tc.expectedEnvs).To(ContainElement(expectedEnv), "Expected environment variable %s not found", expectedEnv.Name)
+			}
 		})
 	}
 }
