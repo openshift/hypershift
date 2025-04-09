@@ -128,7 +128,7 @@ func main() {
 		generators.NameSystems(),
 		generators.DefaultNameSystem(),
 		myTargets,
-		args.GeneratedBuildTag,
+		gengo.StdBuildTag,
 		pflag.Args(),
 	); err != nil {
 		klog.Fatalf("Error: %v", err)

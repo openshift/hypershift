@@ -36,12 +36,8 @@ func main() {
 	// if we're given paths as inputs, generate .pb.go files based on those paths
 	for _, file := range request.FileToGenerate {
 		if strings.Contains(file, "/") {
-			if request.Parameter != nil {
-				*request.Parameter += ",paths=source_relative"
-			} else {
-				param := "paths=source_relative"
-				request.Parameter = &param
-			}
+			param := "paths=source_relative"
+			request.Parameter = &param
 			break
 		}
 	}
