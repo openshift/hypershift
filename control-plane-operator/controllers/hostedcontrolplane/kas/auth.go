@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	hcpconfig "github.com/openshift/hypershift/support/config"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -134,21 +135,20 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 	out.Username = username
 	out.Groups = groups
 
-	// TODO(everettraven): wrap this in a featuregate check
-	// ----
-	uid, err := generateUIDClaimMapping(claimMappings.UID)
-	if err != nil {
-		return out, fmt.Errorf("generating uid claim mapping: %v", err)
-	}
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+		uid, err := generateUIDClaimMapping(claimMappings.UID)
+		if err != nil {
+			return out, fmt.Errorf("generating uid claim mapping: %v", err)
+		}
 
-	extras, err := generateExtraClaimMapping(claimMappings.Extra...)
-	if err != nil {
-		return out, fmt.Errorf("generating extra claim mapping: %v", err)
-	}
+		extras, err := generateExtraClaimMapping(claimMappings.Extra...)
+		if err != nil {
+			return out, fmt.Errorf("generating extra claim mapping: %v", err)
+		}
 
-	out.UID = uid
-	out.Extra = extras
-	// ----
+		out.UID = uid
+		out.Extra = extras
+	}
 
 	return out, nil
 }
