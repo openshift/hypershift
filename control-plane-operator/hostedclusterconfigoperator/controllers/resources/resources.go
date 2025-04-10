@@ -379,6 +379,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
 			log.Info("skipping registry config to let CIRO bootstrap")
 		} else {
+			log.Info("reconciling image registry validating admission policy")
+			if r.platformType == hyperv1.AzurePlatform {
+				if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
+				}
+			}
 			log.Info("reconciling registry config")
 			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
 				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
