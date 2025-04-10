@@ -65,15 +65,16 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			if port.VNICType != "" {
 				additionalPorts[i].ResolvedPortSpecFields.VNICType = &port.VNICType
 			}
+			// OCPBUGS-54763 was reported because we were initially setting port security every time
+			// but in most cases the network is now owned by the project so the default policy
+			// wouldn't allow the port to be created with a port security option, whether it's enabled
+			// or disabled. So we need to set the port security policy only if it's explicitly set in the
+			// additional port spec.
 			switch port.PortSecurityPolicy {
 			case hyperv1.PortSecurityEnabled:
 				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(false)
 			case hyperv1.PortSecurityDisabled:
 				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(true)
-			case hyperv1.PortSecurityDefault:
-				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(false)
-			default:
-				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(false)
 			}
 		}
 		openStackMachineTemplate.Template.Spec.Ports = append(openStackMachineTemplate.Template.Spec.Ports, additionalPorts...)
