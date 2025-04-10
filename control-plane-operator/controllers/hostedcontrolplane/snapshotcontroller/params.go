@@ -18,7 +18,6 @@ type Params struct {
 	OwnerRef                        config.OwnerRef
 	SnapshotControllerOperatorImage string
 	SnapshotControllerImage         string
-	SnapshotWebhookImage            string
 	AvailabilityProberImage         string
 	Version                         string
 	config.DeploymentConfig

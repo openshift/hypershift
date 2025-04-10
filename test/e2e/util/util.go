@@ -2192,7 +2192,6 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 		expectedComponentsWithTokenMount := append(expectedKasManagementComponents,
 			"aws-ebs-csi-driver-controller",
 			"packageserver",
-			"csi-snapshot-webhook",
 			"csi-snapshot-controller",
 			"shared-resource-csi-driver-operator",
 		)
