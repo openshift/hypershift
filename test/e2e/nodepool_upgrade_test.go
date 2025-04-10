@@ -53,6 +53,10 @@ func NewNodePoolInPlaceUpgradeTestManifest(hostedCluster *hyperv1.HostedCluster,
 }
 
 func (ipu *NodePoolInPlaceUpgradeTestManifest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(ipu.previousReleaseImage, ipu.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		return nil, err
+	}
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ipu.hostedCluster.Name + "-" + "test-inplaceupgrade",
@@ -101,6 +105,10 @@ func (ru *NodePoolUpgradeTest) Setup(t *testing.T) {
 }
 
 func (ru *NodePoolUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(ru.previousReleaseImage, ru.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		return nil, err
+	}
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ru.hostedCluster.Name + "-" + "test-replaceupgrade",
@@ -174,6 +182,10 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		e2eutil.WithTimeout(10*time.Second),
 	)
 
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(ru.latestReleaseImage, ru.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		t.Skipf("NodePool version %s is not compatible with the HostedCluster version %s, skipping", ru.latestReleaseImage, ru.hostedCluster.Status.Version.Desired.Version)
+	}
 	// Update NodePool images to the latest.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")

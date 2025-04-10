@@ -1476,3 +1476,210 @@ func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 		})
 	}
 }
+
+func TestSupportedVersionSkewCondition(t *testing.T) {
+	basePullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "pull-secret",
+			Namespace: "test-ns",
+		},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"","email":""}}}`),
+		},
+	}
+
+	baseNodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-np",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			Release: hyperv1.Release{
+				Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+			},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Conditions: []hyperv1.NodePoolCondition{},
+		},
+	}
+
+	baseHostedCluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hc",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+		},
+		Status: hyperv1.HostedClusterStatus{
+			Version: &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{
+					{
+						State:   configv1.CompletedUpdate,
+						Version: "4.18.5",
+					},
+				},
+			},
+		},
+	}
+
+	testCases := []struct {
+		name              string
+		nodePool          *hyperv1.NodePool
+		hostedCluster     *hyperv1.HostedCluster
+		releaseProvider   *fakereleaseprovider.FakeReleaseProvider
+		expectedCondition *hyperv1.NodePoolCondition
+		expectedError     string
+	}{
+		{
+			name: "when nodePool version matches control plane version it should report valid condition",
+			nodePool: func() *hyperv1.NodePool {
+				np := baseNodePool.DeepCopy()
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"
+				return np
+			}(),
+			hostedCluster: baseHostedCluster.DeepCopy(),
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.18.5",
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "Release image version is valid",
+				ObservedGeneration: 0,
+			},
+			expectedError: "",
+		},
+		{
+			name: "when nodePool version is higher than control plane version it should report invalid condition",
+			nodePool: func() *hyperv1.NodePool {
+				np := baseNodePool.DeepCopy()
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.19.0-x86_64"
+				return np
+			}(),
+			hostedCluster: baseHostedCluster.DeepCopy(),
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.19.0",
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolUnsupportedSkewReason,
+				Message:            "NodePool version 4.19.0 cannot be higher than the HostedCluster version 4.18.5",
+				ObservedGeneration: 0,
+			},
+			expectedError: "",
+		},
+		{
+			name: "when nodePool version is two minor versions lower than control plane (odd version) it should report invalid condition",
+			nodePool: func() *hyperv1.NodePool {
+				np := baseNodePool.DeepCopy()
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64"
+				return np
+			}(),
+			hostedCluster: func() *hyperv1.HostedCluster {
+				hc := baseHostedCluster.DeepCopy()
+				hc.Status.Version.History[0].Version = "4.17.0"
+				return hc
+			}(),
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.15.0",
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+				Status:             corev1.ConditionFalse,
+				Reason:             hyperv1.NodePoolUnsupportedSkewReason,
+				Message:            "NodePool minor version 4.15 is not compatible with the HostedCluster minor version 4.17 (max allowed difference: 1)",
+				ObservedGeneration: 0,
+			},
+			expectedError: "",
+		},
+		{
+			name: "when nodePool version is two minor versions lower than control plane (even version) it should report valid condition",
+			nodePool: func() *hyperv1.NodePool {
+				np := baseNodePool.DeepCopy()
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"
+				return np
+			}(),
+			hostedCluster: func() *hyperv1.HostedCluster {
+				hc := baseHostedCluster.DeepCopy()
+				hc.Status.Version.History[0].Version = "4.18.0"
+				return hc
+			}(),
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.16.0",
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "Release image version is valid",
+				ObservedGeneration: 0,
+			},
+			expectedError: "",
+		},
+		{
+			name: "when hosted cluster version history is empty it should report valid condition",
+			nodePool: func() *hyperv1.NodePool {
+				np := baseNodePool.DeepCopy()
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64"
+				return np
+			}(),
+			hostedCluster: func() *hyperv1.HostedCluster {
+				hc := baseHostedCluster.DeepCopy()
+				hc.Status.Version.History = []configv1.UpdateHistory{}
+				hc.Status.Version.Desired = configv1.Release{
+					Version: "4.18.5",
+				}
+				return hc
+			}(),
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Version: "4.18.5",
+			},
+			expectedCondition: &hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            "Release image version is valid",
+				ObservedGeneration: 0,
+			},
+			expectedError: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := NodePoolReconciler{
+				Client:          fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects([]client.Object{tc.nodePool, tc.hostedCluster, basePullSecret}...).Build(),
+				ReleaseProvider: tc.releaseProvider,
+			}
+
+			// Run the test
+			result, err := r.supportedVersionSkewCondition(context.Background(), tc.nodePool, tc.hostedCluster)
+
+			// Check the results
+			if tc.expectedError == "" {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result).To(BeNil())
+			} else {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				g.Expect(result).NotTo(BeNil())
+			}
+
+			// Check the condition
+			condition := FindStatusCondition(tc.nodePool.Status.Conditions, hyperv1.NodePoolSupportedVersionSkewConditionType)
+			g.Expect(condition).NotTo(BeNil())
+
+			g.Expect(condition.Type).To(Equal(tc.expectedCondition.Type))
+			g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+		})
+	}
+}
