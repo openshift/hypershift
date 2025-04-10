@@ -278,6 +278,14 @@ func expectedRules(networkType hyperv1.NetworkType) []rbacv1.PolicyRule {
 			},
 			Verbs: []string{"*"},
 		},
+		{
+			APIGroups: []string{"monitoring.coreos.com", "monitoring.rhobs"},
+			Resources: []string{
+				"servicemonitors",
+				"prometheusrules",
+			},
+			Verbs: []string{"*"},
+		},
 	}
 
 	if networkType != hyperv1.OVNKubernetes {
