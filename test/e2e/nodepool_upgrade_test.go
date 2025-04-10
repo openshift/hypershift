@@ -177,9 +177,9 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	// Update NodePool images to the latest.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-	t.Logf("Updating NodePool image. Image: %s", ru.latestReleaseImage)
+	t.Logf("Updating NodePool image. Image: %s", ru.hostedCluster.Spec.Release.Image)
 	original := nodePool.DeepCopy()
-	nodePool.Spec.Release.Image = ru.latestReleaseImage
+	nodePool.Spec.Release.Image = ru.hostedCluster.Spec.Release.Image
 	err = ru.mgmtClient.Patch(ctx, &nodePool, crclient.MergeFrom(original))
 	g.Expect(err).NotTo(HaveOccurred(), "failed update NodePool image")
 

@@ -4,12 +4,13 @@
 package e2e
 
 import (
+	"testing"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"testing"
 )
 
 type NodePoolPrevReleaseCreateTest struct {
@@ -36,6 +37,11 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Setup(t *testing.T) {
 }
 
 func (npPrevTest *NodePoolPrevReleaseCreateTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
+	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(npPrevTest.release, npPrevTest.hostedCluster.Spec.Release.Image)
+	if err != nil || !isCompatible {
+		return nil, err
+	}
+
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      npPrevTest.hostedCluster.Name + "-" + utilrand.String(5),
