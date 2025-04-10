@@ -53,7 +53,7 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 	return getCatalogImagesWithCache(
 		imageLookupCacheKeyFn(&hcp, pullSecret, registryOverrides),
 		releaseVersionFn(ctx, &hcp, pullSecret, imageMetadataProvider),
-		imageExistsFn(ctx, pullSecret, imageMetadataProvider),
+		imageExistsFn(ctx, &hcp, pullSecret, imageMetadataProvider),
 		registryOverrides)
 }
 
@@ -101,8 +101,11 @@ func releaseVersionFn(ctx context.Context, hcp *hyperv1.HostedControlPlane, pull
 	}
 }
 
-func imageExistsFn(ctx context.Context, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider) func(image string) (bool, error) {
+func imageExistsFn(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret []byte, imageMetadataProvider util.ImageMetadataProvider) func(image string) (bool, error) {
 	return func(image string) (bool, error) {
+		if hcp.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
+			return true, nil
+		}
 		_, _, err := imageMetadataProvider.GetDigest(ctx, image, pullSecret)
 		if err == nil {
 			return true, nil
