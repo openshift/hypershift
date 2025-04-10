@@ -23,6 +23,7 @@ import (
 	certificatesv1 "k8s.io/api/certificates/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -244,6 +245,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 
 func scheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
 	_ = hyperv1.AddToScheme(scheme)
 
 	// Register the NodeClaim GVK in the scheme

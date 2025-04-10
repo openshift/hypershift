@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/config"
@@ -71,7 +72,7 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 	hcp *hyperv1.HostedControlPlane,
 	sa *corev1.ServiceAccount,
 	kubeConfigSecret *corev1.Secret,
-	availabilityProberImage, tokenMinterImage string,
+	availabilityProberImage, tokenMinterImage, karpenterProviderAWSImage string,
 	setDefaultSecurityContext bool,
 	ownerRef config.OwnerRef) error {
 
@@ -142,7 +143,7 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 						Name:      karpenterName,
 						Resources: karpenterResources,
 						// TODO(alberto): lifecycle this image.
-						Image:           "public.ecr.aws/karpenter/controller:1.0.7",
+						Image:           karpenterProviderAWSImage,
 						ImagePullPolicy: corev1.PullIfNotPresent,
 						VolumeMounts: []corev1.VolumeMount{
 							{
@@ -365,6 +366,10 @@ func (r *Reconciler) reconcileKarpenter(ctx context.Context, hcp *hyperv1.Hosted
 	setDefaultSecurityContext := false
 	availabilityProberImage := r.ControlPlaneOperatorImage
 	tokenMinterImage := r.ControlPlaneOperatorImage
+	karpenterProviderAWSImage, exists := hcp.Annotations[hyperkarpenterv1.KarpenterProviderAWSImage]
+	if !exists {
+		karpenterProviderAWSImage = "public.ecr.aws/karpenter/controller:1.0.7"
+	}
 
 	role := KarpenterRole(hcp.Namespace)
 	_, err := createOrUpdate(ctx, c, role, func() error {
@@ -408,7 +413,7 @@ func (r *Reconciler) reconcileKarpenter(ctx context.Context, hcp *hyperv1.Hosted
 
 		deployment := KarpenterDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, c, deployment, func() error {
-			return ReconcileKarpenterDeployment(deployment, hcp, serviceAccount, capiKubeConfigSecret, availabilityProberImage, tokenMinterImage, setDefaultSecurityContext, ownerRef)
+			return ReconcileKarpenterDeployment(deployment, hcp, serviceAccount, capiKubeConfigSecret, availabilityProberImage, tokenMinterImage, karpenterProviderAWSImage, setDefaultSecurityContext, ownerRef)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile karpenter deployment: %w", err)
