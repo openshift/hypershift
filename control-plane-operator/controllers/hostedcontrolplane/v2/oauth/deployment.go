@@ -38,6 +38,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)))
 			c.Args = append(c.Args, "--audit-webhook-mode=batch")
+			c.Args = append(c.Args, "--audit-webhook-initial-backoff=5s")
 
 			c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 				Name:      auditWebhookConfigFileVolumeName,
