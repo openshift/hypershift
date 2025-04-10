@@ -864,7 +864,7 @@ github.com/openshift/hypershift/api/scheduling
 github.com/openshift/hypershift/api/scheduling/v1alpha1
 github.com/openshift/hypershift/api/util/configrefs
 github.com/openshift/hypershift/api/util/ipnet
-# github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
+# github.com/openshift/library-go v0.0.0-20250402180609-ce2ba53fb2a4
 ## explicit; go 1.23.0
 github.com/openshift/library-go/pkg/apiserver/jsonpatch
 github.com/openshift/library-go/pkg/authorization/hardcodedauthorizer
