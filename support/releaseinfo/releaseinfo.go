@@ -22,6 +22,7 @@ type Provider interface {
 	Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error)
 }
 
+//go:generate ../../hack/tools/bin/mockgen -source=releaseinfo.go -package=releaseinfo -destination=providerwithregistryoverrides_mock.go
 type ProviderWithRegistryOverrides interface {
 	Provider
 	GetRegistryOverrides() map[string]string
