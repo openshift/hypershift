@@ -79,6 +79,7 @@ type KubeAPIServerParams struct {
 
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
+	GoAwayChance                string
 }
 
 type KubeAPIServerServiceParams struct {
@@ -93,6 +94,7 @@ const (
 
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
+	defaultGoAwayChance                = 0
 )
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
@@ -124,6 +126,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		},
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
+		GoAwayChance:                fmt.Sprint(defaultGoAwayChance),
 	}
 
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
@@ -143,6 +146,9 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
 		params.MaxMutatingRequestsInflight = mutatingReqInflight
+	}
+	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
+		params.GoAwayChance = goAwayChance
 	}
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
@@ -413,6 +419,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		Authentication:               p.Authentication,
 		MaxRequestsInflight:          p.MaxRequestsInflight,
 		MaxMutatingRequestsInflight:  p.MaxMutatingRequestsInflight,
+		GoAwayChance:                 p.GoAwayChance,
 	}
 }
 
@@ -441,6 +448,7 @@ type KubeAPIServerConfigParams struct {
 	Authentication               *configv1.AuthenticationSpec
 	MaxRequestsInflight          string
 	MaxMutatingRequestsInflight  string
+	GoAwayChance                 string
 }
 
 func (p *KubeAPIServerParams) TLSSecurityProfile() *configv1.TLSSecurityProfile {
