@@ -139,6 +139,7 @@ const (
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
+	defaultToControlPlaneV2Label                               = "io.openshift.hypershift.control-plane-operator.v2-isdefault"
 
 	etcdEncKeyPostfix    = "-etcd-encryption-key"
 	managedServiceEnvVar = "MANAGED_SERVICE"
@@ -1229,6 +1230,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
+	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
 
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
@@ -1609,7 +1611,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
-				shouldCheckForStaleCerts(hcluster, releaseImageVersion),
+				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
 				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
 	})
@@ -2056,8 +2058,8 @@ func (r *HostedClusterReconciler) kasServingCertHashFromEndpoint(kasHostAndPort 
 // The following pre-conditions must be met:
 // - The HostedCluster must be managing its own PKI (the hyperv1.DisablePKIReconciliationAnnotation is not present)
 // - The HostedCluster has been available once
-// - The cluster version of the HostedCluster is < 4.19.0
-func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Version) func() bool {
+// - The cluster is using ControlPlaneOperator v2
+func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, defaultingToControlPlaneV2 bool) func() bool {
 	return func() bool {
 		if hc.Annotations[hcmetrics.HasBeenAvailableAnnotation] != "true" {
 			return false
@@ -2065,9 +2067,10 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, hcVersion semver.Versio
 		if hc.Annotations[hyperv1.DisablePKIReconciliationAnnotation] == "true" {
 			return false
 		}
-		hcVersion.Pre = nil
-		hcVersion.Build = nil
-		return !hcVersion.GE(config.Version419)
+		if defaultingToControlPlaneV2 || hc.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] != "" {
+			return false
+		}
+		return true
 	}
 }
 
