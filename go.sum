@@ -951,12 +951,12 @@ kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0 h1:CPT0ExVicCzcpeN4baWEV2ko2Z/AsiZgEdwgcfwLgMo=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
-sigs.k8s.io/cluster-api v1.9.6 h1:2jZ434qC0bzrPQzmRDm4/b0PZWVMnOocoCjsAonQN5Q=
-sigs.k8s.io/cluster-api v1.9.6/go.mod h1:DyqyZ4jRvKGKewDRn1Q4OCHaVjsdTogymbO6mrgHEDI=
+sigs.k8s.io/cluster-api v1.9.5 h1:68164Q201Y5ANVkhyrOZenoMbfL2SEBjVYZs/ihhSro=
+sigs.k8s.io/cluster-api v1.9.5/go.mod h1:DyqyZ4jRvKGKewDRn1Q4OCHaVjsdTogymbO6mrgHEDI=
 sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1 h1:NmsH/IZsMIiQV/kfJY7+mNriqvk5ImCGZrnmbxUMEM0=
 sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1/go.mod h1:fQ/aPIQs1YKb1hDJtibBY7kspUqvXb9JSWIYkzWlX34=
-sigs.k8s.io/cluster-api-provider-azure v1.19.2 h1:Su0xk55+/nfVskowhd9XISMCz2mgtj/0ganRGt5B5fk=
-sigs.k8s.io/cluster-api-provider-azure v1.19.2/go.mod h1:vgIOjI5i9W+yxCUNJx0Bu/jvBzFVNkfV/xUt4uX/oL0=
+sigs.k8s.io/cluster-api-provider-azure v1.19.1 h1:KLMrzQocUzjk49CrTp9KuwmiSfSqAEznKFuZUi+G/qE=
+sigs.k8s.io/cluster-api-provider-azure v1.19.1/go.mod h1:d3Inm47F1tUBdDHzjTpFu2AZIjPtA6pcMxmfnldubw8=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 h1:3IDw0U2ZFX/RQmJ2mFu3ibQ5mBUUcG1ShcHm7eLHGJ4=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0/go.mod h1:/tqPsGYcODyLUP+DcqMZDeF2l2jiE9qET32s8/eeJTA=
 sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 h1:hQO7Y5GP7FMnH6Aono9WVE90I3vRLBxw/48iKHerjtg=
