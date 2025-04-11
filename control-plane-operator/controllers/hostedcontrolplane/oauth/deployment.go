@@ -221,7 +221,6 @@ func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectRe
 		if auditWebhookRef != nil {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", oauthAuditWebhookConfigFile()))
 			c.Args = append(c.Args, "--audit-webhook-mode=batch")
-			c.Args = append(c.Args, "--audit-webhook-initial-backoff=5s")
 		}
 
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)

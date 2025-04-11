@@ -68,7 +68,6 @@ func reconcileConfigObject(cfg *openshiftcpv1.OpenShiftAPIServerConfig, auditWeb
 	if auditWebhookRef != nil {
 		cfg.APIServerArguments["audit-webhook-config-file"] = []string{auditWebhookConfigFile()}
 		cfg.APIServerArguments["audit-webhook-mode"] = []string{"batch"}
-		cfg.APIServerArguments["audit-webhook-initial-backoff"] = []string{"5s"}
 	}
 
 	cfg.KubeClientConfig.KubeConfig = cpath(oasVolumeKubeconfig().Name, kas.KubeconfigKey)

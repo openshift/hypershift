@@ -211,7 +211,6 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams, etcdHost string) func(c *
 		if p.AuditWebhookRef != nil {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", oauthAuditWebhookConfigFile()))
 			c.Args = append(c.Args, "--audit-webhook-mode=batch")
-			c.Args = append(c.Args, "--audit-webhook-initial-backoff=5s")
 		}
 		if p.AccessTokenInactivityTimeout != nil {
 			c.Args = append(c.Args, fmt.Sprintf("--accesstoken-inactivity-timeout=%s", p.AccessTokenInactivityTimeout.Duration.String()))
