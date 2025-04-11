@@ -140,6 +140,8 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 	}
 }
 
+// setPlatformConditions is a hook for platforms to implement custom logic/conditions freely
+// TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a seperate function.
 func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
@@ -823,4 +825,30 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 	}
 
 	return condition, nil
+}
+
+// validPlatformConfigCondition validates spec.platform config and sets 'ValidPlatformConfig' condition on the NodePool accordingly.
+func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	condition := &hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolValidPlatformConfigConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            hyperv1.AllIsWellMessage,
+		ObservedGeneration: nodePool.Generation,
+	}
+	oldCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformConfigConditionType)
+
+	// TODO: add validation for other platforms
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		err := r.validateAWSPlatformConfig(ctx, nodePool, hc, oldCondition)
+		if err != nil {
+			condition.Status = corev1.ConditionFalse
+			condition.Reason = hyperv1.AWSErrorReason
+			condition.Message = err.Error()
+		}
+	}
+
+	SetStatusCondition(&nodePool.Status.Conditions, *condition)
+	return nil, nil
 }
