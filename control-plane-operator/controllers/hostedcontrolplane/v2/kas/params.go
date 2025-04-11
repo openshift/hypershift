@@ -24,6 +24,7 @@ const (
 
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
+	defaultGoAwayChance                = 0
 )
 
 type KubeAPIServerConfigParams struct {
@@ -51,6 +52,7 @@ type KubeAPIServerConfigParams struct {
 	Authentication               *configv1.AuthenticationSpec
 	MaxRequestsInflight          string
 	MaxMutatingRequestsInflight  string
+	GoAwayChance                 string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams {
@@ -116,6 +118,11 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 	kasConfig.MaxMutatingRequestsInflight = fmt.Sprint(defaultMaxMutatingRequestsInflight)
 	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
 		kasConfig.MaxMutatingRequestsInflight = mutatingReqInflight
+	}
+
+	kasConfig.GoAwayChance = fmt.Sprint(defaultGoAwayChance)
+	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
+		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
 	}
 
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
