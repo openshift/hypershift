@@ -93,9 +93,9 @@ require (
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	kubevirt.io/api v1.4.0
 	kubevirt.io/containerized-data-importer-api v1.61.1
-	sigs.k8s.io/cluster-api v1.9.6
+	sigs.k8s.io/cluster-api v1.9.5
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1
-	sigs.k8s.io/cluster-api-provider-azure v1.19.2
+	sigs.k8s.io/cluster-api-provider-azure v1.19.1
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
