@@ -31,9 +31,6 @@
                         "name": "ClusterVersionOperatorConfiguration"
                     },
                     {
-                        "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
-                    },
-                    {
                         "name": "GCPPlatform"
                     }
                 ],
@@ -42,6 +39,9 @@
                     # Each HostedCluster can configure their specific feature gate CR at creation time via spec.configuration.
                     {
                         "name": "ExternalOIDC"
+                    },
+                    {
+                        "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     },
                     {
                         "name": "DynamicResourceAllocation"
