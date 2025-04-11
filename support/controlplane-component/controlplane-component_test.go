@@ -251,6 +251,11 @@ func componentsFakeObjects() ([]client.Object, error) {
 					Type:   string(hyperv1.ControlPlaneComponentAvailable),
 					Status: metav1.ConditionTrue,
 				},
+				{
+					Type:   string(hyperv1.ControlPlaneComponentProgressing),
+					Status: metav1.ConditionTrue,
+					Reason: "NewReplicaSetAvailable",
+				},
 			},
 		},
 	}
