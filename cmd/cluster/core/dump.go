@@ -538,7 +538,11 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	// oc adm inspect command always returns an error so ignore
-	_, _ = cmd.CombinedOutput()
+	result, err := cmd.CombinedOutput()
+	if err != nil {
+		i.log.Info(fmt.Sprintf("oc adm inspect error: %v", err))
+	}
+	i.log.Info(fmt.Sprintf("oc adm inspect output: %s", string(result)))
 }
 
 type OCAdmNodeLogs struct {
