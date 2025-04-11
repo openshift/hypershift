@@ -52,7 +52,16 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 		}
 
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
-		if availableCondition != nil && availableCondition.Status == metav1.ConditionTrue && component.Status.Version == desiredVersion {
+		isAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue && component.Status.Version == desiredVersion
+		// for API server, we need to wait for the deployment to complete the rollout before proceeding.
+		if component.GetName() == kubeAPIServerComponentName {
+			progressingCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentProgressing))
+			isComplete := progressingCondition != nil && progressingCondition.Status == metav1.ConditionTrue && progressingCondition.Reason == "NewReplicaSetAvailable"
+
+			isAvailable = isAvailable && isComplete
+		}
+
+		if isAvailable {
 			unavailableDependencies.Delete(component.Name)
 		}
 	}
