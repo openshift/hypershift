@@ -3,6 +3,7 @@ package oapi
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -65,10 +66,26 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			Name:  "NO_PROXY",
 			Value: strings.Join(noProxy, ","),
 		})
+		// If auditing is none/disabled, remove the audit args from the container
+		if cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+			for _, argToRemove := range []string{
+				"--audit-log-path=",
+				"--audit-log-format=",
+				"--audit-log-maxsize=",
+				"--audit-log-maxbackup=",
+				"--audit-policy-file=",
+			} {
+				c.Args = slices.DeleteFunc(c.Args, func(s string) bool {
+					return strings.Contains(s, argToRemove)
+				})
+			}
+		}
 	})
 
 	if cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount("audit-config", util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume("audit-config", &deployment.Spec.Template.Spec)
 	}
 
 	if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
