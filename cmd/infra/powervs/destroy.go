@@ -391,7 +391,7 @@ func destroyPowerVsDhcpServer(ctx context.Context, logger logr.Logger, cloudInst
 
 	// TO-DO: need to replace the logic of waiting for dhcp service deletion by using jobReference.
 	// jobReference is not yet added in SDK
-	f := func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, pollingInterval, dhcpServerDeletionTimeout, true, func(context.Context) (bool, error) {
 		dhcpInstance, err := instanceClient.Get(dhcpID)
 		if err != nil {
 			if err = isNotRetryableError(err, timeoutErrorKeywords); err == nil {
@@ -417,9 +417,7 @@ func destroyPowerVsDhcpServer(ctx context.Context, logger logr.Logger, cloudInst
 
 		logger.Info("Waiting for DhcpServer to destroy", "id", *dhcpInstance.PvmInstanceID, "status", *dhcpInstance.Status)
 		return false, nil
-	}
-
-	return wait.PollImmediate(pollingInterval, dhcpServerDeletionTimeout, f)
+	})
 
 }
 
@@ -440,7 +438,7 @@ func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, option
 				continue
 			}
 
-			f := func() (bool, error) {
+			if err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudInstanceDeletionTimeout, true, func(context.Context) (bool, error) {
 				resourceInst, resp, err := rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: &cloudInstanceID})
 				if err != nil {
 					logger.Error(err, "error in querying deleted cloud instance", "resp", resp.String())
@@ -459,9 +457,7 @@ func destroyPowerVsCloudInstance(ctx context.Context, logger logr.Logger, option
 				}
 
 				return false, nil
-			}
-
-			if err = wait.PollImmediate(pollingInterval, cloudInstanceDeletionTimeout, f); err == nil {
+			}); err == nil {
 				break
 			}
 			logger.Info("Retrying cloud instance deletion ...")
@@ -596,7 +592,7 @@ func deleteVpcSubnet(ctx context.Context, logger logr.Logger, id string, v1 *vpc
 		return err
 	}
 
-	f := func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, pollingInterval, vpcResourceDeletionTimeout, true, func(context.Context) (bool, error) {
 		if _, _, err := v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: &id}); err != nil {
 			if strings.Contains(err.Error(), "Subnet not found") {
 				return true, nil
@@ -605,9 +601,7 @@ func deleteVpcSubnet(ctx context.Context, logger logr.Logger, id string, v1 *vpc
 			}
 		}
 		return false, nil
-	}
-
-	return wait.PollImmediate(pollingInterval, vpcResourceDeletionTimeout, f)
+	})
 }
 
 // destroyVpcLB destroys VPC Load Balancer
@@ -619,15 +613,13 @@ func destroyVpcLB(ctx context.Context, logger logr.Logger, options *DestroyInfra
 			return err
 		}
 
-		f := func() (bool, error) {
+		return wait.PollUntilContextTimeout(ctx, pollingInterval, vpcResourceDeletionTimeout, true, func(context.Context) (bool, error) {
 			_, _, err := v1.GetLoadBalancerWithContext(ctx, &vpcv1.GetLoadBalancerOptions{ID: &id})
 			if err != nil && strings.Contains(err.Error(), "cannot be found") {
 				return true, nil
 			}
 			return false, err
-		}
-
-		return wait.PollImmediate(pollingInterval, vpcResourceDeletionTimeout, f)
+		})
 	}
 
 	f := func(start string) (bool, string, error) {

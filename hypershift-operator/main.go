@@ -253,7 +253,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return "", fmt.Errorf("couldn't locate operator container on deployment")
 	}
 	var operatorImage string
-	if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
 		operatorImage, err = lookupOperatorImage(opts.ControlPlaneOperatorImage)
 		if err != nil {
 			return false, err

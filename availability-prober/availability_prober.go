@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -23,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -74,7 +74,7 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 
 		}
-		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.val.List())
+		opts.requiredAPIsParsed, err = parseGroupVersionKindArgValues(opts.requiredAPIs.List())
 		if err != nil {
 			log.Error(err, "failed to parse --required-api arguments")
 			os.Exit(1)
@@ -209,20 +209,34 @@ func check(log logr.Logger, target *url.URL, requestTimeout time.Duration, sleep
 }
 
 type stringSetFlag struct {
-	val sets.String
+	val map[string]struct{}
 }
 
 func (s *stringSetFlag) Set(v string) error {
 	if s.val == nil {
-		s.val = sets.String{}
+		s.val = make(map[string]struct{})
 	}
-	s.val.Insert(v)
+	s.val[v] = struct{}{}
 	return nil
 }
 
 func (s *stringSetFlag) String() string {
-	return fmt.Sprintf("%v", s.val.List())
+	keys := make([]string, 0, len(s.val))
+	for key := range s.val {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return fmt.Sprintf("%v", keys)
 }
+
+func (s *stringSetFlag) List() []string {
+	keys := make([]string, 0, len(s.val))
+	for key := range s.val {
+		keys = append(keys, key)
+	}
+	return keys
+}
+
 func (s *stringSetFlag) Type() string {
 	return "stringSetFlag"
 }
