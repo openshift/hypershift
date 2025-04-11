@@ -20,7 +20,8 @@ package v1beta1
 // PlacementOptionsApplyConfiguration represents a declarative configuration of the PlacementOptions type for use
 // with apply.
 type PlacementOptionsApplyConfiguration struct {
-	Tenancy *string `json:"tenancy,omitempty"`
+	Tenancy             *string                                       `json:"tenancy,omitempty"`
+	CapacityReservation *CapacityReservationOptionsApplyConfiguration `json:"capacityReservation,omitempty"`
 }
 
 // PlacementOptionsApplyConfiguration constructs a declarative configuration of the PlacementOptions type for use with
@@ -34,5 +35,13 @@ func PlacementOptions() *PlacementOptionsApplyConfiguration {
 // If called multiple times, the Tenancy field is set to the value of the last call.
 func (b *PlacementOptionsApplyConfiguration) WithTenancy(value string) *PlacementOptionsApplyConfiguration {
 	b.Tenancy = &value
+	return b
+}
+
+// WithCapacityReservation sets the CapacityReservation field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CapacityReservation field is set to the value of the last call.
+func (b *PlacementOptionsApplyConfiguration) WithCapacityReservation(value *CapacityReservationOptionsApplyConfiguration) *PlacementOptionsApplyConfiguration {
+	b.CapacityReservation = value
 	return b
 }

@@ -107,6 +107,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Capabilities"):
 		return &hypershiftv1beta1.CapabilitiesApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("CapacityReservationOptions"):
+		return &hypershiftv1beta1.CapacityReservationOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
 		return &hypershiftv1beta1.CertificateSigningRequestApprovalApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterAutoscaling"):
