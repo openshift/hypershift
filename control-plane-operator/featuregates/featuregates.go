@@ -10,19 +10,19 @@ import (
 
 // Define new featuregates here
 const (
-    ExternalOIDCWithUIDAndExtraClaimMappings featuregate.Feature = "ExternalOIDCWithUIDAndExtraClaimMappings"
+	ExternalOIDCWithUIDAndExtraClaimMappings featuregate.Feature = "ExternalOIDCWithUIDAndExtraClaimMappings"
 )
 
 // Initialize new features here
 var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
-    externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
 	// Add featuregates here
-    allFeatures.AddFeature(externalOIDCWithUIDAndExtraClaimMappingsFeature)
+	allFeatures.AddFeature(externalOIDCWithUIDAndExtraClaimMappingsFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
