@@ -521,6 +521,10 @@ func (i *OCAdmInspect) WithNamespace(namespace string) *OCAdmInspect {
 }
 
 func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
+	if err := os.MkdirAll(i.artifactDir, 0755); err != nil {
+		i.log.Info(fmt.Sprintf("failed to ensure artifact directory exists: %v", err))
+		return
+	}
 	allArgs := []string{"adm", "inspect", "--dest-dir", i.artifactDir}
 	if len(i.namespace) > 0 {
 		allArgs = append(allArgs, "-n", i.namespace)
@@ -546,6 +550,12 @@ type OCAdmNodeLogs struct {
 }
 
 func (i *OCAdmNodeLogs) Run(ctx context.Context, cmdArgs ...string) {
+	// Ensure that artifact directory exists
+	if err := os.MkdirAll(i.artifactDir, 0755); err != nil {
+		i.log.Info(fmt.Sprintf("failed to ensure artifact directory exists: %v", err))
+		return
+	}
+
 	allArgs := []string{"adm", "node-logs"}
 	if len(i.kubeconfig) > 0 {
 		allArgs = append(allArgs, "--kubeconfig", i.kubeconfig)
