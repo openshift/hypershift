@@ -2606,13 +2606,6 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile cvo serving cert: %w", err)
 	}
 
-	csiSnapshotWebhookSecret := manifests.CSISnapshotControllerWebhookCertSecret(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, csiSnapshotWebhookSecret, func() error {
-		return pki.ReconcileCSISnapshotWebhookTLS(csiSnapshotWebhookSecret, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile CSI snapshot webhook cert: %w", err)
-	}
-
 	// For the Multus Admission Controller, Network Node Identity, and OVN Control Plane Metrics Serving Certs:
 	//   We want to remove the secret if there was an existing one created by service-ca; otherwise, it will cause
 	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving

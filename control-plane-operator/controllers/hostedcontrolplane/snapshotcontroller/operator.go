@@ -44,12 +44,10 @@ func ReconcileOperatorDeployment(
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = params.Version
 		case "OPERAND_IMAGE":
 			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = params.SnapshotControllerImage
-		case "WEBHOOK_IMAGE":
-			deployment.Spec.Template.Spec.Containers[0].Env[i].Value = params.SnapshotWebhookImage
 		}
 	}
 
-	// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller and csi-snapshot-webhook pods as.
+	// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller pods as.
 	// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
 	if setDefaultSecurityContext {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: "1001"})

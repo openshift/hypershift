@@ -272,15 +272,6 @@ spec:
           apiVersion: apps/v1
           kind: Deployment
           metadata:
-            name: csi-snapshot-webhook
-            namespace: openshift-cluster-storage-operator
-            annotations:
-              include.release.openshift.io/ibm-cloud-managed: "true"
-              release.openshift.io/delete: "true"
-          ---
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
             name: csi-snapshot-controller
             namespace: openshift-cluster-storage-operator
             annotations:

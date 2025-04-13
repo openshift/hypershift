@@ -277,7 +277,6 @@ func ResourcesToRemove(platformType hyperv1.PlatformType) []client.Object {
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller-operator", Namespace: "openshift-cluster-storage-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-operator", Namespace: "openshift-cluster-csi-drivers"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "aws-ebs-csi-driver-controller", Namespace: "openshift-cluster-csi-drivers"}},
-			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-webhook", Namespace: "openshift-cluster-storage-operator"}},
 			&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Name: "csi-snapshot-controller", Namespace: "openshift-cluster-storage-operator"}},
 		}
 	}
