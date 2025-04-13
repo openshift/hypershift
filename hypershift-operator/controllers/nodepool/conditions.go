@@ -21,6 +21,8 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -823,4 +825,104 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 	}
 
 	return condition, nil
+}
+
+func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	if hcluster.Status.Version == nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            "HostedCluster version is not available yet, waiting for version information",
+			ObservedGeneration: nodePool.Generation,
+		})
+		return &ctrl.Result{}, fmt.Errorf("HostedCluster version is not available yet")
+	}
+
+	// Get the control plane version string
+	var controlPlaneVersionStr string
+	if len(hcluster.Status.Version.History) == 0 {
+		// If the cluster is in the process of installation, there is no history
+		// Use the desired version as the control plane version
+		controlPlaneVersionStr = hcluster.Status.Version.Desired.Version
+	} else {
+		// If the cluster is installed or upgrading
+		// Start with the most recent version from history as the default
+		controlPlaneVersionStr = hcluster.Status.Version.History[len(hcluster.Status.Version.History)-1].Version
+		// Update with any more recent Completed version if found
+		for _, history := range hcluster.Status.Version.History {
+			if history.State == "Completed" {
+				controlPlaneVersionStr = history.Version
+				break
+			}
+		}
+	}
+	// Parse control plane version
+	controlPlaneVersion, err := semver.Parse(controlPlaneVersionStr)
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("parsing control plane version (%s): %w", controlPlaneVersionStr, err)
+	}
+
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	// Parse NodePool version
+	nodePoolVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return &ctrl.Result{}, fmt.Errorf("parsing NodePool version (%s): %v", releaseImage.Version(), err)
+	}
+
+	// NodePool version cannot be higher than control plane version
+	if nodePoolVersion.GT(controlPlaneVersion) {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:   hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status: corev1.ConditionFalse,
+			Reason: hyperv1.NodePoolUnsupportedSkewReason,
+			Message: fmt.Sprintf("NodePool version %s cannot be higher than the HostedCluster version %s",
+				nodePoolVersion, controlPlaneVersion),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+
+	// Calculate minor version difference
+	versionDiff := int64(controlPlaneVersion.Minor - nodePoolVersion.Minor)
+
+	// For 4.even versions, allow y-2 difference
+	// For 4.odd versions, allow y-1 difference
+	maxAllowedDiff := int64(2)
+	if controlPlaneVersion.Minor%2 == 1 {
+		maxAllowedDiff = 1
+	}
+
+	if versionDiff > maxAllowedDiff {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:   hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status: corev1.ConditionFalse,
+			Reason: hyperv1.NodePoolUnsupportedSkewReason,
+			Message: fmt.Sprintf("NodePool minor version %d.%d is not compatible with the HostedCluster minor version %d.%d (max allowed difference: %d)",
+				nodePoolVersion.Major, nodePoolVersion.Minor,
+				controlPlaneVersion.Major, controlPlaneVersion.Minor,
+				maxAllowedDiff),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Release image version is valid",
+		ObservedGeneration: nodePool.Generation,
+	})
+	return nil, nil
 }

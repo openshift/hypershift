@@ -254,9 +254,10 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		hyperv1.NodePoolValidArchPlatform:                    r.validArchPlatformCondition,
 		hyperv1.NodePoolReconciliationActiveConditionType:    r.reconciliationActiveCondition,
 		// Conditition that depends on a valid release image.
-		hyperv1.NodePoolValidMachineConfigConditionType: r.validMachineConfigCondition,
-		hyperv1.NodePoolUpdatingConfigConditionType:     r.updatingConfigCondition,
-		hyperv1.NodePoolUpdatingVersionConditionType:    r.updatingVersionCondition,
+		hyperv1.NodePoolSupportedVersionSkewConditionType: r.supportedVersionSkewCondition,
+		hyperv1.NodePoolValidMachineConfigConditionType:   r.validMachineConfigCondition,
+		hyperv1.NodePoolUpdatingConfigConditionType:       r.updatingConfigCondition,
+		hyperv1.NodePoolUpdatingVersionConditionType:      r.updatingVersionCondition,
 		// Conditition that depends on a valid config/token.
 		hyperv1.NodePoolValidGeneratedPayloadConditionType: r.validGeneratedPayloadCondition,
 		hyperv1.NodePoolReachedIgnitionEndpoint:            r.reachedIgnitionEndpointCondition,
