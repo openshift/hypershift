@@ -140,6 +140,8 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               cfg.Subject,
+		DNSNames:              cfg.DNSNames,
+		ExtKeyUsage:           cfg.ExtKeyUsages,
 	}
 	// verifies that the CN and/or OU for the cert is set
 	if len(cfg.Subject.CommonName) == 0 || len(cfg.Subject.OrganizationalUnit) == 0 {
