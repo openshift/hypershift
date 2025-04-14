@@ -3773,13 +3773,11 @@ func (r *HostedControlPlaneReconciler) reconcileClusterNetworkOperator(ctx conte
 	if hyperazureutil.IsAroHCP() {
 		cnccSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureNetworkSecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, cnccSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cnccSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cnccSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ingressoperator secret provider class: %w", err)
 		}
-
-		p.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	sa := manifests.ClusterNetworkOperatorServiceAccount(hcp.Namespace)
