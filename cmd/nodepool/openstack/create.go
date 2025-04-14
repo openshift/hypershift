@@ -153,13 +153,8 @@ func convertAdditionalPorts(additionalPorts []string) ([]hyperv1.PortSpec, error
 			return res, fmt.Errorf("--openstack-node-additional-port requires network-id to be set")
 		}
 		var portSecurityPolicy hyperv1.PortSecurityPolicy
-		switch additionalPortOpts.DisablePortSecurity {
-		case true:
+		if additionalPortOpts.DisablePortSecurity {
 			portSecurityPolicy = hyperv1.PortSecurityDisabled
-		case false:
-			portSecurityPolicy = hyperv1.PortSecurityEnabled
-		default:
-			portSecurityPolicy = hyperv1.PortSecurityDefault
 		}
 		res = append(res, hyperv1.PortSpec{
 			Network: &hyperv1.NetworkParam{
