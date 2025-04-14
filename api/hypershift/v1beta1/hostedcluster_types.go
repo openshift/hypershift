@@ -851,7 +851,7 @@ type NodePortPublishingStrategy struct {
 	// address is the host/ip that the NodePort service is exposed over.
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:XValidation:rule=`isIP(self) || self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$') || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')`, message="address must be a valid hostname, IPv4, or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$') || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')`, message="address must be a valid hostname, IPv4, or IPv6 address"
 	// +required
 	Address string `json:"address"`
 
