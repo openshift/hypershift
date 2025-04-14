@@ -257,6 +257,8 @@ require (
 
 replace github.com/openshift/hypershift/api => ./api
 
+replace github.com/openshift/api => ../api
+
 // orc currently lives in CAPO
 replace github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20241018150903-d5cd16872111
 

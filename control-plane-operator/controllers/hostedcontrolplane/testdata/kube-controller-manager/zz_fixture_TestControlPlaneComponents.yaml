@@ -172,6 +172,7 @@ spec:
         - --feature-gates=SignatureStores=false
         - --feature-gates=PinnedImages=false
         - --feature-gates=UpgradeStatus=false
+        - --feature-gates=ExternalOIDCWithUIDAndExtraClaimMappings=false
         - --feature-gates=Example=false
         - --feature-gates=Example2=false
         - --feature-gates=PlatformOperators=false

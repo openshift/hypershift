@@ -156,6 +156,7 @@ spec:
         - --feature-gates=PinnedImages=true
         - --feature-gates=UpgradeStatus=true
         - --feature-gates=ExternalOIDC=true
+        - --feature-gates=ExternalOIDCWithUIDAndExtraClaimMappings=true
         - --feature-gates=Example=true
         - --feature-gates=PlatformOperators=true
         - --feature-gates=InsightsOnDemandDataGather=true
