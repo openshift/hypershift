@@ -129,7 +129,6 @@ spec:
         - --feature-gates=VSphereHostVMGroupZonal=true
         - --feature-gates=VSphereMultiDisk=true
         - --feature-gates=VSphereMultiVCenters=true
-        - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=RouteExternalCertificate=true
         - --feature-gates=CPMSMachineNamePrefix=true
         - --feature-gates=AdminNetworkPolicy=true
@@ -143,7 +142,6 @@ spec:
         - --feature-gates=EtcdBackendQuota=true
         - --feature-gates=AutomatedEtcdBackup=true
         - --feature-gates=DNSNameResolver=true
-        - --feature-gates=VSphereControlPlaneMachineSet=true
         - --feature-gates=MachineConfigNodes=true
         - --feature-gates=GCPClusterHostedDNS=true
         - --feature-gates=AWSClusterHostedDNS=true
@@ -164,6 +162,7 @@ spec:
         - --feature-gates=NodeDisruptionPolicy=true
         - --feature-gates=MetricsCollectionProfiles=true
         - --feature-gates=VSphereDriverConfiguration=true
+        - --feature-gates=ClusterAPIInstallIBMCloud=true
         - --feature-gates=ChunkSizeMiB=true
         - --feature-gates=PersistentIPsForVirtualization=true
         - --feature-gates=ClusterMonitoringConfig=true
@@ -203,7 +202,7 @@ spec:
         - --feature-gates=Example2=false
         - --feature-gates=NewOLM=false
         - --feature-gates=NewOLMCatalogdAPIV1Metas=false
-        - --feature-gates=ClusterAPIInstallIBMCloud=false
+        - --feature-gates=NewOLMPreflightPermissionChecks=false
         - --feature-gates=MachineAPIMigration=false
         - --feature-gates=MultiArchInstallAzure=false
         - --feature-gates=ClusterVersionOperatorConfiguration=false
