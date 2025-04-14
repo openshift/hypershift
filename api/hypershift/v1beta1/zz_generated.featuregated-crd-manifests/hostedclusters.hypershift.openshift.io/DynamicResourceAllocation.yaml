@@ -4596,9 +4596,9 @@ spec:
                               x-kubernetes-validations:
                               - message: address must be a valid hostname, IPv4, or
                                   IPv6 address
-                                rule: isIP(self) || self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$')
+                                rule: self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$')
                                   || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$')
-                                  || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')
+                                  || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
                             port:
                               description: |-
                                 port is the port of the NodePort service. If <=0, the port is dynamically
