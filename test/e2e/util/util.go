@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
-	"io"
 	"net"
 	"os"
 	"strings"
@@ -26,7 +25,6 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -61,7 +59,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
@@ -2567,49 +2564,4 @@ func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byt
 	}
 
 	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
-}
-
-func ValidateNodePoolVersionCompatibility(nodePoolReleaseImage, hostedClusterReleaseImage string) (bool, error) {
-	releaseInfoProvider := &releaseinfo.RegistryClientProvider{}
-	globalOpts := &Options{}
-	pullSecretFile, err := os.Open(globalOpts.ConfigurableClusterOptions.PullSecretFile)
-	if err != nil {
-		return false, err
-	}
-	defer pullSecretFile.Close()
-	pullSecret, err := io.ReadAll(pullSecretFile)
-	if err != nil {
-		return false, err
-	}
-	ctx := context.TODO()
-	nodePoolReleaseInfo, err := releaseInfoProvider.Lookup(ctx, nodePoolReleaseImage, pullSecret)
-	if err != nil {
-		return false, err
-	}
-	nodePoolVersion, err := semver.Parse(nodePoolReleaseInfo.Version())
-	if err != nil {
-		return false, err
-	}
-	controlPlaneReleaseInfo, err := releaseInfoProvider.Lookup(ctx, hostedClusterReleaseImage, pullSecret)
-	if err != nil {
-		return false, err
-	}
-	controlPlaneVersion, err := semver.Parse(controlPlaneReleaseInfo.Version())
-	if err != nil {
-		return false, err
-	}
-	if nodePoolVersion.GT(controlPlaneVersion) {
-		return false, fmt.Errorf("nodePool version %s is greater than HostedCluster version %s", nodePoolVersion, controlPlaneVersion)
-	}
-
-	versionDiff := int64(controlPlaneVersion.Minor - nodePoolVersion.Minor)
-
-	maxAllowedDiff := int64(2)
-	if controlPlaneVersion.Minor%2 == 1 {
-		maxAllowedDiff = 1
-	}
-	if versionDiff > maxAllowedDiff {
-		return false, fmt.Errorf("nodePool version %s is not compatible with the HostedCluster version %s", nodePoolVersion, controlPlaneVersion)
-	}
-	return true, nil
 }

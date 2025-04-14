@@ -15,16 +15,18 @@ import (
 
 type NodePoolPrevReleaseCreateTest struct {
 	DummyInfraSetup
-	hostedCluster *hyperv1.HostedCluster
-	release       string
-	clusterOpts   e2eutil.PlatformAgnosticOptions
+	hostedCluster     *hyperv1.HostedCluster
+	release           string
+	clusterOpts       e2eutil.PlatformAgnosticOptions
+	expectVersionSkew bool
 }
 
-func NewNodePoolPrevReleaseCreateTest(hostedCluster *hyperv1.HostedCluster, release string, clusterOpts e2eutil.PlatformAgnosticOptions) *NodePoolPrevReleaseCreateTest {
+func NewNodePoolPrevReleaseCreateTest(hostedCluster *hyperv1.HostedCluster, release string, clusterOpts e2eutil.PlatformAgnosticOptions, expectVersionSkew bool) *NodePoolPrevReleaseCreateTest {
 	return &NodePoolPrevReleaseCreateTest{
-		hostedCluster: hostedCluster,
-		release:       release,
-		clusterOpts:   clusterOpts,
+		hostedCluster:     hostedCluster,
+		release:           release,
+		clusterOpts:       clusterOpts,
+		expectVersionSkew: expectVersionSkew,
 	}
 }
 
@@ -33,11 +35,6 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Setup(t *testing.T) {
 
 	if npPrevTest.release == "" {
 		t.Skip("previous release wasn't set, skipping")
-	}
-
-	isCompatible, err := e2eutil.ValidateNodePoolVersionCompatibility(npPrevTest.release, npPrevTest.hostedCluster.Spec.Release.Image)
-	if err != nil || !isCompatible {
-		t.Skip("nodepool release is not compatible with the current hostedCluster release, skipping")
 	}
 }
 
@@ -62,4 +59,8 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Run(t *testing.T, nodePool hype
 
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
+}
+
+func (npPrevTest *NodePoolPrevReleaseCreateTest) ExpectVersionSkew() bool {
+	return npPrevTest.expectVersionSkew
 }
