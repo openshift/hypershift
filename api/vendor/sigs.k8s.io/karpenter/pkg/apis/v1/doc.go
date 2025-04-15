@@ -21,7 +21,6 @@ limitations under the License.
 package v1 // doc.go is discovered by codegen
 
 import (
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -37,6 +36,4 @@ func init() {
 		&NodePoolList{},
 		&NodeClaim{},
 		&NodeClaimList{})
-
-	_ = apiextensionsv1.AddToScheme(scheme.Scheme)
 }
