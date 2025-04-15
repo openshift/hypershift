@@ -17,7 +17,7 @@ status:
     message: ""
     reason: AsExpected
     status: "True"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: ""
     kind: ConfigMap
