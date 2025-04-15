@@ -40,3 +40,24 @@ func GetHostedClusterManagedResources(platformsInstalled string) []client.Object
 
 	return managedResources
 }
+
+func GetNodePoolManagedResources(platformsInstalled string) []client.Object {
+	var managedResources []client.Object
+
+	platformsInstalledList := strings.Split(platformsInstalled, ",")
+	for _, platform := range platformsInstalledList {
+		platform = strings.ToLower(strings.TrimSpace(platform))
+		switch platform {
+		case "aws":
+			managedResources = append(managedResources, &capiaws.AWSMachineTemplate{})
+		case "azure":
+			managedResources = append(managedResources, &capiazure.AzureMachineTemplate{})
+		case "agent":
+			managedResources = append(managedResources, &agentv1.AgentMachineTemplate{})
+		case "openstack":
+			managedResources = append(managedResources, &capiopenstackv1beta1.OpenStackMachineTemplate{})
+		}
+	}
+
+	return managedResources
+}
