@@ -41,10 +41,10 @@ spec:
         livenessProbe:
           failureThreshold: 3
           httpGet:
-            path: healthz
+            path: livez?exclude=etcd
             port: 8443
             scheme: HTTPS
-          initialDelaySeconds: 30
+          initialDelaySeconds: 0
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 10
@@ -56,12 +56,23 @@ spec:
         readinessProbe:
           failureThreshold: 10
           httpGet:
-            path: healthz
+            path: readyz?exclude=etcd&exclude=etcd-readiness
             port: 8443
             scheme: HTTPS
+          initialDelaySeconds: 0
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 1
+        startupProbe:
+          httpGet:
+            path: livez
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 10
+          successThreshold: 1
+          failureThreshold: 30
         resources:
           requests:
             cpu: 100m
