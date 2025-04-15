@@ -248,3 +248,19 @@ func CloudNetworkConfigControllerServiceAccountRoleBinding() *rbacv1.ClusterRole
 		},
 	}
 }
+
+func NodePublicInfoViewerClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:node-public-info-viewer",
+		},
+	}
+}
+
+func NodePublicInfoViewerClusterRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:openshift:node-public-info-viewer",
+		},
+	}
+}
