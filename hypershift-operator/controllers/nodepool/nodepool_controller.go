@@ -415,7 +415,7 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 			supported = true
 		}
 	case hyperv1.KubevirtPlatform:
-		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 {
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureS390X {
 			supported = true
 		}
 	case hyperv1.OpenStackPlatform:
