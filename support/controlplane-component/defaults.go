@@ -92,7 +92,7 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 		deploymentConfig.AdditionalLabels[config.NeedManagementKASAccessLabel] = "true"
 	}
 
-	replicas := defaultReplicas(c.Name(), cpContext.HCP)
+	replicas := c.defaultReplicas(cpContext.HCP)
 	if desiredReplicas != nil {
 		replicas = int(*desiredReplicas)
 	}
@@ -268,13 +268,16 @@ func getPriorityClass(componentName string, hcp *hyperv1.HostedControlPlane) str
 	return priorityClass
 }
 
-func defaultReplicas(componentName string, hcp *hyperv1.HostedControlPlane) int {
+func (c *controlPlaneWorkload[T]) defaultReplicas(hcp *hyperv1.HostedControlPlane) int {
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
 		return 1
 	}
 
 	// HighlyAvailable
-	if componentName == etcdComponentName || apiCriticalComponents.Has(componentName) {
+	if c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+		return 2
+	}
+	if c.name == etcdComponentName || apiCriticalComponents.Has(c.name) {
 		return 3
 	}
 	return 2
