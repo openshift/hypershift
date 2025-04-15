@@ -100,9 +100,11 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -157,6 +159,16 @@ const (
 
 // NoopReconcile is just a default mutation function that does nothing.
 var NoopReconcile controllerutil.MutateFn = func() error { return nil }
+
+var capiRelatedManagedResourcesToWatch = []client.Object{
+	&capiaws.AWSCluster{},
+	&capiazure.AzureCluster{},
+	&hyperv1.AWSEndpointService{},
+	&agentv1.AgentCluster{},
+	&capiibmv1.IBMVPCCluster{},
+	&capikubevirt.KubevirtCluster{},
+	&capiopenstackv1beta1.OpenStackCluster{},
+}
 
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
@@ -250,9 +262,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 // managedResources are all the resources that are managed as childresources for a HostedCluster
 func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
-		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
-		&hyperv1.AWSEndpointService{},
 		&capiv1.Cluster{},
 		&appsv1.Deployment{},
 		&prometheusoperatorv1.PodMonitor{},
@@ -267,25 +277,34 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
 		&corev1.Endpoints{},
-		&agentv1.AgentCluster{},
-		&capiibmv1.IBMVPCCluster{},
-		&capikubevirt.KubevirtCluster{},
 		&hyperv1.NodePool{},
 	}
 
+	// Watch based on platforms installed
+	if platformsInstalled := os.Getenv("PLATFORMS_INSTALLED"); len(platformsInstalled) > 0 {
+		managedResources = append(managedResources, hyperutil.GetHostedClusterManagedResources(platformsInstalled)...)
+	} else {
+		managedResources = append(managedResources, capiRelatedManagedResourcesToWatch...)
+	}
+
+	// Watch if etcd recovery is enabled
 	if r.EnableEtcdRecovery {
 		managedResources = append(managedResources, []client.Object{
 			&appsv1.StatefulSet{},
 			&batchv1.Job{},
 		}...)
 	}
+
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		managedResources = append(managedResources, &routev1.Route{})
 	}
+
+	// Watch based on Ingress capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		managedResources = append(managedResources, &configv1.Ingress{})
 	}
+
 	return managedResources
 }
 
