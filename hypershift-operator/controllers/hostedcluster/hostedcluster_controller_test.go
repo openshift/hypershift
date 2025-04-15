@@ -1248,7 +1248,20 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
+	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
+
 	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().
+		Return(nil).AnyTimes()
+	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().
+		Return(nil).AnyTimes()
+
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	manifests := []manifestlist.ManifestDescriptor{
 		{
@@ -1279,113 +1292,242 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		}, nil
 	}
-	hostedClusters := []*hyperv1.HostedCluster{
+
+	testCases := []struct {
+		platform      string
+		hostedCluster *hyperv1.HostedCluster
+	}{
 		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "agent",
-				Namespace: "test",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type:  hyperv1.AgentPlatform,
-					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
+			platform: "agent",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "agent",
+					Namespace: "test",
 				},
-				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
-				},
-			},
-			Status: hyperv1.HostedClusterStatus{
-				IgnitionEndpoint: "ign",
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "aws",
-				Namespace: "test",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.AWSPlatform,
-					AWS: &hyperv1.AWSPlatformSpec{
-						EndpointAccess: hyperv1.Public,
-						RolesRef: hyperv1.AWSRolesRef{
-							IngressARN:              "ingress-arn",
-							ImageRegistryARN:        "image-registry-arn",
-							StorageARN:              "storage-arn",
-							NetworkARN:              "network-arn",
-							KubeCloudControllerARN:  " kube-cloud-controller-arn",
-							NodePoolManagementARN:   "node-pool-management-arn",
-							ControlPlaneOperatorARN: "control-plane-operator-arn",
-						},
-						Region: "us-east-1",
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AgentPlatform,
+						Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
 					},
 				},
-				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+				Status: hyperv1.HostedClusterStatus{
+					IgnitionEndpoint: "ign",
 				},
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "none",
-				Namespace: "test",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.NonePlatform,
+			platform: "aws",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "aws",
+					Namespace: "test",
 				},
-				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Public,
+							RolesRef: hyperv1.AWSRolesRef{
+								IngressARN:              "ingress-arn",
+								ImageRegistryARN:        "image-registry-arn",
+								StorageARN:              "storage-arn",
+								NetworkARN:              "network-arn",
+								KubeCloudControllerARN:  " kube-cloud-controller-arn",
+								NodePoolManagementARN:   "node-pool-management-arn",
+								ControlPlaneOperatorARN: "control-plane-operator-arn",
+							},
+							Region: "us-east-1",
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "ibm",
-				Namespace: "test",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type:     hyperv1.IBMCloudPlatform,
-					IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
+			platform: "none",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "none",
+					Namespace: "test",
 				},
-				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.NonePlatform,
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
 			},
 		},
 		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "kubevirt",
-				Namespace: "test",
-				Annotations: map[string]string{
-					hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+			platform: "ibmcloud",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ibm",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:     hyperv1.IBMCloudPlatform,
+						IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
 			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.KubevirtPlatform,
-					Kubevirt: &hyperv1.KubevirtPlatformSpec{
-						GenerateID: "123456789",
-						Credentials: &hyperv1.KubevirtPlatformCredentials{
-							InfraNamespace: "kubevirt-kubevirt",
-							InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
-								Name: "secret",
-								Key:  "key",
+		},
+		{
+			platform: "kubevirt",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubevirt",
+					Namespace: "test",
+					Annotations: map[string]string{
+						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+					},
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: &hyperv1.KubevirtPlatformSpec{
+							GenerateID: "123456789",
+							Credentials: &hyperv1.KubevirtPlatformCredentials{
+								InfraNamespace: "kubevirt-kubevirt",
+								InfraKubeConfigSecret: &hyperv1.KubeconfigSecretRef{
+									Name: "secret",
+									Key:  "key",
+								},
 							},
 						},
 					},
-				},
-				SecretEncryption: &hyperv1.SecretEncryptionSpec{
-					Type: hyperv1.AESCBC,
-					AESCBC: &hyperv1.AESCBCSpec{
-						ActiveKey: corev1.LocalObjectReference{
-							Name: "kubevirt" + etcdEncKeyPostfix,
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						Type: hyperv1.AESCBC,
+						AESCBC: &hyperv1.AESCBCSpec{
+							ActiveKey: corev1.LocalObjectReference{
+								Name: "kubevirt" + etcdEncKeyPostfix,
+							},
 						},
 					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
-				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+			},
+		},
+		{
+			platform: "azure",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud:             "AzurePublicCloud",
+							Location:          "eastus",
+							ResourceGroupName: "test-resource-group",
+							VnetID:            "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet",
+							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
+							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+							ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
+								ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+									ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+										Name:     "test-keyvault",
+										TenantID: "12345678-1234-1234-1234-123456789abc",
+									},
+									CloudProvider: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									NodePoolManagement: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									ControlPlaneOperator: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									ImageRegistry: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									Ingress: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									Network: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									Disk: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+									File: hyperv1.ManagedIdentity{
+										ClientID:              "12345678-1234-1234-1234-123456789abc",
+										CertificateName:       "test-cert",
+										ObjectEncoding:        "utf-8",
+										CredentialsSecretName: "test-secret",
+									},
+								},
+								DataPlane: hyperv1.DataPlaneManagedIdentities{
+									ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
+									DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+									FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+								},
+							},
+							TenantID: "12345678-1234-1234-1234-123456789abc",
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
+				},
+			},
+		},
+		{
+			platform: "openstack",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "openstack",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.OpenStackPlatform,
+						OpenStack: &hyperv1.OpenStackPlatformSpec{
+							IdentityRef: hyperv1.OpenStackIdentityReference{
+								Name: "test-cloud",
+							},
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
 				},
 			},
 		},
@@ -1412,10 +1554,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent-namespace"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent"}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "azure"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "aws"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ibm"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openstack"}},
 		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
@@ -1426,107 +1570,103 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				},
 			},
 		},
-		&configv1.Infrastructure{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "cluster",
-			},
-			Status: configv1.InfrastructureStatus{
-				PlatformStatus: &configv1.PlatformStatus{
-					Type: configv1.AWSPlatformType,
-				},
-			},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cloud", Namespace: "test"},
 		},
+		&configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
 	}
-	for _, cluster := range hostedClusters {
-		cluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+
+	// Initialize some common data among the HostedClusters
+	for _, testCase := range testCases {
+		testCase.hostedCluster.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
 			{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
 			{Service: hyperv1.Konnectivity, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.OAuthServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 			{Service: hyperv1.Ignition, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
 		}
-		cluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
-		cluster.Spec.InfraID = "infra-id"
-		cluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}
-		cluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
-		cluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}}
-		objects = append(objects, cluster)
+		testCase.hostedCluster.Spec.PullSecret = corev1.LocalObjectReference{Name: "secret"}
+		testCase.hostedCluster.Spec.InfraID = "infra-id"
+		testCase.hostedCluster.Spec.Networking.ClusterNetwork = []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}}
+		testCase.hostedCluster.Spec.Networking.MachineNetwork = []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+		testCase.hostedCluster.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}}
+		objects = append(objects, testCase.hostedCluster)
 	}
 
-	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
-	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-		GetOpenShiftImageRegistryOverrides().
-		Return(nil).AnyTimes()
-	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-		GetRegistryOverrides().
-		Return(nil).AnyTimes()
-	client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
-	r := &HostedClusterReconciler{
-		Client:            client,
-		Clock:             clock.RealClock{},
-		CertRotationScale: 24 * time.Hour,
-		ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
-			capabilities.CapabilityInfrastructure,
-			capabilities.CapabilityIngress,
-			capabilities.CapabilityProxy,
-		),
-		createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-		ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-			return mockedProviderWithOpenShiftImageRegistryOverrides,
-				&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					MediaType: ManifestListMediaType,
-					Result:    &dockerv1client.DockerImageConfig{},
-					Manifest:  fakeimagemetadataprovider.FakeManifest{},
-				}, nil
-		},
-		EnableEtcdRecovery: true,
-		now:                metav1.Now,
-	}
+	for _, testCase := range testCases {
+		t.Run(testCase.platform, func(t *testing.T) {
+			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
+			r := &HostedClusterReconciler{
+				Client:            client,
+				Clock:             clock.RealClock{},
+				CertRotationScale: 24 * time.Hour,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(
+					capabilities.CapabilityInfrastructure,
+					capabilities.CapabilityIngress,
+					capabilities.CapabilityProxy,
+				),
+				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+							MediaType: ManifestListMediaType,
+							Result:    &dockerv1client.DockerImageConfig{},
+							Manifest:  fakeimagemetadataprovider.FakeManifest{},
+						}, nil
+				},
+				EnableEtcdRecovery: true,
+				now:                metav1.Now,
+			}
 
-	r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
-		"v1.2.0",
-		"1.28.0")
+			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
+				"v1.2.0",
+				"1.28.0")
 
-	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-		o.EncodeTime = zapcore.RFC3339TimeEncoder
-	})))
+			ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+				o.EncodeTime = zapcore.RFC3339TimeEncoder
+			})))
 
-	for _, hc := range hostedClusters {
-		t.Run(hc.Name, func(t *testing.T) {
 			ctx := context.WithValue(context.Background(), registryclient.DeserializeFuncName, deserializeFunc)
-			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hostedCluster.Namespace, Name: testCase.hostedCluster.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
 			}
+
+			t.Setenv("PLATFORMS_INSTALLED", testCase.platform)
+
+			if strings.EqualFold(testCase.platform, string(hyperv1.AzurePlatform)) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			}
+
+			watchedResources := sets.New[string]()
+			for _, resource := range r.managedResources() {
+				resourceType := fmt.Sprintf("%T", resource)
+				switch resourceType {
+				case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService":
+					// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
+					// but never create an Endpoints resource
+
+					// We only create a Job when etcd recovery is needed
+
+					// We don't create a StatefulSet but we watch them for etcd health check and recovery
+
+					// We watch NodePools but don't create them
+
+					// We watch AWSEndpointServices to propagate conditions to the HostedCluster
+					continue
+				}
+				watchedResources.Insert(resourceType)
+			}
+
+			sortedCreatedTypes := client.createdTypes.UnsortedList()
+			sort.Strings(sortedCreatedTypes)
+
+			sortedWatchedTypes := watchedResources.UnsortedList()
+			sort.Strings(sortedWatchedTypes)
+
+			if diff := cmp.Diff(sortedCreatedTypes, sortedWatchedTypes); diff != "" {
+				t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
+			}
 		})
-	}
-	watchedResources := sets.New[string]()
-	for _, resource := range r.managedResources() {
-		resourceType := fmt.Sprintf("%T", resource)
-		switch resourceType {
-		case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService":
-			// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
-			// but never create an Endpoints resource
-
-			// We only create a Job when etcd recovery is needed
-
-			// We don't create a StatefulSet but we watch them for etcd health check and recovery
-
-			// We watch NodePools but don't create them
-
-			// We watch AWSEndpointServices to propagate conditions to the HostedCluster
-			continue
-		}
-		watchedResources.Insert(resourceType)
-	}
-	watchedResourcesSlice := watchedResources.UnsortedList()
-	sort.Strings(watchedResourcesSlice)
-	clientCreatedTypesSlice := client.createdTypes.UnsortedList()
-	sort.Strings(clientCreatedTypesSlice)
-	if diff := cmp.Diff(clientCreatedTypesSlice, watchedResourcesSlice); diff != "" {
-		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 	}
 }
 
