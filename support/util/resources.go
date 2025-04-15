@@ -53,6 +53,22 @@ var (
 	OpenStackResources = []client.Object{
 		&capiopenstackv1beta1.OpenStackCluster{},
 	}
+
+	AWSNodePoolResources = []client.Object{
+		&capiaws.AWSMachineTemplate{},
+	}
+
+	AzureNodePoolResources = []client.Object{
+		&capiazure.AzureMachineTemplate{},
+	}
+
+	AgentNodePoolResources = []client.Object{
+		&agentv1.AgentMachineTemplate{},
+	}
+
+	OpenStackNodePoolResources = []client.Object{
+		&capiopenstackv1beta1.OpenStackMachineTemplate{},
+	}
 )
 
 func GetHostedClusterManagedResources(platformsInstalled string) []client.Object {
@@ -91,6 +107,27 @@ func GetHostedClusterManagedResources(platformsInstalled string) []client.Object
 			managedResources = append(managedResources, AgentResources...)
 		case strings.EqualFold(platform, string(hyperv1.OpenStackPlatform)):
 			managedResources = append(managedResources, OpenStackResources...)
+		}
+	}
+
+	return managedResources
+}
+
+func GetNodePoolManagedResources(platformsInstalled string) []client.Object {
+	var managedResources []client.Object
+
+	platformsInstalledList := strings.Split(platformsInstalled, ",")
+	for _, platform := range platformsInstalledList {
+		platform = strings.ToLower(strings.TrimSpace(platform))
+		switch {
+		case strings.EqualFold(platform, string(hyperv1.AWSPlatform)):
+			managedResources = append(managedResources, AWSNodePoolResources...)
+		case strings.EqualFold(platform, string(hyperv1.AzurePlatform)):
+			managedResources = append(managedResources, AzureNodePoolResources...)
+		case strings.EqualFold(platform, string(hyperv1.AgentPlatform)):
+			managedResources = append(managedResources, AgentNodePoolResources...)
+		case strings.EqualFold(platform, string(hyperv1.OpenStackPlatform)):
+			managedResources = append(managedResources, OpenStackNodePoolResources...)
 		}
 	}
 

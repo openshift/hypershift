@@ -52,3 +52,39 @@ func TestGetHostedClusterManagedResources(t *testing.T) {
 		})
 	}
 }
+
+func TestGetNodePoolManagedResources(t *testing.T) {
+	testCases := []struct {
+		name               string
+		platformsInstalled string
+		expectedObjectsSet sets.Set[client.Object]
+	}{
+		{
+			name:               "when no platforms are installed, expect no resources",
+			platformsInstalled: "",
+			expectedObjectsSet: sets.Set[client.Object]{},
+		},
+		{
+			name:               "when only the AWS platform is installed, expect only AWS NodePool resources",
+			platformsInstalled: "AWS",
+			expectedObjectsSet: sets.New[client.Object](AWSNodePoolResources...),
+		},
+		{
+			name:               "when the Azure platform is installed, expect only Azure NodePool resources",
+			platformsInstalled: "azure", // testing case insensitivity here
+			expectedObjectsSet: sets.New[client.Object](AzureNodePoolResources...),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			actualObjects := GetNodePoolManagedResources(tc.platformsInstalled)
+			actualObjectSet := sets.New[client.Object](actualObjects...)
+
+			if diff := cmp.Diff(actualObjectSet, tc.expectedObjectsSet); diff != "" {
+				t.Errorf("the set of managed resources did not match expected set of managed resources: %s", diff)
+			}
+		})
+	}
+}
