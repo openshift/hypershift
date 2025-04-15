@@ -13,6 +13,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiserver/pkg/apis/apiserver"
+	"k8s.io/apiserver/pkg/apis/apiserver/validation"
 	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
 	"k8s.io/utils/ptr"
 
@@ -29,25 +31,36 @@ func ReconcileAuthConfig(ctx context.Context, c crclient.Client, config *corev1.
 	if config.Data == nil {
 		config.Data = map[string]string{}
 	}
-	authConfig, err := generateAuthConfig(p.Authentication, ctx, c, config.Namespace)
+
+	authConfig, err := GenerateAuthConfig(p.Authentication, ctx, c, config.Namespace)
 	if err != nil {
 		return fmt.Errorf("failed to generate authentication config: %w", err)
 	}
+
+	// TODO: using the default compiler means that we are allowing CEL library usage for the Kube version that maps to our
+	// dependency import. This should align with the version of Kubernetes that will be running for a guest cluster instead
+	// since that is what will actually load and validate the configuration.
+	fieldErrors := validation.ValidateAuthenticationConfiguration(authenticationcel.NewDefaultCompiler(), authConfig, []string{p.ServiceAccountIssuerURL})
+	if fieldErrors.ToAggregate() != nil {
+		return fmt.Errorf("validating generated authentication config: %w", fieldErrors.ToAggregate())
+	}
+
 	serializedConfig, err := json.Marshal(authConfig)
 	if err != nil {
 		return fmt.Errorf("failed to serialize kube apiserver authentication config: %w", err)
 	}
+
 	config.Data[AuthenticationConfigKey] = string(serializedConfig)
 	return nil
 }
 
-func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, c crclient.Client, namespace string) (*AuthenticationConfiguration, error) {
-	config := &AuthenticationConfiguration{
+func GenerateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, c crclient.Client, namespace string) (*apiserver.AuthenticationConfiguration, error) {
+	config := &apiserver.AuthenticationConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AuthenticationConfiguration",
 			APIVersion: "apiserver.config.k8s.io/v1alpha1",
 		},
-		JWT: []JWTAuthenticator{},
+		JWT: []apiserver.JWTAuthenticator{},
 	}
 	if spec == nil {
 		return config, nil
@@ -62,8 +75,8 @@ func generateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, 
 	return config, nil
 }
 
-func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider, client crclient.Client, namespace string) (JWTAuthenticator, error) {
-	out := JWTAuthenticator{}
+func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider, client crclient.Client, namespace string) (apiserver.JWTAuthenticator, error) {
+	out := apiserver.JWTAuthenticator{}
 
 	issuer, err := generateIssuer(ctx, provider.Issuer, client, namespace)
 	if err != nil {
@@ -87,11 +100,11 @@ func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider,
 	return out, nil
 }
 
-func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crclient.Client, namespace string) (Issuer, error) {
-	out := Issuer{}
+func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crclient.Client, namespace string) (apiserver.Issuer, error) {
+	out := apiserver.Issuer{}
 
 	out.URL = issuer.URL
-	out.AudienceMatchPolicy = AudienceMatchPolicyMatchAny
+	out.AudienceMatchPolicy = apiserver.AudienceMatchPolicyMatchAny
 
 	for _, audience := range issuer.Audiences {
 		out.Audiences = append(out.Audiences, string(audience))
@@ -122,8 +135,8 @@ func getCertificateAuthorityFromConfigMap(ctx context.Context, client crclient.C
 	return caData, nil
 }
 
-func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL string) (ClaimMappings, error) {
-	out := ClaimMappings{}
+func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL string) (apiserver.ClaimMappings, error) {
+	out := apiserver.ClaimMappings{}
 
 	username, err := generateUsernameClaimMapping(claimMappings.Username, issuerURL)
 	if err != nil {
@@ -153,8 +166,8 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 	return out, nil
 }
 
-func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuerURL string) (PrefixedClaimOrExpression, error) {
-	out := PrefixedClaimOrExpression{}
+func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuerURL string) (apiserver.PrefixedClaimOrExpression, error) {
+	out := apiserver.PrefixedClaimOrExpression{}
 
 	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
 	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
@@ -182,8 +195,8 @@ func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuer
 	return out, nil
 }
 
-func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedClaimOrExpression {
-	out := PrefixedClaimOrExpression{}
+func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) apiserver.PrefixedClaimOrExpression {
+	out := apiserver.PrefixedClaimOrExpression{}
 
 	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
 	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
@@ -194,8 +207,8 @@ func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedCl
 	return out
 }
 
-func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
-	out := ClaimOrExpression{}
+func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (apiserver.ClaimOrExpression, error) {
+	out := apiserver.ClaimOrExpression{}
 
 	// UID mapping can only specify either claim or expression, not both.
 	// This should be rejected at admission time of the authentications.config.openshift.io CRD.
@@ -223,8 +236,8 @@ func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (Claim
 	return out, nil
 }
 
-func generateExtraClaimMapping(extras ...configv1.ExtraMapping) ([]ExtraMapping, error) {
-	out := []ExtraMapping{}
+func generateExtraClaimMapping(extras ...configv1.ExtraMapping) ([]apiserver.ExtraMapping, error) {
+	out := []apiserver.ExtraMapping{}
 	errs := []error{}
 	for _, extra := range extras {
 		outExtra, err := generateExtraMapping(extra)
@@ -238,8 +251,8 @@ func generateExtraClaimMapping(extras ...configv1.ExtraMapping) ([]ExtraMapping,
 	return out, errors.Join(errs...)
 }
 
-func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
-	out := ExtraMapping{}
+func generateExtraMapping(extra configv1.ExtraMapping) (apiserver.ExtraMapping, error) {
+	out := apiserver.ExtraMapping{}
 
 	if extra.Key == "" {
 		return out, errors.New("extra mapping must specify a key, but none was provided")
@@ -260,8 +273,8 @@ func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
 	return out, nil
 }
 
-func generateClaimValidationRules(claimValidationRules ...configv1.TokenClaimValidationRule) ([]ClaimValidationRule, error) {
-	out := []ClaimValidationRule{}
+func generateClaimValidationRules(claimValidationRules ...configv1.TokenClaimValidationRule) ([]apiserver.ClaimValidationRule, error) {
+	out := []apiserver.ClaimValidationRule{}
 	errs := []error{}
 	for _, claimValidationRule := range claimValidationRules {
 		outRule, err := generateClaimValidationRule(claimValidationRule)
@@ -275,8 +288,8 @@ func generateClaimValidationRules(claimValidationRules ...configv1.TokenClaimVal
 	return out, errors.Join(errs...)
 }
 
-func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidationRule) (ClaimValidationRule, error) {
-	out := ClaimValidationRule{}
+func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidationRule) (apiserver.ClaimValidationRule, error) {
+	out := apiserver.ClaimValidationRule{}
 
 	// Currently, the authentications.config.openshift.io CRD only allows setting a claim and required value for the
 	// validation rule and does not allow setting a CEL expression and message like the upstream.

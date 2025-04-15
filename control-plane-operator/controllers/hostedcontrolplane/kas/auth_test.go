@@ -11,6 +11,7 @@ import (
 	hcpconfig "github.com/openshift/hypershift/support/config"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiserver/pkg/apis/apiserver"
 	"k8s.io/component-base/featuregate"
 	fgtesting "k8s.io/component-base/featuregate/testing"
 	"k8s.io/utils/ptr"
@@ -18,11 +19,49 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+const caContents = `-----BEGIN CERTIFICATE-----
+MIIGPTCCBCWgAwIBAgIUcmOOr6dehS2FldUvybAiFr+hMT4wDQYJKoZIhvcNAQEL
+BQAwga0xCzAJBgNVBAYTAlVTMRcwFQYDVQQIDA5Ob3J0aCBDYXJvbGluYTEQMA4G
+A1UEBwwHUmFsZWlnaDEQMA4GA1UECgwHUmVkIEhhdDESMBAGA1UECwwJT3BlblNo
+aWZ0MSowKAYDVQQDDCFoeXBlcnNoaWZ0LnVuaXQudGVzdC5vcGVuc2hpZnQuaW8x
+ITAfBgkqhkiG9w0BCQEWEmJwYWxtZXJAcmVkaGF0LmNvbTAeFw0yNTA0MTUxOTI1
+NDZaFw0yNjA0MTUxOTI1NDZaMIGtMQswCQYDVQQGEwJVUzEXMBUGA1UECAwOTm9y
+dGggQ2Fyb2xpbmExEDAOBgNVBAcMB1JhbGVpZ2gxEDAOBgNVBAoMB1JlZCBIYXQx
+EjAQBgNVBAsMCU9wZW5TaGlmdDEqMCgGA1UEAwwhaHlwZXJzaGlmdC51bml0LnRl
+c3Qub3BlbnNoaWZ0LmlvMSEwHwYJKoZIhvcNAQkBFhJicGFsbWVyQHJlZGhhdC5j
+b20wggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoICAQC/ia2VK/e1VK/sI4jm
+bf1+ozOOgBCPvoDqWuxJn327i0Hhw7eBwz8H0BmwJZLvFRQ6L01Xu4ht73z4ajQ2
+/F3SIbE9BBdamespILA4VZjDsRxXXlWZ8ZHR2+DcXlxsZp/xjFp5EErQIqM9LggZ
+s5p1d2wkZQLb10XDztRazAuT1Jo5yqksoTxhOolqFccj+ePrht7EckFbgVtbD/e2
+E+1SxsqSu393pOsLISbNLpKEaqzbLEBti6Hw8wdOtiwN1TdnVyFQH+1prG57Iaib
+wpCr6zWQUFHMIBgj8hugoWnqEFdl/lkfaaL+1gC8BebZber13N1ruyJ16NTK1xgC
+cKXtJZgCvtbrSj8vKuRCTHvhU2YyY5SMscJcLD3GxIfNPqZKP99ujF78hYoNtThO
+0OM/3XR/tc0M+pX0h7Trq3ej4H3o5g/sObBsF4YrLDLLeqtk/v+CFQP8kkC5Jv8f
+ijHpw2RPOiGaiq6co48uQ3yUHQNspxnxYZbUqPh4t7QoZT2tLhOZpimxB8OBN/Fx
+N5bpV49TG0jS3vxFOtXnlcF3N9gEFlLOTxP97WT90MUjARSPOWQynIz7k+QAa6r6
+WNti0ONu9K+nngNOGR6WJxvQlI8tybHHJYPzE2tJc6SLV6toCNt/hUkc9R55c/bb
+cBfe4od8kvWalLffCb4L4i/fSQIDAQABo1MwUTAdBgNVHQ4EFgQUPGHl+9/pe8tN
+xw8+GNW8ReLUQrIwHwYDVR0jBBgwFoAUPGHl+9/pe8tNxw8+GNW8ReLUQrIwDwYD
+VR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAgEAR5v3IUKGbzfKdhEt1gIw
+H6AE+ALcJJgqqiZFymdaVUz0b4TWwN9K2AghXw+vgyuU/j+mh88uVaA3u2H1UijU
+i+CdsN28qN8/oWio5UxbMP4oz8NkruIdqs4S+8aklWYuOKkMWpQLyvUihvmETc18
+fp5IgQup60x8oW6grD0QXppJfCRJs1B0csZea278csyPRP7l808G4EWkMlYaVrgo
+9uA3XmAkFo/sIloniJSiM5KshMXLp8HKqToNl7X907QDs55KHv2eMldqogt8b/xu
+3nry9YsDc9zEhL/z4As9rXktXiV2/ctc8ngkqoTKqJuaYvUSld/Pl1rbE5bcjO0b
+N9lYAKlYiprST4CJtLuZfe7cK8rg3flOc6DqOquxc5P0S8sexxcsCnga/2U87n+c
+gH3swCNFeTH843Pgk3YdF3/TzQ7LW8v5SoiZ+S1pHAbZHCTUCCN3dVYJNMTxAtWo
+bcF+De2MzfieNkBtKKQ7skC5RhG/n2xLj1r8wvilIO/YlqB/C7s2aJaGPwH+ti7M
+QA38ecQf1z6DgLDWdlQncQ2gE1ca19GBgA0Kyyfudr4z6bQG77w+3j3p1ZlexY9n
+wGfTN9G6sx4vuPjXe8NlEZMJ1eE8pDnIUvQZD8RzL/9EksQeTu7ofNn2KC9J7pfn
+MlubpsoEK2bYQDZskgDGCHI=
+-----END CERTIFICATE-----
+`
+
 func TestReconcileAuthConfig(t *testing.T) {
 	type testCase struct {
 		name                                string
 		client                              crclient.Client
-		expectedAuthenticationConfiguration *AuthenticationConfiguration
+		expectedAuthenticationConfiguration *apiserver.AuthenticationConfiguration
 		kasParams                           KubeAPIServerConfigParams
 		shouldError                         bool
 		featureGates                        []featuregate.Feature
@@ -32,12 +71,12 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "nil authentication spec provided, empty structured authentication configuration configmap provided",
 			client: nil, // no client necessary here, we never make it to a client call
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{},
+				JWT: []apiserver.JWTAuthenticator{},
 			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: nil,
@@ -46,12 +85,12 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "non-nil authentication spec provided, getting CA configmap fails, error",
 			client: fake.NewClientBuilder().Build(),
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{},
+				JWT: []apiserver.JWTAuthenticator{},
 			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
@@ -62,6 +101,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 								URL: "test.com",
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
+								},
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
 								},
 							},
 						},
@@ -73,12 +116,12 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "non-nil authentication spec provided, getting CA configmap succeeds, doesn't contain key 'ca-bundle.crt', error",
 			client: fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: v1.ObjectMeta{Name: "test-provider-ca", Namespace: "test"}, Data: map[string]string{"foo": "bar"}}).Build(),
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{},
+				JWT: []apiserver.JWTAuthenticator{},
 			},
 			kasParams: KubeAPIServerConfigParams{
 				Authentication: &configv1.AuthenticationSpec{
@@ -90,6 +133,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 								CertificateAuthority: configv1.ConfigMapNameReference{
 									Name: "test-provider-ca",
 								},
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 						},
 					},
@@ -99,33 +146,34 @@ func TestReconcileAuthConfig(t *testing.T) {
 		},
 		{
 			name:   "non-nil authentication spec provided, getting CA configmap succeeds, contains key 'ca-bundle.crt', no error, oidc providers are mapped appropriately",
-			client: fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: v1.ObjectMeta{Name: "test-provider-ca", Namespace: "test"}, Data: map[string]string{"ca-bundle.crt": "ca-bundle contents"}}).Build(),
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			client: fake.NewClientBuilder().WithObjects(&corev1.ConfigMap{ObjectMeta: v1.ObjectMeta{Name: "test-provider-ca", Namespace: "test"}, Data: map[string]string{"ca-bundle.crt": caContents}}).Build(),
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                  "https://test.com",
-							CertificateAuthority: "ca-bundle contents",
+							CertificateAuthority: caContents,
 							Audiences: []string{
 								"one",
 								"two",
 							},
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To("https://test.com#"),
-								Claim:  "",
+								Claim:  "username",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -144,6 +192,14 @@ func TestReconcileAuthConfig(t *testing.T) {
 									"two",
 								},
 							},
+							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
+							},
 						},
 					},
 				},
@@ -153,27 +209,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoPrefix, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
+							},
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "username",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -184,6 +245,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
 								Username: configv1.UsernameClaimMapping{
@@ -202,27 +267,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of Prefix, prefix provided, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
+							},
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To("providedPrefix"),
 								Claim:  "username",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -233,6 +303,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
 								Username: configv1.UsernameClaimMapping{
@@ -261,6 +335,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
 								Username: configv1.UsernameClaimMapping{
@@ -279,27 +357,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoOpinion, username claim is not email, no error, successful mapping with issuer URL as prefix",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
+							},
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To("https://test.com#"),
 								Claim:  "username",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -310,6 +393,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
 								Username: configv1.UsernameClaimMapping{
@@ -328,27 +415,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, username claim mapping specified, username mapping prefix policy of NoOpinion, username claim is email, no error, successful mapping with no username prefix",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
+							},
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "email",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -359,6 +451,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
 								Username: configv1.UsernameClaimMapping{
@@ -377,27 +473,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, groups claim mapping specified, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
-						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("https://test.com#"),
-								Claim:  "",
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
 							},
-							Groups: PrefixedClaimOrExpression{
+						},
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To("groups-prefix"),
 								Claim:  "groups",
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -408,8 +509,19 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+                            
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								Groups: configv1.PrefixedClaimMapping{
 									Prefix: "groups-prefix",
 									TokenClaimMapping: configv1.TokenClaimMapping{
@@ -426,30 +538,36 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty claim provided, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
-						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("https://test.com#"),
-								Claim:  "",
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
 							},
-							Groups: PrefixedClaimOrExpression{
+						},
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
-							UID: ClaimOrExpression{
+							UID: apiserver.ClaimOrExpression{
 								Claim: "custom",
 							},
+                            Extra: []apiserver.ExtraMapping{},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -460,8 +578,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								UID: &configv1.TokenClaimOrExpressionMapping{
 									Claim: "custom",
 								},
@@ -478,30 +606,36 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty expression provided, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
-						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("https://test.com#"),
-								Claim:  "",
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
 							},
-							Groups: PrefixedClaimOrExpression{
+						},
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
-							UID: ClaimOrExpression{
+							UID: apiserver.ClaimOrExpression{
 								Expression: "claims.foo",
 							},
+                            Extra: []apiserver.ExtraMapping{},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -512,8 +646,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								UID: &configv1.TokenClaimOrExpressionMapping{
 									Expression: "claims.foo",
 								},
@@ -537,8 +681,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								UID: &configv1.TokenClaimOrExpressionMapping{
 									Claim:      "foo",
 									Expression: "claims.foo",
@@ -563,8 +717,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								UID: &configv1.TokenClaimOrExpressionMapping{
 									Expression: "#@!$&*(^)",
 								},
@@ -581,36 +745,41 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
-						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
-								Prefix: ptr.To("https://test.com#"),
-								Claim:  "",
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
+							Audiences: []string{
+								"one",
+								"two",
 							},
-							Groups: PrefixedClaimOrExpression{
+						},
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
-							UID: ClaimOrExpression{
+							UID: apiserver.ClaimOrExpression{
 								Claim: "sub",
 							},
-							Extra: []ExtraMapping{
+							Extra: []apiserver.ExtraMapping{
 								{
 									Key:             "example.com/foo",
 									ValueExpression: "claims.foo",
 								},
 							},
 						},
+                        ClaimValidationRules: []apiserver.ClaimValidationRule{},
 					},
 				},
 			},
@@ -621,8 +790,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								Extra: []configv1.ExtraMapping{
 									{
 										Key:             "example.com/foo",
@@ -649,8 +828,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								Extra: []configv1.ExtraMapping{
 									{
 										Key:             "example.com/foo",
@@ -677,8 +866,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								Extra: []configv1.ExtraMapping{
 									{
 										ValueExpression: "claims.foo",
@@ -704,8 +903,18 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimMappings: configv1.TokenClaimMappings{
+								Username: configv1.UsernameClaimMapping{
+									PrefixPolicy: configv1.NoOpinion,
+									TokenClaimMapping: configv1.TokenClaimMapping{
+										Claim: "username",
+									},
+								},
 								Extra: []configv1.ExtraMapping{
 									{
 										Key: "example.com/foo",
@@ -724,32 +933,32 @@ func TestReconcileAuthConfig(t *testing.T) {
 		{
 			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim is set, no error, successful mapping",
 			client: nil,
-			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+			expectedAuthenticationConfiguration: &apiserver.AuthenticationConfiguration{
 				TypeMeta: v1.TypeMeta{
 					APIVersion: "apiserver.config.k8s.io/v1alpha1",
 					Kind:       "AuthenticationConfiguration",
 				},
-				JWT: []JWTAuthenticator{
+				JWT: []apiserver.JWTAuthenticator{
 					{
-						Issuer: Issuer{
+						Issuer: apiserver.Issuer{
 							URL:                 "https://test.com",
-							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							AudienceMatchPolicy: apiserver.AudienceMatchPolicyMatchAny,
 							Audiences: []string{
 								"one",
 								"two",
 							},
 						},
-						ClaimMappings: ClaimMappings{
-							Username: PrefixedClaimOrExpression{
+						ClaimMappings: apiserver.ClaimMappings{
+							Username: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To("https://test.com#"),
 								Claim:  "username",
 							},
-							Groups: PrefixedClaimOrExpression{
+							Groups: apiserver.PrefixedClaimOrExpression{
 								Prefix: ptr.To(""),
 								Claim:  "groups",
 							},
 						},
-						ClaimValidationRules: []ClaimValidationRule{
+						ClaimValidationRules: []apiserver.ClaimValidationRule{
 							{
 								Claim:         "foo",
 								RequiredValue: "bar",
@@ -809,6 +1018,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimValidationRules: []configv1.TokenClaimValidationRule{
 								{
@@ -831,6 +1044,10 @@ func TestReconcileAuthConfig(t *testing.T) {
 							Name: "test",
 							Issuer: configv1.TokenIssuer{
 								URL: "https://test.com",
+								Audiences: []configv1.TokenAudience{
+									"one",
+									"two",
+								},
 							},
 							ClaimValidationRules: []configv1.TokenClaimValidationRule{
 								{
