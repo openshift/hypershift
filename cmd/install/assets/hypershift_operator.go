@@ -399,6 +399,7 @@ type HyperShiftOperatorDeployment struct {
 	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
+	PlatformsInstalled                      string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -537,6 +538,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  controlplaneoperatoroverrides.CPOOverridesEnvVar,
 			Value: "1",
+		})
+	}
+
+	if len(o.PlatformsInstalled) > 0 {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "PLATFORMS_INSTALLED",
+			Value: o.PlatformsInstalled,
 		})
 	}
 

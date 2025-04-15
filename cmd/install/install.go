@@ -802,6 +802,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
+		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
