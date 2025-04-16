@@ -2341,6 +2341,12 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 			"shared-resource-csi-driver-operator",
 		)
 
+		if IsLessThan(Version418) {
+			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
+				"csi-snapshot-webhook",
+			)
+		}
+
 		if hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
 			expectedComponentsWithTokenMount = append(expectedComponentsWithTokenMount,
 				"azure-cloud-controller-manager",
