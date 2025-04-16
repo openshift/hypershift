@@ -19,11 +19,31 @@ import (
 // HyperShift operator.
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
-var LatestSupportedVersion = semver.MustParse("4.20.0")
-var MinSupportedVersion = semver.MustParse("4.14.0")
+var (
+	LatestSupportedVersion = semver.MustParse("4.20.0")
+	MinSupportedVersion    = semver.MustParse("4.14.0")
+)
+
+var ocpVersionToKubeVersion = map[string]semver.Version{
+	"4.14.0": semver.MustParse("1.27.0"),
+	"4.15.0": semver.MustParse("1.28.0"),
+	"4.16.0": semver.MustParse("1.29.0"),
+	"4.17.0": semver.MustParse("1.30.0"),
+	"4.18.0": semver.MustParse("1.31.0"),
+	"4.19.0": semver.MustParse("1.32.0"),
+	"4.20.0": semver.MustParse("1.33.0"),
+}
+
+func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {
+	kubeVersion, ok := ocpVersionToKubeVersion[supportedVersion.String()]
+	if !ok {
+		return nil, fmt.Errorf("unknown supported version %q", supportedVersion.String())
+	}
+
+	return &kubeVersion, nil
+}
 
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
-
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return semver.MustParse("0.0.0")
 	}
@@ -107,7 +127,6 @@ type ocpVersion struct {
 
 // LookupLatestSupportedRelease picks the latest multi-arch image supported by this Hypershift Operator
 func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
-
 	minSupportedVersion := GetMinSupportedVersion(hc)
 
 	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
