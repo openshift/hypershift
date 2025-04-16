@@ -8,14 +8,17 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	hcpconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apiserver/pkg/apis/apiserver"
 	"k8s.io/apiserver/pkg/apis/apiserver/validation"
 	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
+	"k8s.io/apiserver/pkg/cel/environment"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,12 +40,9 @@ func ReconcileAuthConfig(ctx context.Context, c crclient.Client, config *corev1.
 		return fmt.Errorf("failed to generate authentication config: %w", err)
 	}
 
-	// TODO: using the default compiler means that we are allowing CEL library usage for the Kube version that maps to our
-	// dependency import. This should align with the version of Kubernetes that will be running for a guest cluster instead
-	// since that is what will actually load and validate the configuration.
-	fieldErrors := validation.ValidateAuthenticationConfiguration(authenticationcel.NewDefaultCompiler(), authConfig, []string{p.ServiceAccountIssuerURL})
-	if fieldErrors.ToAggregate() != nil {
-		return fmt.Errorf("validating generated authentication config: %w", fieldErrors.ToAggregate())
+	err = validateAuthConfig(authConfig, []string{p.ServiceAccountIssuerURL})
+	if err != nil {
+		return fmt.Errorf("validating generated authentication config: %w", err)
 	}
 
 	serializedConfig, err := json.Marshal(authConfig)
@@ -215,7 +215,6 @@ func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (apise
 	// Even though this is the case, we still perform a runtime validation to ensure we never
 	// attempt to create an invalid configuration.
 	// If neither claim or expression is specified, default the claim to "sub"
-
 	switch {
 	case uid == nil:
 		out.Claim = "sub"
@@ -317,4 +316,32 @@ func validateClaimMappingExpression(expression string) error {
 func validateExtraMappingExpression(expression string) error {
 	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ExtraMappingExpression{Expression: expression})
 	return err
+}
+
+func validateAuthConfig(authConfig *apiserver.AuthenticationConfiguration, disallowIssuers []string) error {
+	if authConfig == nil {
+		// nothing to validate
+		return nil
+	}
+
+	// TODO: implement logic for getting the current/desired version for the control plane and get the corresponding ube version based on that.
+	// For now, always use the minimum supported OCP version to ensure we are never getting false positives when validating CEL expression compiliation.
+	// Older versions of Kubernetes are not guaranteed to have the same CEL libraries available as newer ones.
+	// Always using the minimum supported OCP version will likely result in false negatives and the workaround is for users to adapt their CEL expressions
+	// accordingly.
+	// The current line of thinking is that false negatives are better than false positives because false positives could result in invalid configurations
+	// attempting to be rolled out.
+	kubeVersion, err := supportedversion.GetKubeVersionForSupportedVersion(supportedversion.MinSupportedVersion)
+	if err != nil {
+		return fmt.Errorf("getting the corresponding kubernetes version for OCP version %q", supportedversion.MinSupportedVersion.String())
+	}
+
+	envVersion, err := version.Parse(kubeVersion.String())
+	if err != nil {
+		return fmt.Errorf("parsing kubernetes version %q", kubeVersion.String())
+	}
+	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
+
+	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, authConfig, disallowIssuers)
+	return fieldErrors.ToAggregate()
 }
