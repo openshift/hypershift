@@ -55,7 +55,7 @@ type KubeAPIServerConfigParams struct {
 	GoAwayChance                 string
 }
 
-func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams {
+func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 
@@ -71,7 +71,7 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane) KubeAPIServerConfigParams 
 		DefaultNodeSelector:          defaultNodeSelector(hcp.Spec.Configuration),
 		AdvertiseAddress:             util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address),
 		ServiceAccountIssuerURL:      serviceAccountIssuerURL(hcp),
-		FeatureGates:                 config.FeatureGates(hcp.Spec.Configuration.GetFeatureGateSelection()),
+		FeatureGates:                 featureGates,
 		NodePortRange:                serviceNodePortRange(hcp.Spec.Configuration),
 		ConsolePublicURL:             fmt.Sprintf("https://console-openshift-console.%s", dns.Spec.BaseDomain),
 		DisableProfiling:             util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),

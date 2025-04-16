@@ -17,14 +17,15 @@ import (
 )
 
 const (
-	kubeAPIServerComponentName = "kube-apiserver"
-	etcdComponentName          = "etcd"
+	kubeAPIServerComponentName       = "kube-apiserver"
+	etcdComponentName                = "etcd"
+	featureGateGeneratorComponetName = "featuregate-generator"
 )
 
 func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
 	unavailableDependencies := sets.New(c.dependencies...)
 	// always add kube-apiserver as a dependency, except for etcd.
-	if c.Name() != etcdComponentName {
+	if c.Name() != etcdComponentName && c.Name() != featureGateGeneratorComponetName {
 		unavailableDependencies.Insert(kubeAPIServerComponentName)
 	}
 	// we don't deploy etcd for unmanaged, therefore components can't have a dependency on it.

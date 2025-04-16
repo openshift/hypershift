@@ -35,6 +35,7 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -91,6 +92,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = tokenminter.NewStartCommand()
 	case "etcd-defrag-controller":
 		cmd = etcddefrag.NewStartCommand()
+	case "sync-fg-configmap":
+		cmd = syncfgconfigmap.NewRunCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -142,6 +145,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
+	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
 	return cmd
 }
 

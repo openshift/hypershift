@@ -1,0 +1,68 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: featuregate-generator
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      serviceAccountName: control-plane-operator
+      restartPolicy: Never
+      initContainers:
+        - name: render-feature-gates
+          image: cluster-config-api
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/bash
+          - -c
+          args:
+          - |-
+            #!/bin/sh
+            cd /work
+            mkdir input output manifests
+
+            touch /work/manifests/99_feature-gate.yaml
+            cat <<EOF >/work/manifests/99_feature-gate.yaml
+            $(FEATURE_GATE_YAML)
+            EOF
+
+            /usr/bin/render \
+               --asset-output-dir /work/output \
+               --rendered-manifest-dir=/work/manifests \
+               --cluster-profile=ibm-cloud-managed \
+               --payload-version=$(PAYLOAD_VERSION)
+
+            cp /work/manifests/* /output
+          volumeMounts:
+          - name: manifests
+            mountPath: /output
+          - name: work
+            mountPath: /work
+          resources:
+            requests:
+              cpu: 30m
+              memory: 50Mi
+      containers:
+        - name: apply
+          image: controlplane-operator
+          env:
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          command:
+          - /usr/bin/control-plane-operator
+          args:
+          - sync-fg-configmap
+          volumeMounts:
+          - name: manifests
+            mountPath: /manifests
+          resources:
+            requests:
+              cpu: 30m
+              memory: 50Mi
+      volumes:
+      - emptyDir: {}
+        name: manifests
+      - emptyDir: {}
+        name: work

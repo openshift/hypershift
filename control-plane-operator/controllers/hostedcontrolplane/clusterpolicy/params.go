@@ -21,12 +21,15 @@ type ClusterPolicyControllerParams struct {
 
 	DeploymentConfig config.DeploymentConfig `json:"deploymentConfig"`
 	config.OwnerRef  `json:",inline"`
+
+	RenderedFeatureGates []string
 }
 
-func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *ClusterPolicyControllerParams {
+func NewClusterPolicyControllerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, featureGates []string) *ClusterPolicyControllerParams {
 	params := &ClusterPolicyControllerParams{
 		Image:                   releaseImageProvider.GetImage("cluster-policy-controller"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		RenderedFeatureGates:    featureGates,
 	}
 	if hcp.Spec.Configuration != nil {
 		params.APIServer = hcp.Spec.Configuration.APIServer
@@ -70,13 +73,7 @@ func (p *ClusterPolicyControllerParams) MinTLSVersion() string {
 }
 
 func (p *ClusterPolicyControllerParams) FeatureGates() []string {
-	if p.FeatureGate != nil {
-		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
-	}
+	return p.RenderedFeatureGates
 }
 
 func (p *ClusterPolicyControllerParams) CipherSuites() []string {

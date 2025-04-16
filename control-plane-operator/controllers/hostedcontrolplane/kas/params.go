@@ -80,6 +80,8 @@ type KubeAPIServerParams struct {
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
 	GoAwayChance                string
+
+	RenderedFeatureGates []string
 }
 
 type KubeAPIServerServiceParams struct {
@@ -97,7 +99,7 @@ const (
 	defaultGoAwayChance                = 0
 )
 
-func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool) *KubeAPIServerParams {
+func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool, featureGates []string) *KubeAPIServerParams {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 	params := &KubeAPIServerParams{
@@ -127,6 +129,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
 		GoAwayChance:                fmt.Sprint(defaultGoAwayChance),
+		RenderedFeatureGates:        featureGates,
 	}
 
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
@@ -497,13 +500,7 @@ func (p *KubeAPIServerParams) ServiceAccountIssuerURL() string {
 }
 
 func (p *KubeAPIServerParams) FeatureGates() []string {
-	if p.FeatureGate != nil {
-		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
-	}
+	return p.RenderedFeatureGates
 }
 
 func (p *KubeAPIServerParams) CipherSuites() []string {

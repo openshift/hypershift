@@ -26,12 +26,14 @@ type KubeSchedulerParams struct {
 	config.DeploymentConfig `json:",inline"`
 	APIServer               *configv1.APIServerSpec `json:"apiServer"`
 	DisableProfiling        bool                    `json:"disableProfiling"`
+	RenderedFeatureGates    []string
 }
 
-func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeSchedulerParams {
+func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, featureGates []string) *KubeSchedulerParams {
 	params := &KubeSchedulerParams{
 		HyperkubeImage:          releaseImageProvider.GetImage("hyperkube"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		RenderedFeatureGates:    featureGates,
 	}
 	if hcp.Spec.Configuration != nil {
 		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
@@ -82,11 +84,7 @@ func NewKubeSchedulerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 }
 
 func (p *KubeSchedulerParams) FeatureGates() []string {
-	if p.FeatureGate != nil {
-		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(configv1.FeatureGateSelection{FeatureSet: configv1.Default})
-	}
+	return p.RenderedFeatureGates
 }
 
 func (p *KubeSchedulerParams) CipherSuites() []string {

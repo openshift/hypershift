@@ -188,6 +188,18 @@ func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
 	c.AdditionalAnnotations.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.ObjectMeta)
 }
 
+func (c *DeploymentConfig) ApplyToJob(job *batchv1.Job) {
+	c.Scheduling.ApplyTo(&job.Spec.Template.Spec)
+	c.SecurityContexts.ApplyTo(&job.Spec.Template.Spec)
+	c.LivenessProbes.ApplyTo(&job.Spec.Template.Spec)
+	c.ReadinessProbes.ApplyTo(&job.Spec.Template.Spec)
+	c.StartupProbes.ApplyTo(&job.Spec.Template.Spec)
+	c.Resources.ApplyTo(&job.Spec.Template.Spec)
+	c.ResourceRequestOverrides.ApplyRequestsTo(job.Name, &job.Spec.Template.Spec)
+	c.AdditionalLabels.ApplyTo(&job.Spec.Template.ObjectMeta)
+	c.AdditionalAnnotations.ApplyTo(&job.Spec.Template.ObjectMeta)
+}
+
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {
 	return hcp.Namespace
 }

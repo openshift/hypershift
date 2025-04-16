@@ -2,6 +2,7 @@ package hostedcontrolplane
 
 import (
 	"context"
+	_ "embed"
 	"fmt"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
@@ -1897,8 +1899,13 @@ func TestControlPlaneComponents(t *testing.T) {
 				t.Fatalf("failed to list cronJobs: %v", err)
 			}
 
-			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 {
-				t.Fatalf("expected one of deployment, statefulSet or cronJob to exist for component %s", component.Name())
+			var jobs batchv1.JobList
+			if err := fakeClient.List(context.Background(), &jobs); err != nil {
+				t.Fatalf("failed to list jobs: %v", err)
+			}
+
+			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 && len(jobs.Items) == 0 {
+				t.Fatalf("expected one of deployment, statefulSet, cronJob or job to exist for component %s", component.Name())
 			}
 
 			var workload client.Object
@@ -1906,8 +1913,10 @@ func TestControlPlaneComponents(t *testing.T) {
 				workload = &deployments.Items[0]
 			} else if len(statfulsets.Items) > 0 {
 				workload = &statfulsets.Items[0]
-			} else {
+			} else if len(cronJobs.Items) > 0 {
 				workload = &cronJobs.Items[0]
+			} else {
+				workload = &jobs.Items[0]
 			}
 
 			yaml, err := util.SerializeResource(workload, api.Scheme)
@@ -1952,6 +1961,9 @@ func TestControlPlaneComponents(t *testing.T) {
 	}
 
 }
+
+//go:embed testdata/featuregate-generator/feature-gate.yaml
+var testFeatureGateYAML string
 
 func componentsFakeObjects(namespace string) ([]client.Object, error) {
 	rootCA := manifests.RootCASecret(namespace)
@@ -1998,6 +2010,10 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		corev1.TLSCertKey:       []byte("fake"),
 		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
+	fgConfigMap := &corev1.ConfigMap{}
+	fgConfigMap.Name = "feature-gate"
+	fgConfigMap.Namespace = namespace
+	fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
 
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
@@ -2006,6 +2022,7 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		azureCredentialsSecret,
 		cloudCredsSecret,
 		csrSigner,
+		fgConfigMap,
 	}, nil
 }
 
@@ -2028,13 +2045,16 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 		},
 	}
 
-	// all components depend on KAS and KAS depends on etcd.
+	// all components depend on KAS and KAS depends on etcd
 	if componentName == kasv2.ComponentName {
 		fakeComponentTemplate.Name = etcdv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
+		fakeComponentTemplate.Name = fg.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	} else {
 		fakeComponentTemplate.Name = kasv2.ComponentName
+		fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 	}
-	fakeComponents = append(fakeComponents, fakeComponentTemplate.DeepCopy())
 
 	if componentName != oapiv2.ComponentName {
 		fakeComponentTemplate.Name = oapiv2.ComponentName
@@ -2056,4 +2076,203 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
 
 	return fakeComponents
+}
+
+type fakeReleaseProvider struct{}
+
+func (*fakeReleaseProvider) GetImage(key string) string {
+	return key
+}
+
+func (*fakeReleaseProvider) ImageExist(key string) (string, bool) {
+	return key, true
+}
+
+func (*fakeReleaseProvider) Version() string {
+	return "1.0.0"
+}
+
+func (*fakeReleaseProvider) ComponentVersions() (map[string]string, error) {
+	return map[string]string{}, nil
+}
+
+func TestReconcileFeatureGateGenerationJob(t *testing.T) {
+
+	expectedFGYaml := `apiVersion: config.openshift.io/v1
+kind: FeatureGate
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec: {}
+status:
+  featureGates: null
+`
+	expectedPayloadVersion := "1.0.0"
+
+	failedJob := func() *batchv1.Job {
+		job := manifests.FeatureGateGenerationJob("test")
+		job.Status.Conditions = []batchv1.JobCondition{
+			{
+				Type:   batchv1.JobFailed,
+				Status: corev1.ConditionTrue,
+			},
+		}
+		return job
+	}
+
+	completedJob := func(payloadVersion, fgYAML string) *batchv1.Job {
+		job := manifests.FeatureGateGenerationJob("test")
+		job.Spec.Template.Spec.InitContainers = []corev1.Container{
+			{
+				Env: []corev1.EnvVar{
+					{
+						Name:  "PAYLOAD_VERSION",
+						Value: payloadVersion,
+					},
+					{
+						Name:  "FEATURE_GATE_YAML",
+						Value: fgYAML,
+					},
+				},
+			},
+		}
+		job.Status.Conditions = []batchv1.JobCondition{
+			{
+				Type:   batchv1.JobComplete,
+				Status: corev1.ConditionTrue,
+			},
+		}
+		return job
+	}
+
+	validConfigMap := func() *corev1.ConfigMap {
+		cm := &corev1.ConfigMap{}
+		cm.Name = "feature-gate"
+		cm.Namespace = "test"
+
+		cm.Data = map[string]string{"feature-gate.yaml": expectedFGYaml}
+		return cm
+	}
+
+	invalidConfigMap := func() *corev1.ConfigMap {
+		cm := &corev1.ConfigMap{}
+		cm.Name = "feature-gate"
+		cm.Namespace = "test"
+
+		cm.Data = map[string]string{"feature-gate.yaml": "invalid-yaml"}
+		return cm
+	}
+
+	runningJob := func() *batchv1.Job {
+		job := manifests.FeatureGateGenerationJob("test")
+		return job
+	}
+
+	tests := []struct {
+		name            string
+		job             *batchv1.Job
+		cm              *corev1.ConfigMap
+		expectedProceed bool
+		expectedError   bool
+		expectJobExists bool
+	}{
+		{
+			name:            "initial creation",
+			expectedProceed: false,
+			expectJobExists: true,
+		},
+		{
+			name:            "job failed",
+			job:             failedJob(),
+			expectedProceed: false,
+			expectJobExists: false,
+		},
+		{
+			name:            "running job",
+			job:             runningJob(),
+			expectedProceed: false,
+			expectJobExists: true,
+		},
+		{
+			name:            "completed job, valid configmap",
+			job:             completedJob(expectedPayloadVersion, expectedFGYaml),
+			cm:              validConfigMap(),
+			expectJobExists: true,
+			expectedProceed: true,
+		},
+		{
+			name:            "completed job, valid configmap, different payload version",
+			job:             completedJob("1.0.0-alpha", expectedFGYaml),
+			cm:              validConfigMap(),
+			expectJobExists: false,
+			expectedProceed: false,
+		},
+		{
+			name:            "completed job, valid configmap, different featurgateYAML",
+			job:             completedJob(expectedPayloadVersion, "invalid-yaml"),
+			cm:              validConfigMap(),
+			expectJobExists: false,
+			expectedProceed: false,
+		},
+		{
+			name:            "completed job, missing configmap",
+			job:             completedJob(expectedPayloadVersion, expectedFGYaml),
+			expectJobExists: false,
+			expectedProceed: false,
+		},
+		{
+			name:            "completed job, invalid configmap",
+			job:             completedJob(expectedPayloadVersion, expectedFGYaml),
+			cm:              invalidConfigMap(),
+			expectJobExists: false,
+			expectedProceed: false,
+		},
+	}
+
+	for _, tc := range tests[3:] {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "test",
+				},
+			}
+			clientBuilder := fake.NewClientBuilder()
+			if tc.job != nil {
+				clientBuilder = clientBuilder.WithObjects(tc.job)
+			}
+			if tc.cm != nil {
+				clientBuilder = clientBuilder.WithObjects(tc.cm)
+			}
+			fakeClient := clientBuilder.Build()
+			r := &HostedControlPlaneReconciler{
+				Client:              fakeClient,
+				Log:                 ctrl.LoggerFrom(context.TODO()),
+				ReleaseProvider:     &fakereleaseprovider.FakeReleaseProvider{},
+				UserReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{},
+			}
+			proceed, err := r.reconcileFeatureGateGenerationJob(context.Background(), hcp, controllerutil.CreateOrUpdate, &fakeReleaseProvider{}, &fakeReleaseProvider{})
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				if tc.expectedProceed {
+					g.Expect(proceed).To(BeTrue())
+				} else {
+					g.Expect(proceed).To(BeFalse())
+				}
+				job := manifests.FeatureGateGenerationJob(hcp.Namespace)
+				err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(job), job)
+				if !apierrors.IsNotFound(err) {
+					g.Expect(err).NotTo(HaveOccurred())
+				}
+				if tc.expectJobExists {
+					g.Expect(err).NotTo(HaveOccurred())
+				} else {
+					g.Expect(err).To(HaveOccurred())
+				}
+			}
+		})
+	}
 }

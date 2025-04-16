@@ -14,6 +14,10 @@ import (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
 	configuration := cpContext.HCP.Spec.Configuration
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if tlsMinVersion := config.MinTLSVersion(configuration.GetTLSSecurityProfile()); tlsMinVersion != "" {
@@ -25,7 +29,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if util.StringListContains(cpContext.HCP.Annotations[hyperv1.DisableProfilingAnnotation], ComponentName) {
 			c.Args = append(c.Args, "--profiling=false")
 		}
-		for _, f := range config.FeatureGates(configuration.GetFeatureGateSelection()) {
+		for _, f := range featureGates {
 			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
 		}
 		if configuration != nil && configuration.Scheduler != nil && len(configuration.Scheduler.Policy.Name) > 0 {
