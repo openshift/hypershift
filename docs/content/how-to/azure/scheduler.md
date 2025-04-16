@@ -1,4 +1,4 @@
-# Azure Scheduler
+# Using Azure Scheduler
 
 The Azure Scheduler works with the default `ClusterSizingConfiguration` resource and the `HostedClusterSizing` controller.
 
