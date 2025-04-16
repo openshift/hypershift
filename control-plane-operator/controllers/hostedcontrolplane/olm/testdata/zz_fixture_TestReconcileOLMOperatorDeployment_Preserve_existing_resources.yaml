@@ -97,7 +97,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 15Mi
+            memory: 30Mi
         volumeMounts:
         - mountPath: /etc/konnectivity/proxy-client
           name: oas-konnectivity-proxy-cert
