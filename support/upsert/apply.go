@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/openshift/hypershift/support/util"
+
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -67,6 +71,23 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 		return controllerutil.OperationResultCreated, nil
 	}
 
+	// Jobs cannot be updated. If there is an existing one, and its spec is different, then it needs to be recreated.
+	if existing != nil {
+		switch typedObj := obj.(type) {
+		case *batchv1.Job:
+			existingTyped := existing.(*batchv1.Job)
+			failed := util.FindJobCondition(existingTyped, batchv1.JobFailed)
+			if failed == nil || failed.Status == corev1.ConditionFalse {
+				if equality.Semantic.DeepDerivative(typedObj.Spec, existingTyped.Spec) {
+					return controllerutil.OperationResultNone, nil
+				}
+			}
+			// Delete the job if it has failed or it needs to be updated
+			_, err := util.DeleteIfNeededWithOptions(ctx, c, obj, crclient.PropagationPolicy(metav1.DeletePropagationForeground))
+			return controllerutil.OperationResultNone, err
+		}
+	}
+
 	result, err := p.update(ctx, c, obj, existing)
 	if err != nil || result == controllerutil.OperationResultNone {
 		return result, err
@@ -99,6 +120,16 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 			p.loopDetector.recordNoOpUpdate(obj, key)
 		}
 		return controllerutil.OperationResultNone, nil
+	}
+
+	// In the case a job, if an update is needed, the previous job must be deleted
+	switch existingTyped := existing.(type) {
+	case *batchv1.Job:
+		if existingTyped.DeletionTimestamp.IsZero() {
+			if err := c.Delete(ctx, existing); err != nil {
+				return controllerutil.OperationResultNone, err
+			}
+		}
 	}
 
 	if p.loopDetector != nil {

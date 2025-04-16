@@ -22,6 +22,7 @@ import (
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
+	batchv1 "k8s.io/api/batch/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -118,6 +119,7 @@ func init() {
 	_ = secretsstorev1.AddToScheme(Scheme)
 	_ = kcpv1.AddToScheme(Scheme)
 	_ = orcv1alpha1.AddToScheme(Scheme)
+	_ = batchv1.AddToScheme(Scheme)
 	karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
 	metav1.AddToGroupVersion(Scheme, karpenterGroupVersion)
 	Scheme.AddKnownTypes(karpenterGroupVersion,

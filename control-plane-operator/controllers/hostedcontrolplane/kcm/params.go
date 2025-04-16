@@ -35,13 +35,15 @@ type KubeControllerManagerParams struct {
 	HyperkubeImage          string `json:"hyperkubeImage"`
 	AvailabilityProberImage string `json:"availabilityProberImage"`
 	TokenMinterImage        string `json:"tokenMinterImage"`
+
+	RenderedFeatureGates []string
 }
 
 const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, featureGates []string) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
@@ -51,6 +53,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		ServiceCIDR:             util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork),
 		ClusterCIDR:             util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		RenderedFeatureGates:    featureGates,
 	}
 
 	// This value comes from the Cloud Provider Azure documentation: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/#kube-controller-manager
@@ -124,13 +127,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 }
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {
-	if p.FeatureGate != nil {
-		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
-	}
+	return p.RenderedFeatureGates
 }
 
 func (p *KubeControllerManagerParams) CipherSuites() []string {
