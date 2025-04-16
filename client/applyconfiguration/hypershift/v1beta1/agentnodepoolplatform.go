@@ -21,13 +21,13 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// AgentNodePoolPlatformApplyConfiguration represents an declarative configuration of the AgentNodePoolPlatform type for use
+// AgentNodePoolPlatformApplyConfiguration represents a declarative configuration of the AgentNodePoolPlatform type for use
 // with apply.
 type AgentNodePoolPlatformApplyConfiguration struct {
 	AgentLabelSelector *v1.LabelSelectorApplyConfiguration `json:"agentLabelSelector,omitempty"`
 }
 
-// AgentNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AgentNodePoolPlatform type for use with
+// AgentNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AgentNodePoolPlatform type for use with
 // apply.
 func AgentNodePoolPlatform() *AgentNodePoolPlatformApplyConfiguration {
 	return &AgentNodePoolPlatformApplyConfiguration{}

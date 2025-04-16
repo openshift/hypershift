@@ -14,7 +14,6 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -33,10 +32,6 @@ type CreateOrUpdateProvider interface {
 	CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error)
 }
 
-type CreateOrUpdateProviderV2 interface {
-	CreateOrUpdateV2(ctx context.Context, c crclient.Client, obj crclient.Object) (controllerutil.OperationResult, error)
-}
-
 var withStatusSubresource = sets.NewString(
 	fmt.Sprintf("%T", &capiaws.AWSCluster{}),
 	fmt.Sprintf("%T", &configv1.ClusterOperator{}),
@@ -51,14 +46,6 @@ func hasStatusSubResource(o crclient.Object) bool {
 }
 
 func New(enableUpdateLoopDetector bool) CreateOrUpdateProvider {
-	p := &createOrUpdateProvider{}
-	if enableUpdateLoopDetector {
-		p.loopDetector = newUpdateLoopDetector()
-	}
-	return p
-}
-
-func NewV2(enableUpdateLoopDetector bool) CreateOrUpdateProviderV2 {
 	p := &createOrUpdateProvider{}
 	if enableUpdateLoopDetector {
 		p.loopDetector = newUpdateLoopDetector()
@@ -98,7 +85,7 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 		return controllerutil.OperationResultCreated, nil
 	}
 
-	existing := obj.DeepCopyObject() //nolint
+	existing := obj.DeepCopyObject().(crclient.Object) //nolint
 	if err := mutate(f, key, obj); err != nil {
 		return controllerutil.OperationResultNone, err
 	}
@@ -121,7 +108,7 @@ func (p *createOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.
 	return controllerutil.OperationResultUpdated, nil
 }
 
-func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing runtime.Object) (controllerutil.OperationResult, error) {
+func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing crclient.Object) (controllerutil.OperationResult, error) {
 	key := crclient.ObjectKeyFromObject(obj)
 
 	switch existingTyped := existing.(type) {
@@ -162,45 +149,6 @@ func (p *createOrUpdateProvider) update(ctx context.Context, c crclient.Client, 
 	return controllerutil.OperationResultUpdated, nil
 }
 
-// CreateOrUpdateV2 is a copy of CreateOrUpdate with
-// an important difference: It doesn't take a mutate function, and it doesn't override the passed in object
-// if it already exist on the API server.
-// This is needed for objects loaded from a yaml manifest, so the loaded manifest is not overridden.
-func (p *createOrUpdateProvider) CreateOrUpdateV2(ctx context.Context, c crclient.Client, obj crclient.Object) (controllerutil.OperationResult, error) {
-	key := crclient.ObjectKeyFromObject(obj)
-	existing := obj.DeepCopyObject().(crclient.Object) //nolint
-
-	if err := c.Get(ctx, key, existing); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return controllerutil.OperationResultNone, err
-		}
-		if err := c.Create(ctx, obj); err != nil {
-			return controllerutil.OperationResultNone, err
-		}
-		if hasStatusSubResource(obj) {
-			if err := c.Status().Update(ctx, obj); err != nil {
-				return controllerutil.OperationResultNone, err
-			}
-		}
-		return controllerutil.OperationResultCreated, nil
-	}
-
-	preserveOriginalMetadata(existing, obj)
-	result, err := p.update(ctx, c, obj, existing)
-	if err != nil || result == controllerutil.OperationResultNone {
-		return result, err
-	}
-
-	// TODO: check if managed fields is preserved automatically.
-
-	if hasStatusSubResource(obj) {
-		if err := c.Status().Update(ctx, obj); err != nil {
-			return controllerutil.OperationResultNone, err
-		}
-	}
-	return controllerutil.OperationResultUpdated, nil
-}
-
 // mutate wraps a MutateFn and applies validation to its result.
 func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Object) error {
 	if err := f(); err != nil {
@@ -210,31 +158,6 @@ func mutate(f controllerutil.MutateFn, key crclient.ObjectKey, obj crclient.Obje
 		return fmt.Errorf("MutateFn cannot mutate object name and/or object namespace. key: %s, kind: %s, namespace: %s", key, obj.GetObjectKind(), obj.GetNamespace())
 	}
 	return nil
-}
-
-func preserveOriginalMetadata(original, mutated crclient.Object) {
-	labels := original.GetLabels()
-	if labels == nil {
-		labels = make(map[string]string)
-	}
-	for key, value := range mutated.GetLabels() {
-		labels[key] = value
-	}
-	mutated.SetLabels(labels)
-
-	annotations := original.GetAnnotations()
-	if annotations == nil {
-		annotations = make(map[string]string)
-	}
-	for key, value := range mutated.GetAnnotations() {
-		annotations[key] = value
-	}
-	mutated.SetAnnotations(annotations)
-
-	finalizers := sets.New(original.GetFinalizers()...).Insert(mutated.GetFinalizers()...)
-	mutated.SetFinalizers(sets.List(finalizers))
-
-	mutated.SetResourceVersion(original.GetResourceVersion())
 }
 
 // Below defaulting funcs. Their code is based on upstream code that is unfortunately
@@ -283,19 +206,6 @@ func defaultServiceSpec(original, mutated *corev1.ServiceSpec) {
 	if mutated.Type == "" {
 		mutated.Type = original.Type
 	}
-}
-
-func preserveServiceAccountPullSecrets(original, mutated *corev1.ServiceAccount) {
-	// keep original pull secrets, as those will be injected after the serviceAccount is created.
-	// this is necessary to avoid infinite update loop.
-	imagePullSecretsSet := sets.New(mutated.ImagePullSecrets...)
-	for _, pullSecret := range original.ImagePullSecrets {
-		if !imagePullSecretsSet.Has(pullSecret) {
-			mutated.ImagePullSecrets = append(mutated.ImagePullSecrets, pullSecret)
-		}
-	}
-
-	mutated.Secrets = original.Secrets
 }
 
 func defaultCronJobSpec(original, mutated *batchv1.CronJobSpec) {

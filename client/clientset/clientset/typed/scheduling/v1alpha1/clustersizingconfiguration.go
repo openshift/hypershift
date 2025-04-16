@@ -18,18 +18,15 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-	"time"
+	context "context"
 
-	v1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	schedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
+	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	applyconfigurationschedulingv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/scheduling/v1alpha1"
 	scheme "github.com/openshift/hypershift/client/clientset/clientset/scheme"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
-	rest "k8s.io/client-go/rest"
+	gentype "k8s.io/client-go/gentype"
 )
 
 // ClusterSizingConfigurationsGetter has a method to return a ClusterSizingConfigurationInterface.
@@ -40,203 +37,41 @@ type ClusterSizingConfigurationsGetter interface {
 
 // ClusterSizingConfigurationInterface has methods to work with ClusterSizingConfiguration resources.
 type ClusterSizingConfigurationInterface interface {
-	Create(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.CreateOptions) (*v1alpha1.ClusterSizingConfiguration, error)
-	Update(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (*v1alpha1.ClusterSizingConfiguration, error)
-	UpdateStatus(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (*v1alpha1.ClusterSizingConfiguration, error)
+	Create(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfiguration, opts v1.CreateOptions) (*schedulingv1alpha1.ClusterSizingConfiguration, error)
+	Update(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (*schedulingv1alpha1.ClusterSizingConfiguration, error)
+	// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+	UpdateStatus(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (*schedulingv1alpha1.ClusterSizingConfiguration, error)
 	Delete(ctx context.Context, name string, opts v1.DeleteOptions) error
 	DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error
-	Get(ctx context.Context, name string, opts v1.GetOptions) (*v1alpha1.ClusterSizingConfiguration, error)
-	List(ctx context.Context, opts v1.ListOptions) (*v1alpha1.ClusterSizingConfigurationList, error)
+	Get(ctx context.Context, name string, opts v1.GetOptions) (*schedulingv1alpha1.ClusterSizingConfiguration, error)
+	List(ctx context.Context, opts v1.ListOptions) (*schedulingv1alpha1.ClusterSizingConfigurationList, error)
 	Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error)
-	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ClusterSizingConfiguration, err error)
-	Apply(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterSizingConfiguration, err error)
-	ApplyStatus(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterSizingConfiguration, err error)
+	Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *schedulingv1alpha1.ClusterSizingConfiguration, err error)
+	Apply(ctx context.Context, clusterSizingConfiguration *applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *schedulingv1alpha1.ClusterSizingConfiguration, err error)
+	// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
+	ApplyStatus(ctx context.Context, clusterSizingConfiguration *applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *schedulingv1alpha1.ClusterSizingConfiguration, err error)
 	ClusterSizingConfigurationExpansion
 }
 
 // clusterSizingConfigurations implements ClusterSizingConfigurationInterface
 type clusterSizingConfigurations struct {
-	client rest.Interface
+	*gentype.ClientWithListAndApply[*schedulingv1alpha1.ClusterSizingConfiguration, *schedulingv1alpha1.ClusterSizingConfigurationList, *applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration]
 }
 
 // newClusterSizingConfigurations returns a ClusterSizingConfigurations
 func newClusterSizingConfigurations(c *SchedulingV1alpha1Client) *clusterSizingConfigurations {
 	return &clusterSizingConfigurations{
-		client: c.RESTClient(),
+		gentype.NewClientWithListAndApply[*schedulingv1alpha1.ClusterSizingConfiguration, *schedulingv1alpha1.ClusterSizingConfigurationList, *applyconfigurationschedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration](
+			"clustersizingconfigurations",
+			c.RESTClient(),
+			scheme.ParameterCodec,
+			"",
+			func() *schedulingv1alpha1.ClusterSizingConfiguration {
+				return &schedulingv1alpha1.ClusterSizingConfiguration{}
+			},
+			func() *schedulingv1alpha1.ClusterSizingConfigurationList {
+				return &schedulingv1alpha1.ClusterSizingConfigurationList{}
+			},
+		),
 	}
-}
-
-// Get takes name of the clusterSizingConfiguration, and returns the corresponding clusterSizingConfiguration object, and an error if there is any.
-func (c *clusterSizingConfigurations) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Get().
-		Resource("clustersizingconfigurations").
-		Name(name).
-		VersionedParams(&options, scheme.ParameterCodec).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// List takes label and field selectors, and returns the list of ClusterSizingConfigurations that match those selectors.
-func (c *clusterSizingConfigurations) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ClusterSizingConfigurationList, err error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	result = &v1alpha1.ClusterSizingConfigurationList{}
-	err = c.client.Get().
-		Resource("clustersizingconfigurations").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Watch returns a watch.Interface that watches the requested clusterSizingConfigurations.
-func (c *clusterSizingConfigurations) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	var timeout time.Duration
-	if opts.TimeoutSeconds != nil {
-		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
-	}
-	opts.Watch = true
-	return c.client.Get().
-		Resource("clustersizingconfigurations").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Watch(ctx)
-}
-
-// Create takes the representation of a clusterSizingConfiguration and creates it.  Returns the server's representation of the clusterSizingConfiguration, and an error, if there is any.
-func (c *clusterSizingConfigurations) Create(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.CreateOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Post().
-		Resource("clustersizingconfigurations").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterSizingConfiguration).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Update takes the representation of a clusterSizingConfiguration and updates it. Returns the server's representation of the clusterSizingConfiguration, and an error, if there is any.
-func (c *clusterSizingConfigurations) Update(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Put().
-		Resource("clustersizingconfigurations").
-		Name(clusterSizingConfiguration.Name).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterSizingConfiguration).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *clusterSizingConfigurations) UpdateStatus(ctx context.Context, clusterSizingConfiguration *v1alpha1.ClusterSizingConfiguration, opts v1.UpdateOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Put().
-		Resource("clustersizingconfigurations").
-		Name(clusterSizingConfiguration.Name).
-		SubResource("status").
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(clusterSizingConfiguration).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Delete takes name of the clusterSizingConfiguration and deletes it. Returns an error if one occurs.
-func (c *clusterSizingConfigurations) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	return c.client.Delete().
-		Resource("clustersizingconfigurations").
-		Name(name).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *clusterSizingConfigurations) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	var timeout time.Duration
-	if listOpts.TimeoutSeconds != nil {
-		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
-	}
-	return c.client.Delete().
-		Resource("clustersizingconfigurations").
-		VersionedParams(&listOpts, scheme.ParameterCodec).
-		Timeout(timeout).
-		Body(&opts).
-		Do(ctx).
-		Error()
-}
-
-// Patch applies the patch and returns the patched clusterSizingConfiguration.
-func (c *clusterSizingConfigurations) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Patch(pt).
-		Resource("clustersizingconfigurations").
-		Name(name).
-		SubResource(subresources...).
-		VersionedParams(&opts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied clusterSizingConfiguration.
-func (c *clusterSizingConfigurations) Apply(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	if clusterSizingConfiguration == nil {
-		return nil, fmt.Errorf("clusterSizingConfiguration provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(clusterSizingConfiguration)
-	if err != nil {
-		return nil, err
-	}
-	name := clusterSizingConfiguration.Name
-	if name == nil {
-		return nil, fmt.Errorf("clusterSizingConfiguration.Name must be provided to Apply")
-	}
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Resource("clustersizingconfigurations").
-		Name(*name).
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *clusterSizingConfigurations) ApplyStatus(ctx context.Context, clusterSizingConfiguration *schedulingv1alpha1.ClusterSizingConfigurationApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.ClusterSizingConfiguration, err error) {
-	if clusterSizingConfiguration == nil {
-		return nil, fmt.Errorf("clusterSizingConfiguration provided to Apply must not be nil")
-	}
-	patchOpts := opts.ToPatchOptions()
-	data, err := json.Marshal(clusterSizingConfiguration)
-	if err != nil {
-		return nil, err
-	}
-
-	name := clusterSizingConfiguration.Name
-	if name == nil {
-		return nil, fmt.Errorf("clusterSizingConfiguration.Name must be provided to Apply")
-	}
-
-	result = &v1alpha1.ClusterSizingConfiguration{}
-	err = c.client.Patch(types.ApplyPatchType).
-		Resource("clustersizingconfigurations").
-		Name(*name).
-		SubResource("status").
-		VersionedParams(&patchOpts, scheme.ParameterCodec).
-		Body(data).
-		Do(ctx).
-		Into(result)
-	return
 }

@@ -356,6 +356,21 @@ const (
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
 )
 
+// RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
+//
+// +kubebuilder:validation:Enum:=Orphan;Prune
+type RetentionPolicy string
+
+const (
+	// OrphanRetentionPolicy will keep the resources associated with the cluster
+	// when the cluster is deleted.
+	OrphanRetentionPolicy RetentionPolicy = "Orphan"
+
+	// PruneRetentionPolicy will delete the resources associated with the cluster
+	// when the cluster is deleted.
+	PruneRetentionPolicy RetentionPolicy = "Prune"
+)
+
 // +kubebuilder:validation:Enum=ImageRegistry
 type OptionalCapability string
 
@@ -363,10 +378,9 @@ const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.C
 
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
-// +kubebuilder:validation:XValidation:rule="!has(oldSelf.disabledCapabilities) || has(self.disabledCapabilities)", message="disabledCapabilities is required once set"
 type Capabilities struct {
-	// disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+	// disabled when specified, sets the cluster version baselineCapabilitySet to None
+	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
 	// This effectively disables that capability on the hosted cluster.
 	//
 	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
@@ -375,20 +389,21 @@ type Capabilities struct {
 	// Once set, this field cannot be changed.
 	//
 	// +listType=atomic
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="disabledCapabilities is immutable"
+	// +immutable
 	// +optional
-	DisabledCapabilities []OptionalCapability `json:"disabledCapabilities,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
+// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "APIServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires APIServer Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires OAuthServer Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
-
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -457,6 +472,20 @@ type HostedClusterSpec struct {
 	// +required
 	Platform PlatformSpec `json:"platform"`
 
+	// kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+	// When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+	// If it's set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+	// The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+	// This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+	// access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+	// for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+	// This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.
+	// +kubebuilder:validation:XValidation:rule=`self == "" || self.matches('^(?:(?:[a-zA-Z0-9-]+\\.)+[a-zA-Z]{2,}|[a-zA-Z0-9-]+)$')`,message="kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:example: "api.example.com"
+	// +optional
+	KubeAPIServerDNSName string `json:"kubeAPIServerDNSName,omitempty"`
+
 	// controllerAvailabilityPolicy specifies the availability policy applied to critical control plane components like the Kube API Server.
 	// Possible values are HighlyAvailable and SingleReplica. The default value is HighlyAvailable.
 	// This field is immutable.
@@ -506,10 +535,9 @@ type HostedClusterSpec struct {
 	// Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.
 	//
 	// +kubebuilder:validation:MaxItems=6
-	// +kubebuilder:validation:MinItems=4
 	// +kubebuilder:validation:ListType=atomic
 	// -kubebuilder:validation:XValidation:rule="self.all(s, !(s.service == 'APIServer' && s.servicePublishingStrategy.type == 'Route') || has(s.servicePublishingStrategy.route.hostname))",message="If serviceType is 'APIServer' and publishing strategy is 'Route', then hostname must be set"
-	// -kubebuilder:validation:XValidation:rule="['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
+	// -kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? ['APIServer', 'OAuthServer', 'Konnectivity'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', and 'Konnectivity' service types" : ['APIServer', 'OAuthServer', 'Konnectivity', 'Ignition'].all(requiredType, self.exists(s, s.service == requiredType))",message="Services list must contain at least 'APIServer', 'OAuthServer', 'Konnectivity', and 'Ignition' service types"
 	// -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'Route' && has(s.servicePublishingStrategy.route) && has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'Route' && (has(y.servicePublishingStrategy.route) && has(y.servicePublishingStrategy.route.hostname) && y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() <= 1)",message="Each route publishingStrategy 'hostname' must be unique within the Services list."
 	// -kubebuilder:validation:XValidation:rule="self.filter(s, s.servicePublishingStrategy.type == 'NodePort' && has(s.servicePublishingStrategy.nodePort) && has(s.servicePublishingStrategy.nodePort.address) && has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == 'NodePort' && (has(y.servicePublishingStrategy.nodePort) && has(y.servicePublishingStrategy.nodePort.address) && y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address && has(y.servicePublishingStrategy.nodePort.port) && y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() <= 1)",message="Each nodePort publishingStrategy 'nodePort' and 'hostname' must be unique within the Services list."
 	// TODO(alberto): this breaks the cost budget for < 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.
@@ -669,8 +697,10 @@ type HostedClusterSpec struct {
 
 	// capabilities allows for disabling optional components at cluster install time.
 	// This field is optional and once set cannot be changed.
+	// +immutable
 	// +optional
-	// +openshift:enable:FeatureGate=DisableClusterCapabilities
+	// +kubebuilder:default={}
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 }
 
@@ -821,7 +851,7 @@ type NodePortPublishingStrategy struct {
 	// address is the host/ip that the NodePort service is exposed over.
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:XValidation:rule=`isIP(self) || self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$') || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$')`, message="address must be a valid hostname, IPv4, or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([a-zA-Z0-9][-a-zA-Z0-9]*\\.)+[a-zA-Z]{2,}|localhost)$') || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')`, message="address must be a valid hostname, IPv4, or IPv6 address"
 	// +required
 	Address string `json:"address"`
 
@@ -1462,6 +1492,11 @@ type HostedClusterStatus struct {
 	// +optional
 	KubeConfig *corev1.LocalObjectReference `json:"kubeconfig,omitempty"`
 
+	// CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+	// Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the `HostedCluster` namespace.
+	// +optional
+	CustomKubeconfig *corev1.LocalObjectReference `json:"customKubeconfig,omitempty"`
+
 	// KubeadminPassword is a reference to the secret that contains the initial
 	// kubeadmin user password for the guest cluster.
 	// +optional
@@ -1589,8 +1624,9 @@ type ClusterConfiguration struct {
 	// registries, and policies to block or allow registry hostnames.
 	// When exposing OpenShift's image registry to the public, this also lets cluster
 	// admins specify the external hostname.
+	// This input will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
 	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
-	// TODO(alberto): elaborate why.
+	//
 	// +rollout
 	// +optional
 	Image *configv1.ImageSpec `json:"image,omitempty"`

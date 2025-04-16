@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// ImageContentSourceApplyConfiguration represents an declarative configuration of the ImageContentSource type for use
+// ImageContentSourceApplyConfiguration represents a declarative configuration of the ImageContentSource type for use
 // with apply.
 type ImageContentSourceApplyConfiguration struct {
 	Source  *string  `json:"source,omitempty"`
 	Mirrors []string `json:"mirrors,omitempty"`
 }
 
-// ImageContentSourceApplyConfiguration constructs an declarative configuration of the ImageContentSource type for use with
+// ImageContentSourceApplyConfiguration constructs a declarative configuration of the ImageContentSource type for use with
 // apply.
 func ImageContentSource() *ImageContentSourceApplyConfiguration {
 	return &ImageContentSourceApplyConfiguration{}

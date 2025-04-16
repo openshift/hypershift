@@ -275,6 +275,25 @@ and is used to configure platform specific behavior.</p>
 </tr>
 <tr>
 <td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>controllerAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -390,7 +409,7 @@ This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;[&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
 TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
@@ -3466,7 +3485,7 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
-<code>disabledCapabilities</code></br>
+<code>disabled</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
 []OptionalCapability
@@ -3475,8 +3494,8 @@ Once set, it cannot be changed.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabledCapabilities when specified, sets the cluster version baselineCapabilitySet to None
-and sets all additionalEnabledCapabilities BUT the ones supplied in disabledCapabilities.
+<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
+and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
 This effectively disables that capability on the hosted cluster.</p>
 <p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
 OpenShift version.</p>
@@ -3662,8 +3681,8 @@ OpenShift is allowed to import images from, extra CA trust bundles for external
 registries, and policies to block or allow registry hostnames.
 When exposing OpenShift&rsquo;s image registry to the public, this also lets cluster
 admins specify the external hostname.
-Changing this value will trigger a rollout for all existing NodePools in the cluster.
-TODO(alberto): elaborate why.</p>
+This input will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -5145,6 +5164,25 @@ and is used to configure platform specific behavior.</p>
 </tr>
 <tr>
 <td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.
+This API endpoint only works in OCP version 4.19 or later. Older versions will result in a no-op.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>controllerAvailabilityPolicy</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AvailabilityPolicy">
@@ -5260,7 +5298,7 @@ This requires APIServer;OAuthServer;Konnectivity;Ignition.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
--kubebuilder:validation:XValidation:rule=&ldquo;[&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
+-kubebuilder:validation:XValidation:rule=&ldquo;self.platform.type == &lsquo;IBMCloud&rsquo; ? [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&rdquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, and &lsquo;Konnectivity&rsquo; service types&rdquo; : [&lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, &lsquo;Ignition&rsquo;].all(requiredType, self.exists(s, s.service == requiredType))&ldquo;,message=&ldquo;Services list must contain at least &lsquo;APIServer&rsquo;, &lsquo;OAuthServer&rsquo;, &lsquo;Konnectivity&rsquo;, and &lsquo;Ignition&rsquo; service types&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; has(s.servicePublishingStrategy.route) &amp;&amp; has(s.servicePublishingStrategy.route.hostname)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;Route&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.route) &amp;&amp; has(y.servicePublishingStrategy.route.hostname) &amp;&amp; y.servicePublishingStrategy.route.hostname == x.servicePublishingStrategy.route.hostname)).size() &lt;= 1)&rdquo;,message=&ldquo;Each route publishingStrategy &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
 -kubebuilder:validation:XValidation:rule=&ldquo;self.filter(s, s.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; has(s.servicePublishingStrategy.nodePort) &amp;&amp; has(s.servicePublishingStrategy.nodePort.address) &amp;&amp; has(s.servicePublishingStrategy.nodePort.port)).all(x, self.filter(y, y.servicePublishingStrategy.type == &lsquo;NodePort&rsquo; &amp;&amp; (has(y.servicePublishingStrategy.nodePort) &amp;&amp; has(y.servicePublishingStrategy.nodePort.address) &amp;&amp; y.servicePublishingStrategy.nodePort.address == x.servicePublishingStrategy.nodePort.address &amp;&amp; has(y.servicePublishingStrategy.nodePort.port) &amp;&amp; y.servicePublishingStrategy.nodePort.port == x.servicePublishingStrategy.nodePort.port )).size() &lt;= 1)&rdquo;,message=&ldquo;Each nodePort publishingStrategy &lsquo;nodePort&rsquo; and &lsquo;hostname&rsquo; must be unique within the Services list.&rdquo;
 TODO(alberto): this breaks the cost budget for &lt; 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.</p>
@@ -5599,6 +5637,21 @@ Kubernetes core/v1.LocalObjectReference
 <em>(Optional)</em>
 <p>KubeConfig is a reference to the secret containing the default kubeconfig
 for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customKubeconfig</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#localobjectreference-v1-core">
+Kubernetes core/v1.LocalObjectReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the <code>HostedCluster</code> namespace.</p>
 </td>
 </tr>
 <tr>
@@ -5943,6 +5996,24 @@ KubeconfigSecretRef
 <td>
 <em>(Optional)</em>
 <p>KubeConfig specifies the name and key for the kubeconfig secret</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeAPIServerDNSName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kubeAPIServerDNSName specifies a desired DNS name to resolve to the KAS.
+When set, the controller will automatically generate a secret with kubeconfig and expose it in the hostedCluster Status.customKubeconfig field.
+If it&rsquo;s set or removed day 2, the kubeconfig generated secret will be created, recreated or deleted.
+The DNS entries should be resolvable from the cluster, so this should be manually configured in the DNS provider.
+This field works in conjunction with configuration.APIServer.ServingCerts.NamedCertificates to enable
+access to the API server via a custom domain name. The NamedCertificates provide the TLS certificates
+for the custom domain, while this field triggers the generation of a kubeconfig that uses those certificates.</p>
 </td>
 </tr>
 <tr>
@@ -6334,6 +6405,25 @@ KubeconfigSecretRef
 <td>
 <p>KubeConfig is a reference to the secret containing the default kubeconfig
 for this control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customKubeconfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubeconfigSecretRef">
+KubeconfigSecretRef
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>customKubeconfig references an external custom kubeconfig secret.
+This field is populated in the status when a custom kubeconfig secret has been generated
+for the hosted cluster. It contains the name and key of the secret located in the
+hostedCluster namespace. This field is only populated when kubeApiExternalName is set.
+If this field is removed during a day 2 operation, the referenced secret will be deleted
+and this field will be removed from the hostedCluster status.</p>
 </td>
 </tr>
 <tr>
@@ -8143,9 +8233,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>clientID is the client ID of a managed identity.
-Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
+<p>clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+mainly used for CI purposes.</p>
 </td>
 </tr>
 <tr>
@@ -10627,6 +10716,27 @@ creating new nodes and deleting the old ones.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###RetentionPolicy { #hypershift.openshift.io/v1beta1.RetentionPolicy }
+<p>
+<p>RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Orphan&#34;</p></td>
+<td><p>OrphanRetentionPolicy will keep the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr><tr><td><p>&#34;Prune&#34;</p></td>
+<td><p>PruneRetentionPolicy will delete the resources associated with the cluster
+when the cluster is deleted.</p>
+</td>
+</tr></tbody>
 </table>
 ###RollingUpdate { #hypershift.openshift.io/v1beta1.RollingUpdate }
 <p>

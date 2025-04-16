@@ -52,6 +52,28 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
+						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+					},
+					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.DNS.BaseDomain = "@foo"
@@ -594,7 +616,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "3: spec.services in body should have at least 4 items",
+						expectedErrorSubstring: "spec.services in body should have at least 4 items or 3 for IBMCloud",
 					},
 					// {
 					// 	name: "when any of the required services is missing it should fail",
@@ -854,6 +876,51 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.IssuerURL = "foo"
 						},
 						expectedErrorSubstring: "issuerURL must be a valid absolute URL",
+					},
+				},
+			},
+			{
+				name: "when kubeAPIServerDNSName is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when kubeAPIServerDNSName has invalid chars it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "@foo"
+						},
+						expectedErrorSubstring: "kubeAPIServerDNSName must be a valid URL name (e.g., api.example.com)",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a valid hierarchical domain with two levels it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a valid hierarchical domain it with 3 levels should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "123.foo.bar"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is a single subdomain it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = "foo"
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when kubeAPIServerDNSName is empty it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.KubeAPIServerDNSName = ""
+						},
+						expectedErrorSubstring: "",
 					},
 				},
 			},
@@ -1279,6 +1346,11 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			hc.Spec.Capabilities = &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{
+					hyperv1.ImageRegistryCapability,
+				},
+			}
 		}
 	}
 
@@ -1299,6 +1371,12 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
+
+		// ensure image registry component is disabled
+		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, mgtClient, hostedCluster)
+
+		// ensure KAS DNS name is configured with a KAS Serving cert
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 

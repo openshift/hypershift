@@ -263,7 +263,6 @@ cluster-version-operator-9c554b999-l22s7              1/1     Running   0       
 control-plane-operator-6fdc9c569-t7hr4                1/1     Running   0 	       3m57s
 csi-snapshot-controller-785c6dc77c-8ljmr              1/1     Running   0 	       77s
 csi-snapshot-controller-operator-7c6674bc5b-d9dtp     1/1     Running   0 	       93s
-csi-snapshot-webhook-5b8584875f-2492j                 1/1     Running   0          77s
 dns-operator-6874b577f-9tc6b                          1/1     Running   0          94s
 etcd-0                                                3/3     Running   0 	       3m39s
 hosted-cluster-config-operator-f5cf5c464-4nmbh        1/1     Running   0 	       93s

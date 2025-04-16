@@ -96,7 +96,10 @@ func ExecuteJsonGenerationCommand(args []string) (map[string]interface{}, error)
 	}
 
 	var doc map[string]interface{}
-	json.Unmarshal(out, &doc)
+	err = json.Unmarshal(out, &doc)
+	if err != nil {
+		return nil, err
+	}
 
 	return doc, nil
 }

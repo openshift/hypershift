@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// ControlPlaneManagedIdentitiesApplyConfiguration represents an declarative configuration of the ControlPlaneManagedIdentities type for use
+// ControlPlaneManagedIdentitiesApplyConfiguration represents a declarative configuration of the ControlPlaneManagedIdentities type for use
 // with apply.
 type ControlPlaneManagedIdentitiesApplyConfiguration struct {
 	ManagedIdentitiesKeyVault *ManagedAzureKeyVaultApplyConfiguration `json:"managedIdentitiesKeyVault,omitempty"`
@@ -31,7 +31,7 @@ type ControlPlaneManagedIdentitiesApplyConfiguration struct {
 	File                      *ManagedIdentityApplyConfiguration      `json:"file,omitempty"`
 }
 
-// ControlPlaneManagedIdentitiesApplyConfiguration constructs an declarative configuration of the ControlPlaneManagedIdentities type for use with
+// ControlPlaneManagedIdentitiesApplyConfiguration constructs a declarative configuration of the ControlPlaneManagedIdentities type for use with
 // apply.
 func ControlPlaneManagedIdentities() *ControlPlaneManagedIdentitiesApplyConfiguration {
 	return &ControlPlaneManagedIdentitiesApplyConfiguration{}

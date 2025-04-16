@@ -21,13 +21,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// EtcdTLSConfigApplyConfiguration represents an declarative configuration of the EtcdTLSConfig type for use
+// EtcdTLSConfigApplyConfiguration represents a declarative configuration of the EtcdTLSConfig type for use
 // with apply.
 type EtcdTLSConfigApplyConfiguration struct {
 	ClientSecret *v1.LocalObjectReference `json:"clientSecret,omitempty"`
 }
 
-// EtcdTLSConfigApplyConfiguration constructs an declarative configuration of the EtcdTLSConfig type for use with
+// EtcdTLSConfigApplyConfiguration constructs a declarative configuration of the EtcdTLSConfig type for use with
 // apply.
 func EtcdTLSConfig() *EtcdTLSConfigApplyConfiguration {
 	return &EtcdTLSConfigApplyConfiguration{}

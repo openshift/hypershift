@@ -26,6 +26,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token
+        component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -144,7 +145,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig
@@ -165,7 +166,7 @@ spec:
         resources:
           requests:
             cpu: 10m
-            memory: 10Mi
+            memory: 30Mi
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig

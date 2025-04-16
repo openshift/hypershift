@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// AWSSharedVPCRolesRefApplyConfiguration represents an declarative configuration of the AWSSharedVPCRolesRef type for use
+// AWSSharedVPCRolesRefApplyConfiguration represents a declarative configuration of the AWSSharedVPCRolesRef type for use
 // with apply.
 type AWSSharedVPCRolesRefApplyConfiguration struct {
 	IngressARN      *string `json:"ingressARN,omitempty"`
 	ControlPlaneARN *string `json:"controlPlaneARN,omitempty"`
 }
 
-// AWSSharedVPCRolesRefApplyConfiguration constructs an declarative configuration of the AWSSharedVPCRolesRef type for use with
+// AWSSharedVPCRolesRefApplyConfiguration constructs a declarative configuration of the AWSSharedVPCRolesRef type for use with
 // apply.
 func AWSSharedVPCRolesRef() *AWSSharedVPCRolesRefApplyConfiguration {
 	return &AWSSharedVPCRolesRefApplyConfiguration{}

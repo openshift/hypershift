@@ -21,7 +21,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// PortSpecApplyConfiguration represents an declarative configuration of the PortSpec type for use
+// PortSpecApplyConfiguration represents a declarative configuration of the PortSpec type for use
 // with apply.
 type PortSpecApplyConfiguration struct {
 	Network             *NetworkParamApplyConfiguration       `json:"network,omitempty"`
@@ -31,7 +31,7 @@ type PortSpecApplyConfiguration struct {
 	PortSecurityPolicy  *hypershiftv1beta1.PortSecurityPolicy `json:"portSecurityPolicy,omitempty"`
 }
 
-// PortSpecApplyConfiguration constructs an declarative configuration of the PortSpec type for use with
+// PortSpecApplyConfiguration constructs a declarative configuration of the PortSpec type for use with
 // apply.
 func PortSpec() *PortSpecApplyConfiguration {
 	return &PortSpecApplyConfiguration{}

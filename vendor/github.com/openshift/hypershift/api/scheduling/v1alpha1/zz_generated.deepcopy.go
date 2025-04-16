@@ -156,8 +156,8 @@ func (in *Effects) DeepCopyInto(out *Effects) {
 	*out = *in
 	if in.KASGoMemLimit != nil {
 		in, out := &in.KASGoMemLimit, &out.KASGoMemLimit
-		x := (*in).DeepCopy()
-		*out = &x
+		*out = new(string)
+		**out = **in
 	}
 	if in.ControlPlanePriorityClassName != nil {
 		in, out := &in.ControlPlanePriorityClassName, &out.ControlPlanePriorityClassName

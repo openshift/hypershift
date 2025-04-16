@@ -20,6 +20,15 @@ func RootCASecret(ns string) *corev1.Secret { return secretFor(ns, "root-ca") }
 
 func CSRSignerCASecret(ns string) *corev1.Secret { return secretFor(ns, "cluster-signer-ca") }
 
+func KASExternalCAConfigMap(name string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "openshift-config",
+		},
+	}
+}
+
 func RootCAConfigMap(ns string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -332,10 +341,6 @@ func IgnitionServerCertSecret(ns string) *corev1.Secret {
 
 func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-pod-identity-webhook-serving-cert")
-}
-
-func CSISnapshotControllerWebhookCertSecret(ns string) *corev1.Secret {
-	return secretFor(ns, "csi-snapshot-webhook-secret")
 }
 
 func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {

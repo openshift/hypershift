@@ -131,7 +131,7 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("virtual network has no name")
 	}
 
-	if vnet.Properties.Subnets == nil || len(vnet.Properties.Subnets) == 0 {
+	if len(vnet.Properties.Subnets) == 0 {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("no subnets found for resource group '%s'", vnetResourceGroupName)
 	}
 
@@ -231,5 +231,70 @@ func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretP
 				},
 			},
 		},
+	}
+}
+
+func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgResourceGroupName, vnetResourceGroupName, dnsZoneResourceGroupName, component string, assignCustomHCPRoles bool) (string, []string) {
+	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, managedResourceGroupName)
+	nsgRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, nsgResourceGroupName)
+	vnetRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, vnetResourceGroupName)
+	dnsZoneRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionID, dnsZoneResourceGroupName)
+
+	// Default to the Contributor role
+	role := config.ContributorRoleDefinitionID
+
+	scopes := []string{managedRG}
+
+	// TODO CNTRLPLANE-171: CPO, KMS, and NodePoolManagement will need new roles that do not exist today
+	switch component {
+	case config.CloudProvider:
+		role = config.CloudProviderRoleDefinitionID
+		scopes = append(scopes, nsgRG, vnetRG)
+	case config.Ingress:
+		role = config.IngressRoleDefinitionID
+		scopes = append(scopes, vnetRG, dnsZoneRG)
+	case config.CPO:
+		scopes = append(scopes, nsgRG, vnetRG)
+		if assignCustomHCPRoles {
+			role = config.CPOCustomRoleDefinitionID
+		}
+	case config.AzureFile:
+		role = config.AzureFileRoleDefinitionID
+		scopes = append(scopes, nsgRG, vnetRG)
+	case config.AzureDisk:
+		role = config.AzureDiskRoleDefinitionID
+	case config.CNCC:
+		scopes = append(scopes, vnetRG)
+		role = config.NetworkRoleDefinitionID
+	case config.CIRO:
+		role = config.ImageRegistryRoleDefinitionID
+	case config.NodePoolMgmt:
+		scopes = append(scopes, vnetRG)
+		if assignCustomHCPRoles {
+			role = config.CAPZCustomRoleDefinitionID
+		}
+	}
+
+	return role, scopes
+}
+
+// GetKeyVaultDNSSuffixFromCloudType simply mimics the functionality in environments.go from the Azure SDK, github.com/Azure/go-autorest.
+// This function is used to get the DNS suffix for the Key Vault based on the cloud type.
+func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
+	cloud = strings.ToUpper(cloud)
+
+	switch cloud {
+	case "AZURECHINACLOUD":
+		return "vault.azure.cn", nil
+	case "AZURECLOUD":
+		return "vault.azure.net", nil
+	case "AZUREPUBLICCLOUD":
+		return "vault.azure.net", nil
+	case "AZUREUSGOVERNMENT":
+		return "vault.usgovcloudapi.net", nil
+	case "AZUREUSGOVERNMENTCLOUD":
+		return "vault.usgovcloudapi.net", nil
+	default:
+		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
 }

@@ -140,6 +140,8 @@ func SelfSignedCertificate(cfg *CertCfg, key *rsa.PrivateKey) (*x509.Certificate
 		NotBefore:             now,
 		SerialNumber:          serial,
 		Subject:               cfg.Subject,
+		DNSNames:              cfg.DNSNames,
+		ExtKeyUsage:           cfg.ExtKeyUsages,
 	}
 	// verifies that the CN and/or OU for the cert is set
 	if len(cfg.Subject.CommonName) == 0 || len(cfg.Subject.OrganizationalUnit) == 0 {
@@ -524,7 +526,7 @@ func decodeCA(ca *corev1.Secret, opts *CAOpts) (*x509.Certificate, *rsa.PrivateK
 
 func hasKeys(secret *corev1.Secret, keys ...string) bool {
 	for _, key := range keys {
-		if _, hasKey := secret.Data[key]; !hasKey {
+		if value, hasKey := secret.Data[key]; !hasKey || string(value) == "" {
 			return false
 		}
 	}

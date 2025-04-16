@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// NodePoolStatusApplyConfiguration represents an declarative configuration of the NodePoolStatus type for use
+// NodePoolStatusApplyConfiguration represents a declarative configuration of the NodePoolStatus type for use
 // with apply.
 type NodePoolStatusApplyConfiguration struct {
 	Replicas   *int32                                    `json:"replicas,omitempty"`
@@ -26,7 +26,7 @@ type NodePoolStatusApplyConfiguration struct {
 	Conditions []NodePoolConditionApplyConfiguration     `json:"conditions,omitempty"`
 }
 
-// NodePoolStatusApplyConfiguration constructs an declarative configuration of the NodePoolStatus type for use with
+// NodePoolStatusApplyConfiguration constructs a declarative configuration of the NodePoolStatus type for use with
 // apply.
 func NodePoolStatus() *NodePoolStatusApplyConfiguration {
 	return &NodePoolStatusApplyConfiguration{}

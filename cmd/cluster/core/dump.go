@@ -20,6 +20,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -138,7 +139,7 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
 	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
 
-	cmd.MarkFlagRequired("artifact-dir")
+	_ = cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -183,21 +184,11 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 
 	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
 
-	kubeAPIServerPodList := &corev1.PodList{}
-	if err := c.List(ctx, kubeAPIServerPodList, client.InNamespace(cpNamespace), client.MatchingLabels{"app": "kube-apiserver", hyperv1.ControlPlaneComponentLabel: "kube-apiserver"}); err != nil {
-		return fmt.Errorf("failed to list kube-apiserver pods in control plane namespace: %w", err)
+	podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
+	if err != nil {
+		return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
 	}
-	var podToForward *corev1.Pod
-	for i := range kubeAPIServerPodList.Items {
-		pod := &kubeAPIServerPodList.Items[i]
-		if pod.Status.Phase == corev1.PodRunning {
-			podToForward = pod
-			break
-		}
-	}
-	if podToForward == nil {
-		return fmt.Errorf("did not find running kube-apiserver pod for guest cluster")
-	}
+
 	restConfig, err := util.GetConfig()
 	if err != nil {
 		return fmt.Errorf("failed to get a config for management cluster: %w", err)
@@ -214,7 +205,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		return fmt.Errorf("failed to get a kubernetes client: %w", err)
 	}
 	forwarderOutput := &bytes.Buffer{}
-	forwarder := portForwarder{
+	forwarder := supportforwarder.PortForwarder{
 		Namespace: podToForward.Namespace,
 		PodName:   podToForward.Name,
 		Config:    restConfig,
@@ -543,7 +534,7 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	// oc adm inspect command always returns an error so ignore
-	cmd.CombinedOutput()
+	_, _ = cmd.CombinedOutput()
 }
 
 type OCAdmNodeLogs struct {
@@ -570,7 +561,12 @@ func (i *OCAdmNodeLogs) Run(ctx context.Context, cmdArgs ...string) {
 		i.log.Info(fmt.Sprintf("failed creating file to dump node-logs: %v", err))
 		return
 	}
-	defer nodeLogsFile.Close()
+	defer func(nodeLogsFile *os.File) {
+		err := nodeLogsFile.Close()
+		if err != nil {
+			i.log.Info(fmt.Sprintf("failed closing file to dump node-logs: %v", err))
+		}
+	}(nodeLogsFile)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
 	var errb bytes.Buffer
 	cmd.Stdout = nodeLogsFile

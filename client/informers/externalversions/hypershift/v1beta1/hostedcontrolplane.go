@@ -18,13 +18,13 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	apihypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // HostedControlPlanes.
 type HostedControlPlaneInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.HostedControlPlaneLister
+	Lister() hypershiftv1beta1.HostedControlPlaneLister
 }
 
 type hostedControlPlaneInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredHostedControlPlaneInformer(client clientset.Interface, namespace
 				return client.HypershiftV1beta1().HostedControlPlanes(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&hypershiftv1beta1.HostedControlPlane{},
+		&apihypershiftv1beta1.HostedControlPlane{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *hostedControlPlaneInformer) defaultInformer(client clientset.Interface,
 }
 
 func (f *hostedControlPlaneInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&hypershiftv1beta1.HostedControlPlane{}, f.defaultInformer)
+	return f.factory.InformerFor(&apihypershiftv1beta1.HostedControlPlane{}, f.defaultInformer)
 }
 
-func (f *hostedControlPlaneInformer) Lister() v1beta1.HostedControlPlaneLister {
-	return v1beta1.NewHostedControlPlaneLister(f.Informer().GetIndexer())
+func (f *hostedControlPlaneInformer) Lister() hypershiftv1beta1.HostedControlPlaneLister {
+	return hypershiftv1beta1.NewHostedControlPlaneLister(f.Informer().GetIndexer())
 }

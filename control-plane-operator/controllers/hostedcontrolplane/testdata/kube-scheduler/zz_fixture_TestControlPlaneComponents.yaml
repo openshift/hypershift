@@ -29,7 +29,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work
-        component.hypershift.openshift.io/config-hash: 022a8a3a
+        component.hypershift.openshift.io/config-hash: 022a8a3acb8019bf
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -87,6 +87,7 @@ spec:
         - -v=2
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --feature-gates=GatewayAPI=true
         - --feature-gates=SetEIPForNLBIngressController=true
         - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=BuildCSIVolumes=true
@@ -95,13 +96,12 @@ spec:
         - --feature-gates=GCPLabelsTags=true
         - --feature-gates=AlibabaPlatform=true
         - --feature-gates=VSphereMultiVCenters=true
-        - --feature-gates=VSphereStaticIPs=true
         - --feature-gates=AdminNetworkPolicy=true
+        - --feature-gates=NetworkSegmentation=true
         - --feature-gates=AdditionalRoutingCapabilities=true
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkDiagnosticsConfig=true
         - --feature-gates=HardwareSpeed=true
-        - --feature-gates=VSphereControlPlaneMachineSet=true
         - --feature-gates=ManagedBootImages=true
         - --feature-gates=ManagedBootImagesAWS=true
         - --feature-gates=ExternalOIDC=true
@@ -119,16 +119,15 @@ spec:
         - --feature-gates=DisableKubeletCloudCredentialProviders=true
         - --feature-gates=KMSv1=true
         - --feature-gates=ConsolePluginContentSecurityPolicy=false
-        - --feature-gates=GatewayAPI=false
         - --feature-gates=MachineAPIProviderOpenStack=false
         - --feature-gates=InsightsConfigAPI=false
         - --feature-gates=InsightsRuntimeExtractor=false
         - --feature-gates=SigstoreImageVerification=false
+        - --feature-gates=SigstoreImageVerificationPKI=false
         - --feature-gates=VSphereHostVMGroupZonal=false
         - --feature-gates=VSphereMultiDisk=false
         - --feature-gates=RouteExternalCertificate=false
         - --feature-gates=CPMSMachineNamePrefix=false
-        - --feature-gates=NetworkSegmentation=false
         - --feature-gates=RouteAdvertisements=false
         - --feature-gates=OVNObservability=false
         - --feature-gates=EtcdBackendQuota=false
@@ -149,6 +148,8 @@ spec:
         - --feature-gates=Example2=false
         - --feature-gates=PlatformOperators=false
         - --feature-gates=NewOLM=false
+        - --feature-gates=NewOLMCatalogdAPIV1Metas=false
+        - --feature-gates=NewOLMPreflightPermissionChecks=false
         - --feature-gates=InsightsOnDemandDataGather=false
         - --feature-gates=InsightsConfig=false
         - --feature-gates=MetricsCollectionProfiles=false
@@ -164,6 +165,12 @@ spec:
         - --feature-gates=KMSEncryptionProvider=false
         - --feature-gates=HighlyAvailableArbiter=false
         - --feature-gates=ClusterVersionOperatorConfiguration=false
+        - --feature-gates=GCPCustomAPIEndpoints=false
+        - --feature-gates=DyanmicServiceEndpointIBMCloud=false
+        - --feature-gates=DualReplica=false
+        - --feature-gates=GatewayAPIController=false
+        - --feature-gates=ShortCertRotation=false
+        - --feature-gates=VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
         - --feature-gates=ServiceAccountTokenNodeBinding=false
         - --feature-gates=NodeSwap=false
         - --feature-gates=DynamicResourceAllocation=false
@@ -175,6 +182,8 @@ spec:
         - --feature-gates=UserNamespacesSupport=false
         - --feature-gates=UserNamespacesPodSecurityStandards=false
         - --feature-gates=ProcMountType=false
+        - --feature-gates=SELinuxChangePolicy=false
+        - --feature-gates=SELinuxMount=false
         command:
         - hyperkube
         - kube-scheduler

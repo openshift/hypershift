@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtHostDeviceApplyConfiguration represents an declarative configuration of the KubevirtHostDevice type for use
+// KubevirtHostDeviceApplyConfiguration represents a declarative configuration of the KubevirtHostDevice type for use
 // with apply.
 type KubevirtHostDeviceApplyConfiguration struct {
 	DeviceName *string `json:"deviceName,omitempty"`
 	Count      *int    `json:"count,omitempty"`
 }
 
-// KubevirtHostDeviceApplyConfiguration constructs an declarative configuration of the KubevirtHostDevice type for use with
+// KubevirtHostDeviceApplyConfiguration constructs a declarative configuration of the KubevirtHostDevice type for use with
 // apply.
 func KubevirtHostDevice() *KubevirtHostDeviceApplyConfiguration {
 	return &KubevirtHostDeviceApplyConfiguration{}

@@ -18,10 +18,10 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/tools/cache"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	labels "k8s.io/apimachinery/pkg/labels"
+	listers "k8s.io/client-go/listers"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 // HostedControlPlaneLister helps list HostedControlPlanes.
@@ -29,7 +29,7 @@ import (
 type HostedControlPlaneLister interface {
 	// List lists all HostedControlPlanes in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.HostedControlPlane, err error)
+	List(selector labels.Selector) (ret []*hypershiftv1beta1.HostedControlPlane, err error)
 	// HostedControlPlanes returns an object that can list and get HostedControlPlanes.
 	HostedControlPlanes(namespace string) HostedControlPlaneNamespaceLister
 	HostedControlPlaneListerExpansion
@@ -37,25 +37,17 @@ type HostedControlPlaneLister interface {
 
 // hostedControlPlaneLister implements the HostedControlPlaneLister interface.
 type hostedControlPlaneLister struct {
-	indexer cache.Indexer
+	listers.ResourceIndexer[*hypershiftv1beta1.HostedControlPlane]
 }
 
 // NewHostedControlPlaneLister returns a new HostedControlPlaneLister.
 func NewHostedControlPlaneLister(indexer cache.Indexer) HostedControlPlaneLister {
-	return &hostedControlPlaneLister{indexer: indexer}
-}
-
-// List lists all HostedControlPlanes in the indexer.
-func (s *hostedControlPlaneLister) List(selector labels.Selector) (ret []*v1beta1.HostedControlPlane, err error) {
-	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.HostedControlPlane))
-	})
-	return ret, err
+	return &hostedControlPlaneLister{listers.New[*hypershiftv1beta1.HostedControlPlane](indexer, hypershiftv1beta1.Resource("hostedcontrolplane"))}
 }
 
 // HostedControlPlanes returns an object that can list and get HostedControlPlanes.
 func (s *hostedControlPlaneLister) HostedControlPlanes(namespace string) HostedControlPlaneNamespaceLister {
-	return hostedControlPlaneNamespaceLister{indexer: s.indexer, namespace: namespace}
+	return hostedControlPlaneNamespaceLister{listers.NewNamespaced[*hypershiftv1beta1.HostedControlPlane](s.ResourceIndexer, namespace)}
 }
 
 // HostedControlPlaneNamespaceLister helps list and get HostedControlPlanes.
@@ -63,36 +55,15 @@ func (s *hostedControlPlaneLister) HostedControlPlanes(namespace string) HostedC
 type HostedControlPlaneNamespaceLister interface {
 	// List lists all HostedControlPlanes in the indexer for a given namespace.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1beta1.HostedControlPlane, err error)
+	List(selector labels.Selector) (ret []*hypershiftv1beta1.HostedControlPlane, err error)
 	// Get retrieves the HostedControlPlane from the indexer for a given namespace and name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1beta1.HostedControlPlane, error)
+	Get(name string) (*hypershiftv1beta1.HostedControlPlane, error)
 	HostedControlPlaneNamespaceListerExpansion
 }
 
 // hostedControlPlaneNamespaceLister implements the HostedControlPlaneNamespaceLister
 // interface.
 type hostedControlPlaneNamespaceLister struct {
-	indexer   cache.Indexer
-	namespace string
-}
-
-// List lists all HostedControlPlanes in the indexer for a given namespace.
-func (s hostedControlPlaneNamespaceLister) List(selector labels.Selector) (ret []*v1beta1.HostedControlPlane, err error) {
-	err = cache.ListAllByNamespace(s.indexer, s.namespace, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1beta1.HostedControlPlane))
-	})
-	return ret, err
-}
-
-// Get retrieves the HostedControlPlane from the indexer for a given namespace and name.
-func (s hostedControlPlaneNamespaceLister) Get(name string) (*v1beta1.HostedControlPlane, error) {
-	obj, exists, err := s.indexer.GetByKey(s.namespace + "/" + name)
-	if err != nil {
-		return nil, err
-	}
-	if !exists {
-		return nil, errors.NewNotFound(v1beta1.Resource("hostedcontrolplane"), name)
-	}
-	return obj.(*v1beta1.HostedControlPlane), nil
+	listers.ResourceIndexer[*hypershiftv1beta1.HostedControlPlane]
 }

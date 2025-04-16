@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AzureNodePoolPlatformApplyConfiguration represents an declarative configuration of the AzureNodePoolPlatform type for use
+// AzureNodePoolPlatformApplyConfiguration represents a declarative configuration of the AzureNodePoolPlatform type for use
 // with apply.
 type AzureNodePoolPlatformApplyConfiguration struct {
 	VMSize           *string                                `json:"vmSize,omitempty"`
@@ -29,7 +29,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	Diagnostics      *DiagnosticsApplyConfiguration         `json:"diagnostics,omitempty"`
 }
 
-// AzureNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AzureNodePoolPlatform type for use with
+// AzureNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AzureNodePoolPlatform type for use with
 // apply.
 func AzureNodePoolPlatform() *AzureNodePoolPlatformApplyConfiguration {
 	return &AzureNodePoolPlatformApplyConfiguration{}

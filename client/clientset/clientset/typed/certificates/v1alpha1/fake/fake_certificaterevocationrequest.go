@@ -18,171 +18,35 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-
 	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	typedcertificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeCertificateRevocationRequests implements CertificateRevocationRequestInterface
-type FakeCertificateRevocationRequests struct {
+// fakeCertificateRevocationRequests implements CertificateRevocationRequestInterface
+type fakeCertificateRevocationRequests struct {
+	*gentype.FakeClientWithListAndApply[*v1alpha1.CertificateRevocationRequest, *v1alpha1.CertificateRevocationRequestList, *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration]
 	Fake *FakeCertificatesV1alpha1
-	ns   string
 }
 
-var certificaterevocationrequestsResource = v1alpha1.SchemeGroupVersion.WithResource("certificaterevocationrequests")
-
-var certificaterevocationrequestsKind = v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequest")
-
-// Get takes name of the certificateRevocationRequest, and returns the corresponding certificateRevocationRequest object, and an error if there is any.
-func (c *FakeCertificateRevocationRequests) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(certificaterevocationrequestsResource, c.ns, name), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
+func newFakeCertificateRevocationRequests(fake *FakeCertificatesV1alpha1, namespace string) typedcertificatesv1alpha1.CertificateRevocationRequestInterface {
+	return &fakeCertificateRevocationRequests{
+		gentype.NewFakeClientWithListAndApply[*v1alpha1.CertificateRevocationRequest, *v1alpha1.CertificateRevocationRequestList, *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration](
+			fake.Fake,
+			namespace,
+			v1alpha1.SchemeGroupVersion.WithResource("certificaterevocationrequests"),
+			v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequest"),
+			func() *v1alpha1.CertificateRevocationRequest { return &v1alpha1.CertificateRevocationRequest{} },
+			func() *v1alpha1.CertificateRevocationRequestList { return &v1alpha1.CertificateRevocationRequestList{} },
+			func(dst, src *v1alpha1.CertificateRevocationRequestList) { dst.ListMeta = src.ListMeta },
+			func(list *v1alpha1.CertificateRevocationRequestList) []*v1alpha1.CertificateRevocationRequest {
+				return gentype.ToPointerSlice(list.Items)
+			},
+			func(list *v1alpha1.CertificateRevocationRequestList, items []*v1alpha1.CertificateRevocationRequest) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// List takes label and field selectors, and returns the list of CertificateRevocationRequests that match those selectors.
-func (c *FakeCertificateRevocationRequests) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.CertificateRevocationRequestList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewListAction(certificaterevocationrequestsResource, certificaterevocationrequestsKind, c.ns, opts), &v1alpha1.CertificateRevocationRequestList{})
-
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1alpha1.CertificateRevocationRequestList{ListMeta: obj.(*v1alpha1.CertificateRevocationRequestList).ListMeta}
-	for _, item := range obj.(*v1alpha1.CertificateRevocationRequestList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested certificateRevocationRequests.
-func (c *FakeCertificateRevocationRequests) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(certificaterevocationrequestsResource, c.ns, opts))
-
-}
-
-// Create takes the representation of a certificateRevocationRequest and creates it.  Returns the server's representation of the certificateRevocationRequest, and an error, if there is any.
-func (c *FakeCertificateRevocationRequests) Create(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.CreateOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(certificaterevocationrequestsResource, c.ns, certificateRevocationRequest), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// Update takes the representation of a certificateRevocationRequest and updates it. Returns the server's representation of the certificateRevocationRequest, and an error, if there is any.
-func (c *FakeCertificateRevocationRequests) Update(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(certificaterevocationrequestsResource, c.ns, certificateRevocationRequest), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeCertificateRevocationRequests) UpdateStatus(ctx context.Context, certificateRevocationRequest *v1alpha1.CertificateRevocationRequest, opts v1.UpdateOptions) (*v1alpha1.CertificateRevocationRequest, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(certificaterevocationrequestsResource, "status", c.ns, certificateRevocationRequest), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// Delete takes name of the certificateRevocationRequest and deletes it. Returns an error if one occurs.
-func (c *FakeCertificateRevocationRequests) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(certificaterevocationrequestsResource, c.ns, name, opts), &v1alpha1.CertificateRevocationRequest{})
-
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeCertificateRevocationRequests) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(certificaterevocationrequestsResource, c.ns, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1alpha1.CertificateRevocationRequestList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched certificateRevocationRequest.
-func (c *FakeCertificateRevocationRequests) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificaterevocationrequestsResource, c.ns, name, pt, data, subresources...), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied certificateRevocationRequest.
-func (c *FakeCertificateRevocationRequests) Apply(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	if certificateRevocationRequest == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(certificateRevocationRequest)
-	if err != nil {
-		return nil, err
-	}
-	name := certificateRevocationRequest.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificaterevocationrequestsResource, c.ns, *name, types.ApplyPatchType, data), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeCertificateRevocationRequests) ApplyStatus(ctx context.Context, certificateRevocationRequest *certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.CertificateRevocationRequest, err error) {
-	if certificateRevocationRequest == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(certificateRevocationRequest)
-	if err != nil {
-		return nil, err
-	}
-	name := certificateRevocationRequest.Name
-	if name == nil {
-		return nil, fmt.Errorf("certificateRevocationRequest.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(certificaterevocationrequestsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1alpha1.CertificateRevocationRequest{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.CertificateRevocationRequest), err
 }

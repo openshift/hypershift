@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// KubevirtVolumeApplyConfiguration represents an declarative configuration of the KubevirtVolume type for use
+// KubevirtVolumeApplyConfiguration represents a declarative configuration of the KubevirtVolume type for use
 // with apply.
 type KubevirtVolumeApplyConfiguration struct {
-	Type       *v1beta1.KubevirtVolumeType                 `json:"type,omitempty"`
+	Type       *hypershiftv1beta1.KubevirtVolumeType       `json:"type,omitempty"`
 	Persistent *KubevirtPersistentVolumeApplyConfiguration `json:"persistent,omitempty"`
 }
 
-// KubevirtVolumeApplyConfiguration constructs an declarative configuration of the KubevirtVolume type for use with
+// KubevirtVolumeApplyConfiguration constructs a declarative configuration of the KubevirtVolume type for use with
 // apply.
 func KubevirtVolume() *KubevirtVolumeApplyConfiguration {
 	return &KubevirtVolumeApplyConfiguration{}
@@ -37,7 +37,7 @@ func KubevirtVolume() *KubevirtVolumeApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *KubevirtVolumeApplyConfiguration) WithType(value v1beta1.KubevirtVolumeType) *KubevirtVolumeApplyConfiguration {
+func (b *KubevirtVolumeApplyConfiguration) WithType(value hypershiftv1beta1.KubevirtVolumeType) *KubevirtVolumeApplyConfiguration {
 	b.Type = &value
 	return b
 }

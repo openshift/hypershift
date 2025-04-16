@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// KarpenterConfigApplyConfiguration represents an declarative configuration of the KarpenterConfig type for use
+// KarpenterConfigApplyConfiguration represents a declarative configuration of the KarpenterConfig type for use
 // with apply.
 type KarpenterConfigApplyConfiguration struct {
-	Platform *v1beta1.PlatformType                 `json:"platform,omitempty"`
+	Platform *hypershiftv1beta1.PlatformType       `json:"platform,omitempty"`
 	AWS      *KarpenterAWSConfigApplyConfiguration `json:"aws,omitempty"`
 }
 
-// KarpenterConfigApplyConfiguration constructs an declarative configuration of the KarpenterConfig type for use with
+// KarpenterConfigApplyConfiguration constructs a declarative configuration of the KarpenterConfig type for use with
 // apply.
 func KarpenterConfig() *KarpenterConfigApplyConfiguration {
 	return &KarpenterConfigApplyConfiguration{}
@@ -37,7 +37,7 @@ func KarpenterConfig() *KarpenterConfigApplyConfiguration {
 // WithPlatform sets the Platform field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Platform field is set to the value of the last call.
-func (b *KarpenterConfigApplyConfiguration) WithPlatform(value v1beta1.PlatformType) *KarpenterConfigApplyConfiguration {
+func (b *KarpenterConfigApplyConfiguration) WithPlatform(value hypershiftv1beta1.PlatformType) *KarpenterConfigApplyConfiguration {
 	b.Platform = &value
 	return b
 }

@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// NodePoolAutoScalingApplyConfiguration represents an declarative configuration of the NodePoolAutoScaling type for use
+// NodePoolAutoScalingApplyConfiguration represents a declarative configuration of the NodePoolAutoScaling type for use
 // with apply.
 type NodePoolAutoScalingApplyConfiguration struct {
 	Min *int32 `json:"min,omitempty"`
 	Max *int32 `json:"max,omitempty"`
 }
 
-// NodePoolAutoScalingApplyConfiguration constructs an declarative configuration of the NodePoolAutoScaling type for use with
+// NodePoolAutoScalingApplyConfiguration constructs a declarative configuration of the NodePoolAutoScaling type for use with
 // apply.
 func NodePoolAutoScaling() *NodePoolAutoScalingApplyConfiguration {
 	return &NodePoolAutoScalingApplyConfiguration{}

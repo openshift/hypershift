@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AzureKMSKeyApplyConfiguration represents an declarative configuration of the AzureKMSKey type for use
+// AzureKMSKeyApplyConfiguration represents a declarative configuration of the AzureKMSKey type for use
 // with apply.
 type AzureKMSKeyApplyConfiguration struct {
 	KeyVaultName *string `json:"keyVaultName,omitempty"`
@@ -25,7 +25,7 @@ type AzureKMSKeyApplyConfiguration struct {
 	KeyVersion   *string `json:"keyVersion,omitempty"`
 }
 
-// AzureKMSKeyApplyConfiguration constructs an declarative configuration of the AzureKMSKey type for use with
+// AzureKMSKeyApplyConfiguration constructs a declarative configuration of the AzureKMSKey type for use with
 // apply.
 func AzureKMSKey() *AzureKMSKeyApplyConfiguration {
 	return &AzureKMSKeyApplyConfiguration{}

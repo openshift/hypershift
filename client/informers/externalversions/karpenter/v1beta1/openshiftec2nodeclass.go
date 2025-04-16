@@ -18,13 +18,13 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	apikarpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1beta1 "github.com/openshift/hypershift/client/listers/karpenter/v1beta1"
+	karpenterv1beta1 "github.com/openshift/hypershift/client/listers/karpenter/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // OpenshiftEC2NodeClasses.
 type OpenshiftEC2NodeClassInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.OpenshiftEC2NodeClassLister
+	Lister() karpenterv1beta1.OpenshiftEC2NodeClassLister
 }
 
 type openshiftEC2NodeClassInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredOpenshiftEC2NodeClassInformer(client clientset.Interface, namesp
 				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&karpenterv1beta1.OpenshiftEC2NodeClass{},
+		&apikarpenterv1beta1.OpenshiftEC2NodeClass{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *openshiftEC2NodeClassInformer) defaultInformer(client clientset.Interfa
 }
 
 func (f *openshiftEC2NodeClassInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&karpenterv1beta1.OpenshiftEC2NodeClass{}, f.defaultInformer)
+	return f.factory.InformerFor(&apikarpenterv1beta1.OpenshiftEC2NodeClass{}, f.defaultInformer)
 }
 
-func (f *openshiftEC2NodeClassInformer) Lister() v1beta1.OpenshiftEC2NodeClassLister {
-	return v1beta1.NewOpenshiftEC2NodeClassLister(f.Informer().GetIndexer())
+func (f *openshiftEC2NodeClassInformer) Lister() karpenterv1beta1.OpenshiftEC2NodeClassLister {
+	return karpenterv1beta1.NewOpenshiftEC2NodeClassLister(f.Informer().GetIndexer())
 }

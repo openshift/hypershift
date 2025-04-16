@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// FilterByNeutronTagsApplyConfiguration represents an declarative configuration of the FilterByNeutronTags type for use
+// FilterByNeutronTagsApplyConfiguration represents a declarative configuration of the FilterByNeutronTags type for use
 // with apply.
 type FilterByNeutronTagsApplyConfiguration struct {
-	Tags       []v1beta1.NeutronTag `json:"tags,omitempty"`
-	TagsAny    []v1beta1.NeutronTag `json:"tagsAny,omitempty"`
-	NotTags    []v1beta1.NeutronTag `json:"notTags,omitempty"`
-	NotTagsAny []v1beta1.NeutronTag `json:"notTagsAny,omitempty"`
+	Tags       []hypershiftv1beta1.NeutronTag `json:"tags,omitempty"`
+	TagsAny    []hypershiftv1beta1.NeutronTag `json:"tagsAny,omitempty"`
+	NotTags    []hypershiftv1beta1.NeutronTag `json:"notTags,omitempty"`
+	NotTagsAny []hypershiftv1beta1.NeutronTag `json:"notTagsAny,omitempty"`
 }
 
-// FilterByNeutronTagsApplyConfiguration constructs an declarative configuration of the FilterByNeutronTags type for use with
+// FilterByNeutronTagsApplyConfiguration constructs a declarative configuration of the FilterByNeutronTags type for use with
 // apply.
 func FilterByNeutronTags() *FilterByNeutronTagsApplyConfiguration {
 	return &FilterByNeutronTagsApplyConfiguration{}
@@ -39,7 +39,7 @@ func FilterByNeutronTags() *FilterByNeutronTagsApplyConfiguration {
 // WithTags adds the given value to the Tags field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Tags field.
-func (b *FilterByNeutronTagsApplyConfiguration) WithTags(values ...v1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
+func (b *FilterByNeutronTagsApplyConfiguration) WithTags(values ...hypershiftv1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
 	for i := range values {
 		b.Tags = append(b.Tags, values[i])
 	}
@@ -49,7 +49,7 @@ func (b *FilterByNeutronTagsApplyConfiguration) WithTags(values ...v1beta1.Neutr
 // WithTagsAny adds the given value to the TagsAny field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the TagsAny field.
-func (b *FilterByNeutronTagsApplyConfiguration) WithTagsAny(values ...v1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
+func (b *FilterByNeutronTagsApplyConfiguration) WithTagsAny(values ...hypershiftv1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
 	for i := range values {
 		b.TagsAny = append(b.TagsAny, values[i])
 	}
@@ -59,7 +59,7 @@ func (b *FilterByNeutronTagsApplyConfiguration) WithTagsAny(values ...v1beta1.Ne
 // WithNotTags adds the given value to the NotTags field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the NotTags field.
-func (b *FilterByNeutronTagsApplyConfiguration) WithNotTags(values ...v1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
+func (b *FilterByNeutronTagsApplyConfiguration) WithNotTags(values ...hypershiftv1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
 	for i := range values {
 		b.NotTags = append(b.NotTags, values[i])
 	}
@@ -69,7 +69,7 @@ func (b *FilterByNeutronTagsApplyConfiguration) WithNotTags(values ...v1beta1.Ne
 // WithNotTagsAny adds the given value to the NotTagsAny field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the NotTagsAny field.
-func (b *FilterByNeutronTagsApplyConfiguration) WithNotTagsAny(values ...v1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
+func (b *FilterByNeutronTagsApplyConfiguration) WithNotTagsAny(values ...hypershiftv1beta1.NeutronTag) *FilterByNeutronTagsApplyConfiguration {
 	for i := range values {
 		b.NotTagsAny = append(b.NotTagsAny, values[i])
 	}

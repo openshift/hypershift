@@ -14,12 +14,14 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	"github.com/openshift/hypershift/dnsresolver"
 	etcdbackup "github.com/openshift/hypershift/etcd-backup"
 	etcddefrag "github.com/openshift/hypershift/etcd-defrag"
 	ignitionserver "github.com/openshift/hypershift/ignition-server/cmd"
+	kasbootstrap "github.com/openshift/hypershift/kas-bootstrap"
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
@@ -55,9 +57,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-var (
-	setupLog = ctrl.Log.WithName("setup")
-)
+var setupLog = ctrl.Log.WithName("setup")
 
 func main() {
 	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
@@ -69,15 +69,16 @@ func main() {
 	cmd.Version = version.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
-
 }
 
 func commandFor(name string) *cobra.Command {
 	var cmd *cobra.Command
 	switch name {
+	case "kas-bootstrap":
+		cmd = kasbootstrap.NewRunCommand()
 	case "ignition-server":
 		cmd = ignitionserver.NewStartCommand()
 	case "konnectivity-socks5-proxy":
@@ -125,7 +126,7 @@ func defaultCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "control-plane-operator",
 		Run: func(cmd *cobra.Command, args []string) {
-			cmd.Help()
+			_ = cmd.Help()
 			os.Exit(1)
 		},
 	}
@@ -140,9 +141,8 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
-
+	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	return cmd
-
 }
 
 func NewStartCommand() *cobra.Command {
@@ -165,6 +165,7 @@ func NewStartCommand() *cobra.Command {
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
 		imageOverrides                   map[string]string
+		featureSet                       string
 	)
 
 	cmd.Flags().StringVar(&namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
@@ -263,11 +264,15 @@ func NewStartCommand() *cobra.Command {
 			"SOCKS5_PROXY_IMAGE":                   &socks5ProxyImage,
 			"AVAILABILITY_PROBER_IMAGE":            &availabilityProberImage,
 			"TOKEN_MINTER_IMAGE":                   &tokenMinterImage,
+			"HYPERSHIFT_FEATURESET":                &featureSet,
 		} {
 			if value := os.Getenv(env); value != "" {
 				*into = value
 			}
 		}
+
+		// configure the featuregates based on featureset
+		featuregates.ConfigureFeatureSet(featureSet)
 
 		// For now, since the hosted cluster config operator is treated like any other
 		// release payload component but isn't actually part of a release payload,
@@ -358,6 +363,7 @@ func NewStartCommand() *cobra.Command {
 		}
 		setupLog.Info("using token minter image", "image", tokenMinterImage)
 
+		cpoImage = os.Getenv("CONTROL_PLANE_OPERATOR_IMAGE")
 		cpoImage, err = lookupOperatorImage(cpoImage)
 		if err != nil {
 			setupLog.Error(err, "failed to find controlplane-operator-image")

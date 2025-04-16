@@ -232,3 +232,19 @@ func AzureFileCSIDriverNodeServiceAccountRoleBinding() *rbacv1.ClusterRoleBindin
 		},
 	}
 }
+
+func CloudNetworkConfigControllerServiceAccountRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller",
+		},
+	}
+}
+
+func CloudNetworkConfigControllerServiceAccountRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller",
+		},
+	}
+}

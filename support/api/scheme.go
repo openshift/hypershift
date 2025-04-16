@@ -23,7 +23,9 @@ import (
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
@@ -40,6 +42,8 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1beta1"
+	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
@@ -72,46 +76,54 @@ var (
 )
 
 func init() {
-	capiaws.AddToScheme(Scheme)
-	capiibm.AddToScheme(Scheme)
-	clientgoscheme.AddToScheme(Scheme)
-	auditv1.AddToScheme(Scheme)
-	apiregistrationv1.AddToScheme(Scheme)
-	hyperv1beta1.AddToScheme(Scheme)
-	schedulingv1alpha1.AddToScheme(Scheme)
-	certificatesv1alpha1.AddToScheme(Scheme)
-	capiv1.AddToScheme(Scheme)
-	ipamv1.AddToScheme(Scheme)
-	configv1.AddToScheme(Scheme)
-	securityv1.AddToScheme(Scheme)
-	operatorv1.AddToScheme(Scheme)
-	oauthv1.AddToScheme(Scheme)
-	osinv1.AddToScheme(Scheme)
-	routev1.AddToScheme(Scheme)
-	imagev1.AddToScheme(Scheme)
-	clientgoscheme.AddToScheme(Scheme)
-	apiextensionsv1.AddToScheme(Scheme)
-	kasv1beta1.AddToScheme(Scheme)
-	openshiftcpv1.AddToScheme(Scheme)
-	v1alpha1.AddToScheme(Scheme)
-	apiserverconfigv1.AddToScheme(Scheme)
+	_ = capiaws.AddToScheme(Scheme)
+	_ = capiibm.AddToScheme(Scheme)
+	_ = clientgoscheme.AddToScheme(Scheme)
+	_ = auditv1.AddToScheme(Scheme)
+	_ = apiregistrationv1.AddToScheme(Scheme)
+	_ = hyperv1beta1.AddToScheme(Scheme)
+	_ = schedulingv1alpha1.AddToScheme(Scheme)
+	_ = certificatesv1alpha1.AddToScheme(Scheme)
+	_ = capiv1.AddToScheme(Scheme)
+	_ = ipamv1.AddToScheme(Scheme)
+	_ = configv1.AddToScheme(Scheme)
+	_ = securityv1.AddToScheme(Scheme)
+	_ = operatorv1.AddToScheme(Scheme)
+	_ = oauthv1.AddToScheme(Scheme)
+	_ = osinv1.AddToScheme(Scheme)
+	_ = routev1.AddToScheme(Scheme)
+	_ = imagev1.AddToScheme(Scheme)
+	_ = clientgoscheme.AddToScheme(Scheme)
+	_ = apiextensionsv1.AddToScheme(Scheme)
+	_ = kasv1beta1.AddToScheme(Scheme)
+	_ = openshiftcpv1.AddToScheme(Scheme)
+	_ = v1alpha1.AddToScheme(Scheme)
+	_ = apiserverconfigv1.AddToScheme(Scheme)
 	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
-		rhobsmonitoring.AddToScheme(Scheme)
+		_ = rhobsmonitoring.AddToScheme(Scheme)
 	} else {
-		prometheusoperatorv1.AddToScheme(Scheme)
+		_ = prometheusoperatorv1.AddToScheme(Scheme)
 	}
-	snapshotv1.AddToScheme(Scheme)
-	mcfgv1.AddToScheme(Scheme)
-	cdiv1beta1.AddToScheme(Scheme)
-	kubevirtv1.AddToScheme(Scheme)
-	capikubevirt.AddToScheme(Scheme)
-	capiazure.AddToScheme(Scheme)
-	agentv1.AddToScheme(Scheme)
-	capipowervs.AddToScheme(Scheme)
-	machinev1beta1.AddToScheme(Scheme)
-	capiopenstackv1alpha1.AddToScheme(Scheme)
-	capiopenstackv1beta1.AddToScheme(Scheme)
-	secretsstorev1.AddToScheme(Scheme)
-	kcpv1.AddToScheme(Scheme)
-	orcv1alpha1.AddToScheme(Scheme)
+	_ = snapshotv1.AddToScheme(Scheme)
+	_ = mcfgv1.AddToScheme(Scheme)
+	_ = cdiv1beta1.AddToScheme(Scheme)
+	_ = kubevirtv1.AddToScheme(Scheme)
+	_ = capikubevirt.AddToScheme(Scheme)
+	_ = capiazure.AddToScheme(Scheme)
+	_ = agentv1.AddToScheme(Scheme)
+	_ = capipowervs.AddToScheme(Scheme)
+	_ = machinev1beta1.AddToScheme(Scheme)
+	_ = capiopenstackv1alpha1.AddToScheme(Scheme)
+	_ = capiopenstackv1beta1.AddToScheme(Scheme)
+	_ = secretsstorev1.AddToScheme(Scheme)
+	_ = kcpv1.AddToScheme(Scheme)
+	_ = orcv1alpha1.AddToScheme(Scheme)
+	karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
+	metav1.AddToGroupVersion(Scheme, karpenterGroupVersion)
+	Scheme.AddKnownTypes(karpenterGroupVersion,
+		&karpenterv1.NodeClaim{},
+		&karpenterv1.NodeClaimList{},
+		&karpenterv1.NodePool{},
+		&karpenterv1.NodePoolList{},
+	)
 }

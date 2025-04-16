@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
@@ -522,21 +523,13 @@ func PredicatesForHostedClusterAnnotationScoping(r client.Reader) predicate.Pred
 func getHostedClusterScopeAnnotation(obj client.Object, r client.Reader) string {
 	hostedClusterName := ""
 	nodePoolName := ""
-	switch obj.(type) {
+	switch obj := obj.(type) {
 	case *hyperv1.HostedCluster:
-		hc, ok := obj.(*hyperv1.HostedCluster)
-		if !ok {
-			return ""
-		}
-		if hc.GetAnnotations() != nil {
-			return hc.GetAnnotations()[HostedClustersScopeAnnotation]
+		if obj.GetAnnotations() != nil {
+			return obj.GetAnnotations()[HostedClustersScopeAnnotation]
 		}
 	case *hyperv1.NodePool:
-		np, ok := obj.(*hyperv1.NodePool)
-		if !ok {
-			return ""
-		}
-		hostedClusterName = fmt.Sprintf("%s/%s", np.Namespace, np.Spec.ClusterName)
+		hostedClusterName = fmt.Sprintf("%s/%s", obj.Namespace, obj.Spec.ClusterName)
 	default:
 		if obj.GetAnnotations() != nil {
 			nodePoolName = obj.GetAnnotations()["hypershift.openshift.io/nodePool"]
@@ -662,4 +655,36 @@ func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedC
 	}
 
 	return ImageLabels(controlPlaneOperatorImageMetadata), nil
+}
+
+var (
+	hasPortRegex = regexp.MustCompile(`:\d{1,5}$`)
+)
+
+func HostFromURL(addr string) (string, error) {
+	parsedURL, err := url.Parse(addr)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse URL(%s): %w", addr, err)
+	}
+	hostPort := parsedURL.Host
+	if hostPort == "" {
+		return "", fmt.Errorf("missing host/port name in URL(%s)", addr)
+	}
+	if !hasPortRegex.MatchString(hostPort) {
+		return hostPort, nil
+	}
+	hostName, _, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		return "", fmt.Errorf("failed to split host/port from (%s): %w", hostPort, err)
+	}
+	if hostName == "" {
+		return "", fmt.Errorf("missing host name in URL(%s)", addr)
+	}
+	return hostName, nil
+
+}
+
+// EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined
+func EnableIfCustomKubeconfig(hcp *hyperv1.HostedControlPlane) bool {
+	return len(hcp.Spec.KubeAPIServerDNSName) > 0
 }

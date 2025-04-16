@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtStorageClassMappingApplyConfiguration represents an declarative configuration of the KubevirtStorageClassMapping type for use
+// KubevirtStorageClassMappingApplyConfiguration represents a declarative configuration of the KubevirtStorageClassMapping type for use
 // with apply.
 type KubevirtStorageClassMappingApplyConfiguration struct {
 	Group                 *string `json:"group,omitempty"`
@@ -25,7 +25,7 @@ type KubevirtStorageClassMappingApplyConfiguration struct {
 	GuestStorageClassName *string `json:"guestStorageClassName,omitempty"`
 }
 
-// KubevirtStorageClassMappingApplyConfiguration constructs an declarative configuration of the KubevirtStorageClassMapping type for use with
+// KubevirtStorageClassMappingApplyConfiguration constructs a declarative configuration of the KubevirtStorageClassMapping type for use with
 // apply.
 func KubevirtStorageClassMapping() *KubevirtStorageClassMappingApplyConfiguration {
 	return &KubevirtStorageClassMappingApplyConfiguration{}

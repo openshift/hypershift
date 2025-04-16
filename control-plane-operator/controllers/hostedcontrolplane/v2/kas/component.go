@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	hyperutils "github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -51,6 +52,11 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"local-kubeconfig.yaml",
 			component.WithAdaptFunction(adaptLocalhostKubeconfigSecret),
+		).
+		WithManifestAdapter(
+			"custom-admin-kubeconfig.yaml",
+			component.WithAdaptFunction(adaptCustomAdminKubeconfigSecret),
+			component.WithPredicate(enableIfCustomKubeconfig),
 		).
 		WithManifestAdapter(
 			"external-admin-kubeconfig.yaml",
@@ -101,14 +107,13 @@ func NewComponent() component.ControlPlaneComponent {
 			"aws-pod-identity-webhook-kubeconfig.yaml",
 			component.EnableForPlatform(hyperv1.AWSPlatform),
 			component.WithAdaptFunction(adaptAWSPodIdentityWebhookKubeconfigSecret),
+			component.ReconcileExisting(),
 		).
 		WithManifestAdapter(
 			"azure-kms-secretprovider.yaml",
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),
 		).
-		RolloutOnConfigMapChange("kas-config", "kas-audit-config", "auth-config").
-		RolloutOnSecretChange("kas-secret-encryption-config").
 		Build()
 }
 
@@ -117,4 +122,9 @@ func enableAzureKMSSecretProvider(cpContext component.WorkloadContext) bool {
 		return azureutil.IsAroHCP()
 	}
 	return false
+}
+
+// enableIfCustomKubeconfig is a helper predicate for the common use case of enabling a resource when a KubeAPICustomKubeconfig is specified.
+func enableIfCustomKubeconfig(cpContext component.WorkloadContext) bool {
+	return hyperutils.EnableIfCustomKubeconfig(cpContext.HCP)
 }

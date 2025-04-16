@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// NodePortPublishingStrategyApplyConfiguration represents an declarative configuration of the NodePortPublishingStrategy type for use
+// NodePortPublishingStrategyApplyConfiguration represents a declarative configuration of the NodePortPublishingStrategy type for use
 // with apply.
 type NodePortPublishingStrategyApplyConfiguration struct {
 	Address *string `json:"address,omitempty"`
 	Port    *int32  `json:"port,omitempty"`
 }
 
-// NodePortPublishingStrategyApplyConfiguration constructs an declarative configuration of the NodePortPublishingStrategy type for use with
+// NodePortPublishingStrategyApplyConfiguration constructs a declarative configuration of the NodePortPublishingStrategy type for use with
 // apply.
 func NodePortPublishingStrategy() *NodePortPublishingStrategyApplyConfiguration {
 	return &NodePortPublishingStrategyApplyConfiguration{}

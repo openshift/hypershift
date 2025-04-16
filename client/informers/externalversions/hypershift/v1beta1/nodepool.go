@@ -18,13 +18,13 @@ limitations under the License.
 package v1beta1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	apihypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/client/listers/hypershift/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // NodePools.
 type NodePoolInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1beta1.NodePoolLister
+	Lister() hypershiftv1beta1.NodePoolLister
 }
 
 type nodePoolInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredNodePoolInformer(client clientset.Interface, namespace string, r
 				return client.HypershiftV1beta1().NodePools(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&hypershiftv1beta1.NodePool{},
+		&apihypershiftv1beta1.NodePool{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *nodePoolInformer) defaultInformer(client clientset.Interface, resyncPer
 }
 
 func (f *nodePoolInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&hypershiftv1beta1.NodePool{}, f.defaultInformer)
+	return f.factory.InformerFor(&apihypershiftv1beta1.NodePool{}, f.defaultInformer)
 }
 
-func (f *nodePoolInformer) Lister() v1beta1.NodePoolLister {
-	return v1beta1.NewNodePoolLister(f.Informer().GetIndexer())
+func (f *nodePoolInformer) Lister() hypershiftv1beta1.NodePoolLister {
+	return hypershiftv1beta1.NewNodePoolLister(f.Informer().GetIndexer())
 }

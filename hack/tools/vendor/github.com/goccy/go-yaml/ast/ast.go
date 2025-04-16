@@ -1,6 +1,7 @@
 package ast
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -8,13 +9,12 @@ import (
 	"strings"
 
 	"github.com/goccy/go-yaml/token"
-	"golang.org/x/xerrors"
 )
 
 var (
-	ErrInvalidTokenType  = xerrors.New("invalid token type")
-	ErrInvalidAnchorName = xerrors.New("invalid anchor name")
-	ErrInvalidAliasName  = xerrors.New("invalid alias name")
+	ErrInvalidTokenType  = errors.New("invalid token type")
+	ErrInvalidAnchorName = errors.New("invalid anchor name")
+	ErrInvalidAliasName  = errors.New("invalid alias name")
 )
 
 // NodeType type identifier of node
@@ -1491,7 +1491,7 @@ type SequenceNode struct {
 // Replace replace value node.
 func (n *SequenceNode) Replace(idx int, value Node) error {
 	if len(n.Values) <= idx {
-		return xerrors.Errorf(
+		return fmt.Errorf(
 			"invalid index for sequence: sequence length is %d, but specified %d index",
 			len(n.Values), idx,
 		)
@@ -2092,10 +2092,10 @@ func Merge(dst Node, src Node) error {
 	err := &ErrInvalidMergeType{dst: dst, src: src}
 	switch dst.Type() {
 	case DocumentType:
-		node := dst.(*DocumentNode)
+		node, _ := dst.(*DocumentNode)
 		return Merge(node.Body, src)
 	case MappingType:
-		node := dst.(*MappingNode)
+		node, _ := dst.(*MappingNode)
 		target, ok := src.(*MappingNode)
 		if !ok {
 			return err
@@ -2103,7 +2103,7 @@ func Merge(dst Node, src Node) error {
 		node.Merge(target)
 		return nil
 	case SequenceType:
-		node := dst.(*SequenceNode)
+		node, _ := dst.(*SequenceNode)
 		target, ok := src.(*SequenceNode)
 		if !ok {
 			return err

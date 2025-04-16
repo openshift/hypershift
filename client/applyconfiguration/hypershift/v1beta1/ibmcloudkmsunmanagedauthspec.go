@@ -21,13 +21,13 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// IBMCloudKMSUnmanagedAuthSpecApplyConfiguration represents an declarative configuration of the IBMCloudKMSUnmanagedAuthSpec type for use
+// IBMCloudKMSUnmanagedAuthSpecApplyConfiguration represents a declarative configuration of the IBMCloudKMSUnmanagedAuthSpec type for use
 // with apply.
 type IBMCloudKMSUnmanagedAuthSpecApplyConfiguration struct {
 	Credentials *v1.LocalObjectReference `json:"credentials,omitempty"`
 }
 
-// IBMCloudKMSUnmanagedAuthSpecApplyConfiguration constructs an declarative configuration of the IBMCloudKMSUnmanagedAuthSpec type for use with
+// IBMCloudKMSUnmanagedAuthSpecApplyConfiguration constructs a declarative configuration of the IBMCloudKMSUnmanagedAuthSpec type for use with
 // apply.
 func IBMCloudKMSUnmanagedAuthSpec() *IBMCloudKMSUnmanagedAuthSpecApplyConfiguration {
 	return &IBMCloudKMSUnmanagedAuthSpecApplyConfiguration{}

@@ -21,7 +21,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 )
 
-// TaintApplyConfiguration represents an declarative configuration of the Taint type for use
+// TaintApplyConfiguration represents a declarative configuration of the Taint type for use
 // with apply.
 type TaintApplyConfiguration struct {
 	Key    *string         `json:"key,omitempty"`
@@ -29,7 +29,7 @@ type TaintApplyConfiguration struct {
 	Effect *v1.TaintEffect `json:"effect,omitempty"`
 }
 
-// TaintApplyConfiguration constructs an declarative configuration of the Taint type for use with
+// TaintApplyConfiguration constructs a declarative configuration of the Taint type for use with
 // apply.
 func Taint() *TaintApplyConfiguration {
 	return &TaintApplyConfiguration{}

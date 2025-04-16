@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtNetworkApplyConfiguration represents an declarative configuration of the KubevirtNetwork type for use
+// KubevirtNetworkApplyConfiguration represents a declarative configuration of the KubevirtNetwork type for use
 // with apply.
 type KubevirtNetworkApplyConfiguration struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// KubevirtNetworkApplyConfiguration constructs an declarative configuration of the KubevirtNetwork type for use with
+// KubevirtNetworkApplyConfiguration constructs a declarative configuration of the KubevirtNetwork type for use with
 // apply.
 func KubevirtNetwork() *KubevirtNetworkApplyConfiguration {
 	return &KubevirtNetworkApplyConfiguration{}

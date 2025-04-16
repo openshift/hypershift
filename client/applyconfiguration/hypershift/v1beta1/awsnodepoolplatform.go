@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AWSNodePoolPlatformApplyConfiguration represents an declarative configuration of the AWSNodePoolPlatform type for use
+// AWSNodePoolPlatformApplyConfiguration represents a declarative configuration of the AWSNodePoolPlatform type for use
 // with apply.
 type AWSNodePoolPlatformApplyConfiguration struct {
 	InstanceType    *string                                  `json:"instanceType,omitempty"`
@@ -30,7 +30,7 @@ type AWSNodePoolPlatformApplyConfiguration struct {
 	Placement       *PlacementOptionsApplyConfiguration      `json:"placement,omitempty"`
 }
 
-// AWSNodePoolPlatformApplyConfiguration constructs an declarative configuration of the AWSNodePoolPlatform type for use with
+// AWSNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AWSNodePoolPlatform type for use with
 // apply.
 func AWSNodePoolPlatform() *AWSNodePoolPlatformApplyConfiguration {
 	return &AWSNodePoolPlatformApplyConfiguration{}

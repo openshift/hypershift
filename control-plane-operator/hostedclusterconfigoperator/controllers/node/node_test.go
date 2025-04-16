@@ -17,7 +17,7 @@ import (
 )
 
 func TestNodeToNodePoolName(t *testing.T) {
-	capiv1.AddToScheme(scheme.Scheme)
+	_ = capiv1.AddToScheme(scheme.Scheme)
 
 	machineNamespace := "test"
 	nodePoolName := "ns/name"

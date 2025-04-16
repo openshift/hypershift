@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// OpenStackNodePoolPlatformApplyConfiguration represents an declarative configuration of the OpenStackNodePoolPlatform type for use
+// OpenStackNodePoolPlatformApplyConfiguration represents a declarative configuration of the OpenStackNodePoolPlatform type for use
 // with apply.
 type OpenStackNodePoolPlatformApplyConfiguration struct {
 	Flavor           *string                      `json:"flavor,omitempty"`
@@ -26,7 +26,7 @@ type OpenStackNodePoolPlatformApplyConfiguration struct {
 	AdditionalPorts  []PortSpecApplyConfiguration `json:"additionalPorts,omitempty"`
 }
 
-// OpenStackNodePoolPlatformApplyConfiguration constructs an declarative configuration of the OpenStackNodePoolPlatform type for use with
+// OpenStackNodePoolPlatformApplyConfiguration constructs a declarative configuration of the OpenStackNodePoolPlatform type for use with
 // apply.
 func OpenStackNodePoolPlatform() *OpenStackNodePoolPlatformApplyConfiguration {
 	return &OpenStackNodePoolPlatformApplyConfiguration{}

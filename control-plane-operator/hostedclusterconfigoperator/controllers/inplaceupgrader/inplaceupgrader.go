@@ -7,9 +7,12 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -109,6 +112,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
+	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %q: %w", client.ObjectKeyFromObject(hcp), err)
+	}
+	proxy := globalconfig.ProxyConfig()
+	globalconfig.ReconcileProxyConfigWithStatus(proxy, hcp)
+
 	nodePoolUpgradeAPI := &nodePoolUpgradeAPI{
 		spec: struct {
 			targetConfigVersion string
@@ -122,6 +132,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 		}{
 			currentConfigVersion: machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion],
 		},
+		proxy: proxy,
 	}
 
 	mcoImage, err := r.getPayloadImage(ctx, MachineConfigOperatorImage)
@@ -141,6 +152,7 @@ type nodePoolUpgradeAPI struct {
 	status struct {
 		currentConfigVersion string
 	}
+	proxy *configv1.Proxy
 }
 
 // reconcileInPlaceUpgrade loops over all Nodes that belong to a NodePool and performs an in place upgrade if necessary.
@@ -242,7 +254,7 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 		return fmt.Errorf("failed to set hosted nodes for inplace upgrade: %w", err)
 	}
 
-	err = r.reconcileUpgradePods(ctx, r.guestClusterClient, nodes, nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage)
+	err = r.reconcileUpgradePods(ctx, r.guestClusterClient, nodes, nodePoolUpgradeAPI.spec.poolRef.GetName(), mcoImage, nodePoolUpgradeAPI.proxy)
 	if err != nil {
 		return fmt.Errorf("failed to delete idle upgrade pods: %w", err)
 	}
@@ -267,7 +279,7 @@ func (r *Reconciler) setNodesDesiredConfig(ctx context.Context, hostedClusterCli
 }
 
 // reconcileUpgradePods checks if any Machine Config Daemon pods are running on nodes that are not currently performing an update
-func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName, mcoImage string) error {
+func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName, mcoImage string, proxy *configv1.Proxy) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	for _, node := range nodes {
@@ -309,6 +321,7 @@ func (r *Reconciler) reconcileUpgradePods(ctx context.Context, hostedClusterClie
 						node.Name,
 						poolName,
 						mcoImage,
+						proxy,
 					)
 				}); err != nil {
 					return fmt.Errorf("failed to create upgrade pod for node %s: %w", node.Name, err)
@@ -345,7 +358,7 @@ func (r *Reconciler) getPayloadImage(ctx context.Context, imageName string) (str
 	return image, nil
 }
 
-func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string) error {
+func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoImage string, proxy *configv1.Proxy) error {
 	configmap := inPlaceUpgradeConfigMap(poolName, pod.Namespace)
 	pod.Spec.Containers = []corev1.Container{
 		{
@@ -409,7 +422,38 @@ func (r *Reconciler) createUpgradePod(pod *corev1.Pod, nodeName, poolName, mcoIm
 	}
 	pod.Spec.RestartPolicy = corev1.RestartPolicyOnFailure
 
+	// Add proxy environment variables if they are set
+	proxyEnvVars := proxyToEnvVars(proxy)
+	if len(proxyEnvVars) > 0 && len(pod.Spec.Containers) > 0 {
+		pod.Spec.Containers[0].Env = append(pod.Spec.Containers[0].Env, proxyEnvVars...)
+	}
+
 	return nil
+}
+
+func proxyToEnvVars(proxy *configv1.Proxy) []corev1.EnvVar {
+	envVars := []corev1.EnvVar{}
+	if proxy != nil {
+		if proxy.Status.HTTPProxy != "" {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  "HTTP_PROXY",
+				Value: proxy.Status.HTTPProxy,
+			})
+		}
+		if proxy.Status.HTTPSProxy != "" {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  "HTTPS_PROXY",
+				Value: proxy.Status.HTTPSProxy,
+			})
+		}
+		if proxy.Status.NoProxy != "" {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  "NO_PROXY",
+				Value: proxy.Status.NoProxy,
+			})
+		}
+	}
+	return envVars
 }
 
 func deleteUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, nodes []*corev1.Node, poolName string) error {

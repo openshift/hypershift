@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ManagedIdentityApplyConfiguration represents an declarative configuration of the ManagedIdentity type for use
+// ManagedIdentityApplyConfiguration represents a declarative configuration of the ManagedIdentity type for use
 // with apply.
 type ManagedIdentityApplyConfiguration struct {
-	ClientID              *string                       `json:"clientID,omitempty"`
-	CertificateName       *string                       `json:"certificateName,omitempty"`
-	ObjectEncoding        *v1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
-	CredentialsSecretName *string                       `json:"credentialsSecretName,omitempty"`
+	ClientID              *string                                 `json:"clientID,omitempty"`
+	CertificateName       *string                                 `json:"certificateName,omitempty"`
+	ObjectEncoding        *hypershiftv1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
+	CredentialsSecretName *string                                 `json:"credentialsSecretName,omitempty"`
 }
 
-// ManagedIdentityApplyConfiguration constructs an declarative configuration of the ManagedIdentity type for use with
+// ManagedIdentityApplyConfiguration constructs a declarative configuration of the ManagedIdentity type for use with
 // apply.
 func ManagedIdentity() *ManagedIdentityApplyConfiguration {
 	return &ManagedIdentityApplyConfiguration{}
@@ -55,7 +55,7 @@ func (b *ManagedIdentityApplyConfiguration) WithCertificateName(value string) *M
 // WithObjectEncoding sets the ObjectEncoding field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ObjectEncoding field is set to the value of the last call.
-func (b *ManagedIdentityApplyConfiguration) WithObjectEncoding(value v1beta1.ObjectEncodingFormat) *ManagedIdentityApplyConfiguration {
+func (b *ManagedIdentityApplyConfiguration) WithObjectEncoding(value hypershiftv1beta1.ObjectEncodingFormat) *ManagedIdentityApplyConfiguration {
 	b.ObjectEncoding = &value
 	return b
 }

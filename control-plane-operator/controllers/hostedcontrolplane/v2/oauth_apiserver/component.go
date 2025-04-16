@@ -5,6 +5,8 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
+
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -44,8 +46,13 @@ func NewComponent() component.ControlPlaneComponent {
 			component.AdaptPodDisruptionBudget(),
 		).
 		WithDependencies(oapiv2.ComponentName).
-		RolloutOnConfigMapChange("openshift-oauth-apiserver-audit").
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
+			Mode: component.Socks5,
+			Socks5Options: component.Socks5Options{
+				ResolveFromGuestClusterDNS: ptr.To(true),
+			},
+		}).
 		Build()
 }
 

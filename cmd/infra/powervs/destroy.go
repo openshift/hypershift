@@ -102,19 +102,19 @@ func NewDestroyCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.TransitGatewayLocation, "transit-gateway-location", opts.TransitGatewayLocation, "IBM Cloud Transit Gateway location")
 	cmd.Flags().StringVar(&opts.TransitGateway, "transit-gateway", opts.TransitGateway, "IBM Cloud Transit Gateway. Use this flag to reuse an existing Transit Gateway resource for cluster's infra")
 
-	cmd.MarkFlagRequired("name")
-	cmd.MarkFlagRequired("resource-group")
-	cmd.MarkFlagRequired("base-domain")
-	cmd.MarkFlagRequired("infra-id")
-	cmd.MarkFlagRequired("region")
-	cmd.MarkFlagRequired("zone")
-	cmd.MarkFlagRequired("vpc-region")
+	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("resource-group")
+	_ = cmd.MarkFlagRequired("base-domain")
+	_ = cmd.MarkFlagRequired("infra-id")
+	_ = cmd.MarkFlagRequired("region")
+	_ = cmd.MarkFlagRequired("zone")
+	_ = cmd.MarkFlagRequired("vpc-region")
 
 	// these options are only for development and testing purpose, user can pass these flags
 	// to destroy the resource created inside these resources for hypershift infra purpose
-	cmd.Flags().MarkHidden("vpc")
-	cmd.Flags().MarkHidden("cloud-instance-id")
-	cmd.Flags().MarkHidden("transit-gateway")
+	_ = cmd.Flags().MarkHidden("vpc")
+	_ = cmd.Flags().MarkHidden("cloud-instance-id")
+	_ = cmd.Flags().MarkHidden("transit-gateway")
 
 	logger := log.Log.WithName(opts.InfraID)
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {

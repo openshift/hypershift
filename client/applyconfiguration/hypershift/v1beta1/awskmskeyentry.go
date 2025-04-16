@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// AWSKMSKeyEntryApplyConfiguration represents an declarative configuration of the AWSKMSKeyEntry type for use
+// AWSKMSKeyEntryApplyConfiguration represents a declarative configuration of the AWSKMSKeyEntry type for use
 // with apply.
 type AWSKMSKeyEntryApplyConfiguration struct {
 	ARN *string `json:"arn,omitempty"`
 }
 
-// AWSKMSKeyEntryApplyConfiguration constructs an declarative configuration of the AWSKMSKeyEntry type for use with
+// AWSKMSKeyEntryApplyConfiguration constructs a declarative configuration of the AWSKMSKeyEntry type for use with
 // apply.
 func AWSKMSKeyEntry() *AWSKMSKeyEntryApplyConfiguration {
 	return &AWSKMSKeyEntryApplyConfiguration{}

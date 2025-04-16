@@ -18,19 +18,19 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// ServicePublishingStrategyApplyConfiguration represents an declarative configuration of the ServicePublishingStrategy type for use
+// ServicePublishingStrategyApplyConfiguration represents a declarative configuration of the ServicePublishingStrategy type for use
 // with apply.
 type ServicePublishingStrategyApplyConfiguration struct {
-	Type         *v1beta1.PublishingStrategyType                   `json:"type,omitempty"`
+	Type         *hypershiftv1beta1.PublishingStrategyType         `json:"type,omitempty"`
 	NodePort     *NodePortPublishingStrategyApplyConfiguration     `json:"nodePort,omitempty"`
 	LoadBalancer *LoadBalancerPublishingStrategyApplyConfiguration `json:"loadBalancer,omitempty"`
 	Route        *RoutePublishingStrategyApplyConfiguration        `json:"route,omitempty"`
 }
 
-// ServicePublishingStrategyApplyConfiguration constructs an declarative configuration of the ServicePublishingStrategy type for use with
+// ServicePublishingStrategyApplyConfiguration constructs a declarative configuration of the ServicePublishingStrategy type for use with
 // apply.
 func ServicePublishingStrategy() *ServicePublishingStrategyApplyConfiguration {
 	return &ServicePublishingStrategyApplyConfiguration{}
@@ -39,7 +39,7 @@ func ServicePublishingStrategy() *ServicePublishingStrategyApplyConfiguration {
 // WithType sets the Type field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Type field is set to the value of the last call.
-func (b *ServicePublishingStrategyApplyConfiguration) WithType(value v1beta1.PublishingStrategyType) *ServicePublishingStrategyApplyConfiguration {
+func (b *ServicePublishingStrategyApplyConfiguration) WithType(value hypershiftv1beta1.PublishingStrategyType) *ServicePublishingStrategyApplyConfiguration {
 	b.Type = &value
 	return b
 }

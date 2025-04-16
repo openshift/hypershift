@@ -18,11 +18,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				c.Env[i].Value = cpContext.UserReleaseImageProvider.Version()
 			case "OPERAND_IMAGE":
 				c.Env[i].Value = cpContext.ReleaseImageProvider.GetImage("csi-snapshot-controller")
-			case "WEBHOOK_IMAGE":
-				c.Env[i].Value = cpContext.ReleaseImageProvider.GetImage("csi-snapshot-validation-webhook")
 			}
 		}
-		// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller and csi-snapshot-webhook pods as.
+		// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller pods as.
 		// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
 		if cpContext.SetDefaultSecurityContext {
 			c.Env = append(c.Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: "1001"})

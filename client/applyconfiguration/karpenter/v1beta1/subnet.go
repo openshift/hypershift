@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// SubnetApplyConfiguration represents an declarative configuration of the Subnet type for use
+// SubnetApplyConfiguration represents a declarative configuration of the Subnet type for use
 // with apply.
 type SubnetApplyConfiguration struct {
 	ID     *string `json:"id,omitempty"`
@@ -25,7 +25,7 @@ type SubnetApplyConfiguration struct {
 	ZoneID *string `json:"zoneID,omitempty"`
 }
 
-// SubnetApplyConfiguration constructs an declarative configuration of the Subnet type for use with
+// SubnetApplyConfiguration constructs a declarative configuration of the Subnet type for use with
 // apply.
 func Subnet() *SubnetApplyConfiguration {
 	return &SubnetApplyConfiguration{}

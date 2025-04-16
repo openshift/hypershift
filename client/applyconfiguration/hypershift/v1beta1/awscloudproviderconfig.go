@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AWSCloudProviderConfigApplyConfiguration represents an declarative configuration of the AWSCloudProviderConfig type for use
+// AWSCloudProviderConfigApplyConfiguration represents a declarative configuration of the AWSCloudProviderConfig type for use
 // with apply.
 type AWSCloudProviderConfigApplyConfiguration struct {
 	Subnet *AWSResourceReferenceApplyConfiguration `json:"subnet,omitempty"`
@@ -25,7 +25,7 @@ type AWSCloudProviderConfigApplyConfiguration struct {
 	VPC    *string                                 `json:"vpc,omitempty"`
 }
 
-// AWSCloudProviderConfigApplyConfiguration constructs an declarative configuration of the AWSCloudProviderConfig type for use with
+// AWSCloudProviderConfigApplyConfiguration constructs a declarative configuration of the AWSCloudProviderConfig type for use with
 // apply.
 func AWSCloudProviderConfig() *AWSCloudProviderConfigApplyConfiguration {
 	return &AWSCloudProviderConfigApplyConfiguration{}

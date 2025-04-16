@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// AgentPlatformSpecApplyConfiguration represents an declarative configuration of the AgentPlatformSpec type for use
+// AgentPlatformSpecApplyConfiguration represents a declarative configuration of the AgentPlatformSpec type for use
 // with apply.
 type AgentPlatformSpecApplyConfiguration struct {
 	AgentNamespace *string `json:"agentNamespace,omitempty"`
 }
 
-// AgentPlatformSpecApplyConfiguration constructs an declarative configuration of the AgentPlatformSpec type for use with
+// AgentPlatformSpecApplyConfiguration constructs a declarative configuration of the AgentPlatformSpec type for use with
 // apply.
 func AgentPlatformSpec() *AgentPlatformSpecApplyConfiguration {
 	return &AgentPlatformSpecApplyConfiguration{}

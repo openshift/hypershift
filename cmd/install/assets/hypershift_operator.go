@@ -3,14 +3,11 @@ package assets
 import (
 	_ "embed"
 	"fmt"
-	"sort"
-	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
@@ -404,17 +401,6 @@ type HyperShiftOperatorDeployment struct {
 	RegistryOverrides                       string
 }
 
-// String returns a string containing all enabled feature gates, formatted as "key1=value1,key2=value2,...".
-func featureGateString() string {
-	featureGates := make([]string, 0)
-	for feature := range featuregate.MutableGates.GetAll() {
-		featureGates = append(featureGates, fmt.Sprintf("%s=true", feature))
-	}
-
-	sort.Strings(featureGates)
-	return strings.Join(featureGates, ",")
-}
-
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	args := []string{
 		"run",
@@ -425,9 +411,6 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", o.EnableOCPClusterMonitoring),
 		fmt.Sprintf("--enable-ci-debug-output=%t", o.EnableCIDebugOutput),
 		fmt.Sprintf("--private-platform=%s", o.PrivatePlatform),
-	}
-	if o.TechPreviewNoUpgrade {
-		args = append(args, fmt.Sprintf("--feature-gates=%s", featureGateString()))
 	}
 	if o.RegistryOverrides != "" {
 		args = append(args, fmt.Sprintf("--registry-overrides=%s", o.RegistryOverrides))
@@ -458,6 +441,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+	}
+
+	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.
+	if o.TechPreviewNoUpgrade {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "HYPERSHIFT_FEATURESET",
+			Value: string(configv1.TechPreviewNoUpgrade),
+		})
 	}
 
 	if o.EnableWebhook {
@@ -1172,19 +1163,21 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"ipaddresses", "ipaddresses/status"},
 				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
 			},
-			// The following rule is required for CAPO to watch for the Images resources created by ORC,
-			// which is a dependency since CAPO v0.11.0.
-			// This rule is also defined in the Hypershift HostedCluster controller and the Hypershift CLI when creating
-			// the cluster.
+			// This allows hypershift operator to grant RBAC permissions for ORC to the capi-provider.
 			{
 				APIGroups: []string{"openstack.k-orc.cloud"},
-				Resources: []string{"images"},
-				Verbs:     []string{"list", "watch"},
+				Resources: []string{"images", "images/status"},
+				Verbs:     []string{rbacv1.VerbAll},
 			},
 			{ // This allows the kubevirt csi driver to hotplug volumes to KubeVirt VMs.
 				APIGroups: []string{"subresources.kubevirt.io"},
-				Resources: []string{"virtualmachineinstances/addvolume", "virtualmachineinstances/removevolume"},
-				Verbs:     []string{rbacv1.VerbAll},
+				Resources: []string{
+					"virtualmachineinstances/addvolume",
+					"virtualmachineinstances/removevolume",
+					"virtualmachines/addvolume",
+					"virtualmachines/removevolume",
+				},
+				Verbs: []string{"update"},
 			},
 			{ // This allows the kubevirt csi driver to mirror guest PVCs to the mgmt/infra cluster
 				APIGroups: []string{"cdi.kubevirt.io"},

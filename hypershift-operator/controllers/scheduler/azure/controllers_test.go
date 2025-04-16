@@ -11,7 +11,6 @@ import (
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	hyperapi "github.com/openshift/hypershift/support/api"
 
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
@@ -21,14 +20,6 @@ import (
 )
 
 func TestReconcile(t *testing.T) {
-	mustQty := func(qty string) *resource.Quantity {
-		result, err := resource.ParseQuantity(qty)
-		if err != nil {
-			panic(err)
-		}
-		return &result
-	}
-
 	sizingConfig := &schedulingv1alpha1.ClusterSizingConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cluster",
@@ -42,7 +33,7 @@ func TestReconcile(t *testing.T) {
 						To:   ptr.To(uint32(1)),
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("1Gi"),
+						KASGoMemLimit: ptr.To("1GiB"),
 					},
 				},
 				{
@@ -52,7 +43,7 @@ func TestReconcile(t *testing.T) {
 						To:   ptr.To(uint32(2)),
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("2Gi"),
+						KASGoMemLimit: ptr.To("2GiB"),
 					},
 				},
 				{
@@ -62,7 +53,7 @@ func TestReconcile(t *testing.T) {
 						To:   nil,
 					},
 					Effects: &schedulingv1alpha1.Effects{
-						KASGoMemLimit: mustQty("3Gi"),
+						KASGoMemLimit: ptr.To("3GiB"),
 					},
 				},
 			},
@@ -163,7 +154,7 @@ func TestReconcile(t *testing.T) {
 			expectError:   false,
 			expectRequeue: false,
 			expectAnnotations: map[string]string{
-				hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "1Gi",
+				hyperv1.KubeAPIServerGOMemoryLimitAnnotation: "1GiB",
 			},
 		},
 	}

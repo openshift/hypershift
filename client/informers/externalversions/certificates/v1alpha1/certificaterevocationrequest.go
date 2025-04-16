@@ -18,13 +18,13 @@ limitations under the License.
 package v1alpha1
 
 import (
-	"context"
+	context "context"
 	time "time"
 
-	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	apicertificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
-	v1alpha1 "github.com/openshift/hypershift/client/listers/certificates/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/client/listers/certificates/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
@@ -35,7 +35,7 @@ import (
 // CertificateRevocationRequests.
 type CertificateRevocationRequestInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.CertificateRevocationRequestLister
+	Lister() certificatesv1alpha1.CertificateRevocationRequestLister
 }
 
 type certificateRevocationRequestInformer struct {
@@ -70,7 +70,7 @@ func NewFilteredCertificateRevocationRequestInformer(client clientset.Interface,
 				return client.CertificatesV1alpha1().CertificateRevocationRequests(namespace).Watch(context.TODO(), options)
 			},
 		},
-		&certificatesv1alpha1.CertificateRevocationRequest{},
+		&apicertificatesv1alpha1.CertificateRevocationRequest{},
 		resyncPeriod,
 		indexers,
 	)
@@ -81,9 +81,9 @@ func (f *certificateRevocationRequestInformer) defaultInformer(client clientset.
 }
 
 func (f *certificateRevocationRequestInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&certificatesv1alpha1.CertificateRevocationRequest{}, f.defaultInformer)
+	return f.factory.InformerFor(&apicertificatesv1alpha1.CertificateRevocationRequest{}, f.defaultInformer)
 }
 
-func (f *certificateRevocationRequestInformer) Lister() v1alpha1.CertificateRevocationRequestLister {
-	return v1alpha1.NewCertificateRevocationRequestLister(f.Informer().GetIndexer())
+func (f *certificateRevocationRequestInformer) Lister() certificatesv1alpha1.CertificateRevocationRequestLister {
+	return certificatesv1alpha1.NewCertificateRevocationRequestLister(f.Informer().GetIndexer())
 }

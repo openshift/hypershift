@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1beta1
 
-// KubevirtDiskImageApplyConfiguration represents an declarative configuration of the KubevirtDiskImage type for use
+// KubevirtDiskImageApplyConfiguration represents a declarative configuration of the KubevirtDiskImage type for use
 // with apply.
 type KubevirtDiskImageApplyConfiguration struct {
 	ContainerDiskImage *string `json:"containerDiskImage,omitempty"`
 }
 
-// KubevirtDiskImageApplyConfiguration constructs an declarative configuration of the KubevirtDiskImage type for use with
+// KubevirtDiskImageApplyConfiguration constructs a declarative configuration of the KubevirtDiskImage type for use with
 // apply.
 func KubevirtDiskImage() *KubevirtDiskImageApplyConfiguration {
 	return &KubevirtDiskImageApplyConfiguration{}

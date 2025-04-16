@@ -71,7 +71,7 @@ func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMS
 	}, nil
 }
 
-func (p *azureKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.EncryptionConfiguration, error) {
+func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
 	activeKeyHash, err := util.HashStruct(p.kmsSpec.ActiveKey)
@@ -80,10 +80,11 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.Encryption
 	}
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
-			Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
-			Endpoint:  azureActiveKMSUnixSocket,
-			CacheSize: ptr.To[int32](100),
-			Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+			Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
+			APIVersion: apiVersion,
+			Endpoint:   azureActiveKMSUnixSocket,
+			CacheSize:  ptr.To[int32](100),
+			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
 	if p.kmsSpec.BackupKey != nil {
@@ -93,10 +94,11 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(_ string) (*v1.Encryption
 		}
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
-				Name:      fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
-				Endpoint:  azureBackupKMSUnixSocket,
-				CacheSize: ptr.To[int32](100),
-				Timeout:   &metav1.Duration{Duration: 35 * time.Second},
+				Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
+				APIVersion: apiVersion,
+				Endpoint:   azureBackupKMSUnixSocket,
+				CacheSize:  ptr.To[int32](100),
+				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
 		})
 	}
@@ -241,7 +243,7 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 			Driver:   config.ManagedAzureSecretsStoreCSIDriver,
 			ReadOnly: ptr.To(true),
 			VolumeAttributes: map[string]string{
-				config.ManagedAzureSecretProviderClass: config.ManagedAzureKMSSecretStoreVolumeName,
+				config.ManagedAzureSecretProviderClass: config.ManagedAzureKMSSecretProviderClassName,
 			},
 		},
 	}

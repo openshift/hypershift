@@ -21,7 +21,7 @@ import (
 	v1 "github.com/openshift/api/config/v1"
 )
 
-// ClusterVersionStatusApplyConfiguration represents an declarative configuration of the ClusterVersionStatus type for use
+// ClusterVersionStatusApplyConfiguration represents a declarative configuration of the ClusterVersionStatus type for use
 // with apply.
 type ClusterVersionStatusApplyConfiguration struct {
 	Desired            *v1.Release            `json:"desired,omitempty"`
@@ -31,7 +31,7 @@ type ClusterVersionStatusApplyConfiguration struct {
 	ConditionalUpdates []v1.ConditionalUpdate `json:"conditionalUpdates,omitempty"`
 }
 
-// ClusterVersionStatusApplyConfiguration constructs an declarative configuration of the ClusterVersionStatus type for use with
+// ClusterVersionStatusApplyConfiguration constructs a declarative configuration of the ClusterVersionStatus type for use with
 // apply.
 func ClusterVersionStatus() *ClusterVersionStatusApplyConfiguration {
 	return &ClusterVersionStatusApplyConfiguration{}

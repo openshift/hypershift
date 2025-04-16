@@ -18,17 +18,17 @@ limitations under the License.
 package v1beta1
 
 import (
-	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
-// DiagnosticsApplyConfiguration represents an declarative configuration of the Diagnostics type for use
+// DiagnosticsApplyConfiguration represents a declarative configuration of the Diagnostics type for use
 // with apply.
 type DiagnosticsApplyConfiguration struct {
-	StorageAccountType *v1beta1.AzureDiagnosticsStorageAccountType `json:"storageAccountType,omitempty"`
-	UserManaged        *UserManagedDiagnosticsApplyConfiguration   `json:"userManaged,omitempty"`
+	StorageAccountType *hypershiftv1beta1.AzureDiagnosticsStorageAccountType `json:"storageAccountType,omitempty"`
+	UserManaged        *UserManagedDiagnosticsApplyConfiguration             `json:"userManaged,omitempty"`
 }
 
-// DiagnosticsApplyConfiguration constructs an declarative configuration of the Diagnostics type for use with
+// DiagnosticsApplyConfiguration constructs a declarative configuration of the Diagnostics type for use with
 // apply.
 func Diagnostics() *DiagnosticsApplyConfiguration {
 	return &DiagnosticsApplyConfiguration{}
@@ -37,7 +37,7 @@ func Diagnostics() *DiagnosticsApplyConfiguration {
 // WithStorageAccountType sets the StorageAccountType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the StorageAccountType field is set to the value of the last call.
-func (b *DiagnosticsApplyConfiguration) WithStorageAccountType(value v1beta1.AzureDiagnosticsStorageAccountType) *DiagnosticsApplyConfiguration {
+func (b *DiagnosticsApplyConfiguration) WithStorageAccountType(value hypershiftv1beta1.AzureDiagnosticsStorageAccountType) *DiagnosticsApplyConfiguration {
 	b.StorageAccountType = &value
 	return b
 }

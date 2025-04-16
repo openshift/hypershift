@@ -461,9 +461,8 @@ type AzureResourceManagedIdentities struct {
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
 // used, by an HCP component, to authenticate with the Azure API.
 type ManagedIdentity struct {
-	// clientID is the client ID of a managed identity.
-	// Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-	// removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+	// clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
+	// mainly used for CI purposes.
 	//
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."

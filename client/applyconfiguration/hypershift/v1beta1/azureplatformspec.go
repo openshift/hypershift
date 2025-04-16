@@ -17,7 +17,7 @@ limitations under the License.
 
 package v1beta1
 
-// AzurePlatformSpecApplyConfiguration represents an declarative configuration of the AzurePlatformSpec type for use
+// AzurePlatformSpecApplyConfiguration represents a declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
 	Cloud             *string                                           `json:"cloud,omitempty"`
@@ -31,7 +31,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	TenantID          *string                                           `json:"tenantID,omitempty"`
 }
 
-// AzurePlatformSpecApplyConfiguration constructs an declarative configuration of the AzurePlatformSpec type for use with
+// AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
 // apply.
 func AzurePlatformSpec() *AzurePlatformSpecApplyConfiguration {
 	return &AzurePlatformSpecApplyConfiguration{}

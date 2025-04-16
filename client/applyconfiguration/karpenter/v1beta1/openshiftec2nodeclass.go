@@ -23,7 +23,7 @@ import (
 	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
-// OpenshiftEC2NodeClassApplyConfiguration represents an declarative configuration of the OpenshiftEC2NodeClass type for use
+// OpenshiftEC2NodeClassApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClass type for use
 // with apply.
 type OpenshiftEC2NodeClassApplyConfiguration struct {
 	v1.TypeMetaApplyConfiguration    `json:",inline"`
@@ -32,7 +32,7 @@ type OpenshiftEC2NodeClassApplyConfiguration struct {
 	Status                           *OpenshiftEC2NodeClassStatusApplyConfiguration `json:"status,omitempty"`
 }
 
-// OpenshiftEC2NodeClass constructs an declarative configuration of the OpenshiftEC2NodeClass type for use with
+// OpenshiftEC2NodeClass constructs a declarative configuration of the OpenshiftEC2NodeClass type for use with
 // apply.
 func OpenshiftEC2NodeClass(name, namespace string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b := &OpenshiftEC2NodeClassApplyConfiguration{}
@@ -47,7 +47,7 @@ func OpenshiftEC2NodeClass(name, namespace string) *OpenshiftEC2NodeClassApplyCo
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Kind field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithKind(value string) *OpenshiftEC2NodeClassApplyConfiguration {
-	b.Kind = &value
+	b.TypeMetaApplyConfiguration.Kind = &value
 	return b
 }
 
@@ -55,7 +55,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithKind(value string) *Opensh
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the APIVersion field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithAPIVersion(value string) *OpenshiftEC2NodeClassApplyConfiguration {
-	b.APIVersion = &value
+	b.TypeMetaApplyConfiguration.APIVersion = &value
 	return b
 }
 
@@ -64,7 +64,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithAPIVersion(value string) *
 // If called multiple times, the Name field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithName(value string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Name = &value
+	b.ObjectMetaApplyConfiguration.Name = &value
 	return b
 }
 
@@ -73,7 +73,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithName(value string) *Opensh
 // If called multiple times, the GenerateName field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithGenerateName(value string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.GenerateName = &value
+	b.ObjectMetaApplyConfiguration.GenerateName = &value
 	return b
 }
 
@@ -82,7 +82,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithGenerateName(value string)
 // If called multiple times, the Namespace field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithNamespace(value string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Namespace = &value
+	b.ObjectMetaApplyConfiguration.Namespace = &value
 	return b
 }
 
@@ -91,7 +91,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithNamespace(value string) *O
 // If called multiple times, the UID field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithUID(value types.UID) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.UID = &value
+	b.ObjectMetaApplyConfiguration.UID = &value
 	return b
 }
 
@@ -100,7 +100,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithUID(value types.UID) *Open
 // If called multiple times, the ResourceVersion field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithResourceVersion(value string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.ResourceVersion = &value
+	b.ObjectMetaApplyConfiguration.ResourceVersion = &value
 	return b
 }
 
@@ -109,7 +109,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithResourceVersion(value stri
 // If called multiple times, the Generation field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithGeneration(value int64) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.Generation = &value
+	b.ObjectMetaApplyConfiguration.Generation = &value
 	return b
 }
 
@@ -118,7 +118,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithGeneration(value int64) *O
 // If called multiple times, the CreationTimestamp field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithCreationTimestamp(value metav1.Time) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.CreationTimestamp = &value
+	b.ObjectMetaApplyConfiguration.CreationTimestamp = &value
 	return b
 }
 
@@ -127,7 +127,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithCreationTimestamp(value me
 // If called multiple times, the DeletionTimestamp field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithDeletionTimestamp(value metav1.Time) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.DeletionTimestamp = &value
+	b.ObjectMetaApplyConfiguration.DeletionTimestamp = &value
 	return b
 }
 
@@ -136,7 +136,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithDeletionTimestamp(value me
 // If called multiple times, the DeletionGracePeriodSeconds field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithDeletionGracePeriodSeconds(value int64) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	b.DeletionGracePeriodSeconds = &value
+	b.ObjectMetaApplyConfiguration.DeletionGracePeriodSeconds = &value
 	return b
 }
 
@@ -146,11 +146,11 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithDeletionGracePeriodSeconds
 // overwriting an existing map entries in Labels field with the same key.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithLabels(entries map[string]string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Labels == nil && len(entries) > 0 {
-		b.Labels = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Labels == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Labels = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Labels[k] = v
+		b.ObjectMetaApplyConfiguration.Labels[k] = v
 	}
 	return b
 }
@@ -161,11 +161,11 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithLabels(entries map[string]
 // overwriting an existing map entries in Annotations field with the same key.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithAnnotations(entries map[string]string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
-	if b.Annotations == nil && len(entries) > 0 {
-		b.Annotations = make(map[string]string, len(entries))
+	if b.ObjectMetaApplyConfiguration.Annotations == nil && len(entries) > 0 {
+		b.ObjectMetaApplyConfiguration.Annotations = make(map[string]string, len(entries))
 	}
 	for k, v := range entries {
-		b.Annotations[k] = v
+		b.ObjectMetaApplyConfiguration.Annotations[k] = v
 	}
 	return b
 }
@@ -179,7 +179,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithOwnerReferences(values ...
 		if values[i] == nil {
 			panic("nil value passed to WithOwnerReferences")
 		}
-		b.OwnerReferences = append(b.OwnerReferences, *values[i])
+		b.ObjectMetaApplyConfiguration.OwnerReferences = append(b.ObjectMetaApplyConfiguration.OwnerReferences, *values[i])
 	}
 	return b
 }
@@ -190,7 +190,7 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithOwnerReferences(values ...
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithFinalizers(values ...string) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.ensureObjectMetaApplyConfigurationExists()
 	for i := range values {
-		b.Finalizers = append(b.Finalizers, values[i])
+		b.ObjectMetaApplyConfiguration.Finalizers = append(b.ObjectMetaApplyConfiguration.Finalizers, values[i])
 	}
 	return b
 }
@@ -215,4 +215,10 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithSpec(value *OpenshiftEC2No
 func (b *OpenshiftEC2NodeClassApplyConfiguration) WithStatus(value *OpenshiftEC2NodeClassStatusApplyConfiguration) *OpenshiftEC2NodeClassApplyConfiguration {
 	b.Status = value
 	return b
+}
+
+// GetName retrieves the value of the Name field in the declarative configuration.
+func (b *OpenshiftEC2NodeClassApplyConfiguration) GetName() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.ObjectMetaApplyConfiguration.Name
 }

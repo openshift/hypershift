@@ -39,11 +39,11 @@ const (
 var (
 	volumeMounts = util.PodVolumeMounts{
 		kasContainerBootstrap().Name: {
-			kasVolumeBootstrapManifests().Name: "/work",
-		},
-		kasContainerApplyBootstrap().Name: {
 			kasVolumeBootstrapManifests().Name:  "/work",
 			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
+		},
+		kasContainerBootstrapRender().Name: {
+			kasVolumeBootstrapManifests().Name: "/work",
 		},
 		kasContainerMain().Name: {
 			kasVolumeWorkLogs().Name:               "/var/log/kube-apiserver",
@@ -193,17 +193,17 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			DNSPolicy:       corev1.DNSClusterFirst,
 			RestartPolicy:   corev1.RestartPolicyAlways,
 			SecurityContext: &corev1.PodSecurityContext{},
-			// The KAS takes 90 seconds to finish its graceful shutdown, give it enough
+			// The KAS takes 130 seconds to finish its graceful shutdown, give it enough
 			// time to do that + 5 seconds margin. The shutdown sequence is described
 			// in detail here: https://github.com/openshift/installer/blob/master/docs/dev/kube-apiserver-health-check.md
-			TerminationGracePeriodSeconds: ptr.To[int64](95),
+			TerminationGracePeriodSeconds: ptr.To[int64](135),
 			SchedulerName:                 corev1.DefaultSchedulerName,
 			AutomountServiceAccountToken:  ptr.To(false),
 			InitContainers: []corev1.Container{
-				util.BuildContainer(kasContainerBootstrap(), buildKASContainerBootstrap(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
+				util.BuildContainer(kasContainerBootstrapRender(), buildKASContainerBootstrapRender(images.ClusterConfigOperator, payloadVersion, featureGateYaml)),
 			},
 			Containers: []corev1.Container{
-				util.BuildContainer(kasContainerApplyBootstrap(), buildKASContainerApplyBootstrap(images.CLI)),
+				util.BuildContainer(kasContainerBootstrap(), buildKASContainerNewBootstrap(images.KASBootstrap)),
 				util.BuildContainer(kasContainerMain(), buildKASContainerMain(images.HyperKube, port, additionalNoProxyCIDRS, hcp)),
 				util.BuildContainer(konnectivityServerContainer(), buildKonnectivityServerContainer(images.KonnectivityServer, deploymentConfig.Replicas, cipherSuites)),
 			},
@@ -335,49 +335,19 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 func kasContainerBootstrap() *corev1.Container {
 	return &corev1.Container{
-		Name: "init-bootstrap",
+		Name: "bootstrap",
 	}
 }
-
-func buildKASContainerBootstrap(image, payloadVersion, featureGateYaml string) func(c *corev1.Container) {
-	return func(c *corev1.Container) {
-		c.Command = []string{
-			"/bin/bash",
-		}
-		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
-		c.Args = []string{
-			"-c",
-			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeBootstrapManifests().Name), payloadVersion, featureGateYaml),
-		}
-		c.Resources.Requests = corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
-		}
-		c.Image = image
-		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
-	}
-}
-
-func kasContainerApplyBootstrap() *corev1.Container {
-	return &corev1.Container{
-		Name: "apply-bootstrap",
-	}
-}
-
-func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
+func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
-			"/bin/bash",
-		}
-		c.Args = []string{
-			"-c",
-			applyBootstrapManifestsScript(volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name)),
+			"/usr/bin/control-plane-operator",
+			"kas-bootstrap",
+			"--resources-path", volumeMounts.Path(c.Name, kasVolumeBootstrapManifests().Name),
 		}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
@@ -386,9 +356,36 @@ func buildKASContainerApplyBootstrap(image string) func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "KUBECONFIG",
-				Value: path.Join(volumeMounts.Path(c.Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
+				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
 			},
 		}
+		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+	}
+}
+
+func kasContainerBootstrapRender() *corev1.Container {
+	return &corev1.Container{
+		Name: "bootstrap-render",
+	}
+}
+
+func buildKASContainerBootstrapRender(image, payloadVersion, featureGateYaml string) func(c *corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Command = []string{
+			"/bin/bash",
+		}
+		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		c.Args = []string{
+			"-c",
+			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrapRender().Name, kasVolumeBootstrapManifests().Name), payloadVersion, featureGateYaml),
+		}
+		c.Resources.Requests = corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("10m"),
+			corev1.ResourceMemory: resource.MustParse("10Mi"),
+		}
+		c.Image = image
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }
@@ -795,36 +792,6 @@ cp /tmp/output/manifests/* %[1]s
 cp /tmp/manifests/* %[1]s
 `
 	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
-}
-
-func applyBootstrapManifestsScript(workDir string) string {
-	var script = `#!/bin/sh
-function cleanup() {
-	pkill -P $$$
-	wait
-	exit
-}
-trap cleanup SIGTERM
-while true; do
-  if oc apply -f %[1]s; then
-    echo "Bootstrap manifests applied successfully."
-    break
-  fi
-  sleep 1
-done
-while true; do
-  if oc replace --subresource=status -f %[1]s/99_feature-gate.yaml; then
-    echo "FeatureGate status applied successfully."
-    break
-  fi
-  sleep 1
-done
-while true; do
-  sleep 1000 &
-  wait $!
-done
-`
-	return fmt.Sprintf(script, workDir)
 }
 
 func waitForEtcdScript(namespace string) string {

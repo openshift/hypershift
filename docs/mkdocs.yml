@@ -57,7 +57,10 @@ nav:
 - 'How-to guides':
   - how-to/index.md
   - how-to/feature-gates.md
-  - how-to/cluster-configuration.md
+  - 'Configure OCP components':
+    - how-to/configure-ocp-components/index.md
+    - how-to/configure-ocp-components/kubeapi-server.md
+    - how-to/configure-ocp-components/custom-kas-kubeconfig.md
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
@@ -68,6 +71,8 @@ nav:
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - how-to/common/multi-arch-on-hcp.md
+  - 'HyperShift Operator Install':
+    - how-to/install/index.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - how-to/disaster-recovery/backup-and-restore-oadp.md
@@ -88,6 +93,7 @@ nav:
     - how-to/aws/etc-backup-restore.md
     - how-to/aws/disaster-recovery.md
     - how-to/aws/shared-vpc.md
+    - how-to/aws/define-custom-kube-api-name.md
     - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
@@ -96,6 +102,7 @@ nav:
   - 'Azure':
     - how-to/azure/create-azure-cluster-with-options.md
     - how-to/azure/create-azure-cluster_on_aks.md
+    - how-to/azure/scheduler.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
@@ -263,7 +270,9 @@ nav:
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
-    - 'Shared Ingress in Azure Red Hat OpenShift': reference/aro/shared-ingress.md
+    - 'Managed Azure':
+        - reference/architecture/managed-azure/secrets-csi.md
+        - reference/architecture/managed-azure/shared-ingress.md
   - 'Manifests':
     - reference/manifests/index.md
     - 'IBM Cloud':

@@ -17,13 +17,13 @@ limitations under the License.
 
 package v1alpha1
 
-// CertificateRevocationRequestSpecApplyConfiguration represents an declarative configuration of the CertificateRevocationRequestSpec type for use
+// CertificateRevocationRequestSpecApplyConfiguration represents a declarative configuration of the CertificateRevocationRequestSpec type for use
 // with apply.
 type CertificateRevocationRequestSpecApplyConfiguration struct {
 	SignerClass *string `json:"signerClass,omitempty"`
 }
 
-// CertificateRevocationRequestSpecApplyConfiguration constructs an declarative configuration of the CertificateRevocationRequestSpec type for use with
+// CertificateRevocationRequestSpecApplyConfiguration constructs a declarative configuration of the CertificateRevocationRequestSpec type for use with
 // apply.
 func CertificateRevocationRequestSpec() *CertificateRevocationRequestSpecApplyConfiguration {
 	return &CertificateRevocationRequestSpecApplyConfiguration{}

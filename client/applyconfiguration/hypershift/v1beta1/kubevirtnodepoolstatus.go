@@ -17,14 +17,14 @@ limitations under the License.
 
 package v1beta1
 
-// KubeVirtNodePoolStatusApplyConfiguration represents an declarative configuration of the KubeVirtNodePoolStatus type for use
+// KubeVirtNodePoolStatusApplyConfiguration represents a declarative configuration of the KubeVirtNodePoolStatus type for use
 // with apply.
 type KubeVirtNodePoolStatusApplyConfiguration struct {
 	CacheName   *string                                        `json:"cacheName,omitempty"`
 	Credentials *KubevirtPlatformCredentialsApplyConfiguration `json:"credentials,omitempty"`
 }
 
-// KubeVirtNodePoolStatusApplyConfiguration constructs an declarative configuration of the KubeVirtNodePoolStatus type for use with
+// KubeVirtNodePoolStatusApplyConfiguration constructs a declarative configuration of the KubeVirtNodePoolStatus type for use with
 // apply.
 func KubeVirtNodePoolStatus() *KubeVirtNodePoolStatusApplyConfiguration {
 	return &KubeVirtNodePoolStatusApplyConfiguration{}

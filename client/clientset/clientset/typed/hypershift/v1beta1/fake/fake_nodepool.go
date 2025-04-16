@@ -18,171 +18,33 @@ limitations under the License.
 package fake
 
 import (
-	"context"
-	json "encoding/json"
-	"fmt"
-
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	labels "k8s.io/apimachinery/pkg/labels"
-	types "k8s.io/apimachinery/pkg/types"
-	watch "k8s.io/apimachinery/pkg/watch"
-	testing "k8s.io/client-go/testing"
+	typedhypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
+	gentype "k8s.io/client-go/gentype"
 )
 
-// FakeNodePools implements NodePoolInterface
-type FakeNodePools struct {
+// fakeNodePools implements NodePoolInterface
+type fakeNodePools struct {
+	*gentype.FakeClientWithListAndApply[*v1beta1.NodePool, *v1beta1.NodePoolList, *hypershiftv1beta1.NodePoolApplyConfiguration]
 	Fake *FakeHypershiftV1beta1
-	ns   string
 }
 
-var nodepoolsResource = v1beta1.SchemeGroupVersion.WithResource("nodepools")
-
-var nodepoolsKind = v1beta1.SchemeGroupVersion.WithKind("NodePool")
-
-// Get takes name of the nodePool, and returns the corresponding nodePool object, and an error if there is any.
-func (c *FakeNodePools) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.NodePool, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(nodepoolsResource, c.ns, name), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
+func newFakeNodePools(fake *FakeHypershiftV1beta1, namespace string) typedhypershiftv1beta1.NodePoolInterface {
+	return &fakeNodePools{
+		gentype.NewFakeClientWithListAndApply[*v1beta1.NodePool, *v1beta1.NodePoolList, *hypershiftv1beta1.NodePoolApplyConfiguration](
+			fake.Fake,
+			namespace,
+			v1beta1.SchemeGroupVersion.WithResource("nodepools"),
+			v1beta1.SchemeGroupVersion.WithKind("NodePool"),
+			func() *v1beta1.NodePool { return &v1beta1.NodePool{} },
+			func() *v1beta1.NodePoolList { return &v1beta1.NodePoolList{} },
+			func(dst, src *v1beta1.NodePoolList) { dst.ListMeta = src.ListMeta },
+			func(list *v1beta1.NodePoolList) []*v1beta1.NodePool { return gentype.ToPointerSlice(list.Items) },
+			func(list *v1beta1.NodePoolList, items []*v1beta1.NodePool) {
+				list.Items = gentype.FromPointerSlice(items)
+			},
+		),
+		fake,
 	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// List takes label and field selectors, and returns the list of NodePools that match those selectors.
-func (c *FakeNodePools) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.NodePoolList, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewListAction(nodepoolsResource, nodepoolsKind, c.ns, opts), &v1beta1.NodePoolList{})
-
-	if obj == nil {
-		return nil, err
-	}
-
-	label, _, _ := testing.ExtractFromListOptions(opts)
-	if label == nil {
-		label = labels.Everything()
-	}
-	list := &v1beta1.NodePoolList{ListMeta: obj.(*v1beta1.NodePoolList).ListMeta}
-	for _, item := range obj.(*v1beta1.NodePoolList).Items {
-		if label.Matches(labels.Set(item.Labels)) {
-			list.Items = append(list.Items, item)
-		}
-	}
-	return list, err
-}
-
-// Watch returns a watch.Interface that watches the requested nodePools.
-func (c *FakeNodePools) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
-	return c.Fake.
-		InvokesWatch(testing.NewWatchAction(nodepoolsResource, c.ns, opts))
-
-}
-
-// Create takes the representation of a nodePool and creates it.  Returns the server's representation of the nodePool, and an error, if there is any.
-func (c *FakeNodePools) Create(ctx context.Context, nodePool *v1beta1.NodePool, opts v1.CreateOptions) (result *v1beta1.NodePool, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(nodepoolsResource, c.ns, nodePool), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// Update takes the representation of a nodePool and updates it. Returns the server's representation of the nodePool, and an error, if there is any.
-func (c *FakeNodePools) Update(ctx context.Context, nodePool *v1beta1.NodePool, opts v1.UpdateOptions) (result *v1beta1.NodePool, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(nodepoolsResource, c.ns, nodePool), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// UpdateStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeNodePools) UpdateStatus(ctx context.Context, nodePool *v1beta1.NodePool, opts v1.UpdateOptions) (*v1beta1.NodePool, error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewUpdateSubresourceAction(nodepoolsResource, "status", c.ns, nodePool), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// Delete takes name of the nodePool and deletes it. Returns an error if one occurs.
-func (c *FakeNodePools) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
-	_, err := c.Fake.
-		Invokes(testing.NewDeleteActionWithOptions(nodepoolsResource, c.ns, name, opts), &v1beta1.NodePool{})
-
-	return err
-}
-
-// DeleteCollection deletes a collection of objects.
-func (c *FakeNodePools) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(nodepoolsResource, c.ns, listOpts)
-
-	_, err := c.Fake.Invokes(action, &v1beta1.NodePoolList{})
-	return err
-}
-
-// Patch applies the patch and returns the patched nodePool.
-func (c *FakeNodePools) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.NodePool, err error) {
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(nodepoolsResource, c.ns, name, pt, data, subresources...), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied nodePool.
-func (c *FakeNodePools) Apply(ctx context.Context, nodePool *hypershiftv1beta1.NodePoolApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.NodePool, err error) {
-	if nodePool == nil {
-		return nil, fmt.Errorf("nodePool provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(nodePool)
-	if err != nil {
-		return nil, err
-	}
-	name := nodePool.Name
-	if name == nil {
-		return nil, fmt.Errorf("nodePool.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(nodepoolsResource, c.ns, *name, types.ApplyPatchType, data), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
-}
-
-// ApplyStatus was generated because the type contains a Status member.
-// Add a +genclient:noStatus comment above the type to avoid generating ApplyStatus().
-func (c *FakeNodePools) ApplyStatus(ctx context.Context, nodePool *hypershiftv1beta1.NodePoolApplyConfiguration, opts v1.ApplyOptions) (result *v1beta1.NodePool, err error) {
-	if nodePool == nil {
-		return nil, fmt.Errorf("nodePool provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(nodePool)
-	if err != nil {
-		return nil, err
-	}
-	name := nodePool.Name
-	if name == nil {
-		return nil, fmt.Errorf("nodePool.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(nodepoolsResource, c.ns, *name, types.ApplyPatchType, data, "status"), &v1beta1.NodePool{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1beta1.NodePool), err
 }

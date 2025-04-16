@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -50,6 +51,7 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		cfg.APIServerArguments["audit-webhook-config-file"] = []string{path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)}
 		cfg.APIServerArguments["audit-webhook-mode"] = []string{"batch"}
+		cfg.APIServerArguments["audit-webhook-initial-backoff"] = []string{"5s"}
 	}
 
 	configuration := hcp.Spec.Configuration
@@ -66,6 +68,10 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 			})
 		}
 		cfg.ImagePolicyConfig.AllowedRegistriesForImport = allowedRegistries
+	}
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		cfg.ImagePolicyConfig.InternalRegistryHostname = ""
 	}
 
 	// Routing config

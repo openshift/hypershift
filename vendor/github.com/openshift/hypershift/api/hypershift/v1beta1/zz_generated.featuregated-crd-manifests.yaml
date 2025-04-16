@@ -97,10 +97,10 @@ hostedclusters.hypershift.openshift.io:
   FeatureGates:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
-  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
@@ -152,10 +152,10 @@ hostedcontrolplanes.hypershift.openshift.io:
   FeatureGates:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
-  - DisableClusterCapabilities
   - DynamicResourceAllocation
   - ExternalOIDC
   - ImageStreamImportMode
+  - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""

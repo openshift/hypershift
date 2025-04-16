@@ -153,6 +153,9 @@ func TestHasBeenAvailable(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
 				},
 			}
 
@@ -162,8 +165,19 @@ func TestHasBeenAvailable(t *testing.T) {
 			hcp.Status = hyperv1.HostedControlPlaneStatus{
 				Conditions: tc.hcpConditions,
 			}
+			objects := []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "any"},
+					Data: map[string][]byte{
+						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
+					},
+				},
+				hcp,
+				hcluster,
+			}
 
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster, hcp).WithStatusSubresource(hcluster).Build()
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(hcluster).Build()
 			clock := clocktesting.NewFakeClock(tc.timestamp)
 			r := &HostedClusterReconciler{
 				Client:                        client,
@@ -499,92 +513,31 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 	}
 }
 
-func TestReconcileHostedControlPlaneAutoscalingNeeded(t *testing.T) {
-	tests := []struct {
-		name                     string
-		autoscalingNeeded        bool
-		existingHCPAnnotations   map[string]string
-		expectedHCPAnnotations   map[string]string
-		unexpectedHCPAnnotations []string
-	}{
-		{
-			name:                   "Autoscaling not needed, no annotation set",
-			autoscalingNeeded:      false,
-			existingHCPAnnotations: nil,
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
-			},
-		},
-		{
-			name:                     "Autoscaling needed, no annotation set",
-			autoscalingNeeded:        true,
-			existingHCPAnnotations:   nil,
-			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
-		},
-		{
-			name:              "Autoscaling not needed, annotation set",
-			autoscalingNeeded: false,
-			existingHCPAnnotations: map[string]string{
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
-			},
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
-			},
-		},
-		{
-			name:              "Autoscaling needed, annotation set",
-			autoscalingNeeded: true,
-			existingHCPAnnotations: map[string]string{
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
-			},
-			unexpectedHCPAnnotations: []string{hyperv1.DisableClusterAutoscalerAnnotation},
-		},
+func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
+	type testCase struct {
+		name                   string
+		hcpAnnotations         map[string]string
+		hcAnnotations          map[string]string
+		isAutoscalingNeeded    bool
+		certRenewalAnnotations map[string]string
+		expectedAnnotations    map[string]string
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-			hc := &hyperv1.HostedCluster{}
-			hcp := &hyperv1.HostedControlPlane{}
-			hcp.Annotations = test.existingHCPAnnotations
-			err := reconcileHostedControlPlane(hcp, hc, test.autoscalingNeeded, func() (map[string]string, error) { return nil, nil })
-			g.Expect(err).ToNot(HaveOccurred())
-			for k, v := range test.expectedHCPAnnotations {
-				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
-			}
-			for _, k := range test.unexpectedHCPAnnotations {
-				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
-			}
-		})
-	}
-}
 
-func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
-	tests := []struct {
-		name                     string
-		hcAnnotations            map[string]string
-		existingHCPAnnotations   map[string]string
-		expectedHCPAnnotations   map[string]string
-		unexpectedHCPAnnotations []string
-	}{
-		{
-			name:                   "No annotation set",
-			hcAnnotations:          nil,
-			existingHCPAnnotations: nil,
-			expectedHCPAnnotations: nil,
-			unexpectedHCPAnnotations: []string{
-				hyperv1.RestartDateAnnotation,
-				previouslySyncedRestartDateAnnotation,
-			},
-		},
+	hcNamespace := "clusters"
+	hcName := "example"
+	hcKey := hcNamespace + "/" + hcName
+
+	tests := []testCase{
 		{
 			name: "Newly set restart annotation",
 			hcAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation: "01012024",
 			},
-			existingHCPAnnotations: nil,
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:         "01012024",
-				previouslySyncedRestartDateAnnotation: "01012024",
+			expectedAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:              "01012024",
+				previouslySyncedRestartDateAnnotation:      "01012024",
+				hyperutil.HostedClusterAnnotation:          hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
 		{
@@ -592,13 +545,15 @@ func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
 			hcAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation: "05012024",
 			},
-			existingHCPAnnotations: map[string]string{
+			hcpAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:         "01012024",
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:         "05012024",
-				previouslySyncedRestartDateAnnotation: "05012024",
+			expectedAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:              "05012024",
+				previouslySyncedRestartDateAnnotation:      "05012024",
+				hyperutil.HostedClusterAnnotation:          hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
 		{
@@ -606,13 +561,15 @@ func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
 			hcAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation: "01012024",
 			},
-			existingHCPAnnotations: map[string]string{
+			hcpAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:         "some other value",
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:         "some other value",
-				previouslySyncedRestartDateAnnotation: "01012024",
+			expectedAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:              "some other value",
+				previouslySyncedRestartDateAnnotation:      "01012024",
+				hyperutil.HostedClusterAnnotation:          hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
 		{
@@ -620,32 +577,116 @@ func TestReconcileHostedControlPlaneRestartAnnotation(t *testing.T) {
 			hcAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation: "05012024",
 			},
-			existingHCPAnnotations: map[string]string{
+			hcpAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation:         "some other value",
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
-			expectedHCPAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:         "05012024",
-				previouslySyncedRestartDateAnnotation: "05012024",
+			expectedAnnotations: map[string]string{
+				hyperv1.RestartDateAnnotation:              "05012024",
+				previouslySyncedRestartDateAnnotation:      "05012024",
+				hyperutil.HostedClusterAnnotation:          hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name: "Initial reconcile",
+			hcAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				hyperv1.EtcdPriorityClass:                                    "high-priority",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
+				"foo": "bar", // should not be copied
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				hyperv1.EtcdPriorityClass:                                    "high-priority",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
+				hyperutil.HostedClusterAnnotation:                            hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:                   "true",
+			},
+		},
+		{
+			name: "Initial reconcile - autoscaling needed",
+			hcAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				hyperv1.EtcdPriorityClass:                                    "high-priority",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
+				"foo": "bar",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
+				hyperv1.EtcdPriorityClass:                                    "high-priority",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
+				hyperutil.HostedClusterAnnotation:                            hcKey,
+			},
+			isAutoscalingNeeded: true,
+		},
+		{
+			name: "Existing disable autoscaling annotation, autoscaling no longer needed",
+			hcAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation: "control-plane-operator",
+			},
+			hcpAnnotations: map[string]string{
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation: "control-plane-operator",
+				hyperutil.HostedClusterAnnotation:    hcKey,
+			},
+			isAutoscalingNeeded: true,
+		},
+		{
+			name: "Remove known annotations that are no longer set",
+			hcAnnotations: map[string]string{
+				hyperv1.EtcdPriorityClass:                                      "high-priority",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:         "node-size=m5xl",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2":   "test2",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override1": "override1",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override2": "override2",
+				"foo": "bar",
+			},
+			hcpAnnotations: map[string]string{
+				hyperutil.DebugDeploymentsAnnotation:                           "control-plane-operator",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test3":   "test3",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override4": "override4",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override2": "override2",
+				"unrelated": "test", // should remain
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.EtcdPriorityClass:                                      "high-priority",
+				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:         "node-size=m5xl",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1":   "test1",
+				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2":   "test2",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override1": "override1",
+				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override2": "override2",
+				hyperutil.HostedClusterAnnotation:                              hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:                     "true",
+				"unrelated": "test",
 			},
 		},
 	}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			hc := &hyperv1.HostedCluster{}
+			hc.Name = hcName
+			hc.Namespace = hcNamespace
 			hcp := &hyperv1.HostedControlPlane{}
-			hc.Annotations = test.hcAnnotations
-			hcp.Annotations = test.existingHCPAnnotations
-			err := reconcileHostedControlPlane(hcp, hc, true, func() (map[string]string, error) { return nil, nil })
+			hcp.Annotations = tc.hcpAnnotations
+			hc.Annotations = tc.hcAnnotations
+			err := reconcileHostedControlPlaneAnnotations(hcp, hc, tc.isAutoscalingNeeded, func() (map[string]string, error) { return tc.certRenewalAnnotations, nil })
 			g.Expect(err).ToNot(HaveOccurred())
-			for k, v := range test.expectedHCPAnnotations {
-				g.Expect(hcp.Annotations).To(HaveKeyWithValue(k, v))
-			}
-			for _, k := range test.unexpectedHCPAnnotations {
-				g.Expect(hcp.Annotations).ToNot(HaveKey(k))
-			}
+			g.Expect(hcp.Annotations).To(Equal(tc.expectedAnnotations))
 		})
 	}
 }
@@ -2394,7 +2435,8 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
 			if len(previousClusterID) > 0 {
@@ -3617,6 +3659,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "kubevirt" + etcdEncKeyPostfix,
+					},
 				},
 			},
 			secretName:     "kubevirt" + etcdEncKeyPostfix,
@@ -3626,6 +3671,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
 					Data: map[string][]byte{
 						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
 					},
 				},
 			},
@@ -3851,10 +3897,22 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 							},
 						},
 					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "custom-name",
+					},
 				},
 			},
 			secretName:     "custom-name",
 			secretExpected: false,
+			objects: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "custom-name", Namespace: "test"},
+					Data: map[string][]byte{
+						hyperv1.AESCBCKeySecretKey: {1, 2, 3, 4, 5, 6, 7, 8, 9, 0},
+						".dockerconfigjson":        []byte("{}"),
+					},
+				},
+			},
 		},
 		{
 			name: "secret encryption not defined and secret exists with no key",
@@ -3985,5 +4043,89 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			}
 		},
 		)
+	}
+}
+
+func TestReconcileCAPIManagerDeployment(t *testing.T) {
+	testCases := []struct {
+		name              string
+		version           string
+		expectFeatureGate bool
+	}{
+		{
+			name:              "version >= 4.19 should have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.19.0",
+			expectFeatureGate: true,
+		},
+		{
+			name:              "version <= 4.19 should not have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.18.0",
+			expectFeatureGate: false,
+		},
+	}
+
+	hcNamespace := "namespace"
+	cpNamespace := "cp-namespace"
+	image := "image"
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: hcNamespace,
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: cpNamespace,
+				},
+			}
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+			}
+
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{},
+					},
+				},
+			}
+
+			semVersion, err := semver.Parse(tc.version)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			err = reconcileCAPIManagerDeployment(deployment, hc, hcp, sa, image, true, &semVersion)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+			// Check for feature gate argument
+			gotFeatureGate := false
+			for _, arg := range deployment.Spec.Template.Spec.Containers[0].Args {
+				if arg == "--feature-gates=MachineSetPreflightChecks=false" {
+					gotFeatureGate = true
+					break
+				}
+			}
+
+			g.Expect(gotFeatureGate).To(Equal(tc.expectFeatureGate), "Feature gate presence doesn't match expectation")
+
+			// Verify other expected configurations
+			g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(sa.Name))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(image))
+		})
 	}
 }
