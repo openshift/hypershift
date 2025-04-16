@@ -3293,7 +3293,14 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment) error {
-	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
+	// Fetch the hostedcluster-gates ConfigMap to get the targeted feature gate details.
+	releaseVersion := releaseImageProvider.Version()
+	featureGateDetails, err := config.FeatureGateDetailsFromConfigMap(r.Client, ctx, hcp.Namespace, releaseVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get feature gate details: %w", err)
+	}
+
+	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGateDetails)
 
 	service := manifests.KCMService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, service, func() error {

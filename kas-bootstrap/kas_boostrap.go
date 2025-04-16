@@ -9,20 +9,24 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	equality "k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	wait "k8s.io/apimachinery/pkg/util/wait"
+	rest "k8s.io/client-go/rest"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"go.uber.org/zap/zapcore"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func init() {
@@ -32,6 +36,8 @@ func init() {
 	utilruntime.Must(apiextensionsv1.AddToScheme(configScheme))
 	// Needed for the hcco-rolebinding.
 	utilruntime.Must(rbacv1.AddToScheme(configScheme))
+	// Needed for the hostedcluster-gates ConfigMap.
+	utilruntime.Must(corev1.AddToScheme(configScheme))
 }
 
 var (
@@ -54,9 +60,21 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	// Create a client for the management cluster using the mounted service account.
+	managementCfg, err := rest.InClusterConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get management cluster config from service account: %w", err)
+	}
+	managementClient, err := client.New(managementCfg, client.Options{Scheme: configScheme})
+	if err != nil {
+		return fmt.Errorf("failed to create management cluster client: %w", err)
+	}
+
+	logger.Info("Successfully created management cluster client")
+
 	// This binary is meant to run next to the KAS container within the same pod.
 	// We briefly poll here to retry on race and transient network issues.
-	// This to avoid unncessary restarts of this container.
+	// This to avoid unnecessary restarts of this container.
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 20*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
 			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
@@ -80,7 +98,7 @@ func run(ctx context.Context, opts Options) error {
 
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 20*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := reconcileFeatureGate(ctx, c, renderedFeatureGate); err != nil {
+			if err := reconcileFeatureGate(ctx, c, managementClient, renderedFeatureGate); err != nil {
 				logger.Error(err, "failed to reconcile featureGate, retrying")
 				return false, nil
 			}
@@ -108,7 +126,7 @@ func run(ctx context.Context, opts Options) error {
 // reconcileFeatureGate reconciles the featureGate CR status appending the renderedFeatureGate status.featureGates to the existing featureGates.
 // It will not fail if the clusterVersion is not found as this is expected for a brand new cluster.
 // But it will remove any featureGates that are not in the clusterVersion.Status.History if it exists.
-func reconcileFeatureGate(ctx context.Context, c client.Client, renderedFeatureGate *configv1.FeatureGate) error {
+func reconcileFeatureGate(ctx context.Context, c client.Client, managementClient client.Client, renderedFeatureGate *configv1.FeatureGate) error {
 	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
 
 	knownVersions := sets.NewString()
@@ -149,6 +167,37 @@ func reconcileFeatureGate(ctx context.Context, c client.Client, renderedFeatureG
 		desiredFeatureGates = append(desiredFeatureGates, featureGateValues)
 	}
 
+	// Create a ConfigMap with the FeatureGateDetails for consumption by other components, e.g. KCM.
+	featureGateDetails := renderedFeatureGate.Status.FeatureGates[0]
+	featureGateDetailsYAML, err := yaml.Marshal(featureGateDetails)
+	if err != nil {
+		return fmt.Errorf("failed to marshal feature gate details: %w", err)
+	}
+
+	// Get namespace from environment variable.
+	namespace := os.Getenv("KAS_BOOTSTRAP_NAMESPACE")
+	if namespace == "" {
+		return fmt.Errorf("KAS_BOOTSTRAP_NAMESPACE environment variable not set")
+	}
+	logger.Info("Using namespace from KAS_BOOTSTRAP_NAMESPACE environment variable", "namespace", namespace)
+
+	hostedClusterGates := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hostedcluster-gates",
+			Namespace: namespace,
+		},
+	}
+
+	if _, err := ctrl.CreateOrUpdate(ctx, managementClient, hostedClusterGates, func() error {
+		if hostedClusterGates.Data == nil {
+			hostedClusterGates.Data = map[string]string{}
+		}
+		hostedClusterGates.Data["featureGates"] = string(featureGateDetailsYAML)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create or update hostedcluster-gates ConfigMap: %w", err)
+	}
+
 	if equality.Semantic.DeepEqual(desiredFeatureGates, featureGate.Status.FeatureGates) {
 		logger.Info("There is no update for featureGate.Status.FeatureGates")
 		return nil
@@ -159,6 +208,7 @@ func reconcileFeatureGate(ctx context.Context, c client.Client, renderedFeatureG
 	if err := c.Status().Patch(ctx, &featureGate, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update featureGate: %w", err)
 	}
+
 	return nil
 }
 

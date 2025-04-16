@@ -25,6 +25,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return err
 	}
 
+	releaseVersion := cpContext.ReleaseImageProvider.Version()
+	featureGateDetails, err := config.FeatureGateDetailsFromConfigMap(cpContext.Client, cpContext, hcp.Namespace, releaseVersion)
+	if err != nil {
+		return fmt.Errorf("failed to get feature gate details: %w", err)
+	}
+
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-cidr=%s", util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork)),
@@ -51,7 +57,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, "--profiling=false")
 		}
 
-		for _, f := range config.FeatureGates(hcp.Spec.Configuration.GetFeatureGateSelection()) {
+		for _, f := range config.FeatureGatesFromDetails(featureGateDetails) {
 			c.Args = append(c.Args, fmt.Sprintf("--feature-gates=%s", f))
 		}
 

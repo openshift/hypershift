@@ -10,6 +10,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"go.uber.org/zap/zapcore"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func TestParseFeatureGateV1(t *testing.T) {
@@ -360,13 +362,37 @@ func TestReconcileFeatureGate(t *testing.T) {
 			c := builder.WithObjects([]client.Object{&tc.clusterVersion, &tc.existingFeatureGate}...).
 				WithStatusSubresource(&tc.existingFeatureGate).Build()
 
-			err := reconcileFeatureGate(context.TODO(), c, &tc.renderedFeatureGate)
+			managementClient := builder.Build()
+
+			// Set the KAS_BOOTSTRAP_NAMESPACE environment variable for the test.
+			// This should come from the downward API in the real deployment.
+			namespace := "test-namespace"
+			t.Setenv("KAS_BOOTSTRAP_NAMESPACE", namespace)
+
+			err := reconcileFeatureGate(context.TODO(), c, managementClient, &tc.renderedFeatureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			var updatedFeatureGate configv1.FeatureGate
 			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, &updatedFeatureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(updatedFeatureGate.Status.FeatureGates).To(ConsistOf(tc.expectedFeatureGates))
+
+			// Check that the ConfigMap with feature gate details was created.
+			hostedClusterGates := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hostedcluster-gates",
+					Namespace: namespace,
+				},
+			}
+			err = managementClient.Get(context.TODO(), client.ObjectKeyFromObject(hostedClusterGates), hostedClusterGates)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			g.Expect(hostedClusterGates.Data).To(HaveKey("featureGates"))
+
+			var featureGateDetails configv1.FeatureGateDetails
+			err = yaml.Unmarshal([]byte(hostedClusterGates.Data["featureGates"]), &featureGateDetails)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(featureGateDetails).To(Equal(tc.renderedFeatureGate.Status.FeatureGates[0]))
 		})
 	}
 }

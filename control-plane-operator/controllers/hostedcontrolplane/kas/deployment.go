@@ -358,6 +358,14 @@ func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 				Name:  "KUBECONFIG",
 				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
 			},
+			{
+				Name: "KAS_BOOTSTRAP_NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
+			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}

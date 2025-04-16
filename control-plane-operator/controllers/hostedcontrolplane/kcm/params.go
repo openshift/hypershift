@@ -18,7 +18,7 @@ import (
 )
 
 type KubeControllerManagerParams struct {
-	FeatureGate         *configv1.FeatureGateSpec    `json:"featureGate"`
+	FeatureGateDetails  *configv1.FeatureGateDetails `json:"featureGate"`
 	ServiceCA           []byte                       `json:"serviceCA"`
 	CloudProvider       string                       `json:"cloudProvider"`
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
@@ -41,7 +41,7 @@ const (
 	DefaultPort = 10257
 )
 
-func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) *KubeControllerManagerParams {
+func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool, featureGateDetails *configv1.FeatureGateDetails) *KubeControllerManagerParams {
 	params := &KubeControllerManagerParams{
 		// TODO: Come up with sane defaults for scheduling APIServer pods
 		// Expose configuration
@@ -51,6 +51,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 		ServiceCIDR:             util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork),
 		ClusterCIDR:             util.FirstClusterCIDR(hcp.Spec.Networking.ClusterNetwork),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
+		FeatureGateDetails:      featureGateDetails,
 	}
 
 	// This value comes from the Cloud Provider Azure documentation: https://cloud-provider-azure.sigs.k8s.io/install/azure-ccm/#kube-controller-manager
@@ -60,7 +61,6 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	params.PlatformType = hcp.Spec.Platform.Type
 
 	if hcp.Spec.Configuration != nil {
-		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
 		params.APIServer = hcp.Spec.Configuration.APIServer
 	}
 
@@ -124,13 +124,10 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 }
 
 func (p *KubeControllerManagerParams) FeatureGates() []string {
-	if p.FeatureGate != nil {
-		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
-	} else {
-		return config.FeatureGates(configv1.FeatureGateSelection{
-			FeatureSet: configv1.Default,
-		})
+	if p.FeatureGateDetails == nil {
+		return []string{}
 	}
+	return config.FeatureGatesFromDetails(p.FeatureGateDetails)
 }
 
 func (p *KubeControllerManagerParams) CipherSuites() []string {

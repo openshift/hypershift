@@ -1999,6 +1999,26 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
 
+	// Create a hostedcluster-gates ConfigMap with feature gate details.
+	hostedClusterGates := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hostedcluster-gates",
+			Namespace: namespace,
+		},
+		Data: map[string]string{
+			"featureGates": `
+disabled:
+  - name: AWSClusterHostedDNS
+  - name: AutomatedEtcdBackup
+  - name: BootcNodeManagement
+enabled:
+  - name: AWSEFSDriverVolumeMetrics
+  - name: AdditionalRoutingCapabilities
+version: 4.18.0
+`,
+		},
+	}
+
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
@@ -2006,6 +2026,7 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 		azureCredentialsSecret,
 		cloudCredsSecret,
 		csrSigner,
+		hostedClusterGates,
 	}, nil
 }
 
