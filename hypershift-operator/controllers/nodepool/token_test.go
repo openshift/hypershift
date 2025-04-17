@@ -52,6 +52,16 @@ func TestNewToken(t *testing.T) {
 		},
 	}
 
+	proxyTrustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "proxy-trusted-ca",
+			Namespace: hcNamespace,
+		},
+		Data: map[string]string{
+			"ca-bundle.crt": "proxy-trusted-ca-bundle",
+		},
+	}
+
 	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
 	ignitionServerCACert.Data = map[string][]byte{
 		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
@@ -101,6 +111,88 @@ func TestNewToken(t *testing.T) {
 			},
 			cpoCapabilities: &CPOCapabilities{},
 			expectedError:   "",
+		},
+		{
+			name: "when proxy trusted CA bundle is configured it should create token successfully",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &configv1.ProxySpec{
+								HTTPProxy:  "http://proxy.example.com",
+								HTTPSProxy: "https://proxy.example.com",
+								NoProxy:    "example.com,10.0.0.0/8,192.168.0.0/16",
+								TrustedCA: configv1.ConfigMapNameReference{
+									Name: proxyTrustedCABundle.GetName(),
+								},
+							},
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool:              &hyperv1.NodePool{},
+				controlplaneNamespace: controlplaneNamespace,
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+				proxyTrustedCABundle,
+			},
+			cpoCapabilities: &CPOCapabilities{},
+			expectedError:   "",
+		},
+		{
+			name: "when proxy trusted CA bundle is configured but missing it should fail",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &configv1.ProxySpec{
+								HTTPProxy:  "http://proxy.example.com",
+								HTTPSProxy: "https://proxy.example.com",
+								TrustedCA: configv1.ConfigMapNameReference{
+									Name: "missing-trusted-ca",
+								},
+							},
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool:              &hyperv1.NodePool{},
+				controlplaneNamespace: controlplaneNamespace,
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+			},
+			cpoCapabilities: &CPOCapabilities{},
+			expectedError:   "failed to get configMap missing-trusted-ca",
 		},
 		{
 			name: "When missing ignition endpoint it should fail",
@@ -542,6 +634,16 @@ func TestTokenReconcile(t *testing.T) {
 		},
 	}
 
+	proxyTrustedCABundle := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "proxy-trusted-ca",
+			Namespace: hcNamespace,
+		},
+		Data: map[string]string{
+			"ca-bundle.crt": "proxy-trusted-ca-bundle",
+		},
+	}
+
 	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
 	ignitionServerCACert.Data = map[string][]byte{
 		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
@@ -618,6 +720,72 @@ func TestTokenReconcile(t *testing.T) {
 				pullSecret,
 				additionalTrustBundle,
 				ignitionServerCACert,
+			},
+			cpoCapabilities: &CPOCapabilities{
+				DecompressAndDecodeConfig: true,
+			},
+		},
+		{
+			name: "when proxy trusted CA bundle is configured it should include it in ignition config",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &configv1.ProxySpec{
+								HTTPProxy:  "http://proxy.example.com",
+								HTTPSProxy: "https://proxy.example.com",
+								TrustedCA: configv1.ConfigMapNameReference{
+									Name: proxyTrustedCABundle.GetName(),
+								},
+							},
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool: &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "name",
+						Namespace: "namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						Management: hyperv1.NodePoolManagement{
+							UpgradeType: hyperv1.UpgradeTypeReplace,
+						},
+						Release: hyperv1.Release{
+							Image: "image:4.17",
+						},
+					},
+				},
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "4.17",
+							},
+						},
+					},
+					globalConfig: "test-global-config",
+					mcoRawConfig: "raw-config",
+				},
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+				proxyTrustedCABundle,
 			},
 			cpoCapabilities: &CPOCapabilities{
 				DecompressAndDecodeConfig: true,
@@ -736,12 +904,29 @@ func TestTokenReconcile(t *testing.T) {
 					},
 				},
 			}
+			if tc.configGenerator.hostedCluster.Spec.Configuration.Proxy != nil &&
+				tc.configGenerator.hostedCluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+				encodedCACert := base64.StdEncoding.EncodeToString([]byte("proxy-trusted-ca-bundle"))
+				expectedIgnition.Ignition.Security.TLS.CertificateAuthorities = append(expectedIgnition.Ignition.Security.TLS.CertificateAuthorities, ignitionapi.Resource{
+					Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
+				})
+			}
 
 			// Validate the userdata[value] returns the expected ignition config
 			var gotIgnition ignitionapi.Config
 			err = json.Unmarshal(gotUserDataSecret.Data["value"], &gotIgnition)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(gotIgnition).To(Equal(expectedIgnition))
+
+			// Add verification for proxy trusted CA bundle
+			if tc.configGenerator.hostedCluster.Spec.Configuration.Proxy != nil &&
+				tc.configGenerator.hostedCluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+				// Verify proxy trusted CA bundle is included in ignition config
+				g.Expect(gotIgnition.Ignition.Security.TLS.CertificateAuthorities).To(HaveLen(2))
+				g.Expect(gotIgnition.Ignition.Security.TLS.CertificateAuthorities[1].Source).
+					To(Equal(ptr.To(fmt.Sprintf("data:text/plain;base64,%s",
+						base64.StdEncoding.EncodeToString([]byte("proxy-trusted-ca-bundle"))))))
+			}
 		})
 
 	}
