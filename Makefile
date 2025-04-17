@@ -71,7 +71,7 @@ lint-fix:
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: update staticcheck fmt vet lint
+verify: update staticcheck fmt vet lint cpo-container-sync
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -323,6 +323,11 @@ run-operator-locally-aws-dev:
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum"
+
+.PHONY: cpo-container-sync
+cpo-container-sync:
+	@echo "Syncing CPO container images"
+	./hack/tools/git-hooks/cpo-containerfiles-in-sync.sh ./Containerfile.control-plane ./Dockerfile.control-plane
 
 ## Run Karpenter upstream e2e tests. Requires:
 # - KARPENTER_CORE_DIR to be set to the path of the karpenter-core repository
