@@ -294,7 +294,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		params.CloudProvider = aws.Provider
 	case hyperv1.AzurePlatform:
 		params.CloudProvider = azure.Provider
-		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
+		params.CloudProviderConfig = &corev1.LocalObjectReference{Name: manifests.AzureKMSWithCredentials("").Name}
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
