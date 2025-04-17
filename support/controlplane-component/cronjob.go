@@ -3,7 +3,6 @@ package controlplanecomponent
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/config"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,20 +14,13 @@ var _ WorkloadProvider[*batchv1.CronJob] = &cronJobProvider{}
 type cronJobProvider struct {
 }
 
-// ApplyOptionsTo implements WorkloadProvider.
-func (c *cronJobProvider) ApplyOptionsTo(cpContext ControlPlaneContext, object *batchv1.CronJob, oldObject *batchv1.CronJob, deploymentConfig *config.DeploymentConfig) {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldObject.Spec.JobTemplate.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-
-	deploymentConfig.Resources = existingResources
-	deploymentConfig.ApplyToCronJob(object)
-}
-
 func (c *cronJobProvider) NewObject() *batchv1.CronJob {
 	return &batchv1.CronJob{}
+}
+
+// SetReplicasAndStrategy implements WorkloadProvider.
+func (d *cronJobProvider) SetReplicasAndStrategy(object *batchv1.CronJob, replicas int32, isRequestServing bool) {
+	// nothing to do.
 }
 
 // LoadManifest implements WorkloadProvider.
