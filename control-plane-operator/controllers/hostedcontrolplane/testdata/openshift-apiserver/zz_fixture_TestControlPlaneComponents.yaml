@@ -101,10 +101,9 @@ spec:
         livenessProbe:
           failureThreshold: 3
           httpGet:
-            path: healthz
+            path: livez?exclude=etcd
             port: 8443
             scheme: HTTPS
-          initialDelaySeconds: 30
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 10
@@ -116,7 +115,7 @@ spec:
         readinessProbe:
           failureThreshold: 10
           httpGet:
-            path: healthz
+            path: readyz?exclude=etcd&exclude=etcd-readiness
             port: 8443
             scheme: HTTPS
           periodSeconds: 10
@@ -126,6 +125,15 @@ spec:
           requests:
             cpu: 100m
             memory: 200Mi
+        startupProbe:
+          failureThreshold: 30
+          httpGet:
+            path: livez
+            port: 8443
+            scheme: HTTPS
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 10
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-client-ca
           name: aggregator-ca
