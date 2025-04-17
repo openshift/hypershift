@@ -123,13 +123,13 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		oauthContainerHTTPProxy().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			},
 		},
 		oauthContainerSocks5Proxy().Name: {
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("10Mi"),
+				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			},
 		},
 	}
