@@ -3,7 +3,7 @@ package kas
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	hcpconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 )
@@ -14,7 +14,7 @@ const (
 )
 
 func ReconcileKMSEncryptionConfig(config *corev1.Secret,
-	ownerRef hcpconfig.OwnerRef,
+	ownerRef config.OwnerRef,
 	encryptionSpec *hyperv1.KMSSpec,
 ) error {
 	ownerRef.ApplyTo(config)
@@ -32,7 +32,7 @@ func ReconcileKMSEncryptionConfig(config *corev1.Secret,
 }
 
 func ReconcileAESCBCEncryptionConfig(config *corev1.Secret,
-	ownerRef hcpconfig.OwnerRef,
+	ownerRef config.OwnerRef,
 	activeKey []byte,
 	backupKey []byte,
 ) error {

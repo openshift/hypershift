@@ -68,7 +68,9 @@ const (
 	ManagedAzureCertificatePathEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
 	ManagedAzureSecretProviderClassEnvVarKey = "ARO_HCP_SECRET_PROVIDER_CLASS"
 	ManagedAzureCertificateMountPath         = "/mnt/certs"
+	ManagedAzureCredentialsMountPathForKMS   = "/mnt/kms"
 	ManagedAzureCertificatePath              = "/mnt/certs/"
+	ManagedAzureCredentialsPathForKMS        = "/mnt/kms/"
 	ManagedAzureSecretsStoreCSIDriver        = "secrets-store.csi.k8s.io"
 	ManagedAzureSecretProviderClass          = "secretProviderClass"
 

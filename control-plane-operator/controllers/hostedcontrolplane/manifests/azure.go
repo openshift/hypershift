@@ -25,6 +25,15 @@ func AzureProviderConfigWithCredentials(ns string) *corev1.Secret {
 	}
 }
 
+func AzureKMSWithCredentials(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-kms-config",
+			Namespace: ns,
+		},
+	}
+}
+
 func AzureDiskConfigWithCredentials(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
