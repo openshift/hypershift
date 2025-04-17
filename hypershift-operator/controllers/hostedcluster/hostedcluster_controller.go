@@ -4736,7 +4736,7 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 }
 
 // validateOCPConfigurations validates OpenShift-specific configurations for a HostedCluster.
-// It's worth to abstract this validation to a separate funtion per API to have them organized.
+// It's worth to abstract this validation to a separate function per API to have them organized.
 // Currently validates:
 // - API Server configuration
 //
