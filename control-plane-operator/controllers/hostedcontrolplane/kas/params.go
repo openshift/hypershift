@@ -79,12 +79,9 @@ type KubeAPIServerParams struct {
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
 	GoAwayChance                string
-<<<<<<< HEAD
 
 	RenderedFeatureGates []string
-=======
-	AuditEnabled                bool
->>>>>>> 21e0b9b13 (Apiserver fixes)
+	AuditEnabled         bool
 }
 
 type KubeAPIServerServiceParams struct {

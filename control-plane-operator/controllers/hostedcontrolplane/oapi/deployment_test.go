@@ -54,6 +54,19 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 			additionalTrustBundle: &corev1.LocalObjectReference{Name: "test-trust-bundle"},
 			clusterConf:           nil,
 		},
+		{
+			name: "Auditing is disabled",
+			cm: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-oapi-config",
+					Namespace: targetNamespace,
+				},
+				Data: map[string]string{"config.yaml": "test-data"},
+			},
+			deploymentConfig:      config.DeploymentConfig{},
+			additionalTrustBundle: &corev1.LocalObjectReference{Name: "test-trust-bundle"},
+			clusterConf:           nil,
+		},
 	}
 	for _, tc := range testCases {
 		g := NewGomegaWithT(t)
@@ -63,7 +76,9 @@ func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
 		expectedTermGraceSeconds := oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds
 		oapiDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
-		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		if tc.auditEnabled {
+			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		}
 		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditEnabled, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, nil, tc.clusterConf, nil, "")
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedTermGraceSeconds).To(Equal(oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds))
@@ -198,13 +213,23 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			expectProjectedVolumeMounted:      true,
 			expectProjectedProxyVolumeMounted: true,
 		},
+		{
+			name:                              "Auditing is disabled",
+			deploymentConfig:                  config.DeploymentConfig{},
+			expectedVolume:                    nil,
+			additionalTrustBundle:             nil,
+			expectProjectedVolumeMounted:      false,
+			expectProjectedProxyVolumeMounted: false,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
 			ownerRef := config.OwnerRefFrom(hcp)
-			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+			if tc.auditEnabled {
+				tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+			}
 			err := ReconcileDeployment(oapiDeployment, nil, ownerRef, testOapiCM, tc.auditEnabled, tc.auditConfig, nil, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.AgentPlatform, tc.additionalTrustBundle, tc.imageRegistryAdditionalCAs, tc.clusterConf, nil, "")
 			g.Expect(err).To(BeNil())
 			if tc.expectProjectedVolumeMounted {
@@ -238,6 +263,7 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 	testCases := []struct {
 		name             string
 		deploymentConfig config.DeploymentConfig
+		auditEnabled     bool
 		auditConfig      *corev1.ConfigMap
 		params           OAuthDeploymentParams
 	}{
@@ -245,7 +271,15 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 		{
 			name:             "Empty deployment config and oauth params",
 			deploymentConfig: config.DeploymentConfig{},
+			auditEnabled:     true,
 			auditConfig:      manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
+			params: OAuthDeploymentParams{
+				EtcdURL: "https://etcd-client:2379",
+			},
+		},
+		{
+			name:        "auditing disabled",
+			auditConfig: manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
 			params: OAuthDeploymentParams{
 				EtcdURL: "https://etcd-client:2379",
 			},
@@ -257,8 +291,10 @@ func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
 		ownerRef := config.OwnerRefFrom(hcp)
 		oauthAPIDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := oauthAPIDeployment.Spec.MinReadySeconds
-		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
-		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, tc.auditConfig, true, &tc.params, hyperv1.IBMCloudPlatform)
+		if tc.auditEnabled {
+			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		}
+		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, tc.auditConfig, tc.auditEnabled, &tc.params, hyperv1.IBMCloudPlatform)
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(oauthAPIDeployment.Spec.MinReadySeconds))
 	}
