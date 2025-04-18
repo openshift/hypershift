@@ -14,10 +14,11 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: kubevirt-csi-controller Deployment Progressing condition not found
-    reason: NotFound
+    message: 'Waiting for deployment kubevirt-csi-controller rollout to finish: 0
+      out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: ""
     kind: ConfigMap

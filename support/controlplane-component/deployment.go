@@ -1,11 +1,13 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,10 +30,10 @@ type WorkloadProvider[T client.Object] interface {
 	// TODO(Mulham): remove all usage of deploymentConfig in cpov2 and remove this function eventually.
 	ApplyOptionsTo(cpContext ControlPlaneContext, object T, oldObject T, deploymentConfig *config.DeploymentConfig)
 
+	// IsAvailable returns the status, reason and message describing the availability status of the workload object.
+	IsAvailable(object T) (status metav1.ConditionStatus, reason string, message string)
 	// IsReady returns the status, reason and message describing the readiness status of the workload object.
 	IsReady(object T) (status metav1.ConditionStatus, reason string, message string)
-	// IsProgressing returns the status, reason and message describing the progressing status of the workload object.
-	IsProgressing(object T) (status metav1.ConditionStatus, reason string, message string)
 }
 
 var _ WorkloadProvider[*appsv1.Deployment] = &deploymentProvider{}
@@ -73,8 +75,8 @@ func (d *deploymentProvider) Replicas(object *appsv1.Deployment) *int32 {
 	return object.Spec.Replicas
 }
 
-// IsReady implements WorkloadProvider.
-func (d *deploymentProvider) IsReady(object *appsv1.Deployment) (status metav1.ConditionStatus, reason string, message string) {
+// IsAvailable implements WorkloadProvider.
+func (d *deploymentProvider) IsAvailable(object *appsv1.Deployment) (status metav1.ConditionStatus, reason string, message string) {
 	deploymentAvailableCond := findDeploymentCondition(object.Status.Conditions, appsv1.DeploymentAvailable)
 	if deploymentAvailableCond == nil {
 		status = metav1.ConditionFalse
@@ -86,28 +88,27 @@ func (d *deploymentProvider) IsReady(object *appsv1.Deployment) (status metav1.C
 	if deploymentAvailableCond.Status == corev1.ConditionTrue {
 		status = metav1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
-		message = fmt.Sprintf("%s Deployment is available", object.Name)
+		message = fmt.Sprintf("Deployment %s is available", object.Name)
 	} else {
 		status = metav1.ConditionFalse
 		reason = hyperv1.WaitingForAvailableReason
-		message = fmt.Sprintf("%s Deployment is not available: %s", object.Name, deploymentAvailableCond.Message)
+		message = fmt.Sprintf("Deployment %s is not available: %s", object.Name, deploymentAvailableCond.Message)
 	}
 	return
 }
 
-// IsProgressing implements WorkloadProvider.
-func (d *deploymentProvider) IsProgressing(object *appsv1.Deployment) (status metav1.ConditionStatus, reason string, message string) {
-	deploymentProgressingCond := findDeploymentCondition(object.Status.Conditions, appsv1.DeploymentProgressing)
-	if deploymentProgressingCond == nil {
-		status = metav1.ConditionFalse
-		reason = hyperv1.NotFoundReason
-		message = fmt.Sprintf("%s Deployment Progressing condition not found", object.Name)
+// IsReady implements WorkloadProvider.
+func (d *deploymentProvider) IsReady(object *appsv1.Deployment) (status metav1.ConditionStatus, reason string, message string) {
+	if util.IsDeploymentReady(context.TODO(), object) {
+		status = metav1.ConditionTrue
+		reason = hyperv1.AsExpectedReason
+		message = fmt.Sprintf("Deployment %s successfully rolled out", object.Name)
 	} else {
-		// mirror deployment progressing condition
-		status = metav1.ConditionStatus(deploymentProgressingCond.Status)
-		reason = deploymentProgressingCond.Reason
-		message = deploymentProgressingCond.Message
+		status = metav1.ConditionFalse
+		reason = "WaitingForRolloutComplete"
+		message = fmt.Sprintf("Waiting for deployment %s rollout to finish: %d out of %d new replicas have been updated", object.Name, object.Status.UpdatedReplicas, *object.Spec.Replicas)
 	}
+
 	return
 }
 

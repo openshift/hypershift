@@ -18,8 +18,8 @@ func init() {
 const (
 	// ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.
 	ControlPlaneComponentAvailable ConditionType = "Available"
-	// ControlPlaneComponentProgressing indicates whether the ControlPlaneComponent is progressing.
-	ControlPlaneComponentProgressing ConditionType = "Progressing"
+	// ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.
+	ControlPlaneComponentRolloutComplete ConditionType = "RolloutComplete"
 
 	// WaitingForDependenciesReason indicates that there are unavailable dependencies blocking the ControlPlaneComponent reconciliation.
 	WaitingForDependenciesReason string = "WaitingForDependencies"

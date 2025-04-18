@@ -21,6 +21,14 @@ const (
 	etcdComponentName          = "etcd"
 )
 
+// checkDependencies checks the availability of dependencies for a control plane component.
+// It returns a list of unavailable dependencies or an error if the dependency check fails.
+//
+// The function performs the following steps:
+// 1. Adds kube-apiserver as a dependency for all components except etcd.
+// 2. Removes etcd as a dependency for unmanaged control planes, as etcd is not deployed in this case.
+// 3. Ensures the component does not have a circular dependency on itself.
+// 4. Checks the availability and rollout completion status of each dependency against the desired version.
 func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
 	unavailableDependencies := sets.New(c.dependencies...)
 	// always add kube-apiserver as a dependency, except for etcd.
@@ -52,7 +60,12 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 		}
 
 		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
-		if availableCondition != nil && availableCondition.Status == metav1.ConditionTrue && component.Status.Version == desiredVersion {
+		isAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
+
+		rolloutCompleteCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		isComplete := rolloutCompleteCondition != nil && rolloutCompleteCondition.Status == metav1.ConditionTrue && component.Status.Version == desiredVersion
+
+		if isAvailable && isComplete {
 			unavailableDependencies.Delete(component.Name)
 		}
 	}
@@ -102,7 +115,7 @@ func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlan
 	}
 
 	c.setAvailableCondition(cpContext, &component.Status.Conditions)
-	c.setProgressingCondition(cpContext, &component.Status.Conditions, unavailableDependencies, reconcilationError)
+	c.setRolloutCompleteCondition(cpContext, &component.Status.Conditions, unavailableDependencies, reconcilationError)
 	return nil
 }
 
@@ -118,7 +131,7 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 		return
 	}
 
-	status, reason, message := c.workloadProvider.IsReady(workloadObject)
+	status, reason, message := c.workloadProvider.IsAvailable(workloadObject)
 	meta.SetStatusCondition(conditions, metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneComponentAvailable),
 		Status:  status,
@@ -127,10 +140,10 @@ func (c *controlPlaneWorkload[T]) setAvailableCondition(cpContext ControlPlaneCo
 	})
 }
 
-func (c *controlPlaneWorkload[T]) setProgressingCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unavailableDependencies []string, reconcilationError error) {
+func (c *controlPlaneWorkload[T]) setRolloutCompleteCondition(cpContext ControlPlaneContext, conditions *[]metav1.Condition, unavailableDependencies []string, reconcilationError error) {
 	if len(unavailableDependencies) > 0 {
 		meta.SetStatusCondition(conditions, metav1.Condition{
-			Type:    string(hyperv1.ControlPlaneComponentProgressing),
+			Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
 			Status:  metav1.ConditionFalse,
 			Reason:  hyperv1.WaitingForDependenciesReason,
 			Message: fmt.Sprintf("Waiting for Dependencies: %s", strings.Join(unavailableDependencies, ", ")),
@@ -140,7 +153,7 @@ func (c *controlPlaneWorkload[T]) setProgressingCondition(cpContext ControlPlane
 
 	if reconcilationError != nil {
 		meta.SetStatusCondition(conditions, metav1.Condition{
-			Type:    string(hyperv1.ControlPlaneComponentProgressing),
+			Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
 			Status:  metav1.ConditionFalse,
 			Reason:  hyperv1.ReconciliationErrorReason,
 			Message: reconcilationError.Error(),
@@ -151,7 +164,7 @@ func (c *controlPlaneWorkload[T]) setProgressingCondition(cpContext ControlPlane
 	workloadObject := c.workloadProvider.NewObject()
 	if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: c.name}, workloadObject); err != nil {
 		meta.SetStatusCondition(conditions, metav1.Condition{
-			Type:    string(hyperv1.ControlPlaneComponentProgressing),
+			Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
 			Status:  metav1.ConditionFalse,
 			Reason:  string(apierrors.ReasonForError(err)),
 			Message: err.Error(),
@@ -159,9 +172,9 @@ func (c *controlPlaneWorkload[T]) setProgressingCondition(cpContext ControlPlane
 		return
 	}
 
-	status, reason, message := c.workloadProvider.IsProgressing(workloadObject)
+	status, reason, message := c.workloadProvider.IsReady(workloadObject)
 	meta.SetStatusCondition(conditions, metav1.Condition{
-		Type:    string(hyperv1.ControlPlaneComponentProgressing),
+		Type:    string(hyperv1.ControlPlaneComponentRolloutComplete),
 		Status:  status,
 		Reason:  reason,
 		Message: message,
