@@ -180,9 +180,6 @@ func TestIsAroHCP(t *testing.T) {
 
 func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 	type args struct {
-		azureClientID            string
-		azureTenantID            string
-		azureCertificateName     string
 		azureCredentialsFilepath string
 	}
 	tests := []struct {
@@ -193,24 +190,9 @@ func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 		{
 			name: "returns a slice of environment variables with the azure creds",
 			args: args{
-				azureClientID:            "my-client-id",
-				azureTenantID:            "my-tenant-id",
-				azureCertificateName:     "my-certificate-name",
 				azureCredentialsFilepath: "my-credentials-file",
 			},
 			want: []corev1.EnvVar{
-				{
-					Name:  config.ManagedAzureClientIdEnvVarKey,
-					Value: "my-client-id",
-				},
-				{
-					Name:  config.ManagedAzureTenantIdEnvVarKey,
-					Value: "my-tenant-id",
-				},
-				{
-					Name:  config.ManagedAzureCertificatePathEnvVarKey,
-					Value: config.ManagedAzureCertificatePath + "my-certificate-name",
-				},
 				{
 					Name:  config.ManagedAzureCredentialsFilePath,
 					Value: config.ManagedAzureCertificatePath + "my-credentials-file",
@@ -220,7 +202,7 @@ func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := CreateEnvVarsForAzureManagedIdentity(tt.args.azureClientID, tt.args.azureTenantID, tt.args.azureCertificateName, tt.args.azureCredentialsFilepath); !reflect.DeepEqual(got, tt.want) {
+			if got := CreateEnvVarsForAzureManagedIdentity(tt.args.azureCredentialsFilepath); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("CreateEnvVarsForAzureManagedIdentity() = %v, want %v", got, tt.want)
 			}
 		})
