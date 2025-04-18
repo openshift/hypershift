@@ -1,6 +1,7 @@
 package catalogs
 
 import (
+	"context"
 	"slices"
 	"testing"
 	"time"
@@ -8,7 +9,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	"github.com/blang/semver"
 )
@@ -282,4 +285,27 @@ func TestImageLookupCacheKeyFn(t *testing.T) {
 	fn4 := imageLookupCacheKeyFn(hc, pullSecret, registryOverrides)
 	hash4 := util.HashSimple(fn4())
 	g.Expect(hash4).ToNot(Equal(hash3))
+}
+
+func TestImageExistsFnGuestCluster(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	ctx := context.Background()
+	pullSecret := []byte("12345")
+	fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result:   &dockerv1client.DockerImageConfig{},
+		Manifest: fakeimagemetadataprovider.FakeManifest{},
+	}
+
+	// Test to ignore that images don't need to exist for "guest" clusters.
+	fn1 := imageExistsFn(ctx, &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "guest"}}, pullSecret, fakeMetadataProvider)
+	exists, err := fn1("something")
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(exists).To(Equal(true))
+
+	// Test to ensure we fail if not a guest cluster and can't find image.
+	fn2 := imageExistsFn(ctx, &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "management"}}, pullSecret, fakeMetadataProvider)
+	exists, err = fn2("something")
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(exists).To(Equal(false))
 }
