@@ -767,46 +767,47 @@ func TestShouldCheckForStaleCerts(t *testing.T) {
 	tests := []struct {
 		name           string
 		hcAnnotations  map[string]string
-		hcVersion      string
+		cpov2label     bool
 		expectedResult bool
 	}{
 		{
-			name: "version older than 4.19",
+			name: "cpo without cpov2label",
 			hcAnnotations: map[string]string{
 				hcmetrics.HasBeenAvailableAnnotation: "true",
 			},
-			hcVersion:      "4.18.7",
+			cpov2label:     false,
 			expectedResult: true,
 		},
 		{
-			name: "ci version with 4.19",
+			name: "cpo with cpov2label",
 			hcAnnotations: map[string]string{
 				hcmetrics.HasBeenAvailableAnnotation: "true",
 			},
-			hcVersion:      "4.19.0-0.ci-2025-02-03-120046",
+			cpov2label:     true,
 			expectedResult: false,
 		},
 		{
-			name: "4.20",
+			name: "cpo without cpov2label, but has annotation for cpov2",
 			hcAnnotations: map[string]string{
-				hcmetrics.HasBeenAvailableAnnotation: "true",
+				hcmetrics.HasBeenAvailableAnnotation:     "true",
+				hyperv1.ControlPlaneOperatorV2Annotation: "true",
 			},
-			hcVersion:      "4.20.0",
+			cpov2label:     false,
 			expectedResult: false,
 		},
 		{
-			name:           "version older than 4.19, never been available",
+			name:           "has not been available",
 			hcAnnotations:  nil,
-			hcVersion:      "4.17.4",
+			cpov2label:     false,
 			expectedResult: false,
 		},
 		{
-			name: "version older than 4.19, has been available, does not reconcile pki",
+			name: "has been available, does not reconcile pki",
 			hcAnnotations: map[string]string{
 				hcmetrics.HasBeenAvailableAnnotation:       "true",
 				hyperv1.DisablePKIReconciliationAnnotation: "true",
 			},
-			hcVersion:      "4.16.20",
+			cpov2label:     false,
 			expectedResult: false,
 		},
 	}
@@ -815,7 +816,7 @@ func TestShouldCheckForStaleCerts(t *testing.T) {
 			g := NewGomegaWithT(t)
 			hc := &hyperv1.HostedCluster{}
 			hc.Annotations = test.hcAnnotations
-			fn := shouldCheckForStaleCerts(hc, semver.MustParse(test.hcVersion))
+			fn := shouldCheckForStaleCerts(hc, test.cpov2label)
 			result := fn()
 			g.Expect(result).To(Equal(test.expectedResult))
 		})
