@@ -282,7 +282,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
       schedulerName: default-scheduler
-      terminationGracePeriodSeconds: 95
+      terminationGracePeriodSeconds: 135
       volumes:
       - emptyDir: {}
         name: bootstrap-manifests
