@@ -3935,7 +3935,7 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	if hyperazureutil.IsAroHCP() {
 		ingressSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureIngressSecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
