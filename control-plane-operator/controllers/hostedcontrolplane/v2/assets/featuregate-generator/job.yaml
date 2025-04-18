@@ -1,0 +1,71 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: featuregate-generator
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      serviceAccountName: control-plane-operator
+      restartPolicy: Never
+      initContainers:
+        - name: render-feature-gates
+          image: cluster-config-api
+          imagePullPolicy: IfNotPresent
+          command:
+          - /bin/bash
+          - -c
+          args:
+          - |-
+            #!/bin/sh
+            cd /work
+            mkdir input output manifests
+
+            touch /work/manifests/99_feature-gate.yaml
+            cat <<EOF >/work/manifests/99_feature-gate.yaml
+            $(FEATURE_GATE_YAML)
+            EOF
+
+            /usr/bin/render \
+               --asset-output-dir /work/output \
+               --rendered-manifest-dir=/work/manifests \
+               --cluster-profile=ibm-cloud-managed \
+               --payload-version=$(PAYLOAD_VERSION)
+
+            cp /work/manifests/* /output
+          volumeMounts:
+          - name: manifests
+            mountPath: /output
+          - name: work
+            mountPath: /work
+          resources:
+            requests:
+              cpu: 30m
+              memory: 50Mi
+      containers:
+        - name: main-cli
+          image: cli
+          env:
+          - name: NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          command:
+          - /bin/bash
+          args:
+          - -c
+          - |-
+            #!/bin/bash
+            if oc get cm feature-gate; then
+              oc set data cm/feature-gate --from-file feature-gate.yaml=/manifests/99_feature-gate.yaml
+            else
+              oc create cm feature-gate -n $(NAMESPACE) --from-file feature-gate.yaml=/manifests/99_feature-gate.yaml
+            fi
+          volumeMounts:
+          - name: manifests
+            mountPath: /manifests
+      volumes:
+      - emptyDir: {}
+        name: manifests
+      - emptyDir: {}
+        name: work

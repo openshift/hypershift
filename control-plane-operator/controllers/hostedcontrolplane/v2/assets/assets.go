@@ -22,6 +22,7 @@ const (
 	deploymentManifest  = "deployment.yaml"
 	statefulSetManifest = "statefulset.yaml"
 	cronJobManifest     = "cronjob.yaml"
+	jobManifest         = "job.yaml"
 )
 
 func LoadDeploymentManifest(componentName string) (*appsv1.Deployment, error) {
@@ -54,6 +55,15 @@ func LoadCronJobManifest(componentName string) (*batchv1.CronJob, error) {
 	return cronJob, nil
 }
 
+func LoadJobManifest(componentName string) (*batchv1.Job, error) {
+	job := &batchv1.Job{}
+	_, _, err := LoadManifestInto(componentName, jobManifest, job)
+	if err != nil {
+		return nil, err
+	}
+	return job, nil
+}
+
 // LoadManifest decodes the manifest data and load it into a new object.
 func LoadManifest(componentName string, fileName string) (client.Object, *schema.GroupVersionKind, error) {
 	return LoadManifestInto(componentName, fileName, nil)
@@ -84,7 +94,7 @@ func ForEachManifest(componentName string, action func(manifestName string) erro
 			return nil
 		}
 		manifestName := d.Name()
-		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest {
+		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest || manifestName == jobManifest {
 			return nil
 		}
 
