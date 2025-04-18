@@ -3935,13 +3935,11 @@ func (r *HostedControlPlaneReconciler) reconcileIngressOperator(ctx context.Cont
 	if hyperazureutil.IsAroHCP() {
 		ingressSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureIngressSecretStoreProviderClassName, hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r, ingressSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress)
+			secretproviderclass.ReconcileManagedAzureSecretProviderClass(ingressSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress, true)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ingress operator secret provider class: %w", err)
 		}
-
-		p.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; !exists {
@@ -4290,8 +4288,6 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryOperator(ctx contex
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile image registry operator secret provider class: %w", err)
 		}
-
-		params.AzureTenantID = hcp.Spec.Platform.Azure.TenantID
 	}
 
 	deployment := manifests.ImageRegistryOperatorDeployment(hcp.Namespace)

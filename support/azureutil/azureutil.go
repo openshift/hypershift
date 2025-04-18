@@ -190,20 +190,8 @@ func GetKeyVaultAuthorizedUser() string {
 	return os.Getenv(config.AROHCPKeyVaultManagedIdentityClientID)
 }
 
-func CreateEnvVarsForAzureManagedIdentity(azureClientID, azureTenantID, azureCertificateName, azureCredentialsName string) []corev1.EnvVar {
+func CreateEnvVarsForAzureManagedIdentity(azureCredentialsName string) []corev1.EnvVar {
 	return []corev1.EnvVar{
-		{
-			Name:  config.ManagedAzureClientIdEnvVarKey,
-			Value: azureClientID,
-		},
-		{
-			Name:  config.ManagedAzureTenantIdEnvVarKey,
-			Value: azureTenantID,
-		},
-		{
-			Name:  config.ManagedAzureCertificatePathEnvVarKey,
-			Value: config.ManagedAzureCertificatePath + azureCertificateName,
-		},
 		{
 			Name:  config.ManagedAzureCredentialsFilePath,
 			Value: config.ManagedAzureCertificatePath + azureCredentialsName,

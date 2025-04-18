@@ -107,9 +107,6 @@ type Params struct {
 	registryImage            string
 	prunerImage              string
 	deploymentConfig         config.DeploymentConfig
-	AzureClientID            string
-	AzureTenantID            string
-	AzureCertificateName     string
 	AzureCredentialsFilepath string
 }
 
@@ -151,8 +148,6 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 
 	if azureutil.IsAroHCP() {
-		params.AzureClientID = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ClientID
-		params.AzureCertificateName = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CertificateName
 		params.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName
 	}
 
@@ -206,13 +201,13 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 			},
 		)
 	}
-	// For managed azure deployments, we pass environment variables so we authenticate with Azure API through certificate
-	// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
-	// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
-	// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+	// For managed Azure deployments, we pass an environment variable, MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH, so
+	// we authenticate with Azure API through UserAssignedCredential authentication. We also mount the
+	// SecretProviderClass for the Secrets Store CSI driver to use; it will grab the JSON object stored in the
+	// MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH and mount it as a volume in the image registry pod in the path.
 	if azureutil.IsAroHCP() {
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureClientID, params.AzureTenantID, params.AzureCertificateName, params.AzureCredentialsFilepath)...)
+			azureutil.CreateEnvVarsForAzureManagedIdentity(params.AzureCredentialsFilepath)...)
 
 		if deployment.Spec.Template.Spec.Containers[0].VolumeMounts == nil {
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{}
