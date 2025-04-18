@@ -1,10 +1,10 @@
 # Create an Azure cluster with Additional Options
-This document describes how to set up an Azure cluster with Hypershift with additional flag options.
+This document describes how to set up an Azure cluster with Hypershift with additional options.
 
 Creating an Azure cluster with Hypershift without any additional flag options can be found [here](create-azure-cluster_on_aks.md).
 
 ## Prerequisites
-This assumes you are:
+All sections assume you are:
 1. Using an AKS management cluster
 2. Set up external DNS
 3. Installed the HyperShift Operator
@@ -22,86 +22,6 @@ There are a few prerequisites for encrypting the OS disks on the Azure VMs:
     You will need to use the `resource-group-name` flag when using the `DiskEncryptionSetID` flag.
 
 After performing these steps, you just need to provide the DiskEncryptionSet ID when creating a hosted cluster.
-
-## Creating Service Principals for Managed Identities
-Pre-requisites:
-1. Key Vault Administrator role on the Key Vault
-
-
-### Define variables for service principal names
-```
-AZURE_DISK_SP_NAME=<azure-disk-sp-name>
-AZURE_FILE_SP_NAME=<azure-file-sp-name>
-NODEPOOL_MGMT=<nodepool-mgmt-sp-name>
-CLOUD_PROVIDER_SP_NAME=<cloud-provider-sp-name>
-CNCC_NAME=<cncc-sp-name>
-CONTROL_PLANE_SP_NAME=<cpo-sp-name>
-IMAGE_REGISTRY_SP_NAME=<ciro-sp-name>
-INGRESS_SP_NAME=<ingress-sp-name>
-KEY_VAULT_NAME=<name-of-precreated-key-vault>
-KEY_VAULT_TENANT_ID=<tenant-id-of-precreated-key-vault>
-```
-
-### Create service principals and capture app IDs
-```
-DISK_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_DISK_SP_NAME}" --create-cert --cert "${AZURE_DISK_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-FILE_SP_APP_ID=$(az ad sp create-for-rbac --name "${AZURE_FILE_SP_NAME}" --create-cert --cert "${AZURE_FILE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-NODEPOOL_MGMT_APP_ID=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-CLOUD_PROVIDER_APP_ID=$(az ad sp create-for-rbac --name "${CLOUD_PROVIDER_SP_NAME}" --create-cert --cert "${CLOUD_PROVIDER_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-CNCC_APP_ID=$(az ad sp create-for-rbac --name "${CNCC_NAME}" --create-cert --cert "${CNCC_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-CONTROL_PLANE_APP_ID=$(az ad sp create-for-rbac --name "${CONTROL_PLANE_SP_NAME}" --create-cert --cert "${CONTROL_PLANE_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-IMAGE_REGISTRY_APP_ID=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --create-cert --cert "${IMAGE_REGISTRY_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-INGRESS_APP_ID=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault ${KV_NAME} --output json --only-show-errors | jq '.appId' | sed 's/"//g')
-```
-
-### Save service principal IDs and certificate names to a JSON file
-```
-SP_FILE="service-principals.json"
-
-# Save service principal IDs and certificate names to a JSON file
-OUTPUT_FILE="service-principals.json"
-
-cat <<EOF > SP_FILE
-{
-    "cloudProvider": {
-        "certificateName": "${CLOUD_PROVIDER_SP_NAME}",
-        "clientID": "${CLOUD_PROVIDER_APP_ID}"
-    },
-    "controlPlaneOperator": {
-        "certificateName": "${CONTROL_PLANE_SP_NAME}",
-        "clientID": "${CONTROL_PLANE_APP_ID}"
-    },
-    "disk": {
-        "certificateName": "${AZURE_DISK_SP_NAME}",
-        "clientID": "${DISK_SP_APP_ID}"
-    },
-    "file": {
-        "certificateName": "${AZURE_FILE_SP_NAME}",
-        "clientID": "${FILE_SP_APP_ID}"
-    },
-    "imageRegistry": {
-        "certificateName": "${IMAGE_REGISTRY_SP_NAME}",
-        "clientID": "${IMAGE_REGISTRY_APP_ID}"
-    },
-    "ingress": {
-        "certificateName": "${INGRESS_SP_NAME}",
-        "clientID": "${INGRESS_APP_ID}"
-    },
-    "network": {
-        "certificateName": "${CNCC_NAME}",
-        "clientID": "${CNCC_APP_ID}"
-    },
-    "nodePoolManagement": {
-        "certificateName": "${NODEPOOL_MGMT}",
-        "clientID": "${NODEPOOL_MGMT_APP_ID}"
-    },
-    "managedIdentitiesKeyVault": {
-        "name": "${KV_NAME}",
-        "tenantID": "{KV_TENANT_ID}"
-    }
-}
-EOF
-```
 
 ### CLI Example
 ```
@@ -224,4 +144,126 @@ hypershift create nodepool azure \
 --enable-ephemeral-disk true \
 --instance-type Standard_DS4_v2 \
 --disk-storage-account-type Standard_LRS
+```
+
+## Enabling KMS encryption
+This section walks through how to:
+
+1. Set up a new resource group, key vault, and key for etcd encryption using KMSv2
+1. Set up the role assignment between the KMS managed identity (MI) and the key vault
+1. Set up the flags needed when creating the Azure HostedCluster
+1. Verify the etcd encryption is setup and working properly 
+
+There is a `setup_etcd_kv.sh` script in the contrib folder in the HyperShift repo to help automate the first couple of 
+steps mentioned above. However, this guide will manually walk through those steps.
+
+1a) Create a resource group for the key vault that will house the key used for etcd encryption. 
+
+!!! note
+
+    It is assumed this key vault is a different key vault, let's call it MI KV, than the one containing all of the 
+    managed identities for the control plane. However, the managed identity for KMS is assumed to be in the MI KV.
+
+```bash
+az group create --name example-kms --location eastus
+```
+
+1b) Create the etcd encryption key vault
+```bash
+az keyvault create --name example-kms --resource-group example-kms --location eastus --enable-rbac-authorization
+```
+
+1c) Create a key in the etcd encryption key vault and capture the ID in a variable, KEY_ID. This will be passed when 
+creating the Azure HostedCluster in a later step below.
+```bash
+KEY_ID=$(az keyvault key create \
+  --vault-name example-kms \
+  --name example-key \
+  --protection software \
+  --kty RSA \
+  --query key.kid \
+  -o tsv)
+```
+
+2) Create a role assignment between the KMS MI and the resource group where the etcd encryption key vault is located so 
+that it can encrypt & decrypt objects.
+
+```bash
+OBJECT_ID="the object ID of the KMS Managed Identity. This object ID can be found under the enterprise application for your KMS Managed Identity"
+
+az role assignment create --assignee $OBJECT_ID --role "Key Vault Crypto User" \
+--scope $(az keyvault show --name example-kms --query "resourceGroup" -o tsv | xargs -I{} az group show --name {} --query "id" -o tsv)
+```
+
+3) Add these flags to your HyperShift CLI command when creating the Azure HostedCluster. KEY_ID is from step 1d.
+```
+`--encryption-key-id $KEY_ID` \
+`--kms-credentials-secret-name <your KMS credentials secret name>`
+```
+
+4) Here are some different things you can do to confirm etcd encryption using KMSv2 is set up properly on the 
+HCP/HostedCluster:
+
+First, confirm the kube-apiserver pod is using the `encryption-provider-config` flag such as:
+```
+--encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml 
+```
+
+If you look at this data, it should contain something like this:
+```
+apiVersion: apiserver.config.k8s.io/v1
+kind: EncryptionConfiguration
+resources:
+- providers:
+  - kms:
+      apiVersion: v2
+      endpoint: unix:///opt/azurekmsactive.socket
+      name: azure-20514bc7
+      timeout: 35s
+  - identity: {}
+  resources:
+  - secrets
+  - configmaps
+  - routes.route.openshift.io
+  - oauthaccesstokens.oauth.openshift.io
+  - oauthauthorizetokens.oauth.openshift.io
+```
+
+Next, confirm the ` azure-kms-provider-active` container in the kube-apiserver pod is running properly, there are no 
+errors in the log, and the config file is using the KMS MI. The config file path can be found in the flag on the 
+container spec:
+```
+--config-file-path=/etc/kubernetes/azure.json 
+```
+
+If you review this data, you should see the KMS MI credentials secret used within it.
+
+Finally, you can create a secret on the HostedCluster and then check the secret on etcd in the etcd pod on the HCP 
+directly:
+
+1) Create a secret on the HostedCluster. Example `kubectl create secret generic kms-test --from-literal=foo=bar`.
+
+2) Verify you can see the secret contents on the HostedCluster unencrypted.
+
+3) Switch back to the AKS management cluster and exec into the etcd pod, `kubectl exec -it pod/etcd-0 -- /bin/bash`.
+
+4) Run these commands in the etcd pod
+```
+export ETCDCTL_API=3
+export ETCDCTL_CACERT=/etc/etcd/tls/etcd-ca/ca.crt
+export ETCDCTL_CERT=/etc/etcd/tls/client/etcd-client.crt
+export ETCDCTL_KEY=/etc/etcd/tls/client/etcd-client.key
+export ETCDCTL_ENDPOINTS=https://etcd-client:2379
+```
+5) Get the secret created on the HostedCluster `etcdctl get /kubernetes.io/secrets/default/kms-test`. You should see it 
+is encrypted with KMSv2 by the azure provider:
+```
+k8s:enc:kms:v2:azure-8298bce7:
+�d2%&G
+      	E��k(�B�	�H�����6#�]�[���I
+...
+�=�s��h���Fq��a^(��z ��wIȫ�ݹ��,�բRa�A홟��5u�΀��*��᥃��ƚL�$L1Y'�V�Ӧi��.�	R�"                                            �
+version.azure.akv.io1"&
+algorithm.azure.akv.io
+                      RSA-OAEP-256(
 ```

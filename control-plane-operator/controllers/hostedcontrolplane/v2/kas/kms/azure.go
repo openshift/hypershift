@@ -83,7 +83,6 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 			Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
 			APIVersion: apiVersion,
 			Endpoint:   azureActiveKMSUnixSocket,
-			CacheSize:  ptr.To[int32](100),
 			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
@@ -97,7 +96,6 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 				Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
 				APIVersion: apiVersion,
 				Endpoint:   azureBackupKMSUnixSocket,
-				CacheSize:  ptr.To[int32](100),
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
 		})
@@ -221,7 +219,7 @@ func kasVolumeAzureKMSCredentials() *corev1.Volume {
 
 func buildVolumeAzureKMSCredentials(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.AzureProviderConfigWithCredentials("").Name,
+		SecretName: manifests.AzureKMSWithCredentials("").Name,
 		Items: []corev1.KeyToPath{
 			{
 				Key:  azure.CloudConfigKey,

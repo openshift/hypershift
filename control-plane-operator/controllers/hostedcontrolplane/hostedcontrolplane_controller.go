@@ -3165,11 +3165,6 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			if hcp.Spec.SecretEncryption.KMS == nil {
 				return fmt.Errorf("kms metadata not specified")
 			}
-			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
-				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
-			}
 
 			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
 				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
@@ -3178,6 +3173,14 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			}
 
 			if hyperazureutil.IsAroHCP() {
+				// Reconcile the Azure KMS Config Secret
+				azureKMSConfigSecret := manifests.AzureKMSWithCredentials(hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, azureKMSConfigSecret, func() error {
+					return kas.ReconcileKMSConfigSecret(azureKMSConfigSecret, hcp)
+				}); err != nil {
+					return fmt.Errorf("failed to reconcile Azure KMS config secret: %w", err)
+				}
+
 				// Reconcile the SecretProviderClass
 				kmsSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
 				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
