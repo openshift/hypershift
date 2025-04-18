@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -1490,7 +1491,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			}
 		})
 	}
-	watchedResources := sets.String{}
+	watchedResources := sets.New[string]()
 	for _, resource := range r.managedResources() {
 		resourceType := fmt.Sprintf("%T", resource)
 		switch resourceType {
@@ -1509,7 +1510,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		}
 		watchedResources.Insert(resourceType)
 	}
-	if diff := cmp.Diff(client.createdTypes.List(), watchedResources.List()); diff != "" {
+	watchedResourcesSlice := watchedResources.UnsortedList()
+	sort.Strings(watchedResourcesSlice)
+	clientCreatedTypesSlice := client.createdTypes.UnsortedList()
+	sort.Strings(clientCreatedTypesSlice)
+	if diff := cmp.Diff(clientCreatedTypesSlice, watchedResourcesSlice); diff != "" {
 		t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 	}
 }
@@ -1710,12 +1715,12 @@ func TestReconcileCLISecrets(t *testing.T) {
 
 type createTypeTrackingClient struct {
 	crclient.Client
-	createdTypes sets.String
+	createdTypes sets.Set[string]
 }
 
 func (c *createTypeTrackingClient) Create(ctx context.Context, obj crclient.Object, opts ...crclient.CreateOption) error {
 	if c.createdTypes == nil {
-		c.createdTypes = sets.String{}
+		c.createdTypes = sets.New[string]()
 	}
 	c.createdTypes.Insert(fmt.Sprintf("%T", obj))
 	return c.Client.Create(ctx, obj, opts...)
