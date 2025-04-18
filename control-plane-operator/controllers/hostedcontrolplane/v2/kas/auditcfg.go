@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/apiserver/audit"
 
 	corev1 "k8s.io/api/core/v1"
@@ -33,4 +34,8 @@ func AdaptAuditConfig(cpContext component.WorkloadContext, auditCfgMap *corev1.C
 	auditCfgMap.Data[AuditPolicyConfigMapKey] = string(policyBytes)
 	auditCfgMap.Data[AuditPolicyProfileMapKey] = string(auditConfig.Profile)
 	return nil
+}
+
+func AuditEnabled(cpContext component.WorkloadContext) bool {
+	return cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile != configv1.NoneAuditProfileType
 }

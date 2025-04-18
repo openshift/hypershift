@@ -79,6 +79,7 @@ type KubeAPIServerParams struct {
 
 	MaxMutatingRequestsInflight string
 	MaxRequestsInflight         string
+	AuditEnabled                bool
 }
 
 type KubeAPIServerServiceParams struct {
@@ -124,6 +125,7 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		},
 		MaxRequestsInflight:         fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight: fmt.Sprint(defaultMaxMutatingRequestsInflight),
+		AuditEnabled:                true,
 	}
 
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
@@ -143,6 +145,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
 		params.MaxMutatingRequestsInflight = mutatingReqInflight
+	}
+
+	if params.APIServer != nil {
+		params.AuditEnabled = string(params.APIServer.Audit.Profile) != string(configv1.NoneAuditProfileType)
 	}
 
 	params.AdvertiseAddress = util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
@@ -406,6 +412,7 @@ func (p *KubeAPIServerParams) ConfigParams() KubeAPIServerConfigParams {
 		EtcdURL:                      p.EtcdURL,
 		FeatureGates:                 p.FeatureGates(),
 		NodePortRange:                p.ServiceNodePortRange(),
+		AuditEnabled:                 p.AuditEnabled,
 		AuditWebhookEnabled:          p.AuditWebhookRef != nil,
 		ConsolePublicURL:             p.ConsolePublicURL,
 		DisableProfiling:             p.DisableProfiling,
@@ -434,6 +441,7 @@ type KubeAPIServerConfigParams struct {
 	EtcdURL                      string
 	FeatureGates                 []string
 	NodePortRange                string
+	AuditEnabled                 bool
 	AuditWebhookEnabled          bool
 	ConsolePublicURL             string
 	DisableProfiling             bool

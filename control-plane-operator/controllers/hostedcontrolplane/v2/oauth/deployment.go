@@ -3,6 +3,7 @@ package oauth
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -35,6 +36,22 @@ const (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+
+		// Remove audit arguments if auditing is not enabled
+		if cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+			for _, argToRemove := range []string{
+				"--audit-log-path=",
+				"--audit-log-format=",
+				"--audit-log-maxsize=",
+				"--audit-log-maxbackup=",
+				"--audit-policy-file=",
+			} {
+				c.Args = slices.DeleteFunc(c.Args, func(s string) bool {
+					return strings.Contains(s, argToRemove)
+				})
+			}
+		}
+
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)))
 			c.Args = append(c.Args, "--audit-webhook-mode=batch")
@@ -68,6 +85,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	configuration := cpContext.HCP.Spec.Configuration
 	if configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount("audit-config", util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume("audit-config", &deployment.Spec.Template.Spec)
 	}
 
 	if namedCertificates := configuration.GetNamedCertificates(); len(namedCertificates) > 0 {
