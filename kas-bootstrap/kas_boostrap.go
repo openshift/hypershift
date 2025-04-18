@@ -56,7 +56,7 @@ func run(ctx context.Context, opts Options) error {
 
 	// This binary is meant to run next to the KAS container within the same pod.
 	// We briefly poll here to retry on race and transient network issues.
-	// This to avoid unncessary restarts of this container.
+	// This to avoid unnecessary restarts of this container.
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 20*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
 			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
