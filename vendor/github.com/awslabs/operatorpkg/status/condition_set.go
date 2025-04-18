@@ -54,7 +54,8 @@ type ConditionSet struct {
 func (r ConditionTypes) For(object Object) ConditionSet {
 	cs := ConditionSet{object: object, ConditionTypes: r}
 	// Set known conditions Unknown if not set.
-	for _, t := range append(r.dependents, r.root) {
+	// Set the root condition first to get consistent timing for LastTransitionTime
+	for _, t := range append([]string{r.root}, r.dependents...) {
 		if cs.Get(t) == nil {
 			cs.SetUnknown(t)
 		}
@@ -99,44 +100,68 @@ func (c ConditionSet) IsTrue(conditionTypes ...string) bool {
 	return true
 }
 
+func (c ConditionSet) IsDependentCondition(t string) bool {
+	return t == c.root || lo.Contains(c.dependents, t)
+}
+
 // Set sets or updates the Condition on Conditions for Condition.Type.
 // If there is an update, Conditions are stored back sorted.
 func (c ConditionSet) Set(condition Condition) (modified bool) {
-	conditionType := condition.Type
 	var conditions []Condition
-	for _, c := range c.object.GetConditions() {
-		if c.Type != conditionType {
-			conditions = append(conditions, c)
+	var foundCondition bool
+
+	condition.ObservedGeneration = c.object.GetGeneration()
+	for _, cond := range c.object.GetConditions() {
+		if cond.Type != condition.Type {
+			conditions = append(conditions, cond)
 		} else {
-			// If we'd only update the LastTransitionTime, then return.
-			condition.LastTransitionTime = c.LastTransitionTime
-			if reflect.DeepEqual(condition, c) {
+			foundCondition = true
+			if condition.Status == cond.Status {
+				condition.LastTransitionTime = cond.LastTransitionTime
+			} else {
+				condition.LastTransitionTime = metav1.Now()
+			}
+			if reflect.DeepEqual(condition, cond) {
 				return false
 			}
 		}
 	}
-	condition.LastTransitionTime = metav1.Now()
+	if !foundCondition {
+		// Dependent conditions should always be set, so if it's not found, that means
+		// that we are initializing the condition type, and it's last "transition" was object creation
+		if c.IsDependentCondition(condition.Type) {
+			condition.LastTransitionTime = c.object.GetCreationTimestamp()
+		} else {
+			condition.LastTransitionTime = metav1.Now()
+		}
+	}
 	conditions = append(conditions, condition)
 	// Sorted for convenience of the consumer, i.e. kubectl.
-	sort.Slice(conditions, func(i, j int) bool { return conditions[i].Type < conditions[j].Type })
+	sort.SliceStable(conditions, func(i, j int) bool {
+		// Order the root status condition at the end
+		if conditions[i].Type == c.root || conditions[j].Type == c.root {
+			return conditions[j].Type == c.root
+		}
+		return conditions[i].LastTransitionTime.Time.Before(conditions[j].LastTransitionTime.Time)
+	})
 	c.object.SetConditions(conditions)
 
 	// Recompute the root condition after setting any other condition
-	c.recomputeRootCondition(conditionType)
+	c.recomputeRootCondition(condition.Type)
 	return true
 }
 
-// Clear removes the abnormal condition that matches the ConditionType
-// Not implemented for normal conditions
+// Clear removes the independent condition that matches the ConditionType
+// Not implemented for dependent conditions
 func (c ConditionSet) Clear(t string) error {
 	var conditions []Condition
 
 	if c.object == nil {
 		return nil
 	}
-	// Normal conditions are not handled as they can't be nil
-	if t == c.root || lo.Contains(c.dependents, t) {
-		return fmt.Errorf("clearing normal conditions not implemented")
+	// Dependent conditions are not handled as they can't be nil
+	if c.IsDependentCondition(t) {
+		return fmt.Errorf("clearing dependent conditions not implemented")
 	}
 	cond := c.Get(t)
 	if cond == nil {
@@ -207,15 +232,23 @@ func (c ConditionSet) recomputeRootCondition(conditionType string) {
 	if conditions := c.findUnhealthyDependents(); len(conditions) == 0 {
 		c.SetTrue(c.root)
 	} else {
+		// The root condition is no longer unknown as soon as any dependent condition goes false with the latest observedGeneration
+		status := lo.Ternary(
+			lo.ContainsBy(conditions, func(condition Condition) bool {
+				return condition.IsFalse() &&
+					condition.ObservedGeneration == c.object.GetGeneration()
+			}),
+			metav1.ConditionFalse,
+			metav1.ConditionUnknown,
+		)
 		c.Set(Condition{
-			Type: c.root,
-			// The root condition is no longer unknown as soon as any are false
-			Status: lo.Ternary(
-				lo.ContainsBy(conditions, func(condition Condition) bool { return condition.IsFalse() }),
-				metav1.ConditionFalse,
-				metav1.ConditionUnknown,
+			Type:   c.root,
+			Status: status,
+			Reason: lo.Ternary(
+				status == metav1.ConditionUnknown,
+				"ReconcilingDependents",
+				"UnhealthyDependents",
 			),
-			Reason: "UnhealthyDependents",
 			Message: strings.Join(lo.Map(conditions, func(condition Condition, _ int) string {
 				return fmt.Sprintf("%s=%s", condition.Type, condition.Status)
 			}), ", "),
@@ -233,7 +266,7 @@ func (c ConditionSet) findUnhealthyDependents() []Condition {
 		return lo.Contains(c.dependents, condition.Type)
 	})
 	conditions = lo.Filter(conditions, func(condition Condition, _ int) bool {
-		return condition.IsFalse() || condition.IsUnknown()
+		return condition.IsFalse() || condition.IsUnknown() || condition.ObservedGeneration != c.object.GetGeneration()
 	})
 
 	// Sort set conditions by time.

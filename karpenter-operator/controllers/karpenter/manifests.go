@@ -368,7 +368,9 @@ func (r *Reconciler) reconcileKarpenter(ctx context.Context, hcp *hyperv1.Hosted
 	tokenMinterImage := r.ControlPlaneOperatorImage
 	karpenterProviderAWSImage, exists := hcp.Annotations[hyperkarpenterv1.KarpenterProviderAWSImage]
 	if !exists {
-		karpenterProviderAWSImage = "public.ecr.aws/karpenter/controller:1.0.7"
+		// TODO(jkyros): precedence ends up being annotation > payload > default with this here. I'd like to
+		// centralize the decision at a higher level so we can test it together
+		karpenterProviderAWSImage = r.KarpenterProviderAWSImage
 	}
 
 	role := KarpenterRole(hcp.Namespace)

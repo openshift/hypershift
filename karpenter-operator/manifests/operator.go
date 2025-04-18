@@ -74,6 +74,7 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 	kubeConfigSecret *corev1.Secret,
 	hypershiftOperatorImage string,
 	controlPlaneOperatorImage string,
+	karpenterProviderAWSImage string,
 	setDefaultSecurityContext bool,
 	ownerRef config.OwnerRef) error {
 
@@ -158,6 +159,7 @@ func ReconcileKarpenterOperatorDeployment(deployment *appsv1.Deployment,
 			"--target-kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 			"--namespace=$(MY_NAMESPACE)",
 			"--control-plane-operator-image=" + controlPlaneOperatorImage,
+			"--karpenter-provider-aws-image=" + karpenterProviderAWSImage,
 		},
 	}
 
@@ -357,7 +359,7 @@ func ReconcileKarpenterOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rb
 }
 
 // ReconcileKarpenter orchestrates reconciliation of karpenter components.
-func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, c client.Client, hypershiftOperatorImage, controlPlaneOperatorImage string, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, c client.Client, hypershiftOperatorImage, controlPlaneOperatorImage, karpenterProviderAWSImage string, hcp *hyperv1.HostedControlPlane) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 	setDefaultSecurityContext := false
 
@@ -418,7 +420,7 @@ func ReconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.Creat
 
 		deployment := KarpenterOperatorDeployment(hcp.Namespace)
 		_, err = createOrUpdate(ctx, c, deployment, func() error {
-			return ReconcileKarpenterOperatorDeployment(deployment, hcp, serviceAccount, kubeConfigSecret, hypershiftOperatorImage, controlPlaneOperatorImage, setDefaultSecurityContext, ownerRef)
+			return ReconcileKarpenterOperatorDeployment(deployment, hcp, serviceAccount, kubeConfigSecret, hypershiftOperatorImage, controlPlaneOperatorImage, karpenterProviderAWSImage, setDefaultSecurityContext, ownerRef)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile karpenter deployment: %w", err)

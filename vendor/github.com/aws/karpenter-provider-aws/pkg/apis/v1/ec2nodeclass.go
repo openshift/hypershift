@@ -101,7 +101,7 @@ type EC2NodeClassSpec struct {
 	// +kubebuilder:validation:XValidation:message="evictionSoft OwnerKey does not have a matching evictionSoftGracePeriod",rule="has(self.evictionSoft) ? self.evictionSoft.all(e, (e in self.evictionSoftGracePeriod)):true"
 	// +kubebuilder:validation:XValidation:message="evictionSoftGracePeriod OwnerKey does not have a matching evictionSoft",rule="has(self.evictionSoftGracePeriod) ? self.evictionSoftGracePeriod.all(e, (e in self.evictionSoft)):true"
 	// +optional
-	Kubelet *KubeletConfiguration `json:"kubelet,omitempty" hash:"ignore"`
+	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 	// BlockDeviceMappings to be applied to provisioned nodes.
 	// +kubebuilder:validation:XValidation:message="must have only one blockDeviceMappings with rootVolume",rule="self.filter(x, has(x.rootVolume)?x.rootVolume==true:false).size() <= 1"
 	// +kubebuilder:validation:MaxItems:=50
@@ -154,7 +154,7 @@ type SubnetSelectorTerm struct {
 // SecurityGroupSelectorTerm defines selection logic for a security group used by Karpenter to launch nodes.
 // If multiple fields are used for selection, the requirements are ANDed.
 type SecurityGroupSelectorTerm struct {
-	// Tags is a map of key/value tags used to select subnets
+	// Tags is a map of key/value tags used to select security groups.
 	// Specifying '*' for a value selects all values for a given tag key.
 	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
 	// +kubebuilder:validation:MaxProperties:=20
@@ -184,7 +184,7 @@ type AMISelectorTerm struct {
 	// +kubebuilder:validation:MaxLength=30
 	// +optional
 	Alias string `json:"alias,omitempty"`
-	// Tags is a map of key/value tags used to select subnets
+	// Tags is a map of key/value tags used to select amis.
 	// Specifying '*' for a value selects all values for a given tag key.
 	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
 	// +kubebuilder:validation:MaxProperties:=20
@@ -333,6 +333,7 @@ type BlockDeviceMapping struct {
 	EBS *BlockDevice `json:"ebs,omitempty"`
 	// RootVolume is a flag indicating if this device is mounted as kubelet root dir. You can
 	// configure at most one root volume in BlockDeviceMappings.
+	// +optional
 	RootVolume bool `json:"rootVolume,omitempty"`
 }
 
@@ -442,7 +443,7 @@ type EC2NodeClass struct {
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
 // 3. A field is removed from the hash calculations
-const EC2NodeClassHashVersion = "v3"
+const EC2NodeClassHashVersion = "v4"
 
 func (in *EC2NodeClass) Hash() string {
 	return fmt.Sprint(lo.Must(hashstructure.Hash([]interface{}{
@@ -472,12 +473,6 @@ func (in *EC2NodeClass) InstanceProfileTags(clusterName string) map[string]strin
 		EKSClusterNameTagKey: clusterName,
 		LabelNodeClass:       in.Name,
 	})
-}
-
-// UbuntuIncompatible returns true if the NodeClass has the ubuntu compatibility annotation. This will cause the NodeClass to show
-// as NotReady in its status conditions, opting its referencing NodePools out of provisioning and drift.
-func (in *EC2NodeClass) UbuntuIncompatible() bool {
-	return lo.Contains(strings.Split(in.Annotations[AnnotationUbuntuCompatibilityKey], ","), AnnotationUbuntuCompatibilityIncompatible)
 }
 
 // AMIFamily returns the family for a NodePool based on the following items, in order of precdence:

@@ -34,6 +34,7 @@ var (
 	targetKubeconfig          string
 	namespace                 string
 	controlPlaneOperatorImage string
+	karpenterProviderAWSImage string
 )
 
 func main() {
@@ -58,6 +59,8 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&targetKubeconfig, "target-kubeconfig", "", "Path to guest side kubeconfig file. Where the karpenter CRs (nodeClaim, nodePool, nodeClass) live")
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "The namespace to infer input for reconciliation, e.g the userData secret")
 	rootCmd.PersistentFlags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "The image to run the tokenMinter and the availability prober")
+	rootCmd.PersistentFlags().StringVar(&karpenterProviderAWSImage, "karpenter-provider-aws-image", "", "The image to run the actual platform-specific karpenter provider")
+
 	_ = rootCmd.MarkPersistentFlagRequired("target-kubeconfig")
 	_ = rootCmd.MarkPersistentFlagRequired("namespace")
 	_ = rootCmd.MarkPersistentFlagRequired("control-plane-operator-image")
@@ -121,6 +124,7 @@ func run(ctx context.Context) error {
 	r := karpenter.Reconciler{
 		Namespace:                 namespace,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
+		KarpenterProviderAWSImage: karpenterProviderAWSImage,
 	}
 	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)

@@ -19,6 +19,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	karpenteroperatormanifest "github.com/openshift/hypershift/karpenter-operator/manifests"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -105,7 +106,14 @@ spec:
 	// TODO(alberto): Ensure deletion if autoNode is disabled.
 
 	// Run karpenter Operator to manage CRs management and guest side.
-	if err := karpenteroperatormanifest.ReconcileKarpenterOperator(ctx, createOrUpdate, r.Client, hypershiftOperatorImage, controlPlaneOperatorImage, hcp); err != nil {
+
+	// TODO(jkyros): Grab the karpenter image in the proper place at the beginning with args, not here?
+	karpenterProviderAWSImage, hasImage := releaseImage.ComponentImages()["aws-karpenter-provider-aws"]
+	if !hasImage {
+		karpenterProviderAWSImage = assets.DefaultKarpenterProviderAWSImage
+	}
+
+	if err := karpenteroperatormanifest.ReconcileKarpenterOperator(ctx, createOrUpdate, r.Client, hypershiftOperatorImage, controlPlaneOperatorImage, karpenterProviderAWSImage, hcp); err != nil {
 		return err
 	}
 	return nil
