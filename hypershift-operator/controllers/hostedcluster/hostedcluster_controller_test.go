@@ -1247,6 +1247,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
+	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
 	releaseImage, _ := version.LookupDefaultOCPVersion("")
 	manifests := []manifestlist.ManifestDescriptor{
 		{
@@ -1387,6 +1388,110 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				},
 			},
 		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "azure",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						Cloud:             "AzurePublicCloud",
+						Location:          "eastus",
+						ResourceGroupName: "test-resource-group",
+						VnetID:            "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
+						SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
+							ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+								ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+									Name:     "test-keyvault",
+									TenantID: "12345678-1234-1234-1234-123456789abc",
+								},
+								CloudProvider: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								NodePoolManagement: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								ControlPlaneOperator: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								ImageRegistry: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								Ingress: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								Network: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								Disk: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+								File: hyperv1.ManagedIdentity{
+									ClientID:              "12345678-1234-1234-1234-123456789abc",
+									CertificateName:       "test-cert",
+									ObjectEncoding:        "utf-8",
+									CredentialsSecretName: "test-secret",
+								},
+							},
+							DataPlane: hyperv1.DataPlaneManagedIdentities{
+								ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
+								DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+								FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+							},
+						},
+						TenantID: "12345678-1234-1234-1234-123456789abc",
+					},
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "openstack",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.OpenStackPlatform,
+					OpenStack: &hyperv1.OpenStackPlatformSpec{
+						IdentityRef: hyperv1.OpenStackIdentityReference{
+							CloudName: "test-cloud",
+						},
+					},
+				},
+				Release: hyperv1.Release{
+					Image: releaseImage.PullSpec,
+				},
+			},
+		},
 	}
 
 	objects := []crclient.Object{
@@ -1410,10 +1515,12 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent-namespace"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent"}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "azure"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "aws"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "none"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ibm"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openstack"}},
 		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},

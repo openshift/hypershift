@@ -31,7 +31,7 @@ type FakeReleaseProvider struct {
 func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 	releaseImage := &releaseinfo.ReleaseImage{
 		ImageStream: &imagev1.ImageStream{
-			ObjectMeta: metav1.ObjectMeta{Name: "4.15.0"},
+			ObjectMeta: metav1.ObjectMeta{Name: "4.18.0"},
 			Spec: imagev1.ImageStreamSpec{
 				Tags: []imagev1.TagReference{
 					{
@@ -48,6 +48,14 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 					},
 					{
 						Name: "cluster-capi-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "azure-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "openstack-cluster-api-controllers",
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
