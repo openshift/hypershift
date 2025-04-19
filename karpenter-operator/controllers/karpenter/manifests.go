@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 	k8sutilspointer "k8s.io/utils/ptr"
 
 	client "sigs.k8s.io/controller-runtime/pkg/client"
@@ -138,6 +139,44 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 						},
 					},
 				},
+				InitContainers: []corev1.Container{
+					{
+						Name:    "token-minter",
+						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
+						Args: []string{
+							"--service-account-namespace=kube-system",
+							"--service-account-name=karpenter",
+							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
+						},
+						Image:         tokenMinterImage,
+						RestartPolicy: ptr.To(corev1.ContainerRestartPolicyAlways),
+						StartupProbe: &corev1.Probe{
+							ProbeHandler: corev1.ProbeHandler{
+								Exec: &corev1.ExecAction{
+									Command: []string{"cat", "/var/run/secrets/openshift/serviceaccount/token"}, // waits until the token file is created.
+								},
+							},
+							FailureThreshold: 10,
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("30Mi"),
+							},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "target-kubeconfig",
+								MountPath: "/mnt/kubeconfig",
+							},
+							{
+								Name:      "serviceaccount-token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+						},
+					},
+				},
 				Containers: []corev1.Container{
 					{
 						Name:      karpenterName,
@@ -251,33 +290,6 @@ func ReconcileKarpenterDeployment(deployment *appsv1.Deployment,
 								Name:          "http",
 								ContainerPort: 8081,
 								Protocol:      corev1.ProtocolTCP,
-							},
-						},
-					},
-					{
-						Name:    "token-minter",
-						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
-						Args: []string{
-							"--service-account-namespace=kube-system",
-							"--service-account-name=karpenter",
-							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
-							"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("30Mi"),
-							},
-						},
-						Image: tokenMinterImage,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "target-kubeconfig",
-								MountPath: "/mnt/kubeconfig",
-							},
-							{
-								Name:      "serviceaccount-token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
 							},
 						},
 					},

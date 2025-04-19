@@ -626,10 +626,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if strings.HasPrefix(pod.Name, "kube-apiserver") {
 				continue
 			}
-			// TODO: Figure out why Karpenter needs restaring some times https://issues.redhat.com/browse/HOSTEDCP-2254.
-			if strings.HasPrefix(pod.Name, "karpenter") {
-				continue
-			}
 			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
