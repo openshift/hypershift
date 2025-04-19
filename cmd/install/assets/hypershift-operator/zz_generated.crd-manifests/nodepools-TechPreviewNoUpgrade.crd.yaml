@@ -420,6 +420,30 @@ spec:
                         description: placement specifies the placement options for
                           the EC2 instances.
                         properties:
+                          capacityReservation:
+                            description: capacityReservation specifies Capacity Reservation
+                              options for the NodePool instances.
+                            properties:
+                              id:
+                                description: id specifies the target Capacity Reservation
+                                  into which the EC2 instances should be launched.
+                                type: string
+                                x-kubernetes-validations:
+                                - message: capacity reservation ID is invalid
+                                  rule: self.startsWith('cr-')
+                              marketType:
+                                default: CapacityBlocks
+                                description: |-
+                                  marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
+                                  "On-demand": EC2 instances run as standard On-Demand instances.
+                                  "CapacityBlocks" (default): scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+                                enum:
+                                - On-demand
+                                - CapacityBlocks
+                                type: string
+                            required:
+                            - id
+                            type: object
                           tenancy:
                             description: |-
                               Tenancy indicates if instance should run on shared or single-tenant hardware.
