@@ -14,7 +14,7 @@ import (
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
+	g.Expect(Supported()).To(Equal([]string{"4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {
