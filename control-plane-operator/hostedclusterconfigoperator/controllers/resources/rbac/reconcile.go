@@ -756,3 +756,42 @@ func ReconcileCloudNetworkConfigControllerServiceAccountClusterRoleBinding(r *rb
 	}
 	return nil
 }
+
+func ReconcileNodePublicInfoViewerClusterRole(r *rbacv1.ClusterRole) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.Rules = []rbacv1.PolicyRule{
+		{
+			NonResourceURLs: []string{"/livez?exclude=etcd&exclude=log"},
+			Verbs:           []string{"get"},
+		},
+	}
+	return nil
+}
+
+func ReconcileNodePublicInfoViewerClusterRoleBinding(r *rbacv1.ClusterRoleBinding) error {
+	if r.Annotations == nil {
+		r.Annotations = map[string]string{}
+	}
+	r.Annotations["rbac.authorization.kubernetes.io/autoupdate"] = "true"
+	r.RoleRef = rbacv1.RoleRef{
+		APIGroup: "rbac.authorization.k8s.io",
+		Kind:     "ClusterRole",
+		Name:     "system:openshift:node-public-info-viewer",
+	}
+	r.Subjects = []rbacv1.Subject{
+		{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Group",
+			Name:     "system:authenticated",
+		},
+		{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "Group",
+			Name:     "system:unauthenticated",
+		},
+	}
+	return nil
+}
