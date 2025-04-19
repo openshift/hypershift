@@ -115,11 +115,11 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "TestNodePoolPrevReleaseN1",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts, true),
 					},
 					{
 						name: "TestNodePoolPrevReleaseN2",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts, false),
 					},
 					{
 						name: "TestMirrorConfigs",
@@ -272,6 +272,10 @@ type InfraSetup interface {
 	TeardownInfra(t *testing.T) error
 }
 
+type VersionSkewChecker interface {
+	ExpectVersionSkew() bool
+}
+
 type DummyInfraSetup struct{}
 
 func (i *DummyInfraSetup) SetupInfra(*testing.T) error {
@@ -320,7 +324,11 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 	// We want to make sure all conditions are met and in a deterministic known state before running the tests to avoid false positives.
 	// https://issues.redhat.com/browse/OCPBUGS-52983.
-	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
+	expectVersionSkew := true
+	if checker, ok := nodePoolTest.(VersionSkewChecker); ok {
+		expectVersionSkew = checker.ExpectVersionSkew()
+	}
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectVersionSkew)
 
 	// TestNTOPerformanceProfile fails on 4.16 and older if we don't wait for the rollout here with
 	// ValidationFailed(ConfigMap "pp-test" not found)
@@ -334,11 +342,15 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectVersionSkew)
 }
 
-func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, expectVersionSkew bool) {
 	expectedConditions := conditions.ExpectedNodePoolConditions(nodePool)
+	if !expectVersionSkew {
+		expectedConditions[hyperv1.NodePoolSupportedVersionSkewConditionType] = corev1.ConditionFalse
+	}
+
 	var predicates []e2eutil.Predicate[*hyperv1.NodePool]
 	for conditionType, conditionStatus := range expectedConditions {
 		predicates = append(predicates, e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
