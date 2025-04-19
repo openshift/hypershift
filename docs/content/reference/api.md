@@ -1004,7 +1004,7 @@ string
 <p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
 TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add s390x to enum validation once the architecture is supported</p>
+</p>
 </td>
 </tr>
 </table>
@@ -9095,7 +9095,7 @@ string
 <p>arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
 TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
-TODO Add s390x to enum validation once the architecture is supported</p>
+</p>
 </td>
 </tr>
 </tbody>
