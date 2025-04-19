@@ -89,6 +89,8 @@ func TestKarpenter(t *testing.T) {
 			workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
 
 			// Apply both Karpenter NodePool and workloads.
+			defer guestClient.Delete(ctx, karpenterNodePool)
+			defer guestClient.Delete(ctx, workLoads)
 			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
 			t.Logf("Created Karpenter NodePool")
 			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
@@ -144,10 +146,10 @@ func TestKarpenter(t *testing.T) {
 						// the actual OS version is at the end of the node's OSImage field
 						fullOSImageString := node.Status.NodeInfo.OSImage
 						parts := strings.Split(fullOSImageString, " ")
-						if len(parts) == 0 {
+						if len(parts) <= 1 {
 							return false, "", fmt.Errorf("unexpected OSImage format: %s", fullOSImageString)
 						}
-						rawVersion := parts[len(parts)-1]
+						rawVersion := parts[len(parts)-2]
 						if rawVersion != expectedRHCOSVersion {
 							return false, fmt.Sprintf("expected %s, got %s", expectedRHCOSVersion, rawVersion), nil
 						}
