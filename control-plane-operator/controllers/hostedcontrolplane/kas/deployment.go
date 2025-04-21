@@ -341,7 +341,7 @@ func kasContainerBootstrap() *corev1.Container {
 func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
@@ -375,7 +375,7 @@ func buildKASContainerBootstrapRender(image, payloadVersion, featureGateYaml str
 			"/bin/bash",
 		}
 		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.Args = []string{
 			"-c",
@@ -399,7 +399,7 @@ func kasContainerWaitForEtcd() *corev1.Container {
 func buildKASContainerWaitForEtcd(image string, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
@@ -421,7 +421,7 @@ func kasContainerMain() *corev1.Container {
 func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp *hyperv1.HostedControlPlane) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
 		c.Command = []string{
