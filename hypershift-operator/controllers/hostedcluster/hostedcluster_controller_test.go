@@ -596,13 +596,15 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
-				"foo": "bar", // should not be copied
+				hyperv1.KubeAPIServerGoAwayChance:                            "0.001",
+				"foo":                                                        "bar", // should not be copied
 			},
 			expectedAnnotations: map[string]string{
 				hyperutil.DebugDeploymentsAnnotation:                         "control-plane-operator",
 				hyperv1.EtcdPriorityClass:                                    "high-priority",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test1": "test1",
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
+				hyperv1.KubeAPIServerGoAwayChance:                            "0.001",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperutil.HostedClusterAnnotation:                            hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                   "true",
