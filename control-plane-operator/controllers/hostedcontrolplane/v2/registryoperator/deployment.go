@@ -24,15 +24,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			{Name: "IMAGE_PRUNER", Value: cpContext.UserReleaseImageProvider.GetImage("cli")},
 		})
 
-		// For managed Azure deployments, we pass environment variables so we authenticate with Azure API through certificate
-		// authentication. We also mount the SecretProviderClass for the Secrets Store CSI driver to use; it will grab the
-		// certificate related to the ARO_HCP_MI_CLIENT_ID and mount it as a volume in the ingress pod in the path,
-		// ARO_HCP_CLIENT_CERTIFICATE_PATH.
+		// For managed Azure deployments, we pass an environment variable, MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH, so
+		// we authenticate with Azure API through UserAssignedCredential authentication. We also mount the
+		// SecretProviderClass for the Secrets Store CSI driver to use; it will grab the JSON object stored in the
+		// MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH and mount it as a volume in the image registry pod in the path.
 		if azureutil.IsAroHCP() {
-			managedIdentiity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry
-
 			c.Env = append(c.Env,
-				azureutil.CreateEnvVarsForAzureManagedIdentity(managedIdentiity.ClientID, cpContext.HCP.Spec.Platform.Azure.TenantID, managedIdentiity.CertificateName, managedIdentiity.CredentialsSecretName)...)
+				azureutil.CreateEnvVarsForAzureManagedIdentity(cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName)...)
 
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName),
