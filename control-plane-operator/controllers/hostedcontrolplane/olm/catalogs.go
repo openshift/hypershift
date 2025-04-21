@@ -133,6 +133,9 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
 	}
 
+	if hcp.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
+		imageRegistry = "registry.redhat.io/redhat"
+	} else {
 	//check catalogs of last 4 supported version incase new version is not available
 	supportedVersions := 4
 	for i := 0; i < supportedVersions; i++ {
