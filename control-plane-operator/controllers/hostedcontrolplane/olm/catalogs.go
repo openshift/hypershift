@@ -148,28 +148,33 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 	//check catalogs of last 4 supported version in case new version is not available
 	supportedVersions := 4
 	imageRegistry := ""
-	for i := 0; i < supportedVersions; i++ {
-		for _, registry := range registries {
-			testImage := fmt.Sprintf("%s/certified-operator-index:v%d.%d", registry, version.Major, version.Minor)
+	if hcp.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
+		imageRegistry = "registry.redhat.io/redhat"
+	} else {
+		for i := 0; i < supportedVersions; i++ {
 
-			_, dockerImage, err := imageMetadataProvider.GetDigest(ctx, testImage, pullSecret)
-			if err == nil {
-				imageRegistry = fmt.Sprintf("%s/%s", dockerImage.Registry, dockerImage.Namespace)
+			for _, registry := range registries {
+				testImage := fmt.Sprintf("%s/certified-operator-index:v%d.%d", registry, version.Major, version.Minor)
+
+				_, dockerImage, err := imageMetadataProvider.GetDigest(ctx, testImage, pullSecret)
+				if err == nil {
+					imageRegistry = fmt.Sprintf("%s/%s", dockerImage.Registry, dockerImage.Namespace)
+					break
+				}
+
+				// Manifest unknown error is expected if the image is not available.
+				if !strings.Contains(err.Error(), "manifest unknown") {
+					return nil, err // Return if it's an unexpected error
+				}
+			}
+			if imageRegistry != "" {
 				break
 			}
-
-			// Manifest unknown error is expected if the image is not available.
-			if !strings.Contains(err.Error(), "manifest unknown") {
-				return nil, err // Return if it's an unexpected error
+			if i == supportedVersions-1 {
+				return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
 			}
+			version.Minor--
 		}
-		if imageRegistry != "" {
-			break
-		}
-		if i == supportedVersions-1 {
-			return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
-		}
-		version.Minor--
 	}
 
 	operators := map[string]string{
