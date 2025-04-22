@@ -3411,7 +3411,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
-		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project, hcp.Spec.Capabilities)
+		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project, hcp.Spec.Capabilities, p.FeatureGates())
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}

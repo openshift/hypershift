@@ -17,6 +17,7 @@ import (
 
 type OpenShiftAPIServerParams struct {
 	APIServer               *configv1.APIServerSpec
+	FeatureGate             *configv1.FeatureGateSpec
 	Proxy                   *configv1.ProxySpec
 	IngressSubDomain        string
 	EtcdURL                 string
@@ -70,6 +71,7 @@ func NewOpenShiftAPIServerParams(hcp *hyperv1.HostedControlPlane, observedConfig
 		params.APIServer = hcp.Spec.Configuration.APIServer
 		params.Image = hcp.Spec.Configuration.Image
 		params.Proxy = hcp.Spec.Configuration.Proxy
+		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -224,6 +226,16 @@ func (p *OpenShiftAPIServerParams) CipherSuites() []string {
 
 func (p *OpenShiftAPIServerParams) IngressDomain() string {
 	return p.IngressSubDomain
+}
+
+func (p *OpenShiftAPIServerParams) FeatureGates() []string {
+	if p.FeatureGate != nil {
+		return config.FeatureGates(p.FeatureGate.FeatureGateSelection)
+	} else {
+		return config.FeatureGates(configv1.FeatureGateSelection{
+			FeatureSet: configv1.Default,
+		})
+	}
 }
 
 func (p *OpenShiftAPIServerParams) AuditPolicyConfig() configv1.Audit {
