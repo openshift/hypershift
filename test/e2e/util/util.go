@@ -37,7 +37,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1760,7 +1760,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking that all ValidatingAdmissionPolicies are present")
-		var validatingAdmissionPolicies k8sadmissionv1beta1.ValidatingAdmissionPolicyList
+		var validatingAdmissionPolicies k8sadmissionv1.ValidatingAdmissionPolicyList
 		if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
 			t.Errorf("Failed to list ValidatingAdmissionPolicies: %v", err)
 		}
