@@ -371,7 +371,7 @@ spec:
         resources: {}
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
-      terminationGracePeriodSeconds: 95
+      terminationGracePeriodSeconds: 135
       tolerations:
       - effect: NoSchedule
         key: hypershift.openshift.io/control-plane
