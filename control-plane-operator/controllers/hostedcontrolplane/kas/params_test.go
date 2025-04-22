@@ -68,7 +68,7 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 			hcp.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{test.apiServiceMapping}
 			hcp.Spec.Networking.ServiceNetwork = append(hcp.Spec.Networking.ServiceNetwork, hyperv1.ServiceNetworkEntry{CIDR: *ipnet.MustParseCIDR(test.serviceNetworkCIDR)})
 			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: test.port, AdvertiseAddress: ptr.To(test.advertiseAddress)}
-			p := NewKubeAPIServerParams(context.Background(), hcp, imageProvider, "", 0, "", 0, false)
+			p := NewKubeAPIServerParams(context.Background(), hcp, imageProvider, "", 0, "", 0, false, nil)
 			if len(test.advertiseAddress) > 0 {
 				g.Expect(test.advertiseAddress).To(Equal(test.expectedAddress))
 			}

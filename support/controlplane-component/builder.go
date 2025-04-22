@@ -43,6 +43,16 @@ func NewCronJobComponent(name string, opts ComponentOptions) *controlPlaneWorklo
 	}
 }
 
+func NewJobComponent(name string, opts ComponentOptions) *controlPlaneWorkloadBuilder[*batchv1.Job] {
+	return &controlPlaneWorkloadBuilder[*batchv1.Job]{
+		workload: &controlPlaneWorkload[*batchv1.Job]{
+			name:             name,
+			workloadProvider: &jobProvider{},
+			ComponentOptions: opts,
+		},
+	}
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) WithAdaptFunction(adapt func(cpContext WorkloadContext, obj T) error) *controlPlaneWorkloadBuilder[T] {
 	b.workload.adapt = adapt
 	return b

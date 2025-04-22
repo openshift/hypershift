@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/dnsoperator"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/fg"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignitionserver"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
@@ -68,6 +69,7 @@ import (
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
+	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
@@ -239,6 +241,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
+		fgv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
 		schedulerv2.NewComponent(),
@@ -349,6 +352,7 @@ func (r *HostedControlPlaneReconciler) eventHandlers(scheme *runtime.Scheme, res
 		{obj: &rbacv1.Role{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &rbacv1.RoleBinding{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 		{obj: &batchv1.CronJob{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
+		{obj: &batchv1.Job{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})},
 	}
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		handlers = append(handlers, eventHandler{obj: &routev1.Route{}, handler: handler.EnqueueRequestForOwner(scheme, restMapper, &hyperv1.HostedControlPlane{})})
@@ -1142,7 +1146,25 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
+	var featureGates []string
+
 	if !r.IsCPOV2 {
+		// Reconcile the feature gate Job
+		r.Log.Info("Reconciling the feature gate job to capture release featuregates")
+		proceed, err := r.reconcileFeatureGateGenerationJob(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider)
+		if err != nil {
+			return fmt.Errorf("failed to reconcile the featuregate generation job: %w", err)
+		}
+		if !proceed {
+			r.Log.Info("Waiting for successful completion of featuregate generation job")
+			return nil
+		}
+
+		featureGates, err = config.FeatureGatesFromConfigMap(ctx, r.Client, hostedControlPlane.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to read feature gates from configmap: %w", err)
+		}
+
 		// Reconcile Cloud Provider Config
 		r.Log.Info("Reconciling cloud provider config")
 		if err := r.reconcileCloudProviderConfig(ctx, hostedControlPlane, createOrUpdate); err != nil {
@@ -1152,7 +1174,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		// Reconcile kube apiserver
 		r.Log.Info("Reconciling Kube API Server")
 		kubeAPIServerDeployment := manifests.KASDeployment(hostedControlPlane.Namespace)
-		if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment); err != nil {
+		if err := r.reconcileKubeAPIServer(ctx, hostedControlPlane, releaseImageProvider, userReleaseImageProvider, infraStatus.APIHost, infraStatus.APIPort, infraStatus.OAuthHost, infraStatus.OAuthPort, createOrUpdate, kubeAPIServerDeployment, featureGates); err != nil {
 			return fmt.Errorf("failed to reconcile kube apiserver: %w", err)
 		}
 
@@ -1166,14 +1188,14 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		// Reconcile kube controller manager
 		r.Log.Info("Reconciling Kube Controller Manager")
 		kcmDeployment := manifests.KCMDeployment(hostedControlPlane.Namespace)
-		if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, kcmDeployment); err != nil {
+		if err := r.reconcileKubeControllerManager(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, kcmDeployment, featureGates); err != nil {
 			return fmt.Errorf("failed to reconcile kube controller manager: %w", err)
 		}
 
 		// Reconcile kube scheduler
 		r.Log.Info("Reconciling Kube Scheduler")
 		schedulerDeployment := manifests.SchedulerDeployment(hostedControlPlane.Namespace)
-		if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment); err != nil {
+		if err := r.reconcileKubeScheduler(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, schedulerDeployment, featureGates); err != nil {
 			return fmt.Errorf("failed to reconcile kube scheduler: %w", err)
 		}
 
@@ -1301,7 +1323,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 		// Reconcile cluster policy controller
 		r.Log.Info("Reconciling Cluster Policy Controller")
-		if err := r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate); err != nil {
+		if err := r.reconcileClusterPolicyController(ctx, hostedControlPlane, releaseImageProvider, createOrUpdate, featureGates); err != nil {
 			return fmt.Errorf("failed to reconcile cluster policy controller: %w", err)
 		}
 
@@ -2769,6 +2791,80 @@ func (r *HostedControlPlaneReconciler) reconcileCSIDriver(ctx context.Context, h
 	return nil
 }
 
+func (r *HostedControlPlaneReconciler) reconcileFeatureGateGenerationJob(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) (bool, error) {
+	existing := manifests.FeatureGateGenerationJob(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(existing), existing); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to fetch feature gate generation job: %w", err)
+		}
+	}
+
+	updated := manifests.FeatureGateGenerationJob(hcp.Namespace)
+	configAPIImage := releaseImageProvider.GetImage("cluster-config-api")
+	cpoImage := releaseImageProvider.GetImage(util.CPOImageName)
+	releaseVersion := userReleaseImageProvider.Version()
+	if err := fg.ReconcileFeatureGateGenerationJob(ctx, updated, hcp, releaseVersion, configAPIImage, cpoImage, r.SetDefaultSecurityContext); err != nil {
+		return false, fmt.Errorf("failed to reconcile feature gate generation job: %w", err)
+	}
+
+	if existing.ResourceVersion == "" {
+		// A job doesn't exist, create it
+		_, err := createOrUpdate(ctx, r.Client, updated, func() error { return nil })
+		if err != nil {
+			return false, fmt.Errorf("failed to create feature gate generation job: %w", err)
+		}
+		return false, nil
+	}
+
+	// There is an existing job, check its completion status and whether it matches the spec we want
+	failedCond := util.FindJobCondition(existing, batchv1.JobFailed)
+	completedCond := util.FindJobCondition(existing, batchv1.JobComplete)
+	switch {
+	case failedCond != nil && failedCond.Status == corev1.ConditionTrue:
+		// If the job has failed, delete it so it can be recreated
+		_, err := util.DeleteIfNeededWithOptions(ctx, r.Client, existing, client.PropagationPolicy(metav1.DeletePropagationForeground))
+		return false, err
+	case completedCond == nil || completedCond.Status == corev1.ConditionFalse:
+		// Job not done yet
+		return false, nil
+	case fg.NeedsUpdate(existing, updated):
+		// If the job needs to be updated, delete the job so it can be recreated
+		_, err := util.DeleteIfNeededWithOptions(ctx, r.Client, existing, client.PropagationPolicy(metav1.DeletePropagationForeground))
+		return false, err
+	}
+
+	isValidFeatureGateConfigMap := func() (bool, error) {
+		cm, err := config.FeatureGateConfigMap(ctx, r.Client, hcp.Namespace)
+		switch {
+		case apierrors.IsNotFound(err):
+			return false, nil
+		case err != nil:
+			return false, err
+		default:
+			_, err = config.ParseFeatureGates(cm)
+			if err != nil {
+				r.Log.Error(err, "Failed to parse feature gates")
+				// If an error occurs parsing the feature gates, regardless of the error
+				// we want to delete the job so the configmap can be re-generated.
+				return false, nil
+			}
+			return true, nil
+		}
+	}
+
+	// Job is completed, ensure that a ConfigMap exists and has valid data.
+	valid, err := isValidFeatureGateConfigMap()
+	if err != nil {
+		return false, err
+	}
+	if !valid {
+		// If the job is done, but the configmap is not valid, delete the job so it can be recreated
+		_, err := util.DeleteIfNeededWithOptions(ctx, r.Client, existing, client.PropagationPolicy(metav1.DeletePropagationForeground))
+		return false, err
+	}
+	return true, nil
+}
+
 func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
@@ -2972,8 +3068,8 @@ func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
-	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.SimpleReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment, featureGates []string) error {
+	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext, featureGates)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -3292,8 +3388,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment) error {
-	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment, featureGates []string) error {
+	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	service := manifests.KCMService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, service, func() error {
@@ -3366,8 +3462,8 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment) error {
-	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment, featureGates []string) error {
+	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
@@ -3670,8 +3766,8 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
+func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, featureGates []string) error {
+	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, config, func() error {

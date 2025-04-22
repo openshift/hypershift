@@ -87,6 +87,7 @@ var expectedKasManagementComponents = []string{
 	"aws-ebs-csi-driver-operator",
 	"karpenter",
 	"karpenter-operator",
+	"featuregate-generator",
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -1002,6 +1003,10 @@ func getComponentName(pod *corev1.Pod) string {
 
 	if strings.HasPrefix(pod.Labels["job-name"], "olm-collect-profiles") {
 		return "olm-collect-profiles"
+	}
+
+	if pod.Labels["job-name"] == "featuregate-generator" {
+		return "featuregate-generator"
 	}
 
 	return ""

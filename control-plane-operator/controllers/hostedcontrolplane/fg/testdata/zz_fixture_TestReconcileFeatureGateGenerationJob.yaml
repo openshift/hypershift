@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  creationTimestamp: null
+  name: featuregate-generator
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      creationTimestamp: null
+    spec:
+      containers:
+      - args:
+        - sync-fg-configmap
+        command:
+        - /usr/bin/control-plane-operator
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PAYLOAD_VERSION
+          value: 4.19.0
+        image: example.org/cpo-image
+        name: apply
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /manifests
+          name: manifests
+      initContainers:
+      - args:
+        - |-
+          #!/bin/sh
+          cd /work
+          mkdir input output manifests
+
+          touch /work/manifests/99_feature-gate.yaml
+          cat <<EOF >/work/manifests/99_feature-gate.yaml
+          $(FEATURE_GATE_YAML)
+          EOF
+
+          /usr/bin/render \
+             --asset-output-dir /work/output \
+             --rendered-manifest-dir=/work/manifests \
+             --cluster-profile=ibm-cloud-managed \
+             --payload-version=$(PAYLOAD_VERSION)
+
+          cp /work/manifests/* /output
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: PAYLOAD_VERSION
+          value: 4.19.0
+        - name: FEATURE_GATE_YAML
+          value: |
+            apiVersion: config.openshift.io/v1
+            kind: FeatureGate
+            metadata:
+              creationTimestamp: null
+              name: cluster
+            spec: {}
+            status:
+              featureGates: null
+        image: example.org/config-image
+        imagePullPolicy: IfNotPresent
+        name: render-feature-gates
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /output
+          name: manifests
+        - mountPath: /work
+          name: work
+      restartPolicy: Never
+      serviceAccountName: control-plane-operator
+      volumes:
+      - emptyDir: {}
+        name: manifests
+      - emptyDir: {}
+        name: work
+status: {}

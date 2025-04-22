@@ -23,13 +23,18 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("expected an existing openshift cluster policy controller configuration")
 	}
 
-	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	if err := util.DeserializeResource(cm.Data[configKey], config, api.Scheme); err != nil {
+	cmConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+	if err := util.DeserializeResource(cm.Data[configKey], cmConfig, api.Scheme); err != nil {
 		return fmt.Errorf("unable to decode existing openshift cluster policy controller configuration: %w", err)
 	}
 
-	adaptConfig(config, cpContext.HCP.Spec.Configuration)
-	configStr, err := util.SerializeResource(config, api.Scheme)
+	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
+
+	adaptConfig(cmConfig, cpContext.HCP.Spec.Configuration, featureGates)
+	configStr, err := util.SerializeResource(cmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift cluster policy controller configuration: %w", err)
 	}
@@ -38,8 +43,8 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration) {
-	cfg.FeatureGates = config.FeatureGates(configuration.GetFeatureGateSelection())
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, fg []string) {
+	cfg.FeatureGates = fg
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
 }

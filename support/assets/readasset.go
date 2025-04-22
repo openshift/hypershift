@@ -60,6 +60,12 @@ func MustCronJob(reader AssetReader, fileName string) *batchv1.CronJob {
 	return cronJob
 }
 
+func MustJob(reader AssetReader, fileName string) *batchv1.Job {
+	job := &batchv1.Job{}
+	deserializeResource(reader, fileName, job)
+	return job
+}
+
 func MustRole(reader AssetReader, fileName string) *rbacv1.Role {
 	role := &rbacv1.Role{}
 	deserializeResource(reader, fileName, role)

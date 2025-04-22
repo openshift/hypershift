@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        component.hypershift.openshift.io/config-hash: 0abf5bd6
+        component.hypershift.openshift.io/config-hash: 01d4f76f
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:

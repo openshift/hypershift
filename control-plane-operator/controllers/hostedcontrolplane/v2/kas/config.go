@@ -39,7 +39,11 @@ const (
 )
 
 func adaptKubeAPIServerConfig(cpContext component.WorkloadContext, config *corev1.ConfigMap) error {
-	configParams := NewConfigParams(cpContext.HCP)
+	featureGates, err := hcpconfig.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
+	configParams := NewConfigParams(cpContext.HCP, featureGates)
 	kasConfig, err := generateConfig(configParams)
 	if err != nil {
 		return err
