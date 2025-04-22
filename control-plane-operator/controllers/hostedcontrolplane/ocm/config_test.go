@@ -67,7 +67,7 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 	params := NewOpenShiftControllerManagerParams(hcp, observedConfig, imageProvider, true)
 	configMap := manifests.OpenShiftControllerManagerConfig(hcp.Namespace)
 
-	if err := ReconcileOpenShiftControllerManagerConfig(configMap, config2.OwnerRefFrom(hcp), params.DeployerImage, params.DockerBuilderImage, params.MinTLSVersion(), params.CipherSuites(), imageConfig, buildConfig, networkConfig, nil); err != nil {
+	if err := ReconcileOpenShiftControllerManagerConfig(configMap, config2.OwnerRefFrom(hcp), params.DeployerImage, params.DockerBuilderImage, params.MinTLSVersion(), params.CipherSuites(), imageConfig, buildConfig, networkConfig, nil, []string{}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	configMapYaml, err := util.SerializeResource(configMap, api.Scheme)
