@@ -2229,7 +2229,7 @@ status:
 		},
 	}
 
-	for _, tc := range tests[3:] {
+	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			hcp := &hyperv1.HostedControlPlane{
@@ -2257,11 +2257,7 @@ status:
 				g.Expect(err).To(HaveOccurred())
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
-				if tc.expectedProceed {
-					g.Expect(proceed).To(BeTrue())
-				} else {
-					g.Expect(proceed).To(BeFalse())
-				}
+				g.Expect(proceed).To(Equal(tc.expectedProceed))
 				job := manifests.FeatureGateGenerationJob(hcp.Namespace)
 				err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(job), job)
 				if !apierrors.IsNotFound(err) {
