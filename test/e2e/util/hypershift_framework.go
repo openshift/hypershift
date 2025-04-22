@@ -142,6 +142,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
 		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
 		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
+		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
 		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
 		EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
 		EnsureNoRapidDeploymentRollouts(t, context.Background(), h.client, hostedCluster)

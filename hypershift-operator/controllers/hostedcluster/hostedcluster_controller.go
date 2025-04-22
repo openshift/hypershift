@@ -2925,7 +2925,8 @@ func reconcileControlPlaneOperatorDeployment(
 							FailureThreshold: 3,
 							TimeoutSeconds:   5,
 						},
-						Resources: cpoResources,
+						Resources:                cpoResources,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					},
 				},
 			},
@@ -3074,6 +3075,7 @@ func reconcileControlPlaneOperatorDeployment(
 					corev1.ResourceMemory: resource.MustParse("30Mi"),
 				},
 			},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "cloud-token",
