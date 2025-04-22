@@ -815,6 +815,28 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 	})
 }
 
+func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError", func(t *testing.T) {
+
+		var podList corev1.PodList
+		if err := client.List(ctx, &podList); err != nil {
+			t.Fatalf("failed to list pods in cluster: %v", err)
+		}
+		for _, pod := range podList.Items {
+			for _, initContainer := range pod.Spec.InitContainers {
+				if initContainer.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
+					t.Errorf("initContainer %s in pod %s has doesn't have terminationMessagePolicy %s but %s", initContainer.Name, pod.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)
+				}
+			}
+			for _, container := range pod.Spec.Containers {
+				if container.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
+					t.Errorf("container %s in pod %s has doesn't have terminationMessagePolicy %s but %s", container.Name, pod.Name, corev1.TerminationMessageFallbackToLogsOnError, container.TerminationMessagePolicy)
+				}
+			}
+		}
+	})
+}
+
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, platform hyperv1.PlatformType, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
 		var nodePoolList hyperv1.NodePoolList
