@@ -25,7 +25,7 @@ const (
 	ConfigKey = "config.yaml"
 )
 
-func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities) error {
+func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities, featureGates []string) error {
 	ownerRef.ApplyTo(cm)
 
 	if cm.Data == nil {
@@ -39,7 +39,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 		}
 	}
 	if err := reconcileConfig(config, deployerImage, dockerBuilderImage, minTLSVersion,
-		cipherSuites, imageConfig, buildConfig, networkConfig, caps); err != nil {
+		cipherSuites, imageConfig, buildConfig, networkConfig, caps, featureGates); err != nil {
 		return err
 	}
 	configStr, err := util.SerializeResource(config, api.Scheme)
@@ -50,7 +50,7 @@ func ReconcileOpenShiftControllerManagerConfig(cm *corev1.ConfigMap, ownerRef co
 	return nil
 }
 
-func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities) error {
+func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deployerImage, dockerBuilderImage, minTLSVersion string, cipherSuites []string, imageConfig *configv1.ImageSpec, buildConfig *configv1.Build, networkConfig *configv1.NetworkSpec, caps *hyperv1.Capabilities, featureGates []string) error {
 	cpath := func(volume, file string) string {
 		dir := volumeMounts.Path(ocmContainerMain().Name, volume)
 		return path.Join(dir, file)
@@ -129,6 +129,10 @@ func reconcileConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, deploy
 			MinTLSVersion: minTLSVersion,
 			CipherSuites:  cipherSuites,
 		},
+	}
+
+	if len(featureGates) > 0 {
+		cfg.FeatureGates = featureGates
 	}
 	return nil
 }
