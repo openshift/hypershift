@@ -1,16 +1,29 @@
 package nodepool
 
 import (
+	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/request"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -242,4 +255,220 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 	}
 
 	return template
+}
+
+type fakeEC2Client struct {
+	ec2iface.EC2API
+
+	capacityReservation    *ec2.CapacityReservation
+	SubnetAvailabilityZone string
+}
+
+func (fake *fakeEC2Client) DescribeCapacityReservationsWithContext(aws.Context, *ec2.DescribeCapacityReservationsInput, ...request.Option) (*ec2.DescribeCapacityReservationsOutput, error) {
+	return &ec2.DescribeCapacityReservationsOutput{
+		CapacityReservations: []*ec2.CapacityReservation{
+			fake.capacityReservation,
+		},
+	}, nil
+}
+
+func (fake *fakeEC2Client) DescribeSubnetsWithContext(aws.Context, *ec2.DescribeSubnetsInput, ...request.Option) (*ec2.DescribeSubnetsOutput, error) {
+	return &ec2.DescribeSubnetsOutput{
+		Subnets: []*ec2.Subnet{
+			{
+				AvailabilityZone: ptr.To(fake.SubnetAvailabilityZone),
+			},
+		},
+	}, nil
+}
+
+func fakePullSecret(hc *hyperv1.HostedCluster) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hc.Spec.PullSecret.Name,
+			Namespace: hc.Namespace,
+		},
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: []byte("fake"),
+		},
+	}
+}
+func TestValidateAWSPlatformConfig(t *testing.T) {
+	hostedcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "test",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			PullSecret: corev1.LocalObjectReference{Name: "fake-pullsecret"},
+		},
+	}
+
+	capacityReservationID := "cr-fakeID"
+
+	pullSecret := fakePullSecret(hostedcluster)
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret).Build()
+
+	type NodePoolOptions struct {
+		instanceType           string
+		replicas               *int32
+		autoScaling            *hyperv1.NodePoolAutoScaling
+		subnetAvailabilityZone string
+	}
+
+	testCases := []struct {
+		name                 string
+		hostedClusterVersion string
+		nodePoolOpts         NodePoolOptions
+		capacityReservation  *ec2.CapacityReservation
+		oldCondition         *hyperv1.NodePoolCondition
+		expectedError        string
+	}{
+		{
+			name: "If capacityReservation was already reported expired/cancelled, skip checks and return old condition message",
+			oldCondition: &hyperv1.NodePoolCondition{
+				Status:  corev1.ConditionFalse,
+				Message: fmt.Sprintf("capacityReservation %s is expired", capacityReservationID),
+			},
+			expectedError: fmt.Sprintf("capacityReservation %s is expired", capacityReservationID),
+		},
+		{
+			name:                 "If hostedCluster < 4.19 it should fail",
+			hostedClusterVersion: "4.18.0",
+			expectedError:        "capacityReservation is only supported on 4.19+ clusters",
+		},
+		{
+			name:                 "If capacityReservation is cancelled or expired it should fail",
+			hostedClusterVersion: "4.19.0",
+			capacityReservation: &ec2.CapacityReservation{
+				State: ptr.To("expired"),
+			},
+			expectedError: "expired",
+		},
+		{
+			name:                 "If nodePool autoScaling max replicas is greater than capacityReservation total instance count it should fail",
+			hostedClusterVersion: "4.19.0",
+			nodePoolOpts: NodePoolOptions{
+				autoScaling: &hyperv1.NodePoolAutoScaling{
+					Max: 4,
+				},
+			},
+			capacityReservation: &ec2.CapacityReservation{
+				State:              ptr.To("active"),
+				TotalInstanceCount: ptr.To[int64](2),
+			},
+			expectedError: "nodePool.Spec.AutoScaling.Max '4' is greater than the capacityReservation total instance count '2'",
+		},
+		{
+			name:                 "If nodePool replicas is greater than capacityReservation total instance count it should fail",
+			hostedClusterVersion: "4.19.0",
+			nodePoolOpts: NodePoolOptions{
+				replicas: ptr.To[int32](4),
+			},
+			capacityReservation: &ec2.CapacityReservation{
+				State:              ptr.To("active"),
+				TotalInstanceCount: ptr.To[int64](2),
+			},
+			expectedError: "nodePool.Spec.Replicas '4' is greater than the capacityReservation total instance count '2'",
+		},
+		{
+			name:                 "If nodePool instanceType doesn't match the capacityReservation instanceType it should fail",
+			hostedClusterVersion: "4.19.0",
+			nodePoolOpts: NodePoolOptions{
+				replicas:     ptr.To[int32](2),
+				instanceType: "m5.large",
+			},
+			capacityReservation: &ec2.CapacityReservation{
+				State:              ptr.To("active"),
+				TotalInstanceCount: ptr.To[int64](2),
+				InstanceType:       ptr.To("m1.medium"),
+			},
+			expectedError: "nodePool.Spec.Platform.AWS.InstanceType 'm5.large' doesn't match the capacityReservation instance type 'm1.medium'",
+		},
+		{
+			name:                 "If nodePool subnet availabilityZone doesn't match the capacityReservation availabilityZone it should fail",
+			hostedClusterVersion: "4.19.0",
+			nodePoolOpts: NodePoolOptions{
+				replicas:               ptr.To[int32](2),
+				instanceType:           "m5.large",
+				subnetAvailabilityZone: "eu-west-1a",
+			},
+			capacityReservation: &ec2.CapacityReservation{
+				State:              ptr.To("active"),
+				TotalInstanceCount: ptr.To[int64](2),
+				InstanceType:       ptr.To("m5.large"),
+				AvailabilityZone:   ptr.To("us-east-2a"),
+			},
+			expectedError: "nodePool availabilityZone 'eu-west-1a' doesn't match the capacityReservation availabilityZone 'us-east-2a'",
+		},
+		{
+			name:                 "If nodePool and capacityReservation options match it should successed",
+			hostedClusterVersion: "4.19.0",
+			nodePoolOpts: NodePoolOptions{
+				replicas:               ptr.To[int32](2),
+				instanceType:           "m5.large",
+				subnetAvailabilityZone: "us-east-2a",
+			},
+			capacityReservation: &ec2.CapacityReservation{
+				State:              ptr.To("active"),
+				TotalInstanceCount: ptr.To[int64](2),
+				InstanceType:       ptr.To("m5.large"),
+				AvailabilityZone:   ptr.To("us-east-2a"),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hostedcluster.Status.Version = &hyperv1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{
+					{
+						CompletionTime: &metav1.Time{},
+						Version:        tc.hostedClusterVersion,
+					},
+				},
+			}
+
+			nodePool := &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Replicas:    tc.nodePoolOpts.replicas,
+					AutoScaling: tc.nodePoolOpts.autoScaling,
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							InstanceType: tc.nodePoolOpts.instanceType,
+							Placement: &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: capacityReservationID,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			fakeEC2Client := &fakeEC2Client{
+				capacityReservation:    tc.capacityReservation,
+				SubnetAvailabilityZone: tc.nodePoolOpts.subnetAvailabilityZone,
+			}
+
+			reconciler := &NodePoolReconciler{
+				Client:    fakeClient,
+				EC2Client: fakeEC2Client,
+			}
+			err := reconciler.validateAWSPlatformConfig(context.Background(), nodePool, hostedcluster, tc.oldCondition)
+			if tc.expectedError == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected an error, got nothing")
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("expected error to contain %s, got %v", tc.expectedError, err)
+			}
+		})
+	}
 }

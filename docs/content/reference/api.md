@@ -3504,6 +3504,51 @@ OpenShift version.</p>
 </tr>
 </tbody>
 </table>
+###CapacityReservationOptions { #hypershift.openshift.io/v1beta1.CapacityReservationOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>CapacityReservationOptions specifies Capacity Reservation options for the NodePool instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>id</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>id specifies the target Capacity Reservation into which the EC2 instances should be launched.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>marketType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketType">
+MarketType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
+&ldquo;On-demand&rdquo;: EC2 instances run as standard On-Demand instances.
+&ldquo;CapacityBlocks&rdquo; (default): scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
 (<em>Appears on:</em>
@@ -8291,6 +8336,29 @@ TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 </tr>
 </tbody>
 </table>
+###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+</p>
+<p>
+<p>MarketType describes the market type of the CapacityReservationo for an Instance.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
+<td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
+</td>
+</tr><tr><td><p>&#34;On-demand&#34;</p></td>
+<td><p>MarketTypeOnDemand is a MarketType enum value</p>
+</td>
+</tr></tbody>
+</table>
 ###MultiQueueSetting { #hypershift.openshift.io/v1beta1.MultiQueueSetting }
 <p>
 (<em>Appears on:</em>
@@ -9702,6 +9770,20 @@ string
 default: NodePool instances run on shared hardware.
 dedicated: Each NodePool instance runs on single-tenant hardware.
 host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capacityReservation</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">
+CapacityReservationOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 </td>
 </tr>
 </tbody>

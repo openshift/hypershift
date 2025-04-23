@@ -65,6 +65,41 @@ type PlacementOptions struct {
 	// +optional
 	// +kubebuilder:validation:Enum:=default;dedicated;host
 	Tenancy string `json:"tenancy,omitempty"`
+
+	// capacityReservation specifies Capacity Reservation options for the NodePool instances.
+	//
+	// +openshift:enable:FeatureGate=CapacityReservation
+	// +optional
+	CapacityReservation *CapacityReservationOptions `json:"capacityReservation,omitempty"`
+}
+
+// MarketType describes the market type of the CapacityReservationo for an Instance.
+type MarketType string
+
+const (
+	// MarketTypeOnDemand is a MarketType enum value
+	MarketTypeOnDemand MarketType = "On-demand"
+
+	// MarketTypeCapacityBlock is a MarketType enum value
+	MarketTypeCapacityBlock MarketType = "CapacityBlocks"
+)
+
+// CapacityReservationOptions specifies Capacity Reservation options for the NodePool instances.
+type CapacityReservationOptions struct {
+	// id specifies the target Capacity Reservation into which the EC2 instances should be launched.
+	//
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('cr-')", message="capacity reservation ID is invalid"
+	// +required
+	ID string `json:"id"`
+
+	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
+	// "On-demand": EC2 instances run as standard On-Demand instances.
+	// "CapacityBlocks" (default): scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+	//
+	// +kubebuilder:validation:Enum:=On-demand;CapacityBlocks
+	// +kubebuilder:default=CapacityBlocks
+	// +optional
+	MarketType MarketType `json:"marketType,omitempty"`
 }
 
 // AWSResourceReference is a reference to a specific AWS resource by ID or filters.

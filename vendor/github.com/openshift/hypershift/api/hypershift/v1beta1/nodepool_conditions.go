@@ -7,17 +7,22 @@ const (
 	NodePoolValidGeneratedPayloadConditionType = "ValidGeneratedPayload"
 	// NodePoolValidPlatformImageType signals if an OS image e.g. an AMI was found successfully based on the consumer input e.g. releaseImage.
 	// If the image is direct user input then this condition is meaningless.
-	// A failure here is unlikely to resolve without the changing user input.
+	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidPlatformImageType = "ValidPlatformImage"
 	// NodePoolValidReleaseImageConditionType signals if the input in nodePool.spec.release.image is valid.
-	// A failure here is unlikely to resolve without the changing user input.
+	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidReleaseImageConditionType = "ValidReleaseImage"
 	// NodePoolValidMachineConfigConditionType signals if the content within nodePool.spec.config is valid.
-	// A failure here is unlikely to resolve without the changing user input.
+	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidMachineConfigConditionType = "ValidMachineConfig"
 	// NodePoolValidTuningConfigConditionType signals if the content within nodePool.spec.tuningConfig is valid.
-	// A failure here is unlikely to resolve without the changing user input.
+	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidTuningConfigConditionType = "ValidTuningConfig"
+
+	// NodePoolValidPlatformConfigConditionType signals if the content within nodePool.spec.platform is valid.
+	// Image type validation is reported in 'NodePoolValidPlatformImageType' condition.
+	// A failure here is unlikely to resolve without changing user input.
+	NodePoolValidPlatformConfigConditionType = "ValidPlatformConfig"
 
 	// NodePoolUpdateManagementEnabledConditionType signals if the nodePool.spec.management input is valid.
 	// A failure here is unlikely to resolve without the changing user input.
