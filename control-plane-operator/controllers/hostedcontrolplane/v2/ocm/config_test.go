@@ -74,7 +74,7 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 				t.Fatalf("unable to decode existing openshift controller manager configuration: %v", err)
 			}
 
-			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities)
+			adaptConfig(config, hcp.Spec.Configuration, imageProvider, buildConfig, hcp.Spec.Capabilities, []string{"foo=true", "bar=false"})
 			configStr, err := util.SerializeResource(config, api.Scheme)
 			if err != nil {
 				t.Fatalf("failed to serialize openshift controller manager configuration: %v", err)

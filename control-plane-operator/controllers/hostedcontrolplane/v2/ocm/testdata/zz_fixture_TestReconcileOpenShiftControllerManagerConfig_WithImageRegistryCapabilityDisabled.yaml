@@ -23,7 +23,9 @@ data:
     dockerPullSecret:
       internalRegistryHostname: ""
       registryURLs: null
-    featureGates: null
+    featureGates:
+    - foo=true
+    - bar=false
     imageImport:
       disableScheduledImport: false
       maxScheduledImageImportsPerMinute: 0
