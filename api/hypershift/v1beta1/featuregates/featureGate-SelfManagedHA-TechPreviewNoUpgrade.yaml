@@ -39,6 +39,9 @@
                     },
                     {
                         "name": "CapacityReservation"
+                    },
+                    {
+                        "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     }
                 ],
                 "version": ""
