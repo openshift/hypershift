@@ -28,8 +28,8 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("expected an existing openshift controller manager configuration")
 	}
 
-	config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-	err := util.DeserializeResource(cm.Data[configKey], config, api.Scheme)
+	ocmConfig := &openshiftcpv1.OpenShiftControllerManagerConfig{}
+	err := util.DeserializeResource(cm.Data[configKey], ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
 	}
@@ -39,8 +39,12 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
-	adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities)
-	configStr, err := util.SerializeResource(config, api.Scheme)
+	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
+	adaptConfig(ocmConfig, cpContext.HCP.Spec.Configuration, cpContext.ReleaseImageProvider, observedConfig.Build, cpContext.HCP.Spec.Capabilities, featureGates)
+	configStr, err := util.SerializeResource(ocmConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
 	}
@@ -48,7 +52,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, releaseImageProvider imageprovider.ReleaseImageProvider, buildConfig *configv1.Build, caps *hyperv1.Capabilities, featureGates []string) {
 	cfg.Build.ImageTemplateFormat.Format = releaseImageProvider.GetImage("docker-builder")
 	cfg.Deployer.ImageTemplateFormat.Format = releaseImageProvider.GetImage("deployer")
 
@@ -99,6 +103,10 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configurat
 
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
+
+	if len(featureGates) > 0 {
+		cfg.FeatureGates = featureGates
+	}
 }
 
 func hasBuildDefaults(cfg *configv1.Build) bool {

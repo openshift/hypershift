@@ -38,7 +38,11 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("failed to read observed global config: %w", err)
 	}
 
-	adaptConfig(openshiftAPIServerConfig, cpContext.HCP, observedConfig.Project)
+	featureGates, err := config.FeatureGatesFromConfigMap(cpContext.Context, cpContext.Client, cpContext.HCP.Namespace)
+	if err != nil {
+		return err
+	}
+	adaptConfig(openshiftAPIServerConfig, cpContext.HCP, observedConfig.Project, featureGates)
 	serializedConfig, err := util.SerializeResource(openshiftAPIServerConfig, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift apiserver configuration: %w", err)
@@ -47,7 +51,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.HostedControlPlane, projectConfig *configv1.Project) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.HostedControlPlane, projectConfig *configv1.Project, featureGates []string) {
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
 		cfg.APIServerArguments["audit-webhook-config-file"] = []string{path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)}
 		cfg.APIServerArguments["audit-webhook-mode"] = []string{"batch"}
@@ -85,5 +89,9 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		cfg.StorageConfig.EtcdConnectionInfo.URLs = []string{hcp.Spec.Etcd.Unmanaged.Endpoint}
+	}
+
+	if len(featureGates) > 0 {
+		cfg.APIServerArguments["feature-gates"] = featureGates
 	}
 }
