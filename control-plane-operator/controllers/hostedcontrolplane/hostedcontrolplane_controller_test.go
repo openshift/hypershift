@@ -2118,6 +2118,10 @@ func (*fakeReleaseProvider) ComponentVersions() (map[string]string, error) {
 	return map[string]string{}, nil
 }
 
+func (*fakeReleaseProvider) ComponentImages() map[string]string {
+	return map[string]string{}
+}
+
 func TestReconcileFeatureGateGenerationJob(t *testing.T) {
 
 	expectedFGYaml := `apiVersion: config.openshift.io/v1

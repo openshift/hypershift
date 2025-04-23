@@ -3068,7 +3068,7 @@ func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ct
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider *imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider, apiAddress string, apiPort int32, oauthAddress string, oauthPort int32, createOrUpdate upsert.CreateOrUpdateFN, kubeAPIServerDeployment *appsv1.Deployment, featureGates []string) error {
 	p := kas.NewKubeAPIServerParams(ctx, hcp, releaseImageProvider, apiAddress, apiPort, oauthAddress, oauthPort, r.SetDefaultSecurityContext, featureGates)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -3388,7 +3388,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, kcmDeployment *appsv1.Deployment, featureGates []string) error {
 	p := kcm.NewKubeControllerManagerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	service := manifests.KCMService(hcp.Namespace)
@@ -3462,7 +3462,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeControllerManager(ctx contex
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment) error {
+func (r *HostedControlPlaneReconciler) reconcileKubeScheduler(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, schedulerDeployment *appsv1.Deployment, featureGates []string) error {
 	p := scheduler.NewKubeSchedulerParams(ctx, hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
@@ -3766,7 +3766,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftRouteControllerManager(
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) reconcileClusterPolicyController(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, featureGates []string) error {
 	p := clusterpolicy.NewClusterPolicyControllerParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext, featureGates)
 
 	config := manifests.ClusterPolicyControllerConfig(hcp.Namespace)
