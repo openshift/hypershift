@@ -1,5 +1,6 @@
 RUNTIME ?= $(shell sh ../hack/utils.sh get_container_engine)
-VERSION := $(shell awk -f image-version.awk requirements.txt)
+version := $(shell awk -f image-version.awk requirements.txt)
+VERSION ?= $(if $(MKDOCS_TAG),$(MKDOCS_TAG),$(version))
 IMG ?= quay.io/hypershift/mkdocs-material:$(VERSION)
 
 .PHONY: build
