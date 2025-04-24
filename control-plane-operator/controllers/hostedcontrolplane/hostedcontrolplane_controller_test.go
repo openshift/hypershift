@@ -2105,11 +2105,6 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 type fakeReleaseProvider struct{}
 
-// ComponentImages implements imageprovider.ReleaseImageProvider.
-func (f *fakeReleaseProvider) ComponentImages() map[string]string {
-	panic("unimplemented")
-}
-
 func (*fakeReleaseProvider) GetImage(key string) string {
 	return key
 }
