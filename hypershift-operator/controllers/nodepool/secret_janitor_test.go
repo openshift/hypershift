@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -31,11 +32,13 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
 
 func TestSecretJanitor_Reconcile(t *testing.T) {
 	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	mockCtrl := gomock.NewController(t)
 
 	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
 	if err != nil {
@@ -155,6 +158,11 @@ spec:
 		ignitionConfig3,
 		ignitionServerCACert,
 	).Build()
+	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
+	//We need the ReleaseProvider to stay at 4.18 so that the token doesn't get updated when bumping releases,
+	// this protects us from possibly hiding other factors that might be causing the token to be updated
+	mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.18.0"), nil).AnyTimes()
 	r := secretJanitor{
 		NodePoolReconciler: &NodePoolReconciler{
 			Client: c,
@@ -295,6 +303,7 @@ spec:
 }
 
 func TestShouldKeepOldUserData(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
 	pullSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "test"},
 		Data: map[string][]byte{
@@ -303,10 +312,11 @@ func TestShouldKeepOldUserData(t *testing.T) {
 	}
 
 	testCases := []struct {
-		name            string
-		hc              *hyperv1.HostedCluster
-		releaseProvider releaseinfo.Provider
-		expected        bool
+		name                 string
+		hc                   *hyperv1.HostedCluster
+		releaseProvider      *releaseinfo.MockProviderWithRegistryOverrides
+		releaseMockedVersion string
+		expected             bool
 	}{
 		{
 			name: "when hosted cluster is not aws it should NOT keep old user data",
@@ -328,7 +338,8 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			expected: false,
+			releaseProvider: releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			expected:        false,
 		},
 		{
 			name: "when hosted cluster is less than 4.16 it should keep user data",
@@ -350,8 +361,9 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				},
 				Status: hyperv1.HostedClusterStatus{},
 			},
-			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.15.0").String()},
-			expected:        true,
+			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseMockedVersion: "4.15.0",
+			expected:             true,
 		},
 		{
 			name: "when hosted cluster is equal or greater than 4.16 it should NOT keep user data",
@@ -372,8 +384,9 @@ func TestShouldKeepOldUserData(t *testing.T) {
 					},
 				},
 			},
-			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{Version: semver.MustParse("4.16.0").String()},
-			expected:        false,
+			releaseProvider:      releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl),
+			releaseMockedVersion: "4.16.0",
+			expected:             false,
 		},
 	}
 
@@ -387,6 +400,10 @@ func TestShouldKeepOldUserData(t *testing.T) {
 			r := &NodePoolReconciler{
 				Client:          c,
 				ReleaseProvider: tc.releaseProvider,
+			}
+			if len(tc.releaseMockedVersion) > 0 {
+				releaseImage := testutils.InitReleaseImageOrDie(tc.releaseMockedVersion)
+				tc.releaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(releaseImage, nil).AnyTimes()
 			}
 
 			shouldKeepOldUserData, err := r.shouldKeepOldUserData(context.Background(), tc.hc)

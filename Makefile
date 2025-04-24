@@ -17,6 +17,7 @@ CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
+MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 
 CODESPELL_VER := 2.3.0
 CODESPELL_BIN := codespell
@@ -71,7 +72,7 @@ lint-fix:
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: update staticcheck fmt vet lint cpo-container-sync
+verify: generate update staticcheck fmt vet lint cpo-container-sync
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -91,9 +92,17 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
+$(MOCKGEN): ${TOOLS_DIR}/go.mod
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
+
+
+#.PHONY: generate
+generate: $(MOCKGEN)
+	GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go generate ./...
+
 # Compile all tests
 .PHONY: tests
-tests:
+tests: generate
 	$(GO) test -o /dev/null -c ./...
 
 # Build hypershift-operator binary
@@ -227,7 +236,7 @@ delegating_client:
 # Determine the number of CPU cores
 NUM_CORES := $(shell uname | grep -q 'Darwin' && sysctl -n hw.ncpu || nproc)
 
-test:
+test: generate
 	echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
