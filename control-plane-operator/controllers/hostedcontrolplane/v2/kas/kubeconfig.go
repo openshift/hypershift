@@ -1,6 +1,7 @@
 package kas
 
 import (
+	"bytes"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -121,7 +122,18 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 	hcp := cpContext.HCP
 	apiServerPort := util.KASPodPort(hcp)
 	url := customExternalURL(hcp.Spec.KubeAPIServerDNSName, apiServerPort)
-	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.SystemAdminClientCertSecret(hcp.Namespace), url)
+
+	totalRootCA, err := combineRootCAWithServingCerts(cpContext)
+	if err != nil {
+		return fmt.Errorf("failed to include serving certificates: %w", err)
+	}
+
+	certSecret := manifests.SystemAdminClientCertSecret(hcp.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(certSecret), certSecret); err != nil {
+		return fmt.Errorf("failed to get system admin client cert secret: %w", err)
+	}
+
+	kubeconfig, err := generateKubeConfig(totalRootCA, certSecret, url)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubeconfig: %w", err)
 	}
@@ -132,11 +144,9 @@ func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secre
 	secret.Data[externalKubeconfigKey(hcp)] = kubeconfig
 
 	return nil
-
 }
 
 func adaptBootstrapKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-
 	url := externalURL(cpContext.InfraStatus)
 	if util.IsPrivateHCP(cpContext.HCP) {
 		url = internalURL(cpContext.InfraStatus, cpContext.HCP.Name)
@@ -174,16 +184,8 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadCont
 	return nil
 }
 
-func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
-		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)
-	}
-	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return nil, fmt.Errorf("failed to get root ca cert secret: %w", err)
-	}
-
-	caPEM := rootCA.Data[certs.CASignerCertMapKey]
+func generateKubeConfig(ca, cert *corev1.Secret, url string) ([]byte, error) {
+	caPEM := ca.Data[certs.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]
 
 	kubeCfg := clientcmdapi.Config{
@@ -214,6 +216,18 @@ func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret
 	return clientcmd.Write(kubeCfg)
 }
 
+func GenerateKubeConfig(cpContext component.WorkloadContext, cert *corev1.Secret, url string) ([]byte, error) {
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(cert), cert); err != nil {
+		return nil, fmt.Errorf("failed to get cert secret %s: %w", cert.Name, err)
+	}
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return nil, fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+
+	return generateKubeConfig(rootCA, cert, url)
+}
+
 func InClusterKASURL(platformType hyperv1.PlatformType) string {
 	if platformType == hyperv1.IBMCloudPlatform {
 		return fmt.Sprintf("https://%s:%d", manifests.KubeAPIServerServiceName, config.KASSVCIBMCloudPort)
@@ -236,7 +250,53 @@ func internalURL(infraStatus infra.InfrastructureStatus, hcpName string) string 
 
 func externalKubeconfigKey(hcp *hyperv1.HostedControlPlane) string {
 	if hcp.Spec.KubeConfig == nil {
-		return util.KubeconfigKey
+		return KubeconfigKey
 	}
 	return hcp.Spec.KubeConfig.Key
+}
+
+// combineRootCAWithServingCerts combines the root CA certificate with additional serving certificates
+// specified in the HostedControlPlane's APIServer configuration to form a complete CA bundle.
+func combineRootCAWithServingCerts(cpContext component.WorkloadContext) (*corev1.Secret, error) {
+	hcp := cpContext.HCP
+
+	rootCA := manifests.RootCASecret(hcp.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return nil, fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+
+	// If no named certificates are configured, return the original root CA
+	if hcp.Spec.Configuration == nil ||
+		hcp.Spec.Configuration.APIServer == nil ||
+		len(hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) == 0 {
+		return rootCA, nil
+	}
+
+	var buffer bytes.Buffer
+	// Write the root CA cert first
+	buffer.Write(rootCA.Data[certs.CASignerCertMapKey])
+
+	// Collect and write all additional certificates
+	for _, servingCert := range hcp.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
+		certSecret := &corev1.Secret{}
+		if err := cpContext.Client.Get(cpContext, client.ObjectKey{
+			Namespace: hcp.Namespace,
+			Name:      servingCert.ServingCertificate.Name,
+		}, certSecret); err != nil {
+			return nil, fmt.Errorf("failed to get serving certificate secret %s: %w",
+				servingCert.ServingCertificate.Name, err)
+		}
+
+		certData, ok := certSecret.Data["tls.crt"]
+		if !ok {
+			return nil, fmt.Errorf("serving certificate secret %s missing tls.crt",
+				servingCert.ServingCertificate.Name)
+		}
+
+		buffer.WriteByte('\n')
+		buffer.Write(certData)
+	}
+
+	rootCA.Data[certs.CASignerCertMapKey] = buffer.Bytes()
+	return rootCA, nil
 }
