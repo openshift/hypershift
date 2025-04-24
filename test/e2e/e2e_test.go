@@ -120,6 +120,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureIssuerURL, "e2e.oidc-issuer-url", "", "The OIDC provider issuer URL")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureServiceAccountTokenIssuerKeyPath, "e2e.sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureDataPlaneIdentities, "e2e.azure-data-plane-identities-file", "", "Path to a file containing the client IDs of the managed identities associated with the data plane")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID, "e2e.azure-encryption-key-id", "", "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName, "e2e.azure-kms-credentials-secret-name", "", "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
 
 	// Kubevirt specific flags
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtContainerDiskImage, "e2e.kubevirt-container-disk-image", "", "DEPRECATED (ignored will be removed soon)")
