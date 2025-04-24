@@ -5,7 +5,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -18,9 +17,7 @@ import (
 )
 
 const (
-	KonnectivityHealthPort      = 2041
 	KonnectivityServerLocalPort = 8090
-	KonnectivityServerPort      = 8091
 
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
@@ -77,12 +74,8 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		DisableProfiling:             util.StringListContains(hcp.Annotations[hyperv1.DisableProfilingAnnotation], manifests.KASDeployment("").Name),
 	}
 
-	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		kasConfig.CloudProvider = aws.Provider
-	case hyperv1.AzurePlatform:
-		kasConfig.CloudProvider = azure.Provider
-		// kasConfig.CloudProviderConfigRef = &corev1.LocalObjectReference{Name: manifests.AzureProviderConfigWithCredentials("").Name}
 	}
 
 	switch hcp.Spec.Etcd.ManagementType {

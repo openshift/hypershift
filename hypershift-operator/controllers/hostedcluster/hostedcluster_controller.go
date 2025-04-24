@@ -1935,6 +1935,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
 		}
+
+		if hcluster.Spec.SecretEncryption.KMS != nil {
+			// Reconcile KMS SecretProviderClass CR
+			kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
+				secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS, hcVersion.GE(config.Version419))
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+			}
+
+		}
 	}
 
 	if err := r.reconcileKarpenterOperator(ctx, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
@@ -3043,7 +3055,7 @@ func reconcileControlPlaneOperatorDeployment(
 				})
 		}
 
-		// Mount the control plane operator's certificate from the managed Azure key vault. The CPO authenticates with
+		// Mount the control plane operator's credentials from the managed Azure key vault. The CPO authenticates with
 		// the Azure cloud API for validating resource group locations.
 		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
 			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName),
@@ -3051,6 +3063,16 @@ func reconcileControlPlaneOperatorDeployment(
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName, config.ManagedAzureCPOSecretProviderClassName),
 		)
+
+		// Mount the KMS credentials so the HCP reconciliation can validate the Azure KMS configuration.
+		if hcp.Spec.SecretEncryption.KMS != nil {
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+				azureutil.CreateVolumeMountForKMSAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName),
+			)
+			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+				azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
+			)
+		}
 	}
 
 	if hcp.Spec.AdditionalTrustBundle != nil {

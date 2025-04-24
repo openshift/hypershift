@@ -9,7 +9,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
@@ -271,7 +270,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		applyPortieriesConfig(&deployment.Spec.Template.Spec, images.Portieris)
 	}
 	applyNamedCertificateMounts(namedCertificates, &deployment.Spec.Template.Spec)
-	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec, cloudProviderName)
+	applyCloudConfigVolumeMount(cloudProviderConfigRef, &deployment.Spec.Template.Spec)
 	util.ApplyCloudProviderCreds(&deployment.Spec.Template.Spec, cloudProviderName, cloudProviderCreds, images.TokenMinterImage, kasContainerMain().Name)
 
 	if cloudProviderName == aws.Provider {
@@ -725,22 +724,18 @@ func kasVolumeCloudConfig() *corev1.Volume {
 	}
 }
 
-func buildKASVolumeCloudConfig(configMapName, providerName string) func(v *corev1.Volume) {
+func buildKASVolumeCloudConfig(configMapName string) func(v *corev1.Volume) {
 	return func(v *corev1.Volume) {
-		if providerName == azure.Provider {
-			v.Secret = &corev1.SecretVolumeSource{SecretName: configMapName}
-		} else {
-			v.ConfigMap = &corev1.ConfigMapVolumeSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
-				DefaultMode:          ptr.To[int32](420),
-			}
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: configMapName},
+			DefaultMode:          ptr.To[int32](420),
 		}
 	}
 }
 
-func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec, cloudProviderName string) {
+func applyCloudConfigVolumeMount(configRef *corev1.LocalObjectReference, podSpec *corev1.PodSpec) {
 	if configRef != nil && configRef.Name != "" {
-		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name, cloudProviderName)))
+		podSpec.Volumes = append(podSpec.Volumes, util.BuildVolume(kasVolumeCloudConfig(), buildKASVolumeCloudConfig(configRef.Name)))
 		var container *corev1.Container
 		for i, c := range podSpec.Containers {
 			if c.Name == kasContainerMain().Name {

@@ -2,11 +2,14 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
@@ -197,7 +200,14 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 	return nil
 }
 
-func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	// Reconcile the Azure KMS Config Secret
+	azureKMSConfigSecret := manifests.AzureKMSWithCredentials(controlPlaneNamespace)
+	if _, err := createOrUpdate(ctx, c, azureKMSConfigSecret, func() error {
+		return reconcileKMSConfigSecret(azureKMSConfigSecret, hc)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile Azure KMS config secret: %w", err)
+	}
 	return nil
 }
 
@@ -297,4 +307,35 @@ func parseCloudType(cloudType string) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported cloud type: %s", cloudType)
 	}
+}
+
+// reconcileKMSConfigSecret reconciles the data needed for the KMS configuration secret.
+func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) error {
+	azureConfig := azure.AzureConfig{
+		Cloud:                        hc.Spec.Platform.Azure.Cloud,
+		TenantID:                     hc.Spec.Platform.Azure.TenantID,
+		UseManagedIdentityExtension:  false,
+		SubscriptionID:               hc.Spec.Platform.Azure.SubscriptionID,
+		ResourceGroup:                hc.Spec.Platform.Azure.ResourceGroupName,
+		Location:                     hc.Spec.Platform.Azure.Location,
+		LoadBalancerName:             hc.Spec.InfraID,
+		CloudProviderBackoff:         true,
+		CloudProviderBackoffDuration: 6,
+		UseInstanceMetadata:          false,
+		LoadBalancerSku:              "standard",
+		DisableOutboundSNAT:          true,
+		AADMSIDataPlaneIdentityPath:  config.ManagedAzureCertificatePath + hc.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName,
+	}
+
+	serializedConfig, err := json.MarshalIndent(azureConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
+	}
+
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[azure.CloudConfigKey] = serializedConfig
+
+	return nil
 }

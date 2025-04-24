@@ -15,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
-	"k8s.io/utils/ptr"
 )
 
 const (
@@ -79,7 +78,6 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 			Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
 			APIVersion: apiVersion,
 			Endpoint:   azureActiveKMSUnixSocket,
-			CacheSize:  ptr.To[int32](100),
 			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
@@ -93,7 +91,6 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 				Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
 				APIVersion: apiVersion,
 				Endpoint:   azureBackupKMSUnixSocket,
-				CacheSize:  ptr.To[int32](100),
 				Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 			},
 		})
@@ -137,19 +134,17 @@ func (p *azureKMSProvider) ApplyKMSConfig(podSpec *corev1.PodSpec) error {
 		)
 	}
 
-	var container *corev1.Container
-	for i, c := range podSpec.Containers {
-		if c.Name == KasMainContainerName {
-			container = &podSpec.Containers[i]
-			break
-		}
-	}
+	container := util.FindContainer(KasMainContainerName, podSpec.Containers)
 	if container == nil {
 		panic("main kube apiserver container not found in spec")
 	}
 	container.VolumeMounts = append(container.VolumeMounts,
 		azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
 
+	container = util.FindContainer("azure-kms-provider-active", podSpec.Containers)
+	if container == nil {
+		panic("azure-kms-provider-active container not found in spec")
+	}
 	container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
 		Name:      config.ManagedAzureKMSSecretStoreVolumeName,
 		MountPath: config.ManagedAzureCertificateMountPath,
@@ -226,7 +221,7 @@ func kasVolumeAzureKMSCredentials() *corev1.Volume {
 
 func buildVolumeAzureKMSCredentials(v *corev1.Volume) {
 	v.Secret = &corev1.SecretVolumeSource{
-		SecretName: manifests.AzureProviderConfigWithCredentials("").Name,
+		SecretName: manifests.AzureKMSWithCredentials("").Name,
 		Items: []corev1.KeyToPath{
 			{
 				Key:  azure.CloudConfigKey,

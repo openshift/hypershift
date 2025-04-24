@@ -3261,27 +3261,11 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			if hcp.Spec.SecretEncryption.KMS == nil {
 				return fmt.Errorf("kms metadata not specified")
 			}
-			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
-				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
-			}
 
 			if _, err := createOrUpdate(ctx, r, encryptionConfigFile, func() error {
 				return kas.ReconcileKMSEncryptionConfig(encryptionConfigFile, p.OwnerRef, hcp.Spec.SecretEncryption.KMS)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile kms encryption config secret: %w", err)
-			}
-
-			if hyperazureutil.IsAroHCP() {
-				// Reconcile the SecretProviderClass
-				kmsSecretProviderClass := manifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
-				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
-					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS, true)
-					return nil
-				}); err != nil {
-					return fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
-				}
 			}
 		}
 	}
@@ -5650,7 +5634,7 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
 	// Retrieve the KMS UserAssignedCredentials path
-	credentialsPath := config.ManagedAzureCertificatePath + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+	credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
 	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,

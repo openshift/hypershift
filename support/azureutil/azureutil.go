@@ -207,6 +207,14 @@ func CreateVolumeMountForAzureSecretStoreProviderClass(secretStoreVolumeName str
 	}
 }
 
+func CreateVolumeMountForKMSAzureSecretStoreProviderClass(secretStoreVolumeName string) corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      secretStoreVolumeName,
+		MountPath: config.ManagedAzureCredentialsMountPathForKMS,
+		ReadOnly:  true,
+	}
+}
+
 func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretProviderClassName string) corev1.Volume {
 	return corev1.Volume{
 		Name: secretStoreVolumeName,
