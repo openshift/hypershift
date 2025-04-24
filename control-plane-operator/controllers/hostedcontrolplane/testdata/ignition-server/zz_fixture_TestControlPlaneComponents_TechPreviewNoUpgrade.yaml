@@ -160,7 +160,7 @@ spec:
 
           touch /tmp/manifests/99_feature-gate.yaml
           cat <<EOF >/tmp/manifests/99_feature-gate.yaml
-          ${FEAUTRE_GATE_YAML}
+          $(FEATURE_GATE_YAML)
 
           EOF
 
@@ -168,7 +168,7 @@ spec:
         command:
         - /bin/bash
         env:
-        - name: FEAUTRE_GATE_YAML
+        - name: FEATURE_GATE_YAML
           value: |
             apiVersion: config.openshift.io/v1
             kind: FeatureGate

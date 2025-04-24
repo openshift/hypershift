@@ -14,10 +14,11 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: redhat-marketplace-catalog Deployment Progressing condition not found
-    reason: NotFound
+    message: 'Waiting for deployment redhat-marketplace-catalog rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: ""
     kind: Service

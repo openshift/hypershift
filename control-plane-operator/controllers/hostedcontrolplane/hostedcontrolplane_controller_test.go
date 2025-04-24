@@ -2062,6 +2062,10 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 					Type:   string(hyperv1.ControlPlaneComponentAvailable),
 					Status: metav1.ConditionTrue,
 				},
+				{
+					Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
+					Status: metav1.ConditionTrue,
+				},
 			},
 		},
 	}
@@ -2100,6 +2104,11 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 }
 
 type fakeReleaseProvider struct{}
+
+// ComponentImages implements imageprovider.ReleaseImageProvider.
+func (f *fakeReleaseProvider) ComponentImages() map[string]string {
+	panic("unimplemented")
+}
 
 func (*fakeReleaseProvider) GetImage(key string) string {
 	return key

@@ -4232,8 +4232,8 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
 </td>
-</tr><tr><td><p>&#34;Progressing&#34;</p></td>
-<td><p>ControlPlaneComponentProgressing indicates whether the ControlPlaneComponent is progressing.</p>
+</tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
+<td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.

@@ -9,15 +9,16 @@ spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: 'etcd StatefulSet is not available: 0/3 replicas ready'
+    message: 'StatefulSet etcd is not available: 0/3 replicas ready'
     reason: WaitingForAvailable
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'etcd StatefulSet progressing: 0/3 replicas ready'
-    reason: WaitingForAvailable
-    status: "True"
-    type: Progressing
+    message: 'Waiting for statefulset etcd rollout to finish: 0 out of 3 new replicas
+      have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
   resources:
   - group: ""
     kind: Service

@@ -45,16 +45,16 @@ func (c *cronJobProvider) Replicas(object *batchv1.CronJob) *int32 {
 	return nil
 }
 
-// IsReady implements WorkloadProvider.
-func (c *cronJobProvider) IsReady(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
+// IsAvailable implements WorkloadProvider.
+func (c *cronJobProvider) IsAvailable(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
 	// TODO
 	status = metav1.ConditionTrue
 	reason = hyperv1.AsExpectedReason
 	return
 }
 
-// IsProgressing implements WorkloadProvider.
-func (c *cronJobProvider) IsProgressing(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
+// IsReady implements WorkloadProvider.
+func (c *cronJobProvider) IsReady(object *batchv1.CronJob) (status metav1.ConditionStatus, reason string, message string) {
 	// TODO
 	status = metav1.ConditionTrue
 	reason = hyperv1.AsExpectedReason
