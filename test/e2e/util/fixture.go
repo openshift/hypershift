@@ -276,6 +276,12 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 
 // validateAWSGuestResourcesDeletedFunc waits for 15min or until the guest cluster resources are gone.
 func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, infraID, awsCreds, awsRegion string) func() {
+	if IsLessThan(Version415) {
+		return func() {
+			t.Log("SKIPPED: skipping AWS cleanup validation for OCP <= 4.14")
+		}
+	}
+
 	return func() {
 		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
 		awsConfig := awsutil.NewConfig()

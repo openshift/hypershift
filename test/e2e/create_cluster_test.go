@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"testing"
 
@@ -1487,6 +1488,13 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 	defer cancel()
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	if e2eutil.IsLessThan(e2eutil.Version415) {
+		cleanupAnnotationIndex := slices.Index(clusterOpts.Annotations, fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation))
+		if cleanupAnnotationIndex != -1 {
+			clusterOpts.Annotations = slices.Delete(clusterOpts.Annotations, cleanupAnnotationIndex, cleanupAnnotationIndex+1)
+		}
+	}
+
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
 	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
 	expectGuestKubeconfHostChange := false
