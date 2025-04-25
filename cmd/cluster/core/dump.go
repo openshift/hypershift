@@ -618,25 +618,43 @@ func outputLogs(ctx context.Context, l logr.Logger, c kubeclient.Interface, arti
 		return
 	}
 
-	dir := filepath.Join(artifactDir, "namespaces", namespace, "core", "pods", "logs")
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		l.Error(err, "Cannot create directory", "directory", dir)
+	podsDir := filepath.Join(artifactDir, "namespaces", namespace, "pods")
+	if err := os.MkdirAll(podsDir, 0755); err != nil {
+		l.Error(err, "Cannot create pods logs directory", "directory", podsDir)
 		return
 	}
 
 	opts.Log.Info("dumping container logs", "namespace", namespace)
 	for _, pod := range podList.Items {
-		for _, container := range pod.Spec.InitContainers {
-			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, opts.LogCheckers...)
-			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, opts.LogCheckers...)
+		podDir := filepath.Join(podsDir, pod.Name)
+		if err := os.MkdirAll(podDir, 0755); err != nil {
+			l.Error(err, "Cannot create pod logs directory", "directory", podDir)
+			return
 		}
-		for _, container := range pod.Spec.Containers {
-			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name}), false, opts.LogCheckers...)
-			outputLog(ctx, l, filepath.Join(dir, fmt.Sprintf("%s-%s-previous.log", pod.Name, container.Name)),
-				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, Previous: true}), true, opts.LogCheckers...)
+
+		podFileName := filepath.Join(podDir, fmt.Sprintf("%s.yaml", pod.Name))
+		podFile, err := os.OpenFile(podFileName, os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			l.Error(err, "Cannot create pod yaml file", "file", podFileName)
+			return
+		}
+		defer podFile.Close()
+		pod.APIVersion = pod.GroupVersionKind().GroupVersion().String()
+		pod.Kind = pod.GroupVersionKind().Kind
+		hyperapi.YamlSerializer.Encode(&pod, podFile)
+
+		allContainers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
+		for _, container := range allContainers {
+			// Yes, two directories are created for each container to match must-gather format
+			containerDir := filepath.Join(podDir, container.Name, container.Name, "logs")
+			if err := os.MkdirAll(containerDir, 0755); err != nil {
+				l.Error(err, "Cannot create container logs directory", "directory", containerDir)
+				return
+			}
+			outputLog(ctx, l, filepath.Join(containerDir, "current.log"),
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, InsecureSkipTLSVerifyBackend: true}), false, opts.LogCheckers...)
+			outputLog(ctx, l, filepath.Join(containerDir, "previous.log"),
+				c.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: container.Name, InsecureSkipTLSVerifyBackend: true, Previous: true}), true, opts.LogCheckers...)
 		}
 	}
 }
