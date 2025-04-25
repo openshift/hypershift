@@ -623,10 +623,6 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Figure out why Karpenter needs restaring some times https://issues.redhat.com/browse/HOSTEDCP-2254.
-			if strings.HasPrefix(pod.Name, "karpenter") {
-				continue
-			}
 			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
 			if strings.HasPrefix(pod.Name, "ingress-operator-") {
 				continue
