@@ -104,6 +104,8 @@ type ConfigurableClusterOptions struct {
 	AzureIssuerURL                        string
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
+	AzureEncryptionKeyID                  string
+	AzureKMSUserAssignedCredsSecretName   string
 	OpenStackCredentialsFile              string
 	OpenStackCACertFile                   string
 	AzureLocation                         string
