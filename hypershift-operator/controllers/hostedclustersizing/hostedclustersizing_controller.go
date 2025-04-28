@@ -215,6 +215,18 @@ func (r *reconciler) reconcile(
 				sizeClass = &config.Spec.Sizes[i]
 			}
 		}
+	} else if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
+		recommendedSize := hostedCluster.Annotations[hypershiftv1beta1.RecommendedClusterSizeAnnotation]
+		for i, class := range config.Spec.Sizes {
+			if class.Name == recommendedSize {
+				sizeClass = &config.Spec.Sizes[i]
+				break
+			}
+		}
+		// If recommendedSize is not set, or not found, use the first size class
+		if sizeClass == nil {
+			sizeClass = &config.Spec.Sizes[0]
+		}
 	} else {
 		nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
 		if err != nil {
