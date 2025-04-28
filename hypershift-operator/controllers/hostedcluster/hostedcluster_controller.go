@@ -2468,7 +2468,10 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 	// Reconcile operator service account
 	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorServiceAccount, NoopReconcile)
+	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorServiceAccount, func() error {
+		hyperutil.EnsurePullSecret(controlPlaneOperatorServiceAccount, controlplaneoperator.PullSecret("").Name)
+		return nil
+	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
 	}
