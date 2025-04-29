@@ -255,7 +255,7 @@ func buildOAuthKonnectivityProxyContainer(image string) func(c *corev1.Container
 		}}
 		c.Resources.Requests = corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
-			corev1.ResourceMemory: resource.MustParse("10Mi"),
+			corev1.ResourceMemory: resource.MustParse("30Mi"),
 		}
 		c.VolumeMounts = oauthVolumeMounts.ContainerMounts(c.Name)
 	}
