@@ -361,3 +361,20 @@ $(CODESPELL): ## Build codespell from tools folder.
 	 	pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
 		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
 		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
+
+JOB_TEMPLATE := $(abspath $(TOOLS_BIN_DIR)/jobtemplate)
+
+$(JOB_TEMPLATE): $(TOOLS_DIR)/go.mod # Build jobtemplate tool
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/jobtemplate ./jobtemplate
+
+.PHONY: generate-bucketed-jobs
+generate-bucketed-jobs: $(JOB_TEMPLATE)
+	@if [ -z "$(TOTAL_BUCKETS)" ] || [ -z "$(CONFIG_FILE)" ] || [ -z "$(TEST_BLOCKS)" ]; then \
+		echo "Error: All parameters are required. Example:"; \
+		echo "make generate-bucketed-jobs TOTAL_BUCKETS=3 CONFIG_FILE=path/to/config.yaml TEST_BLOCKS=e2e-aws,e2e-aws-upgrade"; \
+		exit 1; \
+	fi
+	$(JOB_TEMPLATE) \
+		--config=$(CONFIG_FILE) \
+		--test-blocks=$(TEST_BLOCKS) \
+		--total-buckets=$(TOTAL_BUCKETS)
