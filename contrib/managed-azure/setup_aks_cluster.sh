@@ -34,7 +34,7 @@ az group create \
 az aks create \
 --resource-group ${AKS_RG} \
 --name ${AKS_CLUSTER_NAME} \
---node-count 2 \
+--replicas 2 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \

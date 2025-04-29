@@ -27,7 +27,7 @@ type CreateNodePoolOptions struct {
 	Name            string
 	Namespace       string
 	ClusterName     string
-	NodeCount       int32
+	Replicas        int32
 	ReleaseImage    string
 	Render          bool
 	NodeUpgradeType hyperv1.UpgradeType
@@ -135,7 +135,7 @@ func (o *CreateNodePoolOptions) CreateNodePool(ctx context.Context, platformOpts
 				AutoRepair:  o.AutoRepair,
 			},
 			ClusterName: o.ClusterName,
-			Replicas:    &o.NodeCount,
+			Replicas:    &o.Replicas,
 			Release: hyperv1.Release{
 				Image: releaseImage,
 			},
