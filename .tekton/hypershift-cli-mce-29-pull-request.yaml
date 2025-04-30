@@ -13,7 +13,7 @@ metadata:
       && ( target_branch == "release-4.19" || target_branch == "main")
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: cli-mce-29
+    appstudio.openshift.io/application: hypershift-cli
     appstudio.openshift.io/component: hypershift-cli-mce-29
     pipelines.appstudio.openshift.io/type: build
   name: hypershift-cli-mce-29-on-pull-request

@@ -11,7 +11,7 @@ metadata:
       == "release-4.19"
   creationTimestamp: null
   labels:
-    appstudio.openshift.io/application: cli-mce-29
+    appstudio.openshift.io/application: hypershift-cli
     appstudio.openshift.io/component: hypershift-cli-mce-29
     pipelines.appstudio.openshift.io/type: build
   name: hypershift-cli-mce-29-on-push
