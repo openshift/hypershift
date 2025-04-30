@@ -169,6 +169,7 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 	if p.AuditWebhookEnabled {
 		args.Set("audit-webhook-config-file", auditWebhookConfigFile())
 		args.Set("audit-webhook-mode", "batch")
+		args.Set("audit-webhook-initial-backoff", "5s")
 	}
 	if p.DisableProfiling {
 		args.Set("profiling", "false")
