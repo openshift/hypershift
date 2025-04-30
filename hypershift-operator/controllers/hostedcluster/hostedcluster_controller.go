@@ -4260,13 +4260,15 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
-	exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
-	if err != nil {
-		return false, err
-	}
-	if exists {
-		log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
-		return false, nil
+	if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
+		exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
 	}
 
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -4290,7 +4292,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
 	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
-	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
 	if err != nil {
 		return false, err
 	}
