@@ -4776,18 +4776,18 @@ func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context,
 	var errs field.ErrorList
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
-    if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
-        err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
-        if err != nil {
-            fieldErr := &field.Error{
-                Type: field.ErrorTypeInvalid,
-                Field: field.NewPath("spec", "configuration", "authentication").String(),
-                BadValue: hc.Spec.Configuration.Authentication,
-                Detail: err.Error(),
-            }
-            errs = append(errs, fieldErr)
-        }
-    }
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
+		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
+		if err != nil {
+			fieldErr := &field.Error{
+				Type:     field.ErrorTypeInvalid,
+				Field:    field.NewPath("spec", "configuration", "authentication").String(),
+				BadValue: hc.Spec.Configuration.Authentication,
+				Detail:   err.Error(),
+			}
+			errs = append(errs, fieldErr)
+		}
+	}
 
 	return errs.ToAggregate()
 }

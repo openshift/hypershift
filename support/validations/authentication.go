@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/supportedversion"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apiserver/pkg/apis/apiserver/validation"
 	"k8s.io/apiserver/pkg/authentication/cel"
 	"k8s.io/apiserver/pkg/cel/environment"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -63,6 +66,11 @@ func ValidateAuthenticationSpecForTypeOIDC(ctx context.Context, client crclient.
 	}
 	celCompiler := cel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
 
-	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, authConfig, disallowIssuers)
+	apiServerAuthConfig, err := kas.HCPAuthConfigToAPIServerAuthConfig(authConfig)
+	if err != nil {
+		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %v", err)
+	}
+
+	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, apiServerAuthConfig, disallowIssuers)
 	return fieldErrors.ToAggregate()
 }
