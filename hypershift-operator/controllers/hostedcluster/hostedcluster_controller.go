@@ -1881,6 +1881,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 		hyperv1.KubeAPIServerMaximumRequestsInFlight,
 		hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight,
 		hyperv1.DisableIgnitionServerAnnotation,
+		hyperv1.KubeAPIServerGoAwayChance,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
