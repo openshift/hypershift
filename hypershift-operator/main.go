@@ -46,7 +46,6 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -304,29 +303,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
-	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
-	var imageRegistryOverrides map[string][]string
-	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
-		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS), mgmtClusterCaps.Has(capabilities.CapabilityICSP))
-		if err != nil {
-			return fmt.Errorf("failed to populate image registry overrides: %w", err)
-		}
-	}
-
-	releaseProviderWithOpenShiftImageRegistryOverrides := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: opts.RegistryOverrides,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
-
-	imageMetaDataProvider := &hyperutil.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
+	// Create the registry provider for the release and image metadata providers
+	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
@@ -343,6 +321,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ManagementClusterCapabilities:           mgmtClusterCaps,
 		HypershiftOperatorImage:                 operatorImage,
 		RegistryOverrides:                       opts.RegistryOverrides,
+		RegistryProvider:                        registryProvider,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		MetricsSet:                              metricsSet,
@@ -366,7 +345,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
-		if err := hostedcluster.SetupWebhookWithManager(mgr, imageMetaDataProvider, log); err != nil {
+		if err := hostedcluster.SetupWebhookWithManager(mgr, registryProvider.MetadataProvider, log); err != nil {
 			return fmt.Errorf("unable to create webhook: %w", err)
 		}
 	}
@@ -405,14 +384,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
-		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
+		ReleaseProvider:         registryProvider.ReleaseProvider,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider: &hyperutil.RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		},
-		KubevirtInfraClients: kvinfra.NewKubevirtInfraClientMap(),
-		EC2Client:            ec2Client,
+		ImageMetadataProvider:   registryProvider.MetadataProvider,
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
+		EC2Client:               ec2Client,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -425,7 +402,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	enableSizeTagging := os.Getenv("ENABLE_SIZE_TAGGING") == "1"
 	if enableSizeTagging {
-		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, releaseProviderWithOpenShiftImageRegistryOverrides, imageMetaDataProvider); err != nil {
+		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, registryProvider.ReleaseProvider, registryProvider.MetadataProvider); err != nil {
 			return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
 		}
 	}
