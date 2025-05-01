@@ -491,16 +491,18 @@ type ManagedIdentity struct {
 	// +kubebuilder:validation:MaxLength=255
 	ClientID string `json:"clientID,omitempty"`
 
-	// certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-	// reside in an Azure Key Vault on the management cluster.
-	// Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-	// removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+	// objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+	// the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
+	// Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+	// unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+	// SecretProviderClass custom resource related to the managed identity.
 	//
-	// +optional
-	// +kubebuilder:validation:MaxLength=255
-	CertificateName string `json:"certificateName,omitempty"`
-
-	// objectEncoding is the encoding format for the object.
+	// The default value is utf-8.
+	//
+	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+	//
+	// +kubebuilder:validation:Enum:=utf-8;hex;base64
+	// +kubebuilder:default:="utf-8"
 	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
@@ -513,11 +515,11 @@ type ManagedIdentity struct {
 	// credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
 	// credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
 	//
-	// TODO set the validation:MinLength=1
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=127
-	// TODO set validation:Pattern=`^[a-zA-Z0-9-]+$`
-	// +optional
-	CredentialsSecretName string `json:"credentialsSecretName,omitempty"`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9-]+$`
+	// +required
+	CredentialsSecretName string `json:"credentialsSecretName"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
