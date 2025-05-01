@@ -154,6 +154,7 @@ const (
 
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
+	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -444,6 +445,44 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
+
+			// Remove any referenced resource annotations for this hosted cluster from secrets and configmaps
+			deleteReferencedResourceAnnotation := func(obj client.Object) error {
+				annotations := obj.GetAnnotations()
+				if annotations == nil {
+					return nil
+				}
+				key := referencedResourceAnnotationPrefix + hcluster.Name
+				if _, ok := annotations[key]; !ok {
+					return nil
+				}
+				delete(annotations, key)
+				obj.SetAnnotations(annotations)
+				if err := r.Update(ctx, obj); err != nil {
+					return err
+				}
+				return nil
+			}
+
+			var secretList corev1.SecretList
+			if err := r.List(ctx, &secretList, client.InNamespace(hcluster.Namespace)); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
+			}
+			for _, secret := range secretList.Items {
+				if err := deleteReferencedResourceAnnotation(&secret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
+				}
+			}
+
+			var configmapList corev1.ConfigMapList
+			if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
+			}
+			for _, configmap := range configmapList.Items {
+				if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
+				}
+			}
 		}
 	}
 
@@ -571,14 +610,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
-		if err := r.dereferenceAWSRoles(ctx, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
+		if err := r.dereferenceAWSRoles(ctx, hcluster.Name, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 	if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil && hcluster.Spec.SecretEncryption.KMS.AWS != nil {
 		if strings.HasPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::") {
 			secretName := strings.TrimPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::")
-			arn, err := r.getARNFromSecret(ctx, secretName, hcluster.Namespace)
+			arn, err := r.getARNFromSecret(ctx, hcluster.Name, secretName, hcluster.Namespace)
 			if err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to get ARN from secret %s/%s: %w", hcluster.Namespace, secretName, err)
 			}
@@ -1312,6 +1351,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.PullSecret.Name}, &src); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get pull secret %s: %w", hcluster.Spec.PullSecret.Name, err)
 		}
+		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+		}
 		dst := controlplaneoperator.PullSecret(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dst, func() error {
 			srcData, srcHasData := src.Data[".dockerconfigjson"]
@@ -1344,6 +1386,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name}, &src); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to get active aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name, err)
 			}
+			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			}
 			if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
 				log.Error(fmt.Errorf("no key field %s specified for aescbc active key secret", hyperv1.AESCBCKeySecretKey), "")
 				// don't return error here as reconciling won't fix input error
@@ -1370,6 +1415,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				var src corev1.Secret
 				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
+				}
+				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
 				if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
 					log.Error(fmt.Errorf("no key field %s specified for aescbc backup key secret", hyperv1.AESCBCKeySecretKey), "")
@@ -1420,6 +1468,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
 			}
+			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+			}
 			configData, ok := src.Data[hyperv1.AuditWebhookKubeconfigKey]
 			if !ok {
 				return ctrl.Result{}, fmt.Errorf("audit webhook secret does not contain key %s", hyperv1.AuditWebhookKubeconfigKey)
@@ -1453,6 +1504,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSHKey secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
+		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+		}
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
 			srcData, srcHasData := src.Data["id_rsa.pub"]
@@ -1478,6 +1532,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
+		}
+		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		dest := controlplaneoperator.UserCABundle(controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
@@ -1513,6 +1570,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret), unmanagedEtcdTLSClientSecret); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
+		}
+		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, unmanagedEtcdTLSClientSecret); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		hostedControlPlaneEtcdClientSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1554,6 +1614,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
 				}
+				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+				}
 				destCM := &corev1.ConfigMap{}
 				destCM.Name = sourceCM.Name
 				destCM.Namespace = controlPlaneNamespace.Name
@@ -1573,6 +1636,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				sourceSecret := &corev1.Secret{}
 				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
+				}
+				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
 				destSecret := &corev1.Secret{}
 				destSecret.Name = sourceSecret.Name
@@ -4257,16 +4323,27 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 		log := ctrllog.Log
 
 		handleDefault := func(obj client.Object) []reconcile.Request {
-			var hostedClusterName string
-			if obj.GetAnnotations() != nil {
-				hostedClusterName = obj.GetAnnotations()[hyperutil.HostedClusterAnnotation]
+			requests := []reconcile.Request{}
+			annotations := obj.GetAnnotations()
+			if annotations != nil {
+				hostedClusterName := obj.GetAnnotations()[hyperutil.HostedClusterAnnotation]
+				if hostedClusterName != "" {
+					return []reconcile.Request{
+						{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
+					}
+				}
+				for k := range annotations {
+					if strings.HasPrefix(k, referencedResourceAnnotationPrefix) {
+						requests = append(requests, reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      strings.TrimPrefix(k, referencedResourceAnnotationPrefix),
+								Namespace: obj.GetNamespace(),
+							},
+						})
+					}
+				}
 			}
-			if hostedClusterName == "" {
-				return []reconcile.Request{}
-			}
-			return []reconcile.Request{
-				{NamespacedName: hyperutil.ParseNamespacedName(hostedClusterName)},
-			}
+			return requests
 		}
 
 		switch typedObj := obj.(type) {
@@ -5383,6 +5460,9 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hc.Namespace, Name: hc.Spec.ServiceAccountSigningKey.Name}, signingKeySecret); err != nil {
 		return nil, nil, fmt.Errorf("failed to get hostedcluster ServiceAccountSigningKey secret %s: %w", hc.Spec.ServiceAccountSigningKey.Name, err)
 	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hc.Name, signingKeySecret); err != nil {
+		return nil, nil, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
 	privateKeyPEMBytes, hasKey := signingKeySecret.Data[hyperv1.ServiceAccountSigningKeySecretKey]
 	if !hasKey {
 		return nil, nil, fmt.Errorf("cannot find service account key %q in secret %s", hyperv1.ServiceAccountSigningKeySecretKey, signingKeySecret.Name)
@@ -5535,7 +5615,7 @@ func (r *HostedClusterReconciler) reconcilePlatformDefaultSettings(ctx context.C
 	return nil
 }
 
-func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, name, namespace string) (string, error) {
+func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, hcName, name, namespace string) (string, error) {
 	creds := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -5545,6 +5625,9 @@ func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, name, na
 	if err := r.Get(ctx, client.ObjectKeyFromObject(creds), creds); err != nil {
 		return "", fmt.Errorf("failed to get secret: %w", err)
 	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcName, creds); err != nil {
+		return "", fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
 	credContent, err := ini.Load(creds.Data["credentials"])
 	if err != nil {
 		return "", fmt.Errorf("cannot parse credentials: %w", err)
@@ -5552,10 +5635,10 @@ func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, name, na
 	return credContent.Section("default").Key("role_arn").String(), nil
 }
 
-func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, rolesRef *hyperv1.AWSRolesRef, ns string) error {
+func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, hcName string, rolesRef *hyperv1.AWSRolesRef, ns string) error {
 	if strings.HasPrefix(rolesRef.NodePoolManagementARN, "arn-from-secret::") {
 		secretName := strings.TrimPrefix(rolesRef.NodePoolManagementARN, "arn-from-secret::")
-		arn, err := r.getARNFromSecret(ctx, secretName, ns)
+		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
@@ -5564,7 +5647,7 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 
 	if strings.HasPrefix(rolesRef.ControlPlaneOperatorARN, "arn-from-secret::") {
 		secretName := strings.TrimPrefix(rolesRef.ControlPlaneOperatorARN, "arn-from-secret::")
-		arn, err := r.getARNFromSecret(ctx, secretName, ns)
+		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
@@ -5573,7 +5656,7 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, roles
 
 	if strings.HasPrefix(rolesRef.KubeCloudControllerARN, "arn-from-secret::") {
 		secretName := strings.TrimPrefix(rolesRef.KubeCloudControllerARN, "arn-from-secret::")
-		arn, err := r.getARNFromSecret(ctx, secretName, ns)
+		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
@@ -5670,6 +5753,26 @@ func getNodePortIP(hcluster *hyperv1.HostedCluster) net.IP {
 		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort {
 			return net.ParseIP(svc.NodePort.Address)
 		}
+	}
+	return nil
+}
+
+func ensureReferencedResourceAnnotation(ctx context.Context, client client.Client, hcName string, obj client.Object) error {
+	if obj.GetNamespace() == "" {
+		panic("program error: ensureReferencedResourceAnnotation called on cluster-scoped object")
+	}
+	existing := obj.GetAnnotations()
+	if existing == nil {
+		existing = map[string]string{}
+	}
+	key := referencedResourceAnnotationPrefix + hcName
+	if _, ok := existing[key]; ok {
+		return nil
+	}
+	existing[key] = "true"
+	obj.SetAnnotations(existing)
+	if err := client.Update(ctx, obj); err != nil {
+		return err
 	}
 	return nil
 }
