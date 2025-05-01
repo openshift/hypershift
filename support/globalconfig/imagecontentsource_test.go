@@ -181,6 +181,7 @@ func createFakeIDMS() *configv1.ImageDigestMirrorSetList {
 		},
 	}
 }
+
 func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 	ctx := context.TODO()
 	g := NewGomegaWithT(t)
@@ -315,7 +316,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			}
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			releaseProvider, imageMetadataProvider, err := RenconcileMgmtImageRegistryOverrides(ctx, tc.capChecker, client, tc.registryOverrides)
+			provider, err := NewCommonRegistryProvider(ctx, tc.capChecker, client, tc.registryOverrides)
 
 			// Check error
 			if tc.expectedError != nil {
@@ -326,10 +327,10 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			}
 
 			// Check release provider
-			g.Expect(releaseProvider).To(Equal(tc.expectedRelease))
+			g.Expect(provider.GetReleaseProvider()).To(Equal(tc.expectedRelease))
 
 			// Check image metadata provider
-			g.Expect(imageMetadataProvider).To(Equal(tc.expectedMetadata))
+			g.Expect(provider.GetMetadataProvider()).To(Equal(tc.expectedMetadata))
 		})
 	}
 }
