@@ -15,7 +15,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -92,7 +91,7 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 //
 //		https://issues.redhat.com/browse/OCPNODE-1258
 //	    https://github.com/openshift/hypershift/pull/1776
-func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtClusterHasIDMSCapability, mgmtClusterHasICSPCapability bool) (map[string][]string, error) {
+func GetAllImageRegistryMirrors(ctx context.Context, client crclient.Client, mgmtClusterHasIDMSCapability, mgmtClusterHasICSPCapability bool) (map[string][]string, error) {
 	var mgmtClusterRegistryOverrides = make(map[string][]string)
 
 	if mgmtClusterHasIDMSCapability {
@@ -121,7 +120,7 @@ func GetAllImageRegistryMirrors(ctx context.Context, client client.Client, mgmtC
 }
 
 // getImageDigestMirrorSets retrieves any IDMS CRs from an OpenShift management cluster
-func getImageDigestMirrorSets(ctx context.Context, client client.Client) (map[string][]string, error) {
+func getImageDigestMirrorSets(ctx context.Context, client crclient.Client) (map[string][]string, error) {
 	var idmsRegistryOverrides = make(map[string][]string)
 	var imageDigestMirrorSets = ImageDigestMirrorSetList()
 
@@ -145,7 +144,7 @@ func getImageDigestMirrorSets(ctx context.Context, client client.Client) (map[st
 }
 
 // getImageContentSourcePolicies retrieves any ICSP CRs from an OpenShift management cluster
-func getImageContentSourcePolicies(ctx context.Context, client client.Client) (map[string][]string, error) {
+func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) (map[string][]string, error) {
 	log := ctrl.LoggerFrom(ctx)
 	var icspRegistryOverrides = make(map[string][]string)
 	var imageContentSourcePolicies = ImageContentSourcePolicyList()
@@ -172,7 +171,24 @@ func getImageContentSourcePolicies(ctx context.Context, client client.Client) (m
 	return icspRegistryOverrides, nil
 }
 
-func RenconcileMgmtImageRegistryOverrides(ctx context.Context, capChecker capabilities.CapabiltyChecker, client crclient.Client, registryOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+// RegistryProvider is an interface for release and metadata providers to enable the reconcilliation
+// of those providers
+type RegistryProvider interface {
+	GetMetadataProvider() hyperutil.ImageMetadataProvider
+	GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	Reconcile(context.Context, crclient.Client) error
+}
+
+// CommonRegistryProvider is the default RegistyProvider implementation
+type CommonRegistryProvider struct {
+	capChecker       capabilities.CapabiltyChecker
+	MetadataProvider *hyperutil.RegistryClientImageMetadataProvider
+	ReleaseProvider  *releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator
+}
+
+// NewCommonRegistryProvider creates a CommonRegistryProvider
+func NewCommonRegistryProvider(ctx context.Context, capChecker capabilities.CapabiltyChecker, client crclient.Client, registryOverrides map[string]string) (CommonRegistryProvider, error) {
+
 	var (
 		imageRegistryMirrors map[string][]string
 		err                  error
@@ -181,7 +197,7 @@ func RenconcileMgmtImageRegistryOverrides(ctx context.Context, capChecker capabi
 	if capChecker.Has(capabilities.CapabilityICSP) || capChecker.Has(capabilities.CapabilityIDMS) {
 		imageRegistryMirrors, err = GetAllImageRegistryMirrors(ctx, client, capChecker.Has(capabilities.CapabilityIDMS), capChecker.Has(capabilities.CapabilityICSP))
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
+			return CommonRegistryProvider{}, fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
 		}
 	}
 
@@ -196,9 +212,46 @@ func RenconcileMgmtImageRegistryOverrides(ctx context.Context, capChecker capabi
 		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
 	}
 
-	imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{
+	metadataProvider := &hyperutil.RegistryClientImageMetadataProvider{
 		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
 	}
 
-	return releaseProvider, imageMetadataProvider, nil
+	provider := CommonRegistryProvider{
+		capChecker:       capChecker,
+		MetadataProvider: metadataProvider,
+		ReleaseProvider:  releaseProvider,
+	}
+
+	return provider, nil
+}
+
+// GetMetadataProvider returns the image metadata provider for the registry provider
+func (rp CommonRegistryProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+	return rp.MetadataProvider
+}
+
+// GetReleaseProvider returns the release provider for the registry provider
+func (rp CommonRegistryProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides {
+	return rp.ReleaseProvider
+}
+
+// Reconcile updates the image registry mirrors for the providers according to the capabilities of the cluster
+func (rp CommonRegistryProvider) Reconcile(ctx context.Context, client crclient.Client) error {
+
+	var (
+		imageRegistryMirrors map[string][]string
+		err                  error
+	)
+
+	if rp.capChecker.Has(capabilities.CapabilityICSP) || rp.capChecker.Has(capabilities.CapabilityIDMS) {
+		imageRegistryMirrors, err = GetAllImageRegistryMirrors(ctx, client, rp.capChecker.Has(capabilities.CapabilityIDMS), rp.capChecker.Has(capabilities.CapabilityICSP))
+		if err != nil {
+			return fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
+		}
+	}
+
+	rp.ReleaseProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
+	rp.MetadataProvider.OpenShiftImageRegistryOverrides = imageRegistryMirrors
+
+	return nil
 }
