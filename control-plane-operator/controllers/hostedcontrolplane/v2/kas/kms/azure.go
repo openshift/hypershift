@@ -249,6 +249,6 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 
 func AdaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
 	managedIdentity := cpContext.HCP.Spec.SecretEncryption.KMS.Azure.KMS
-	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity, true)
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
 	return nil
 }
