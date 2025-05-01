@@ -8377,21 +8377,6 @@ mainly used for CI purposes.</p>
 </tr>
 <tr>
 <td>
-<code>certificateName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-reside in an Azure Key Vault on the management cluster.
-Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>objectEncoding</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ObjectEncodingFormat">
@@ -8400,7 +8385,13 @@ ObjectEncodingFormat
 </em>
 </td>
 <td>
-<p>objectEncoding is the encoding format for the object.</p>
+<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
+Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
+unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+SecretProviderClass custom resource related to the managed identity.</p>
+<p>The default value is utf-8.</p>
+<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </td>
 </tr>
 <tr>
@@ -8411,15 +8402,12 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
 format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
 ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.</p>
 <p>More info on this struct can be found here - <a href="https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156">https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156</a>.</p>
 <p>credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
 credentialsSecretName must also be unique within the Azure Key Vault. See more details here - <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/</a>.</p>
-<p>TODO set the validation:MinLength=1
-TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 </td>
 </tr>
 </tbody>

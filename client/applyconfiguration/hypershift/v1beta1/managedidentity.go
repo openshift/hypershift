@@ -25,7 +25,6 @@ import (
 // with apply.
 type ManagedIdentityApplyConfiguration struct {
 	ClientID              *string                                 `json:"clientID,omitempty"`
-	CertificateName       *string                                 `json:"certificateName,omitempty"`
 	ObjectEncoding        *hypershiftv1beta1.ObjectEncodingFormat `json:"objectEncoding,omitempty"`
 	CredentialsSecretName *string                                 `json:"credentialsSecretName,omitempty"`
 }
@@ -41,14 +40,6 @@ func ManagedIdentity() *ManagedIdentityApplyConfiguration {
 // If called multiple times, the ClientID field is set to the value of the last call.
 func (b *ManagedIdentityApplyConfiguration) WithClientID(value string) *ManagedIdentityApplyConfiguration {
 	b.ClientID = &value
-	return b
-}
-
-// WithCertificateName sets the CertificateName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CertificateName field is set to the value of the last call.
-func (b *ManagedIdentityApplyConfiguration) WithCertificateName(value string) *ManagedIdentityApplyConfiguration {
-	b.CertificateName = &value
 	return b
 }
 
