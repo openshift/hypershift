@@ -255,39 +255,25 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 // reconcileAzureClusterIdentity creates a CAPZ AzureClusterIdentity custom resource using UserAssignedIdentityCredentials
 // as the Azure authentication method. More information on this custom resource type can be found here: https://capz.sigs.k8s.io/topics/identities
 func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
-	if payloadVersion.GE(config.Version419) {
-		// Translate the HyperShift cloud value to a valid CAPZ cloud value
-		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
-		if err != nil {
-			return err
-		}
-
-		// Create a AzureClusterIdentity with the Azure authentication type UserAssignedIdentityCredentials
-		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-			TenantID:                                 hc.Spec.Platform.Azure.TenantID,
-			UserAssignedIdentityCredentialsCloudType: azureCloudType,
-			UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
-			Type:                                     capiazure.UserAssignedIdentityCredential,
-			AllowedNamespaces: &capiazure.AllowedNamespaces{
-				NamespaceList: []string{
-					controlPlaneNamespace,
-				},
-			},
-		}
-	} else {
-		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-			ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
-			TenantID: hc.Spec.Platform.Azure.TenantID,
-			CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
-			Type:     capiazure.ServicePrincipalCertificate,
-			AllowedNamespaces: &capiazure.AllowedNamespaces{
-				NamespaceList: []string{
-					controlPlaneNamespace,
-				},
-			},
-		}
+	// Translate the HyperShift cloud value to a valid CAPZ cloud value
+	azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
+	if err != nil {
+		return err
 	}
+
+	// Create a AzureClusterIdentity with the Azure authentication type UserAssignedIdentityCredentials
+	azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+		TenantID:                                 hc.Spec.Platform.Azure.TenantID,
+		UserAssignedIdentityCredentialsCloudType: azureCloudType,
+		UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
+		Type:                                     capiazure.UserAssignedIdentityCredential,
+		AllowedNamespaces: &capiazure.AllowedNamespaces{
+			NamespaceList: []string{
+				controlPlaneNamespace,
+			},
+		},
+	}
+
 	return nil
 }
 
