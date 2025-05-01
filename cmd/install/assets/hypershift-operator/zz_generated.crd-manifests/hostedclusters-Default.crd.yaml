@@ -3532,13 +3532,6 @@ spec:
                                   cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
                                   manager.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3551,7 +3544,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3561,6 +3554,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3585,6 +3580,7 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               controlPlaneOperator:
@@ -3592,13 +3588,6 @@ spec:
                                   managed identity associated with the control plane
                                   operator.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3611,7 +3600,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3621,6 +3610,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3645,19 +3636,13 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               disk:
                                 description: diskClientID is a pre-existing managed
                                   identity associated with the azure-disk-controller.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3670,7 +3655,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3680,6 +3665,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3704,19 +3691,13 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               file:
                                 description: fileClientID is a pre-existing managed
                                   identity associated with the azure-disk-controller.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3729,7 +3710,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3739,6 +3720,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3763,19 +3746,13 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               imageRegistry:
                                 description: imageRegistry is a pre-existing managed
                                   identity associated with the cluster-image-registry-operator.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3788,7 +3765,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3798,6 +3775,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3822,19 +3801,13 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               ingress:
                                 description: ingress is a pre-existing managed identity
                                   associated with the cluster-ingress-operator.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3847,7 +3820,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3857,6 +3830,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3881,6 +3856,7 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               managedIdentitiesKeyVault:
@@ -3909,13 +3885,6 @@ spec:
                                 description: network is a pre-existing managed identity
                                   associated with the cluster-network-operator.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3928,7 +3897,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3938,6 +3907,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -3962,6 +3933,7 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                               nodePoolManagement:
@@ -3969,13 +3941,6 @@ spec:
                                   managed identity associated with the operator managing
                                   the NodePools.
                                 properties:
-                                  certificateName:
-                                    description: |-
-                                      certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                      reside in an Azure Key Vault on the management cluster.
-                                      Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                      removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                    type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -3988,7 +3953,7 @@ spec:
                                         in the form 8-4-4-4-12.
                                       rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                                   credentialsSecretName:
-                                    description: |
+                                    description: |-
                                       credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                       format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                       ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -3998,6 +3963,8 @@ spec:
                                       credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                       credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                     maxLength: 127
+                                    minLength: 1
+                                    pattern: ^[a-zA-Z0-9-]+$
                                     type: string
                                   objectEncoding:
                                     allOf:
@@ -4022,6 +3989,7 @@ spec:
                                       See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                     type: string
                                 required:
+                                - credentialsSecretName
                                 - objectEncoding
                                 type: object
                             required:
@@ -4755,13 +4723,6 @@ spec:
                             description: kms is a pre-existing managed identity used
                               to authenticate with Azure KMS.
                             properties:
-                              certificateName:
-                                description: |-
-                                  certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-                                  reside in an Azure Key Vault on the management cluster.
-                                  Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-                                  removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-                                type: string
                               clientID:
                                 description: |-
                                   clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
@@ -4773,7 +4734,7 @@ spec:
                                     separated hexadecimal characters in the form 8-4-4-4-12.
                                   rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                               credentialsSecretName:
-                                description: |
+                                description: |-
                                   credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
                                   format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
                                   ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.
@@ -4783,6 +4744,8 @@ spec:
                                   credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
                                   credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
                                 maxLength: 127
+                                minLength: 1
+                                pattern: ^[a-zA-Z0-9-]+$
                                 type: string
                               objectEncoding:
                                 allOf:
@@ -4807,6 +4770,7 @@ spec:
                                   See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
                                 type: string
                             required:
+                            - credentialsSecretName
                             - objectEncoding
                             type: object
                         required:
