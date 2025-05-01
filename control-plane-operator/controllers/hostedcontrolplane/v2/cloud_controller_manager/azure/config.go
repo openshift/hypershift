@@ -51,7 +51,7 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 }
 
 func adaptSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider, true)
+	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider)
 	return nil
 }
 
