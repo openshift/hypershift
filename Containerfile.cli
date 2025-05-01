@@ -1,0 +1,36 @@
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:v1.23.6 AS builder
+
+WORKDIR /hypershift
+
+COPY . .
+
+RUN make product-cli-release
+
+RUN for OS in linux; do \
+  for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
+    tar -czvf /hypershift/bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp \
+      || exit 1; \
+  done; \
+done
+
+RUN for OS in darwin windows; do \
+  for ARCH in amd64 arm64; do \
+    tar -czvf /hypershift/bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp \
+      || exit 1; \
+  done; \
+done
+
+FROM registry.redhat.io/ubi9/nginx-122:1-1743076774
+
+COPY --from=builder /hypershift/bin/    /opt/app-root/src/
+
+CMD ["nginx", "-g", "daemon off;"]
+
+LABEL name="multicluster-engine/hypershift-cli-rhel9"
+LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
+LABEL summary="HyperShift HCP CLI"
+LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/"
+LABEL version=4.19
+LABEL com.redhat.component="multicluster-engine-hypershift-cli-container"
+LABEL io.openshift.tags="data,images"
+LABEL io.k8s.display-name="multicluster-engine-hypershift-cli"
