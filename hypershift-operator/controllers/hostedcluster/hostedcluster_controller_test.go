@@ -796,15 +796,6 @@ func TestShouldCheckForStaleCerts(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name: "cpo without cpov2label, but has annotation for cpov2",
-			hcAnnotations: map[string]string{
-				hcmetrics.HasBeenAvailableAnnotation:     "true",
-				hyperv1.ControlPlaneOperatorV2Annotation: "true",
-			},
-			cpov2label:     false,
-			expectedResult: false,
-		},
-		{
 			name:           "has not been available",
 			hcAnnotations:  nil,
 			cpov2label:     false,

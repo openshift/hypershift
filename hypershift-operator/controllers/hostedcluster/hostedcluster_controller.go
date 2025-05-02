@@ -2147,7 +2147,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, defaultingToControlPlan
 		if hc.Annotations[hyperv1.DisablePKIReconciliationAnnotation] == "true" {
 			return false
 		}
-		if defaultingToControlPlaneV2 || hc.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] != "" {
+		if defaultingToControlPlaneV2 {
 			return false
 		}
 		return true
