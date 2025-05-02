@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/errors"
 )
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -40,6 +39,8 @@ const (
 	PowerVSProcessorTypeShared PowerVSProcessorType = "Shared"
 	// PowerVSProcessorTypeCapped enum property to identify a Capped Power VS processor type.
 	PowerVSProcessorTypeCapped PowerVSProcessorType = "Capped"
+	// DefaultIgnitionVersion represents default Ignition version generated for machine userdata.
+	DefaultIgnitionVersion = "2.3"
 )
 
 // IBMPowerVSMachineSpec defines the desired state of IBMPowerVSMachine.
@@ -48,8 +49,18 @@ type IBMPowerVSMachineSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed.
-	// +kubebuilder:validation:MinLength=1
+	// Deprecated: use ServiceInstance instead
 	ServiceInstanceID string `json:"serviceInstanceID"`
+
+	// serviceInstance is the reference to the Power VS workspace on which the server instance(VM) will be created.
+	// Power VS workspace is a container for all Power VS instances at a specific geographic region.
+	// serviceInstance can be created via IBM Cloud catalog or CLI.
+	// supported serviceInstance identifier in PowerVSResource are Name and ID and that can be obtained from IBM Cloud UI or IBM Cloud cli.
+	// More detail about Power VS service instance.
+	// https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
+	// when omitted system will dynamically create the service instance
+	// +optional
+	ServiceInstance *IBMPowerVSResourceReference `json:"serviceInstance,omitempty"`
 
 	// SSHKey is the name of the SSH key pair provided to the vsi for authenticating users.
 	SSHKey string `json:"sshKey,omitempty"`
@@ -72,7 +83,7 @@ type IBMPowerVSMachineSpec struct {
 	// When omitted, this means that the user has no opinion and the platform is left to choose a
 	// reasonable default, which is subject to change over time. The current default is s922 which is generally available.
 	// + This is not an enum because we expect other values to be added later which should be supported implicitly.
-	// +kubebuilder:validation:Enum:="s922";"e880";"e980";""
+	// +kubebuilder:validation:Enum:="s922";"e880";"e980";"s1022";""
 	// +optional
 	SystemType string `json:"systemType,omitempty"`
 
@@ -187,7 +198,7 @@ type IBMPowerVSMachineStatus struct {
 	// can be added as events to the Machine object and/or logged in the
 	// controller's output.
 	// +optional
-	FailureReason *errors.MachineStatusError `json:"failureReason,omitempty"`
+	FailureReason *string `json:"failureReason,omitempty"`
 
 	// FailureMessage will be set in the event that there is a terminal problem
 	// reconciling the Machine and will contain a more verbose string suitable

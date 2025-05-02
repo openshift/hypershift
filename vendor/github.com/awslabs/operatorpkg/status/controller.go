@@ -134,6 +134,7 @@ func toPrometheusLabel(k string) string {
 func (c *Controller[T]) reconcile(ctx context.Context, req reconcile.Request, o Object) (reconcile.Result, error) {
 	if err := c.kubeClient.Get(ctx, req.NamespacedName, o); err != nil {
 		if errors.IsNotFound(err) {
+			c.observedConditions.Delete(req)
 			c.deletePartialMatchGaugeMetric(c.ConditionCount, ConditionCount, map[string]string{
 				MetricLabelNamespace: req.Namespace,
 				MetricLabelName:      req.Name,
