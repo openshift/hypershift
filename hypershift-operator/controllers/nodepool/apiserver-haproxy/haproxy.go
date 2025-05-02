@@ -373,6 +373,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 				SecurityContext: &corev1.SecurityContext{
 					RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
 				},
+				TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 				Resources: corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
 						corev1.ResourceMemory: resource.MustParse("16Mi"),

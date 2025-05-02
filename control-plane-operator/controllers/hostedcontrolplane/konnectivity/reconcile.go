@@ -147,6 +147,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 			"--v",
 			"3",
 		}
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }

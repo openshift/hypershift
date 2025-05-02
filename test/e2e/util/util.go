@@ -825,12 +825,12 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 		for _, pod := range podList.Items {
 			for _, initContainer := range pod.Spec.InitContainers {
 				if initContainer.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
-					t.Errorf("initContainer %s in pod %s has doesn't have terminationMessagePolicy %s but %s", initContainer.Name, pod.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)
+					t.Errorf("ns/%s pod/%s initContainer/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, initContainer.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)
 				}
 			}
 			for _, container := range pod.Spec.Containers {
 				if container.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
-					t.Errorf("container %s in pod %s has doesn't have terminationMessagePolicy %s but %s", container.Name, pod.Name, corev1.TerminationMessageFallbackToLogsOnError, container.TerminationMessagePolicy)
+					t.Errorf("ns/%s pod/%s container/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, container.Name, corev1.TerminationMessageFallbackToLogsOnError, container.TerminationMessagePolicy)
 				}
 			}
 		}
