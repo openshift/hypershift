@@ -281,7 +281,9 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if ((hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform) && (svc.Spec.Type != corev1.ServiceTypeNodePort)) || (hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform) {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Konnectivity service: %s", strategy.Type)
 	}
