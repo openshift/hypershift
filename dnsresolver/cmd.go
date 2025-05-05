@@ -30,7 +30,7 @@ func NewCommand() *cobra.Command {
 }
 
 func resolveDNS(ctx context.Context, hostName string) error {
-	err := wait.PollImmediateWithContext(ctx, time.Second, 10*time.Minute, func(ctx context.Context) (done bool, err error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 10*time.Minute, false, func(ctx context.Context) (done bool, err error) {
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, hostName)
 		if err == nil && len(ips) > 0 {
 			fmt.Printf("Address %s resolved to %s\n", hostName, ips[0].String())

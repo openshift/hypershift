@@ -149,8 +149,8 @@ const (
 
 func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error) {
 	var errs []error
-	combined := make(map[string]sets.String)
-	combinedDisplayNames := make(map[string]sets.String)
+	combined := make(map[string]sets.Set[string])
+	combinedDisplayNames := make(map[string]sets.Set[string])
 	for _, tag := range is.Spec.Tags {
 		versions, ok := tag.Annotations[annotationBuildVersions]
 		if !ok {
@@ -168,14 +168,14 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 			}
 			existing, ok := combined[k]
 			if !ok {
-				existing = sets.NewString()
+				existing = sets.New[string]()
 				combined[k] = existing
 			}
 			existing.Insert(v.Version)
 
 			existingDisplayName, ok := combinedDisplayNames[k]
 			if !ok {
-				existingDisplayName = sets.NewString()
+				existingDisplayName = sets.New[string]()
 				combinedDisplayNames[k] = existingDisplayName
 			}
 			existingDisplayName.Insert(v.DisplayName)
@@ -197,7 +197,9 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 		if _, ok := out[k]; ok {
 			continue
 		}
-		version := v.List()[0]
+		sortedList := v.UnsortedList()
+		sort.Strings(sortedList)
+		version := sortedList[0]
 		if out == nil {
 			out = make(ComponentVersions)
 		}
@@ -216,7 +218,9 @@ func readComponentVersions(is *imageapi.ImageStream) (ComponentVersions, []error
 			continue
 		}
 		if len(version.DisplayName) == 0 {
-			version.DisplayName = v.List()[0]
+			sortedList := v.UnsortedList()
+			sort.Strings(sortedList)
+			version.DisplayName = sortedList[0]
 		}
 		out[k] = version
 	}

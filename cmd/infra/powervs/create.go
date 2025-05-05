@@ -760,7 +760,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		return resourceInstance, nil
 	}
 
-	f := func() (bool, error) {
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, cloudInstanceCreationTimeout, true, func(context.Context) (bool, error) {
 		resourceInstance, _, err = rcv2.GetResourceInstanceWithContext(ctx, &resourcecontrollerv2.GetResourceInstanceOptions{ID: resourceInstance.ID})
 		logger.Info("Waiting for cloud instance to up", "id", resourceInstance.ID, "state", *resourceInstance.State)
 
@@ -776,9 +776,7 @@ func (infra *Infra) createCloudInstance(ctx context.Context, logger logr.Logger,
 		}
 
 		return false, nil
-	}
-
-	if err = wait.PollImmediate(pollingInterval, cloudInstanceCreationTimeout, f); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -937,8 +935,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 		return nil, err
 	}
 
-	f := func() (bool, error) {
-
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, func(ctx context.Context) (bool, error) {
 		vpc, _, err = v1.GetVPCWithContext(ctx, &vpcv1.GetVPCOptions{ID: vpc.ID})
 		if err != nil {
 			return false, err
@@ -948,9 +945,7 @@ func (infra *Infra) createVpc(ctx context.Context, logger logr.Logger, options *
 			return true, nil
 		}
 		return false, nil
-	}
-
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -1092,8 +1087,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 		return nil, fmt.Errorf("CreateSubnet returned nil")
 	}
 
-	f := func() (bool, error) {
-
+	if err = wait.PollUntilContextTimeout(ctx, pollingInterval, vpcCreationTimeout, true, func(ctx context.Context) (bool, error) {
 		subnet, _, err = v1.GetSubnetWithContext(ctx, &vpcv1.GetSubnetOptions{ID: subnet.ID})
 		if err != nil {
 			return false, err
@@ -1103,9 +1097,7 @@ func (infra *Infra) createVpcSubnet(ctx context.Context, logger logr.Logger, opt
 			return true, nil
 		}
 		return false, nil
-	}
-
-	if err = wait.PollImmediate(pollingInterval, vpcCreationTimeout, f); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
@@ -1151,18 +1143,16 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, op
 		dhcpServer, err = client.Get(dhcpServerID)
 		if *dhcpServer.Status != dhcpServiceActiveState {
 			var isActive bool
-			f := func() (bool, error) {
+			if err = wait.PollUntilContextTimeout(ctx, dhcpPollingInterval, dhcpServerCreationTimeout, true, func(ctx context.Context) (bool, error) {
 				dhcpServer, isActive, err = isDHCPServerActive(logger, client, dhcpServerID)
 				return isActive, err
-			}
-
-			if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+			}); err != nil {
 				return err
 			}
 		}
 	} else {
 		logger.Info("Creating PowerVS DHCPServer...")
-		dhcpServer, err = infra.createPowerVSDhcp(logger, options, client)
+		dhcpServer, err = infra.createPowerVSDhcp(ctx, logger, options, client)
 	}
 
 	if err != nil {
@@ -1223,7 +1213,7 @@ func isDHCPServerActive(logger logr.Logger, client *instance.IBMPIDhcpClient, dh
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 
@@ -1240,12 +1230,11 @@ func (infra *Infra) createPowerVSDhcp(logger logr.Logger, options *CreateInfraOp
 	}
 
 	var isActive bool
-	f := func() (bool, error) {
+
+	if err = wait.PollUntilContextTimeout(ctx, dhcpPollingInterval, dhcpServerCreationTimeout, true, func(ctx context.Context) (bool, error) {
 		dhcpServer, isActive, err = isDHCPServerActive(logger, client, *dhcp.ID)
 		return isActive, err
-	}
-
-	if err = wait.PollImmediate(dhcpPollingInterval, dhcpServerCreationTimeout, f); err != nil {
+	}); err != nil {
 		return nil, err
 	}
 
