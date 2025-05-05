@@ -9,13 +9,15 @@ package tools
 import (
 	_ "github.com/ahmetb/gen-crd-api-reference-docs"
 	_ "github.com/golangci/golangci-lint/cmd/golangci-lint"
+
 	// jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
 	// more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
 	//_ "github.com/prometheus/prometheus/cmd/promtool"
 	_ "github.com/openshift/api/tools"
 	_ "github.com/openshift/api/tools/codegen/cmd"
+	_ "go.uber.org/mock/mockgen"
 	_ "gotest.tools/gotestsum"
 	_ "honnef.co/go/tools/cmd/staticcheck"
 	_ "k8s.io/code-generator"
-	_ "go.uber.org/mock/mockgen"
+	_ "sigs.k8s.io/kube-api-linter"
 )

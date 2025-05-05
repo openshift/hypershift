@@ -62,20 +62,20 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 update: workspace-sync api-deps api api-docs deps clients
 
 $(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
+	# Hack to install kuibe api linter plugin until https://github.com/kubernetes-sigs/kube-api-linter/pull/78 is merged
+	@echo 'package main; import (_ "sigs.k8s.io/kube-api-linter")' > hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/cmd/golangci-lint
-
-$(GOLANGCI_KUBEAPILINTER): $(GOLANGCI_LINT)
-	$(GOLANGCI_LINT) custom
+	git checkout hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT) $(GOLANGCI_KUBEAPILINTER)
+lint: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml -v
-	cd api && $(GOLANGCI_KUBEAPILINTER) run --config ./.golangci.yml -v
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml -v
 
 .PHONY: lint-fix
 lint-fix:
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
-	cd api && $(GOLANGCI_KUBEAPILINTER) run --config ./.golangci.yml --fix -v
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet lint cpo-container-sync
