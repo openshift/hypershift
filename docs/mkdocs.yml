@@ -76,6 +76,7 @@ nav:
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - how-to/disaster-recovery/backup-and-restore-oadp.md
+    - how-to/disaster-recovery/backup-and-restore-oadp-1-5.md
     - how-to/disaster-recovery/etcd-recovery.md
   - 'Automated Machine Management':
     - how-to/automated-machine-management/index.md
