@@ -133,25 +133,24 @@ func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullS
 		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
 	}
 
-	if hcp.Spec.OLMCatalogPlacement == hyperv1.GuestOLMCatalogPlacement {
-		imageRegistry = "registry.redhat.io/redhat"
-	} else {
-	//check catalogs of last 4 supported version incase new version is not available
-	supportedVersions := 4
-	for i := 0; i < supportedVersions; i++ {
-		_, err = digestLister(ctx, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)
-		if err == nil {
-			break
+	if hcp.Spec.OLMCatalogPlacement != hyperv1.GuestOLMCatalogPlacement {
+		//check catalogs of last 4 supported version incase new version is not available
+		supportedVersions := 4
+		for i := 0; i < supportedVersions; i++ {
+			_, err = digestLister(ctx, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)
+			if err == nil {
+				break
+			}
+			//manifest unknown error is expected if the image is not available.
+			//If the all supported versions are checked and the image is still not available, return the error
+			if !strings.Contains(err.Error(), "manifest unknown") {
+				return nil, err
+			}
+			if i == supportedVersions-1 {
+				return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
+			}
+			version.Minor--
 		}
-		//manifest unknown error is expected if the image is not available.
-		//If the all supported versions are checked and the image is still not available, return the error
-		if !strings.Contains(err.Error(), "manifest unknown") {
-			return nil, err
-		}
-		if i == supportedVersions-1 {
-			return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
-		}
-		version.Minor--
 	}
 
 	operators := map[string]string{
