@@ -862,7 +862,7 @@ EOF
    --rendered-manifest-dir=/tmp/manifests \
    --cluster-profile=ibm-cloud-managed \
    --payload-version=%[2]s
-cp /tmp/output/manifests/* %[1]s
+cp /tmp/output/* %[1]s
 cp /tmp/manifests/* %[1]s
 `
 	return fmt.Sprintf(script, workDir, payloadVersion, featureGateYaml)
