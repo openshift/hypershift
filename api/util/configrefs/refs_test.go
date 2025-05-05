@@ -4,10 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/sets"
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	configv1 "github.com/openshift/api/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // Be sure to update *ConfigMapRefs in refs.go to include new configmap refs
