@@ -4365,24 +4365,27 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 		return fmt.Errorf("failed to reconcile router configuration: %w", err)
 	}
 
-	deployment := manifests.RouterDeployment(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-		return ingress.ReconcileRouterDeployment(deployment,
-			config.OwnerRefFrom(hcp),
-			ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
-			releaseImageProvider.GetImage(ingress.PrivateRouterImage),
-			routerConfig,
-		)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router deployment: %w", err)
-	}
+	if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		deployment := manifests.RouterDeployment(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
+			return ingress.ReconcileRouterDeployment(deployment,
+				config.OwnerRefFrom(hcp),
+				ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
+				releaseImageProvider.GetImage(ingress.PrivateRouterImage),
+				routerConfig,
+			)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router deployment: %w", err)
+		}
 
-	pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
-		ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+		pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
+			ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
+		}
+
 	}
 
 	return nil
