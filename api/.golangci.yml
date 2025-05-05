@@ -1,0 +1,161 @@
+run:
+  timeout: 10m
+  allow-parallel-runners: true
+output:
+  sort-results: true
+severity:
+  default-severity: error
+issues:
+  exclude-rules:
+    - linters:
+        - staticcheck
+      text: "SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release"
+    - linters:
+        - staticcheck
+      text: "SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.ReleaseImage is deprecated: Use versionStatus.desired.image instead."
+    - linters:
+        - staticcheck
+      text: "SA1019: hcp.Status.LastReleaseImageTransitionTime is deprecated"
+    - linters:
+        - staticcheck
+      text: "SA1019: in.Status.DNSName is deprecated"
+    - linters:
+        - unused
+      text: "const `tuningConfigKey` is unused"
+    - path-except: "hypershift//*"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/aws.go"
+      text: "nobools: field Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum"
+      linters:
+        - kubeapilinter     
+    - path: "hypershift/v1beta1/hosted_controlplane.go"
+      text: "nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hosted_controlplane.go"
+      text: "nobools: field Ready should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hosted_controlplane.go"
+      text: "nobools: field Initialized should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hosted_controlplane.go"
+      text: "nobools: field ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hosted_controlplane.go"
+      text: "integers: field NodeCount pointer should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hostedcluster_types.go"
+      text: "nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/hostedcluster_types.go"
+      text: "requiredfields: field Provisioner is marked as required, should not be a pointer"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/kubevirt.go"
+      text: "integers: field Cores pointer should not use unsigned integers, use only int32 or int64 and apply validation to ensure the value is positive"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/kubevirt.go"
+      text: "requiredfields: field RootVolume is marked as required, should not be a pointer"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/kubevirt.go"
+      text: "nobools: field AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/kubevirt.go"
+      text: "nobools: field BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/nodepool_types.go"
+      text: "conditions: Conditions field must be a slice of metav1.Condition"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/nodepool_types.go"
+      text: "nobools: field AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/openstack.go"
+      text: "integers: field NetworkMTU pointer should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/openstack.go"
+      text: "nobools: field DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/powervs.go"
+      text: "requiredfields: field Subnet is marked as required, should not be a pointer"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/powervs.go"
+      text: "requiredfields: field VPC is marked as required, should not be a pointer"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/ibmcloud.go"
+      text: "integers: field KeyVersion should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/kubevirt.go"
+      text: "integers: field Count should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/openstack.go"
+      text: "integers: field IPVersion should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements"
+      linters:
+        - kubeapilinter
+    - path: "hypershift/v1beta1/aws.go"
+      text: "nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum."
+      linters:
+        - kubeapilinter
+linters:
+  enable:
+    - kubeapilinter
+    - gci
+    - unused
+    - ineffassign
+    - gosimple
+    - errcheck
+    - govet
+  disable:
+    - staticcheck
+linters-settings:
+  custom:
+    kubeapilinter:
+      type: "module"
+      description: kubeapilinter is the Kube-API-Linter and lints Kube like APIs based on API conventions and best practices.
+      settings:
+        linters:
+          enable:
+          - "maxlength"
+          - "nobools"
+          - "nomaps"
+          - "statussubresource"
+        lintersConfig:
+          conditions:
+            isFirstField: Warn
+            useProtobuf: Ignore
+            usePatchStrategy: Ignore
+  gci:
+    sections:
+      - standard
+      - dot
+      - prefix(github.com/openshift/hypershift)
+      - prefix(github.com/openshift)
+      - prefix(github.com/aws)
+      - prefix(github.com/Azure)
+      - prefix(k8s.io)
+      - prefix(sigs.k8s.io)
+      - default
+    custom-order: true

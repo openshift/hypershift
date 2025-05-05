@@ -15,6 +15,7 @@ TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
 CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
+GOLANGCI_KUBEAPILINTER := $(abspath $(TOOLS_BIN_DIR)/golangci-kube-api-linter)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
@@ -63,13 +64,18 @@ update: workspace-sync api-deps api api-docs deps clients
 $(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/cmd/golangci-lint
 
+$(GOLANGCI_KUBEAPILINTER): $(GOLANGCI_LINT)
+	$(GOLANGCI_LINT) custom
+
 .PHONY: lint
-lint: $(GOLANGCI_LINT)
+lint: $(GOLANGCI_LINT) $(GOLANGCI_KUBEAPILINTER)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml -v
+	cd api && $(GOLANGCI_KUBEAPILINTER) run --config ./.golangci.yml -v
 
 .PHONY: lint-fix
 lint-fix:
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
+	cd api && $(GOLANGCI_KUBEAPILINTER) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet lint cpo-container-sync
