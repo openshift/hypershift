@@ -1742,7 +1742,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}
