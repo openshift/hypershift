@@ -59,7 +59,7 @@ func newAnalyzer(cfg config.RequiredFieldsConfig) *analysis.Analyzer {
 	}
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (any, error) {
+func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector

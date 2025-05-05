@@ -113,7 +113,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(newMarkers()),
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -239,8 +239,8 @@ func extractExpressions(expressions string) map[string]string {
 
 	// split expression string on commas (,) to handle multiple expressions
 	// in a single marker
-	chainedExpressions := strings.SplitSeq(expressions, ",")
-	for chainedExpression := range chainedExpressions {
+	chainedExpressions := strings.Split(expressions, ",")
+	for _, chainedExpression := range chainedExpressions {
 		exps := strings.SplitN(chainedExpression, "=", 2)
 		if len(exps) < 2 {
 			continue

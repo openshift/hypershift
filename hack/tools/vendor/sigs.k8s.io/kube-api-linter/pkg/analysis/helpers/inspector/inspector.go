@@ -28,9 +28,6 @@ import (
 type Inspector interface {
 	// InspectFields is a function that iterates over fields in structs.
 	InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers))
-
-	// InspectTypeSpec is a function that inspects the type spec and calls the provided inspectTypeSpec function.
-	InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers))
 }
 
 // inspector implements the Inspector interface.
@@ -80,15 +77,10 @@ func (i *inspector) InspectFields(inspectField func(field *ast.Field, stack []as
 			return false
 		}
 
-		structType, ok := stack[len(stack)-3].(*ast.StructType)
+		_, ok = stack[len(stack)-3].(*ast.StructType)
 		if !ok {
 			// A field within a struct has a FieldList parent and then a StructType parent.
 			// If we don't have a StructType parent, then we're not in a struct.
-			return false
-		}
-
-		if isItemsType(structType) {
-			// The field belongs to an items type, we don't need to report lint errors for this.
 			return false
 		}
 
@@ -107,48 +99,4 @@ func (i *inspector) InspectFields(inspectField func(field *ast.Field, stack []as
 
 		return true
 	})
-}
-
-// InspectTypeSpec inspects the type spec and calls the provided inspectTypeSpec function.
-func (i *inspector) InspectTypeSpec(inspectTypeSpec func(typeSpec *ast.TypeSpec, markersAccess markers.Markers)) {
-	nodeFilter := []ast.Node{
-		(*ast.TypeSpec)(nil),
-	}
-
-	i.inspector.Preorder(nodeFilter, func(n ast.Node) {
-		typeSpec, ok := n.(*ast.TypeSpec)
-		if !ok {
-			return
-		}
-
-		inspectTypeSpec(typeSpec, i.markers)
-	})
-}
-
-func isItemsType(structType *ast.StructType) bool {
-	// An items type is a struct with TypeMeta, ListMeta and Items fields.
-	if len(structType.Fields.List) != 3 {
-		return false
-	}
-
-	// Check if the first field is TypeMeta.
-	// This should be a selector (e.g. metav1.TypeMeta)
-	// Check the TypeMeta part as the package name may vary.
-	if typeMeta, ok := structType.Fields.List[0].Type.(*ast.SelectorExpr); !ok || typeMeta.Sel.Name != "TypeMeta" {
-		return false
-	}
-
-	// Check if the second field is ListMeta.
-	if listMeta, ok := structType.Fields.List[1].Type.(*ast.SelectorExpr); !ok || listMeta.Sel.Name != "ListMeta" {
-		return false
-	}
-
-	// Check if the third field is Items.
-	// It should be an array, and be called Items.
-	itemsField := structType.Fields.List[2]
-	if _, ok := itemsField.Type.(*ast.ArrayType); !ok || len(itemsField.Names) == 0 || itemsField.Names[0].Name != "Items" {
-		return false
-	}
-
-	return true
 }

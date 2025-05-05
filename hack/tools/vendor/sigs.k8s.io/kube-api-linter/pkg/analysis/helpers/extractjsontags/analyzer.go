@@ -64,7 +64,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(newStructFieldTags()),
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector

@@ -2119,8 +2119,8 @@ sigs.k8s.io/controller-tools/pkg/webhook
 ## explicit; go 1.21
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20250501211755-2c83ed303cde
-## explicit; go 1.24.2
+# sigs.k8s.io/kube-api-linter v0.0.0-20250418132406-3b26e1dde101
+## explicit; go 1.23.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis
 sigs.k8s.io/kube-api-linter/pkg/analysis/commentstart

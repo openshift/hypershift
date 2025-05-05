@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
-	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 )
 
 const (
@@ -50,7 +49,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspector.Analyzer},
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -75,13 +74,13 @@ func checkField(pass *analysis.Pass, field *ast.Field, markersAccess markers.Mar
 }
 
 func checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix, marker string, needsMaxLength func(markers.MarkerSet) bool) {
-	if utils.IsBasicType(pass, ident) { // Built-in type
+	if ident.Obj == nil { // Built-in type
 		checkString(pass, ident, node, aliases, markersAccess, prefix, marker, needsMaxLength)
 
 		return
 	}
 
-	tSpec, ok := utils.LookupTypeSpec(pass, ident)
+	tSpec, ok := ident.Obj.Decl.(*ast.TypeSpec)
 	if !ok {
 		return
 	}

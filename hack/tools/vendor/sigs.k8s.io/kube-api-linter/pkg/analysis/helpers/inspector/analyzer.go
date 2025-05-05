@@ -19,6 +19,7 @@ import (
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
+	"golang.org/x/tools/go/analysis/passes/inspect"
 	astinspector "golang.org/x/tools/go/ast/inspector"
 
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
@@ -35,12 +36,15 @@ var Analyzer = &analysis.Analyzer{
 	Name:       name,
 	Doc:        "Provides common functionality for analyzers that need to inspect fields and struct",
 	Run:        run,
-	Requires:   []*analysis.Analyzer{extractjsontags.Analyzer, markers.Analyzer},
+	Requires:   []*analysis.Analyzer{inspect.Analyzer, extractjsontags.Analyzer, markers.Analyzer},
 	ResultType: reflect.TypeOf(newInspector(nil, nil, nil)),
 }
 
-func run(pass *analysis.Pass) (any, error) {
-	astInspector := astinspector.New(pass.Files)
+func run(pass *analysis.Pass) (interface{}, error) {
+	astinspector, ok := pass.ResultOf[inspect.Analyzer].(*astinspector.Inspector)
+	if !ok {
+		return nil, kalerrors.ErrCouldNotGetInspector
+	}
 
 	jsonTags, ok := pass.ResultOf[extractjsontags.Analyzer].(extractjsontags.StructFieldTags)
 	if !ok {
@@ -52,5 +56,5 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotGetMarkers
 	}
 
-	return newInspector(astInspector, jsonTags, markersAccess), nil
+	return newInspector(astinspector, jsonTags, markersAccess), nil
 }

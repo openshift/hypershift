@@ -100,13 +100,13 @@ func (t *typeChecker) checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node
 // checkIdent calls the checkFunc with the ident, when we have hit a built-in type.
 // If the ident is not a built in, we look at the underlying type until we hit a built-in type.
 func (t *typeChecker) checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
-	if IsBasicType(pass, ident) {
+	if ident.Obj == nil || ident.Obj.Decl == nil {
 		// We've hit a built-in type, no need to check further.
 		t.checkFunc(pass, ident, node, prefix)
 		return
 	}
 
-	tSpec, ok := LookupTypeSpec(pass, ident)
+	tSpec, ok := ident.Obj.Decl.(*ast.TypeSpec)
 	if !ok {
 		return
 	}

@@ -240,8 +240,6 @@ It also supports the `// +kubebuilder:validation:Optional` and `// +kubebuilder:
 
 If you prefer to use the Kubebuilder markers instead, you can change the preference in the configuration.
 
-The `optionalorrequired` linter also checks for the presence of optional or required markers on type declarations, and forbids this pattern.
-
 ### Configuration
 
 ```yaml

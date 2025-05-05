@@ -41,12 +41,6 @@ const (
 
 	// KubebuilderRequiredMarker is the marker that indicates that a field is required in kubebuilder.
 	KubebuilderRequiredMarker = "kubebuilder:validation:Required"
-
-	// K8sOptionalMarker is the marker that indicates that a field is optional in k8s declarative validation.
-	K8sOptionalMarker = "k8s:optional"
-
-	// K8sRequiredMarker is the marker that indicates that a field is required in k8s declarative validation.
-	K8sRequiredMarker = "k8s:required"
 )
 
 func init() {
@@ -55,8 +49,6 @@ func init() {
 		RequiredMarker,
 		KubebuilderOptionalMarker,
 		KubebuilderRequiredMarker,
-		K8sOptionalMarker,
-		K8sRequiredMarker,
 	)
 }
 
@@ -100,7 +92,7 @@ func newAnalyzer(cfg config.OptionalOrRequiredConfig) *analysis.Analyzer {
 	}
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (any, error) {
+func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -108,10 +100,6 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 
 	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
 		a.checkField(pass, field, markersAccess.FieldMarkers(field), jsonTagInfo)
-	})
-
-	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
-		a.checkTypeSpec(pass, typeSpec, markersAccess)
 	})
 
 	return nil, nil //nolint:nilnil
@@ -143,8 +131,6 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarker
 	hasBothOptional := hasPrimaryOptional && hasSecondaryOptional
 	hasBothRequired := hasPrimaryRequired && hasSecondaryRequired
 
-	a.checkK8sMarkers(pass, field, fieldMarkers, prefix, hasEitherOptional, hasEitherRequired)
-
 	switch {
 	case hasEitherOptional && hasEitherRequired:
 		pass.Reportf(field.Pos(), "%s must not be marked as both optional and required", prefix)
@@ -169,23 +155,6 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarker
 	}
 }
 
-func (a *analyzer) checkK8sMarkers(pass *analysis.Pass, field *ast.Field, fieldMarkers markers.MarkerSet, prefix string, hasEitherOptional, hasEitherRequired bool) {
-	hasK8sOptional := fieldMarkers.Has(K8sOptionalMarker)
-	hasK8sRequired := fieldMarkers.Has(K8sRequiredMarker)
-
-	if hasK8sOptional && hasK8sRequired {
-		pass.Reportf(field.Pos(), "%s must not be marked as both %s and %s", prefix, K8sOptionalMarker, K8sRequiredMarker)
-	}
-
-	if hasK8sOptional && hasEitherRequired {
-		pass.Reportf(field.Pos(), "%s must not be marked as both %s and %s", prefix, K8sOptionalMarker, RequiredMarker)
-	}
-
-	if hasK8sRequired && hasEitherOptional {
-		pass.Reportf(field.Pos(), "%s must not be marked as both %s and %s", prefix, OptionalMarker, K8sRequiredMarker)
-	}
-}
-
 func reportShouldReplaceSecondaryMarker(field *ast.Field, marker []markers.Marker, primaryMarker, secondaryMarker, prefix string) analysis.Diagnostic {
 	textEdits := make([]analysis.TextEdit, len(marker))
 
@@ -194,7 +163,7 @@ func reportShouldReplaceSecondaryMarker(field *ast.Field, marker []markers.Marke
 			textEdits[i] = analysis.TextEdit{
 				Pos:     m.Pos,
 				End:     m.End,
-				NewText: fmt.Appendf(nil, "// +%s", primaryMarker),
+				NewText: []byte(fmt.Sprintf("// +%s", primaryMarker)),
 			}
 
 			continue
@@ -239,33 +208,6 @@ func reportShouldRemoveSecondaryMarker(field *ast.Field, marker []markers.Marker
 				TextEdits: textEdits,
 			},
 		},
-	}
-}
-
-func (a *analyzer) checkTypeSpec(pass *analysis.Pass, typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
-	name := typeSpec.Name.Name
-	set := markersAccess.TypeMarkers(typeSpec)
-
-	for _, marker := range set.UnsortedList() {
-		switch marker.Identifier {
-		case a.primaryOptionalMarker, a.secondaryOptionalMarker, a.primaryRequiredMarker, a.secondaryRequiredMarker, K8sOptionalMarker, K8sRequiredMarker:
-			pass.Report(analysis.Diagnostic{
-				Pos:     typeSpec.Pos(),
-				Message: fmt.Sprintf("type %s should not be marked as %s", name, marker.String()),
-				SuggestedFixes: []analysis.SuggestedFix{
-					{
-						Message: fmt.Sprintf("should remove `// +%s`", marker.String()),
-						TextEdits: []analysis.TextEdit{
-							{
-								Pos:     marker.Pos,
-								End:     marker.End,
-								NewText: nil,
-							},
-						},
-					},
-				},
-			})
-		}
 	}
 }
 
