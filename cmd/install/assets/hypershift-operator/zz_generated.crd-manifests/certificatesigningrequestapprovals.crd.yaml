@@ -42,12 +42,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: CertificateSigningRequestApprovalSpec defines the desired
-              state of CertificateSigningRequestApproval
+            description: spec is the specification of the desired behavior of the
+              CertificateSigningRequestApproval.
             type: object
           status:
-            description: CertificateSigningRequestApprovalStatus defines the observed
-              state of CertificateSigningRequestApproval
+            description: status is the most recently observed status of the CertificateSigningRequestApproval.
             type: object
         type: object
     served: true

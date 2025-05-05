@@ -39,27 +39,29 @@ spec:
           metadata:
             type: object
           spec:
-            description: AWSEndpointServiceSpec defines the desired state of AWSEndpointService
+            description: spec is the specification for the AWSEndpointService.
             properties:
               networkLoadBalancerName:
-                description: The name of the NLB for which an Endpoint Service should
-                  be configured
+                description: |-
+                  networkLoadBalancerName is the name of the NLB for which an Endpoint Service should be configured
+                  NetworkLoadBalancerName is the name of the network load balancer.
+                maxLength: 255
                 type: string
               resourceTags:
-                description: Tags to apply to the EndpointService
+                description: resourceTags is the list of tags to apply to the EndpointService
                 items:
                   description: AWSResourceTag is a tag to apply to AWS resources created
                     for the cluster.
                   properties:
                     key:
-                      description: Key is the key of the tag.
+                      description: key is the key of the tag.
                       maxLength: 128
                       minLength: 1
                       pattern: ^[0-9A-Za-z_.:/=+-@]+$
                       type: string
                     value:
                       description: |-
-                        Value is the value of the tag.
+                        value is the value of the tag.
 
                         Some AWS service do not support empty values. Since tags are added to
                         resources in many services, the length of the tag value must meet the
@@ -72,22 +74,25 @@ spec:
                   - key
                   - value
                   type: object
+                maxItems: 25
                 type: array
               subnetIDs:
-                description: SubnetIDs is the list of subnet IDs to which guest nodes
+                description: subnetIDs is the list of subnet IDs to which guest nodes
                   can attach
                 items:
+                  maxLength: 63
                   type: string
+                maxItems: 10
                 type: array
             required:
             - networkLoadBalancerName
             type: object
           status:
-            description: AWSEndpointServiceStatus defines the observed state of AWSEndpointService
+            description: status is the status of the AWSEndpointService.
             properties:
               conditions:
                 description: |-
-                  Conditions contains details for the current state of the Endpoint Service
+                  conditions contains details for the current state of the Endpoint Service
                   request If there is an error processing the request e.g. the NLB doesn't
                   exist, then the Available condition will be false, reason AWSErrorReason,
                   and the error reported in the message.
@@ -147,30 +152,39 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
               dnsNames:
-                description: DNSName are the names for the records created in the
+                description: dnsNames are the names for the records created in the
                   hypershift private zone
                 items:
+                  maxLength: 253
                   type: string
+                maxItems: 10
                 type: array
               dnsZoneID:
-                description: DNSZoneID is ID for the hypershift private zone
+                description: dnsZoneID is ID for the hypershift private zone
+                maxLength: 255
                 type: string
               endpointID:
-                description: EndpointID is the ID of the Endpoint created in the guest
+                description: endpointID is the ID of the Endpoint created in the guest
                   VPC
+                maxLength: 255
                 type: string
               endpointServiceName:
                 description: |-
-                  EndpointServiceName is the name of the Endpoint Service created in the
+                  endpointServiceName is the name of the Endpoint Service created in the
                   management VPC
+                maxLength: 255
                 type: string
               securityGroupID:
-                description: SecurityGroupID is the ID for the VPC endpoint SecurityGroup
+                description: |-
+                  securityGroupID is the ID for the VPC endpoint SecurityGroup
+                  SecurityGroupID is the ID of the security group.
+                maxLength: 255
                 type: string
             type: object
         type: object

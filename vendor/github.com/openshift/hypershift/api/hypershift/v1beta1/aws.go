@@ -3,36 +3,41 @@ package v1beta1
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on AWS.
 type AWSNodePoolPlatform struct {
-	// InstanceType is an ec2 instance type for node instances (e.g. m5.large).
+	// instanceType is an ec2 instance type for node instances (e.g. m5.large).
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	InstanceType string `json:"instanceType"`
 
-	// InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.
+	// instanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	InstanceProfile string `json:"instanceProfile,omitempty"`
 
+	// subnet is the subnet to use for node instances.
 	// +kubebuilder:validation:XValidation:rule="has(self.id) && self.id.startsWith('subnet-') ? !has(self.filters) : size(self.filters) > 0", message="subnet is invalid, a valid subnet id or filters must be set, but not both"
-	// +kubebuilder:validation:Required
-	//
-	// Subnet is the subnet to use for node instances.
+	// +required
 	Subnet AWSResourceReference `json:"subnet"`
 
-	// AMI is the image id to use for node instances. If unspecified, the default
+	// ami is the image id to use for node instances. If unspecified, the default
 	// is chosen based on the NodePool release payload image.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	AMI string `json:"ami,omitempty"`
 
-	// SecurityGroups is an optional set of security groups to associate with node
+	// securityGroups is an optional set of security groups to associate with node
 	// instances.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxItems=50
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
 
-	// RootVolume specifies configuration for the root volume of node instances.
+	// rootVolume specifies configuration for the root volume of node instances.
 	//
 	// +optional
 	RootVolume *Volume `json:"rootVolume,omitempty"`
 
-	// ResourceTags is an optional list of additional tags to apply to AWS node
+	// resourceTags is an optional list of additional tags to apply to AWS node
 	// instances.
 	//
 	// These will be merged with HostedCluster scoped tags, and HostedCluster tags
@@ -55,7 +60,7 @@ type AWSNodePoolPlatform struct {
 
 // PlacementOptions specifies the placement options for the EC2 instances.
 type PlacementOptions struct {
-	// Tenancy indicates if instance should run on shared or single-tenant hardware.
+	// tenancy indicates if instance should run on shared or single-tenant hardware.
 	//
 	// Possible values:
 	// default: NodePool instances run on shared hardware.
@@ -90,6 +95,7 @@ type CapacityReservationOptions struct {
 	//
 	// +kubebuilder:validation:XValidation:rule="self.startsWith('cr-')", message="capacity reservation ID is invalid"
 	// +required
+	// +kubebuilder:validation:MaxLength=255
 	ID string `json:"id"`
 
 	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
@@ -106,70 +112,81 @@ type CapacityReservationOptions struct {
 // Only one of ID or Filters may be specified. Specifying more than one will result in
 // a validation error.
 type AWSResourceReference struct {
-	// ID of resource
+	// id of resource
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	ID *string `json:"id,omitempty"`
 
-	// Filters is a set of key/value pairs used to identify a resource
+	// filters is a set of key/value pairs used to identify a resource
 	// They are applied according to the rules defined by the AWS API:
 	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
 	// +optional
+	// +kubebuilder:validation:MaxItems=50
 	Filters []Filter `json:"filters,omitempty"`
 }
 
 // Filter is a filter used to identify an AWS resource
 type Filter struct {
-	// Name of the filter. Filter names are case-sensitive.
+	// name is the name of the filter.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name"`
 
-	// Values includes one or more filter values. Filter values are case-sensitive.
+	// values is a list of values for the filter.
+	// +required
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=255
 	Values []string `json:"values"`
 }
 
 // Volume specifies the configuration options for node instance storage devices.
 type Volume struct {
-	// Size specifies size (in Gi) of the storage device.
+	// size is the size of the volume in gibibytes (GiB).
 	//
 	// Must be greater than the image snapshot size or 8 (whichever is greater).
 	//
 	// +kubebuilder:validation:Minimum=8
+	// +required
 	Size int64 `json:"size"`
 
-	// Type is the type of the volume.
+	// type is the type of volume to provision.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Type string `json:"type"`
 
-	// IOPS is the number of IOPS requested for the disk. This is only valid
+	// iops is the number of IOPS requested for the disk. This is only valid
 	// for type io1.
 	//
 	// +optional
 	IOPS int64 `json:"iops,omitempty"`
 
-	// Encrypted is whether the volume should be encrypted or not.
+	// encrypted indicates whether the EBS volume should be encrypted or not.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Encrypted is immutable"
 	Encrypted *bool `json:"encrypted,omitempty"`
 
-	// EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
-	// If Encrypted is set and this is omitted, the default AWS key will be used.
-	// The key must already exist and be accessible by the controller.
+	// encryptionKey is the KMS key to use for volume encryption.
 	// +optional
+	// +kubebuilder:validation:MaxLength=2048
 	EncryptionKey string `json:"encryptionKey,omitempty"`
 }
 
 // AWSCloudProviderConfig specifies AWS networking configuration.
 type AWSCloudProviderConfig struct {
-	// Subnet is the subnet to use for control plane cloud resources.
+	// subnet is the subnet to use for control plane cloud resources.
 	//
 	// +optional
 	Subnet *AWSResourceReference `json:"subnet,omitempty"`
 
-	// Zone is the availability zone where control plane cloud resources are
+	// zone is the availability zone where control plane cloud resources are
 	// created.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	Zone string `json:"zone,omitempty"`
 
-	// VPC is the VPC to use for control plane cloud resources.
+	// vpc is the VPC to use for control plane cloud resources.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	VPC string `json:"vpc"`
 }
 
@@ -192,14 +209,16 @@ const (
 
 // AWSPlatformSpec specifies configuration for clusters running on Amazon Web Services.
 type AWSPlatformSpec struct {
-	// Region is the AWS region in which the cluster resides. This configures the
+	// region is the AWS region in which the cluster resides. This configures the
 	// OCP control plane cloud integrations, and is used by NodePool to resolve
 	// the correct boot AMI for a given release.
 	//
 	// +immutable
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Region string `json:"region"`
 
-	// CloudProviderConfig specifies AWS networking configuration for the control
+	// cloudProviderConfig specifies AWS networking configuration for the control
 	// plane.
 	// This is mainly used for cloud provider controller config:
 	// https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364
@@ -209,22 +228,24 @@ type AWSPlatformSpec struct {
 	// +immutable
 	CloudProviderConfig *AWSCloudProviderConfig `json:"cloudProviderConfig,omitempty"`
 
-	// ServiceEndpoints specifies optional custom endpoints which will override
+	// serviceEndpoints specifies optional custom endpoints which will override
 	// the default service endpoint of specific AWS Services.
 	//
 	// There must be only one ServiceEndpoint for a given service name.
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:MaxItems=50
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
-	// RolesRef contains references to various AWS IAM roles required to enable
+	// rolesRef contains references to various AWS IAM roles required to enable
 	// integrations such as OIDC.
 	//
 	// +immutable
+	// +required
 	RolesRef AWSRolesRef `json:"rolesRef"`
 
-	// ResourceTags is a list of additional tags to apply to AWS resources created
+	// resourceTags is a list of additional tags to apply to AWS resources created
 	// for the cluster. See
 	// https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
 	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -235,7 +256,7 @@ type AWSPlatformSpec struct {
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
-	// EndpointAccess specifies the publishing scope of cluster endpoints. The
+	// endpointAccess specifies the publishing scope of cluster endpoints. The
 	// default is Public.
 	//
 	// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
@@ -243,16 +264,18 @@ type AWSPlatformSpec struct {
 	// +optional
 	EndpointAccess AWSEndpointAccessType `json:"endpointAccess,omitempty"`
 
-	// AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+	// additionalAllowedPrincipals specifies a list of additional allowed principal ARNs
 	// to be added to the hosted control plane's VPC Endpoint Service to enable additional
 	// VPC Endpoint connection requests to be automatically accepted.
 	// See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
 	// for more details around VPC Endpoint Service allowed principals.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:items:MaxLength=255
 	AdditionalAllowedPrincipals []string `json:"additionalAllowedPrincipals,omitempty"`
 
-	// MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+	// multiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
 	// CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
 	// Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
 	// automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
@@ -262,7 +285,7 @@ type AWSPlatformSpec struct {
 	// +optional
 	MultiArch bool `json:"multiArch"`
 
-	// SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+	// sharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
 	// created in a different AWS account and is shared with the AWS account where the HostedCluster
 	// will be created.
 	//
@@ -274,43 +297,51 @@ type AWSPlatformSpec struct {
 // created and shared from a different AWS account than the AWS account where the cluster
 // is getting created.
 type AWSSharedVPC struct {
-
-	// RolesRef contains references to roles in the VPC owner account that enable a
+	// rolesRef contains references to roles in the VPC owner account that enable a
 	// HostedCluster on a shared VPC.
 	//
-	// +kubebuilder:validation:Required
 	// +required
 	RolesRef AWSSharedVPCRolesRef `json:"rolesRef"`
 
-	// LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+	// localZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
 	// associated with the HostedCluster's VPC and exists in the VPC owner account.
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MaxLength=32
 	// +required
+	// +kubebuilder:validation:MaxLength=32
 	LocalZoneID string `json:"localZoneID"`
 }
 
 type AWSRoleCredentials struct {
-	ARN       string `json:"arn"`
+	// arn is the ARN of the role.
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
+	ARN string `json:"arn"`
+	// namespace is the namespace of the role.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
+	// name is the name of the role.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
+	Name string `json:"name"`
 }
 
 // AWSResourceTag is a tag to apply to AWS resources created for the cluster.
 type AWSResourceTag struct {
-	// Key is the key of the tag.
+	// key is the key of the tag.
 	//
+	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=128
 	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
 	Key string `json:"key"`
-	// Value is the value of the tag.
+	// value is the value of the tag.
 	//
 	// Some AWS service do not support empty values. Since tags are added to
 	// resources in many services, the length of the tag value must meet the
 	// requirements of all services.
 	//
+	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=256
 	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.:/=+-@]+$`
@@ -318,29 +349,29 @@ type AWSResourceTag struct {
 }
 
 // AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.
+// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+// Example:
+//
+//	{
+//			"Version": "2012-10-17",
+//			"Statement": [
+//				{
+//					"Effect": "Allow",
+//					"Principal": {
+//						"Federated": "{{ .ProviderARN }}"
+//					},
+//						"Action": "sts:AssumeRoleWithWebIdentity",
+//					"Condition": {
+//						"StringEquals": {
+//							"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+//						}
+//					}
+//				}
+//			]
+//		}
 type AWSRolesRef struct {
-	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
-	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
-	// Example:
-	// {
-	//		"Version": "2012-10-17",
-	//		"Statement": [
-	//			{
-	//				"Effect": "Allow",
-	//				"Principal": {
-	//					"Federated": "{{ .ProviderARN }}"
-	//				},
-	//					"Action": "sts:AssumeRoleWithWebIdentity",
-	//				"Condition": {
-	//					"StringEquals": {
-	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
-	//					}
-	//				}
-	//			}
-	//		]
-	//	}
-	//
-	// IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.
+	// ingressARN is an ARN value referencing a role appropriate for the Ingress Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -368,9 +399,11 @@ type AWSRolesRef struct {
 	//		}
 	//	]
 	// }
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	IngressARN string `json:"ingressARN"`
 
-	// ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.
+	// imageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -403,9 +436,11 @@ type AWSRolesRef struct {
 	//		}
 	//	]
 	// }
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	ImageRegistryARN string `json:"imageRegistryARN"`
 
-	// StorageARN is an ARN value referencing a role appropriate for the Storage Operator.
+	// storageARN is an ARN value referencing a role appropriate for the Storage Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -434,9 +469,11 @@ type AWSRolesRef struct {
 	//		}
 	//	]
 	// }
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	StorageARN string `json:"storageARN"`
 
-	// NetworkARN is an ARN value referencing a role appropriate for the Network Operator.
+	// networkARN is an ARN value referencing a role appropriate for the Network Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -460,9 +497,11 @@ type AWSRolesRef struct {
 	//		}
 	//	]
 	// }
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	NetworkARN string `json:"networkARN"`
 
-	// KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
+	// kubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
 	// Source: https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies
 	//
 	// The following is an example of a valid policy document:
@@ -537,10 +576,11 @@ type AWSRolesRef struct {
 	//    }
 	//  ]
 	// }
-	// +immutable
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	KubeCloudControllerARN string `json:"kubeCloudControllerARN"`
 
-	// NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.
+	// nodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -650,10 +690,11 @@ type AWSRolesRef struct {
 	//  ]
 	// }
 	//
-	// +immutable
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	NodePoolManagementARN string `json:"nodePoolManagementARN"`
 
-	// ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.
+	// controlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -690,14 +731,15 @@ type AWSRolesRef struct {
 	//		}
 	//	]
 	// }
-	// +immutable
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	ControlPlaneOperatorARN string `json:"controlPlaneOperatorARN"`
 }
 
 // AWSSharedVPCRolesRef contains references to AWS IAM roles required for a shared VPC hosted cluster.
 // These roles must exist in the VPC owner's account.
 type AWSSharedVPCRolesRef struct {
-	// IngressARN is an ARN value referencing the role in the VPC owner account that allows the
+	// ingressARN is an ARN value referencing the role in the VPC owner account that allows the
 	// ingress operator in the cluster account to create and manage records in the private DNS
 	// hosted zone.
 	//
@@ -745,12 +787,12 @@ type AWSSharedVPCRolesRef struct {
 	// 	]
 	// }
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
 	// +required
+	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
+	// +kubebuilder:validation:MaxLength=2048
 	IngressARN string `json:"ingressARN"`
 
-	// ControlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
+	// controlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
 	// the control plane operator in the cluster account to create and manage a VPC endpoint, its
 	// corresponding Security Group, and DNS records in the hypershift local hosted zone.
 	//
@@ -801,65 +843,73 @@ type AWSSharedVPCRolesRef struct {
 	// 	]
 	// }
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
 	// +required
+	// +kubebuilder:validation:Pattern:=`^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$`
+	// +kubebuilder:validation:MaxLength=2048
 	ControlPlaneARN string `json:"controlPlaneARN"`
 }
 
 // AWSServiceEndpoint stores the configuration for services to
 // override existing defaults of AWS Services.
 type AWSServiceEndpoint struct {
-	// Name is the name of the AWS service.
+	// name is the name of the AWS service.
 	// This must be provided and cannot be empty.
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name"`
 
-	// URL is fully qualified URI with scheme https, that overrides the default generated
+	// url is fully qualified URI with scheme https, that overrides the default generated
 	// endpoint for a client.
 	// This must be provided and cannot be empty.
 	//
+	// +required
 	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:MaxLength=2048
 	URL string `json:"url"`
 }
 
 // AWSKMSSpec defines metadata about the configuration of the AWS KMS Secret Encryption provider
 type AWSKMSSpec struct {
-	// Region contains the AWS region
+	// region contains the AWS region
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Region string `json:"region"`
-	// ActiveKey defines the active key used to encrypt new secrets
+	// activeKey defines the active key used to encrypt new secrets
+	// +required
 	ActiveKey AWSKMSKeyEntry `json:"activeKey"`
-	// BackupKey defines the old key during the rotation process so previously created
+	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
 	BackupKey *AWSKMSKeyEntry `json:"backupKey,omitempty"`
-	// Auth defines metadata about the management of credentials used to interact with AWS KMS
+	// auth defines metadata about the management of credentials used to interact with AWS KMS
+	// +required
 	Auth AWSKMSAuthSpec `json:"auth"`
 }
 
 // AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.
+// The referenced role must have a trust relationship that allows it to be assumed via web identity.
+// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
+// Example:
+//
+//	{
+//			"Version": "2012-10-17",
+//			"Statement": [
+//				{
+//					"Effect": "Allow",
+//					"Principal": {
+//						"Federated": "{{ .ProviderARN }}"
+//					},
+//						"Action": "sts:AssumeRoleWithWebIdentity",
+//					"Condition": {
+//						"StringEquals": {
+//							"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
+//						}
+//					}
+//				}
+//			]
+//		}
 type AWSKMSAuthSpec struct {
-	// The referenced role must have a trust relationship that allows it to be assumed via web identity.
-	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.
-	// Example:
-	// {
-	//		"Version": "2012-10-17",
-	//		"Statement": [
-	//			{
-	//				"Effect": "Allow",
-	//				"Principal": {
-	//					"Federated": "{{ .ProviderARN }}"
-	//				},
-	//					"Action": "sts:AssumeRoleWithWebIdentity",
-	//				"Condition": {
-	//					"StringEquals": {
-	//						"{{ .ProviderName }}:sub": {{ .ServiceAccounts }}
-	//					}
-	//				}
-	//			}
-	//		]
-	//	}
-	//
-	// AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.
+	// awsKms is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.
 	//
 	// The following is an example of a valid policy document:
 	//
@@ -879,21 +929,26 @@ type AWSKMSAuthSpec struct {
 	//		}
 	//	]
 	// }
+	// +required
+	// +kubebuilder:validation:MaxLength=2048
 	AWSKMSRoleARN string `json:"awsKms"`
 }
 
 // AWSKMSKeyEntry defines metadata to locate the encryption key in AWS
 type AWSKMSKeyEntry struct {
-	// ARN is the Amazon Resource Name for the encryption key
+	// arn is the Amazon Resource Name for the encryption key
+	// +required
 	// +kubebuilder:validation:Pattern=`^arn:`
+	// +kubebuilder:validation:MaxLength=2048
 	ARN string `json:"arn"`
 }
 
 // AWSPlatformStatus contains status specific to the AWS platform
 type AWSPlatformStatus struct {
-	// DefaultWorkerSecurityGroupID is the ID of a security group created by
+	// defaultWorkerSecurityGroupID is the ID of a security group created by
 	// the control plane operator. It is always added to worker machines in
 	// addition to any security groups specified in the NodePool.
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	DefaultWorkerSecurityGroupID string `json:"defaultWorkerSecurityGroupID,omitempty"`
 }

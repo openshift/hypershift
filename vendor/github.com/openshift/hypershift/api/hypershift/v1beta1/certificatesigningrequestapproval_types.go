@@ -11,10 +11,17 @@ import (
 
 // CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval
 type CertificateSigningRequestApproval struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   CertificateSigningRequestApprovalSpec   `json:"spec,omitempty"`
+	// spec is the specification of the desired behavior of the CertificateSigningRequestApproval.
+	// +optional
+	Spec CertificateSigningRequestApprovalSpec `json:"spec,omitempty"`
+
+	// status is the most recently observed status of the CertificateSigningRequestApproval.
+	// +optional
 	Status CertificateSigningRequestApprovalStatus `json:"status,omitempty"`
 }
 
@@ -28,6 +35,12 @@ type CertificateSigningRequestApprovalStatus struct{}
 // CertificateSigningRequestApprovalList contains a list of CertificateSigningRequestApprovals.
 type CertificateSigningRequestApprovalList struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is standard list metadata.
+	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []CertificateSigningRequestApproval `json:"items"`
+
+	// items is the list of CertificateSigningRequestApprovals.
+	// +required
+	// +kubebuilder:validation:MaxItems=1000
+	Items []CertificateSigningRequestApproval `json:"items"`
 }

@@ -4,39 +4,56 @@ import corev1 "k8s.io/api/core/v1"
 
 // IBMCloudKMSSpec defines metadata for the IBM Cloud KMS encryption strategy
 type IBMCloudKMSSpec struct {
-	// Region is the IBM Cloud region
+	// region is the IBM Cloud region
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	Region string `json:"region"`
-	// Auth defines metadata for how authentication is done with IBM Cloud KMS
+	// auth defines metadata for how authentication is done with IBM Cloud KMS
+	// +required
 	Auth IBMCloudKMSAuthSpec `json:"auth"`
-	// KeyList defines the list of keys used for data encryption
+	// keyList defines the list of keys used for data encryption
+	// +kubebuilder:validation:MaxItems=100
+	// +required
 	KeyList []IBMCloudKMSKeyEntry `json:"keyList"`
 }
 
 // IBMCloudKMSKeyEntry defines metadata for an IBM Cloud KMS encryption key
 type IBMCloudKMSKeyEntry struct {
-	// CRKID is the customer rook key id
+	// crkID is the customer rook key id
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	CRKID string `json:"crkID"`
-	// InstanceID is the id for the key protect instance
+	// instanceID is the id for the key protect instance
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	InstanceID string `json:"instanceID"`
-	// CorrelationID is an identifier used to track all api call usage from hypershift
+	// correlationID is an identifier used to track all api call usage from hypershift
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	CorrelationID string `json:"correlationID"`
-	// URL is the url to call key protect apis over
+	// url is the url to call key protect apis over
 	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:MaxLength=2048
+	// +required
 	URL string `json:"url"`
-	// KeyVersion is a unique number associated with the key. The number increments whenever a new
+	// keyVersion is a unique number associated with the key. The number increments whenever a new
 	// key is enabled for data encryption.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=2147483647
+	// +required
 	KeyVersion int `json:"keyVersion"`
 }
 
 // IBMCloudKMSAuthSpec defines metadata for how authentication is done with IBM Cloud KMS
 type IBMCloudKMSAuthSpec struct {
-	// Type defines the IBM Cloud KMS authentication strategy
+	// type defines the IBM Cloud KMS authentication strategy
 	// +unionDiscriminator
+	// +required
 	Type IBMCloudKMSAuthType `json:"type"`
-	// Unmanaged defines the auth metadata the customer provides to interact with IBM Cloud KMS
+	// unmanaged defines the auth metadata the customer provides to interact with IBM Cloud KMS
 	// +optional
 	Unmanaged *IBMCloudKMSUnmanagedAuthSpec `json:"unmanaged,omitempty"`
-	// Managed defines metadata around the service to service authentication strategy for the IBM Cloud
+	// managed defines metadata around the service to service authentication strategy for the IBM Cloud
 	// KMS system (all provider managed).
 	// +optional
 	Managed *IBMCloudKMSManagedAuthSpec `json:"managed,omitempty"`
@@ -57,8 +74,9 @@ const (
 
 // IBMCloudKMSUnmanagedAuthSpec defines the auth metadata the customer provides to interact with IBM Cloud KMS
 type IBMCloudKMSUnmanagedAuthSpec struct {
-	// Credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
+	// credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
 	// call IBM Cloud KMS APIs
+	// +required
 	Credentials corev1.LocalObjectReference `json:"credentials"`
 }
 

@@ -60,6 +60,8 @@ Kubernetes meta/v1.ObjectMeta
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>metadata is standard object metadata.</p>
 Refer to the Kubernetes API documentation for the fields of the
 <code>metadata</code> field.
 </td>
@@ -74,6 +76,8 @@ CertificateSigningRequestApprovalSpec
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>spec is the specification of the desired behavior of the CertificateSigningRequestApproval.</p>
 <br/>
 <br/>
 <table>
@@ -90,6 +94,8 @@ CertificateSigningRequestApprovalStatus
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>status is the most recently observed status of the CertificateSigningRequestApproval.</p>
 </td>
 </tr>
 </tbody>
@@ -137,6 +143,8 @@ Kubernetes meta/v1.ObjectMeta
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the HostedCluster.</p>
 Refer to the Kubernetes API documentation for the fields of the
 <code>metadata</code> field.
 </td>
@@ -151,7 +159,8 @@ HostedClusterSpec
 </em>
 </td>
 <td>
-<p>Spec is the desired behavior of the HostedCluster.</p>
+<em>(Optional)</em>
+<p>spec is the desired behavior of the HostedCluster.</p>
 <br/>
 <br/>
 <table>
@@ -376,6 +385,7 @@ AutoNode
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
@@ -504,7 +514,7 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>Configuration specifies configuration for individual OCP components in the
+<p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
 </td>
@@ -534,7 +544,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AuditWebhook contains metadata for configuring an audit webhook endpoint
+<p>auditWebhook contains metadata for configuring an audit webhook endpoint
 for a cluster to process cluster audit events. It references a secret that
 contains the webhook information for the audit webhook endpoint. It is a
 secret because if the endpoint has mTLS the kubeconfig will contain client
@@ -634,7 +644,7 @@ OLMCatalogPlacement
 </td>
 <td>
 <em>(Optional)</em>
-<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+<p>olmCatalogPlacement specifies the placement of OLM catalog components. By default,
 this is set to management and OLM catalog components are deployed onto the management
 cluster. If set to guest, the OLM catalog components will be deployed onto the guest
 cluster.</p>
@@ -649,7 +659,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+<p>nodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
 It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
 Changes to this field will propagate to existing Deployments and StatefulSets.
 TODO(alberto): add additional validation for the map key/values.</p>
@@ -666,7 +676,7 @@ TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+<p>tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 <tr>
@@ -715,7 +725,8 @@ HostedClusterStatus
 </em>
 </td>
 <td>
-<p>Status is the latest observed status of the HostedCluster.</p>
+<em>(Optional)</em>
+<p>status is the latest observed status of the HostedCluster.</p>
 </td>
 </tr>
 </tbody>
@@ -724,7 +735,7 @@ HostedClusterStatus
 <p>
 <p>NodePool is a scalable set of worker nodes attached to a HostedCluster.
 NodePool machine architectures are uniform within a given pool, and are
-independent of the control plane’s underlying machine architecture.</p>
+independent of the control plane&rsquo;s underlying machine architecture.</p>
 </p>
 <table>
 <thead>
@@ -761,6 +772,8 @@ Kubernetes meta/v1.ObjectMeta
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the NodePool.</p>
 Refer to the Kubernetes API documentation for the fields of the
 <code>metadata</code> field.
 </td>
@@ -775,7 +788,8 @@ NodePoolSpec
 </em>
 </td>
 <td>
-<p>Spec is the desired behavior of the NodePool.</p>
+<em>(Optional)</em>
+<p>spec is the desired behavior of the NodePool.</p>
 <br/>
 <br/>
 <table>
@@ -863,8 +877,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoscaling specifies auto-scaling behavior for the NodePool.
-autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
+<p>autoScaling specifies auto-scaling behavior for the NodePool.
+autoScaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
 </td>
 </tr>
 <tr>
@@ -877,6 +891,7 @@ autoscaling is mutually exclusive with replicas. If replicas is set, this field 
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
@@ -981,6 +996,7 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
@@ -1020,7 +1036,8 @@ NodePoolStatus
 </em>
 </td>
 <td>
-<p>Status is the latest observed status of the NodePool.</p>
+<em>(Optional)</em>
+<p>status is the latest observed status of the NodePool.</p>
 </td>
 </tr>
 </tbody>
@@ -1051,7 +1068,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ActiveKey defines the active key used to encrypt new secrets</p>
+<p>activeKey defines the active key used to encrypt new secrets</p>
 </td>
 </tr>
 <tr>
@@ -1065,7 +1082,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>BackupKey defines the old key during the rotation process so previously created
+<p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
@@ -1132,6 +1149,7 @@ This value is immutable.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 If not specified, traffic is allowed from all addresses.
 This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
@@ -1166,7 +1184,7 @@ AWSResourceReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>Subnet is the subnet to use for control plane cloud resources.</p>
+<p>subnet is the subnet to use for control plane cloud resources.</p>
 </td>
 </tr>
 <tr>
@@ -1178,7 +1196,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Zone is the availability zone where control plane cloud resources are
+<p>zone is the availability zone where control plane cloud resources are
 created.</p>
 </td>
 </tr>
@@ -1190,7 +1208,7 @@ string
 </em>
 </td>
 <td>
-<p>VPC is the VPC to use for control plane cloud resources.</p>
+<p>vpc is the VPC to use for control plane cloud resources.</p>
 </td>
 </tr>
 </tbody>
@@ -1230,7 +1248,28 @@ private node communication with the control plane.</p>
 <a href="#hypershift.openshift.io/v1beta1.AWSKMSSpec">AWSKMSSpec</a>)
 </p>
 <p>
-<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.</p>
+<p>AWSKMSAuthSpec defines metadata about the management of credentials used to interact and encrypt data via AWS KMS key.
+The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:</p>
+<pre><code>{
+&quot;Version&quot;: &quot;2012-10-17&quot;,
+&quot;Statement&quot;: [
+{
+&quot;Effect&quot;: &quot;Allow&quot;,
+&quot;Principal&quot;: {
+&quot;Federated&quot;: &quot;{{ .ProviderARN }}&quot;
+},
+&quot;Action&quot;: &quot;sts:AssumeRoleWithWebIdentity&quot;,
+&quot;Condition&quot;: {
+&quot;StringEquals&quot;: {
+&quot;{{ .ProviderName }}:sub&quot;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}
+</code></pre>
 </p>
 <table>
 <thead>
@@ -1248,27 +1287,7 @@ string
 </em>
 </td>
 <td>
-<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
-<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
-Example:
-{
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Principal&rdquo;: {
-&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
-},
-&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
-}
-}
-}
-]
-}</p>
-<p>AWSKMSARN is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.</p>
+<p>awsKms is an ARN value referencing a role appropriate for managing the auth via the AWS KMS key.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1314,7 +1333,7 @@ string
 </em>
 </td>
 <td>
-<p>ARN is the Amazon Resource Name for the encryption key</p>
+<p>arn is the Amazon Resource Name for the encryption key</p>
 </td>
 </tr>
 </tbody>
@@ -1343,7 +1362,7 @@ string
 </em>
 </td>
 <td>
-<p>Region contains the AWS region</p>
+<p>region contains the AWS region</p>
 </td>
 </tr>
 <tr>
@@ -1356,7 +1375,7 @@ AWSKMSKeyEntry
 </em>
 </td>
 <td>
-<p>ActiveKey defines the active key used to encrypt new secrets</p>
+<p>activeKey defines the active key used to encrypt new secrets</p>
 </td>
 </tr>
 <tr>
@@ -1370,7 +1389,7 @@ AWSKMSKeyEntry
 </td>
 <td>
 <em>(Optional)</em>
-<p>BackupKey defines the old key during the rotation process so previously created
+<p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
@@ -1384,7 +1403,7 @@ AWSKMSAuthSpec
 </em>
 </td>
 <td>
-<p>Auth defines metadata about the management of credentials used to interact with AWS KMS</p>
+<p>auth defines metadata about the management of credentials used to interact with AWS KMS</p>
 </td>
 </tr>
 </tbody>
@@ -1414,7 +1433,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceType is an ec2 instance type for node instances (e.g. m5.large).</p>
+<p>instanceType is an ec2 instance type for node instances (e.g. m5.large).</p>
 </td>
 </tr>
 <tr>
@@ -1425,7 +1444,8 @@ string
 </em>
 </td>
 <td>
-<p>InstanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.</p>
+<em>(Optional)</em>
+<p>instanceProfile is the AWS EC2 instance profile, which is a container for an IAM role that the EC2 instance uses.</p>
 </td>
 </tr>
 <tr>
@@ -1438,7 +1458,7 @@ AWSResourceReference
 </em>
 </td>
 <td>
-<p>Subnet is the subnet to use for node instances.</p>
+<p>subnet is the subnet to use for node instances.</p>
 </td>
 </tr>
 <tr>
@@ -1450,7 +1470,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AMI is the image id to use for node instances. If unspecified, the default
+<p>ami is the image id to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
@@ -1465,7 +1485,7 @@ is chosen based on the NodePool release payload image.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecurityGroups is an optional set of security groups to associate with node
+<p>securityGroups is an optional set of security groups to associate with node
 instances.</p>
 </td>
 </tr>
@@ -1480,7 +1500,7 @@ Volume
 </td>
 <td>
 <em>(Optional)</em>
-<p>RootVolume specifies configuration for the root volume of node instances.</p>
+<p>rootVolume specifies configuration for the root volume of node instances.</p>
 </td>
 </tr>
 <tr>
@@ -1494,7 +1514,7 @@ Volume
 </td>
 <td>
 <em>(Optional)</em>
-<p>ResourceTags is an optional list of additional tags to apply to AWS node
+<p>resourceTags is an optional list of additional tags to apply to AWS node
 instances.</p>
 <p>These will be merged with HostedCluster scoped tags, and HostedCluster tags
 take precedence in case of conflicts.</p>
@@ -1544,7 +1564,7 @@ string
 </em>
 </td>
 <td>
-<p>Region is the AWS region in which the cluster resides. This configures the
+<p>region is the AWS region in which the cluster resides. This configures the
 OCP control plane cloud integrations, and is used by NodePool to resolve
 the correct boot AMI for a given release.</p>
 </td>
@@ -1560,7 +1580,7 @@ AWSCloudProviderConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>CloudProviderConfig specifies AWS networking configuration for the control
+<p>cloudProviderConfig specifies AWS networking configuration for the control
 plane.
 This is mainly used for cloud provider controller config:
 <a href="https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364">https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364</a>
@@ -1578,7 +1598,7 @@ TODO(dan): should this be named AWSNetworkConfig?</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceEndpoints specifies optional custom endpoints which will override
+<p>serviceEndpoints specifies optional custom endpoints which will override
 the default service endpoint of specific AWS Services.</p>
 <p>There must be only one ServiceEndpoint for a given service name.</p>
 </td>
@@ -1593,7 +1613,7 @@ AWSRolesRef
 </em>
 </td>
 <td>
-<p>RolesRef contains references to various AWS IAM roles required to enable
+<p>rolesRef contains references to various AWS IAM roles required to enable
 integrations such as OIDC.</p>
 </td>
 </tr>
@@ -1608,7 +1628,7 @@ integrations such as OIDC.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ResourceTags is a list of additional tags to apply to AWS resources created
+<p>resourceTags is a list of additional tags to apply to AWS resources created
 for the cluster. See
 <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
 information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -1627,7 +1647,7 @@ AWSEndpointAccessType
 </td>
 <td>
 <em>(Optional)</em>
-<p>EndpointAccess specifies the publishing scope of cluster endpoints. The
+<p>endpointAccess specifies the publishing scope of cluster endpoints. The
 default is Public.</p>
 </td>
 </tr>
@@ -1640,7 +1660,7 @@ default is Public.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+<p>additionalAllowedPrincipals specifies a list of additional allowed principal ARNs
 to be added to the hosted control plane&rsquo;s VPC Endpoint Service to enable additional
 VPC Endpoint connection requests to be automatically accepted.
 See <a href="https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html">https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html</a>
@@ -1656,7 +1676,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+<p>multiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
 CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
 Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
 automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
@@ -1675,7 +1695,7 @@ AWSSharedVPC
 </td>
 <td>
 <em>(Optional)</em>
-<p>SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+<p>sharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
 created in a different AWS account and is shared with the AWS account where the HostedCluster
 will be created.</p>
 </td>
@@ -1707,7 +1727,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>DefaultWorkerSecurityGroupID is the ID of a security group created by
+<p>defaultWorkerSecurityGroupID is the ID of a security group created by
 the control plane operator. It is always added to worker machines in
 addition to any security groups specified in the NodePool.</p>
 </td>
@@ -1742,7 +1762,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ID of resource</p>
+<p>id of resource</p>
 </td>
 </tr>
 <tr>
@@ -1756,7 +1776,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Filters is a set of key/value pairs used to identify a resource
+<p>filters is a set of key/value pairs used to identify a resource
 They are applied according to the rules defined by the AWS API:
 <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html">https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html</a></p>
 </td>
@@ -1788,7 +1808,7 @@ string
 </em>
 </td>
 <td>
-<p>Key is the key of the tag.</p>
+<p>key is the key of the tag.</p>
 </td>
 </tr>
 <tr>
@@ -1799,7 +1819,7 @@ string
 </em>
 </td>
 <td>
-<p>Value is the value of the tag.</p>
+<p>value is the value of the tag.</p>
 <p>Some AWS service do not support empty values. Since tags are added to
 resources in many services, the length of the tag value must meet the
 requirements of all services.</p>
@@ -1826,6 +1846,7 @@ string
 </em>
 </td>
 <td>
+<p>arn is the ARN of the role.</p>
 </td>
 </tr>
 <tr>
@@ -1836,6 +1857,7 @@ string
 </em>
 </td>
 <td>
+<p>namespace is the namespace of the role.</p>
 </td>
 </tr>
 <tr>
@@ -1846,6 +1868,7 @@ string
 </em>
 </td>
 <td>
+<p>name is the name of the role.</p>
 </td>
 </tr>
 </tbody>
@@ -1856,7 +1879,28 @@ string
 <a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
-<p>AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.</p>
+<p>AWSRolesRef contains references to various AWS IAM roles required for operators to make calls against the AWS API.
+The referenced role must have a trust relationship that allows it to be assumed via web identity.
+<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
+Example:</p>
+<pre><code>{
+&quot;Version&quot;: &quot;2012-10-17&quot;,
+&quot;Statement&quot;: [
+{
+&quot;Effect&quot;: &quot;Allow&quot;,
+&quot;Principal&quot;: {
+&quot;Federated&quot;: &quot;{{ .ProviderARN }}&quot;
+},
+&quot;Action&quot;: &quot;sts:AssumeRoleWithWebIdentity&quot;,
+&quot;Condition&quot;: {
+&quot;StringEquals&quot;: {
+&quot;{{ .ProviderName }}:sub&quot;: {{ .ServiceAccounts }}
+}
+}
+}
+]
+}
+</code></pre>
 </p>
 <table>
 <thead>
@@ -1874,27 +1918,7 @@ string
 </em>
 </td>
 <td>
-<p>The referenced role must have a trust relationship that allows it to be assumed via web identity.
-<a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html">https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html</a>.
-Example:
-{
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Principal&rdquo;: {
-&ldquo;Federated&rdquo;: &ldquo;{{ .ProviderARN }}&rdquo;
-},
-&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;{{ .ProviderName }}:sub&rdquo;: {{ .ServiceAccounts }}
-}
-}
-}
-]
-}</p>
-<p>IngressARN is an ARN value referencing a role appropriate for the Ingress Operator.</p>
+<p>ingressARN is an ARN value referencing a role appropriate for the Ingress Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1930,7 +1954,7 @@ string
 </em>
 </td>
 <td>
-<p>ImageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.</p>
+<p>imageRegistryARN is an ARN value referencing a role appropriate for the Image Registry Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -1971,7 +1995,7 @@ string
 </em>
 </td>
 <td>
-<p>StorageARN is an ARN value referencing a role appropriate for the Storage Operator.</p>
+<p>storageARN is an ARN value referencing a role appropriate for the Storage Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -2008,7 +2032,7 @@ string
 </em>
 </td>
 <td>
-<p>NetworkARN is an ARN value referencing a role appropriate for the Network Operator.</p>
+<p>networkARN is an ARN value referencing a role appropriate for the Network Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -2040,7 +2064,7 @@ string
 </em>
 </td>
 <td>
-<p>KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
+<p>kubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
 Source: <a href="https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies">https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies</a></p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
@@ -2123,7 +2147,7 @@ string
 </em>
 </td>
 <td>
-<p>NodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.</p>
+<p>nodePoolManagementARN is an ARN value referencing a role appropriate for the CAPI Controller.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -2240,7 +2264,7 @@ string
 </em>
 </td>
 <td>
-<p>ControlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.</p>
+<p>controlPlaneOperatorARN  is an ARN value referencing a role appropriate for the Control Plane Operator.</p>
 <p>The following is an example of a valid policy document:</p>
 <p>{
 &ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
@@ -2304,7 +2328,7 @@ string
 </em>
 </td>
 <td>
-<p>Name is the name of the AWS service.
+<p>name is the name of the AWS service.
 This must be provided and cannot be empty.</p>
 </td>
 </tr>
@@ -2316,7 +2340,7 @@ string
 </em>
 </td>
 <td>
-<p>URL is fully qualified URI with scheme https, that overrides the default generated
+<p>url is fully qualified URI with scheme https, that overrides the default generated
 endpoint for a client.
 This must be provided and cannot be empty.</p>
 </td>
@@ -2351,7 +2375,7 @@ AWSSharedVPCRolesRef
 </em>
 </td>
 <td>
-<p>RolesRef contains references to roles in the VPC owner account that enable a
+<p>rolesRef contains references to roles in the VPC owner account that enable a
 HostedCluster on a shared VPC.</p>
 </td>
 </tr>
@@ -2363,7 +2387,7 @@ string
 </em>
 </td>
 <td>
-<p>LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+<p>localZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
 associated with the HostedCluster&rsquo;s VPC and exists in the VPC owner account.</p>
 </td>
 </tr>
@@ -2394,7 +2418,7 @@ string
 </em>
 </td>
 <td>
-<p>IngressARN is an ARN value referencing the role in the VPC owner account that allows the
+<p>ingressARN is an ARN value referencing the role in the VPC owner account that allows the
 ingress operator in the cluster account to create and manage records in the private DNS
 hosted zone.</p>
 <p>The referenced role must have a trust relationship that allows it to be assumed by the
@@ -2448,7 +2472,7 @@ string
 </em>
 </td>
 <td>
-<p>ControlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
+<p>controlPlaneARN is an ARN value referencing the role in the VPC owner account that allows
 the control plane operator in the cluster account to create and manage a VPC endpoint, its
 corresponding Security Group, and DNS records in the hypershift local hosted zone.</p>
 <p>The referenced role must have a trust relationship that allows it to be assumed by the
@@ -2522,7 +2546,7 @@ string
 </em>
 </td>
 <td>
-<p>IPAddress is the IP address of the allowed address pair. Depending on
+<p>ipAddress is the IP address of the allowed address pair. Depending on
 the configuration of Neutron, it may be supported to specify a CIDR
 instead of a specific IP address.</p>
 </td>
@@ -2557,7 +2581,7 @@ Kubernetes meta/v1.LabelSelector
 </td>
 <td>
 <em>(Optional)</em>
-<p>AgentLabelSelector contains labels that must be set on an Agent in order to
+<p>agentLabelSelector contains labels that must be set on an Agent in order to
 be selected for a Machine.</p>
 </td>
 </tr>
@@ -2587,7 +2611,7 @@ string
 </em>
 </td>
 <td>
-<p>AgentNamespace is the namespace where to search for Agents for this cluster</p>
+<p>agentNamespace is the namespace where to search for Agents for this cluster</p>
 </td>
 </tr>
 </tbody>
@@ -2615,7 +2639,7 @@ string
 </em>
 </td>
 <td>
-<p>Start represents the start of the AllocationPool, that is the lowest IP of the pool.</p>
+<p>start represents the start of the AllocationPool, that is the lowest IP of the pool.</p>
 </td>
 </tr>
 <tr>
@@ -2626,7 +2650,7 @@ string
 </em>
 </td>
 <td>
-<p>End represents the end of the AlloctionPool, that is the highest IP of the pool.</p>
+<p>end represents the end of the AlloctionPool, that is the highest IP of the pool.</p>
 </td>
 </tr>
 </tbody>
@@ -2658,7 +2682,7 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisioner is the implementation used for Node auto provisioning.</p>
+<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
 </td>
 </tr>
 </tbody>
@@ -2797,7 +2821,7 @@ string
 </em>
 </td>
 <td>
-<p>KeyVaultName is the name of the keyvault. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
+<p>keyVaultName is the name of the keyvault. Must match criteria specified at <a href="https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name">https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name</a>
 Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 <code>az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn &lt;YOUR APPLICATION CLIENT ID&gt;</code></p>
 </td>
@@ -2810,7 +2834,7 @@ string
 </em>
 </td>
 <td>
-<p>KeyName is the name of the keyvault key used for encrypt/decrypt</p>
+<p>keyName is the name of the keyvault key used for encrypt/decrypt</p>
 </td>
 </tr>
 <tr>
@@ -2821,7 +2845,7 @@ string
 </em>
 </td>
 <td>
-<p>KeyVersion contains the version of the key to use</p>
+<p>keyVersion contains the version of the key to use</p>
 </td>
 </tr>
 </tbody>
@@ -2852,7 +2876,7 @@ AzureKMSKey
 </em>
 </td>
 <td>
-<p>ActiveKey defines the active key used to encrypt new secrets</p>
+<p>activeKey defines the active key used to encrypt new secrets</p>
 </td>
 </tr>
 <tr>
@@ -2866,7 +2890,7 @@ AzureKMSKey
 </td>
 <td>
 <em>(Optional)</em>
-<p>BackupKey defines the old key during the rotation process so previously created
+<p>backupKey defines the old key during the rotation process so previously created
 secrets can continue to be decrypted until they are all re-encrypted with the active key.</p>
 </td>
 </tr>
@@ -2981,7 +3005,7 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>SizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
+<p>sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
 This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
 When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default is 30.</p>
@@ -3208,7 +3232,8 @@ string
 </em>
 </td>
 <td>
-<p>Cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
+<em>(Optional)</em>
+<p>cloud is the cloud environment identifier, valid values could be found here: <a href="https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33">https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33</a></p>
 </td>
 </tr>
 <tr>
@@ -3219,7 +3244,7 @@ string
 </em>
 </td>
 <td>
-<p>Location is the Azure region in where all the cloud infrastructure resources will be created.</p>
+<p>location is the Azure region in where all the cloud infrastructure resources will be created.</p>
 <p>Example: eastus</p>
 </td>
 </tr>
@@ -3231,7 +3256,7 @@ string
 </em>
 </td>
 <td>
-<p>ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+<p>resourceGroup is the name of an existing resource group where all cloud resources created by the Hosted
 Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.</p>
 <p>In ARO HCP, this will be the managed resource group where customer cloud resources will be created.</p>
 <p>Resource group naming requirements can be found here: <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.ResourceGroup.Name/</a>.</p>
@@ -3247,7 +3272,7 @@ string
 </em>
 </td>
 <td>
-<p>VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+<p>vnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
 other than the one specified in ResourceGroupName, but it must exist under the same subscription as
 SubscriptionID.</p>
 <p>In ARO HCP, this will be the ID of the customer provided VNET.</p>
@@ -3282,7 +3307,7 @@ string
 </em>
 </td>
 <td>
-<p>SubscriptionID is a unique identifier for an Azure subscription used to manage resources.</p>
+<p>subscriptionID is a unique identifier for an Azure subscription used to manage resources.</p>
 </td>
 </tr>
 <tr>
@@ -3293,7 +3318,7 @@ string
 </em>
 </td>
 <td>
-<p>SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+<p>securityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
 expected to exist under the same subscription as SubscriptionID.</p>
 </td>
@@ -3675,7 +3700,7 @@ github.com/openshift/api/config/v1.APIServerSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>APIServer holds configuration (like serving certificates, client CA and CORS domains)
+<p>apiServer holds configuration (like serving certificates, client CA and CORS domains)
 shared by all API servers in the system, among them especially kube-apiserver
 and openshift-apiserver.</p>
 </td>
@@ -3691,7 +3716,7 @@ github.com/openshift/api/config/v1.AuthenticationSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Authentication specifies cluster-wide settings for authentication (like OAuth and
+<p>authentication specifies cluster-wide settings for authentication (like OAuth and
 webhook token authenticators).</p>
 </td>
 </tr>
@@ -3706,7 +3731,7 @@ github.com/openshift/api/config/v1.FeatureGateSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>FeatureGate holds cluster-wide information about feature gates.</p>
+<p>featureGate holds cluster-wide information about feature gates.</p>
 </td>
 </tr>
 <tr>
@@ -3720,7 +3745,7 @@ github.com/openshift/api/config/v1.ImageSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Image governs policies related to imagestream imports and runtime configuration
+<p>image governs policies related to imagestream imports and runtime configuration
 for external registries. It allows cluster admins to configure which registries
 OpenShift is allowed to import images from, extra CA trust bundles for external
 registries, and policies to block or allow registry hostnames.
@@ -3741,7 +3766,7 @@ github.com/openshift/api/config/v1.IngressSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Ingress holds cluster-wide information about ingress, including the default ingress domain
+<p>ingress holds cluster-wide information about ingress, including the default ingress domain
 used for routes.</p>
 </td>
 </tr>
@@ -3756,7 +3781,7 @@ github.com/openshift/api/config/v1.NetworkSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
+<p>network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
 Please view network.spec for an explanation on what applies when configuring this resource.
 TODO (csrwng): Add validation here to exclude changes that conflict with networking settings in the HostedCluster.Spec.Networking field.</p>
 </td>
@@ -3772,7 +3797,7 @@ github.com/openshift/api/config/v1.OAuthSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>OAuth holds cluster-wide information about OAuth.
+<p>oauth holds cluster-wide information about OAuth.
 It is used to configure the integrated OAuth server.
 This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.</p>
 </td>
@@ -3788,7 +3813,7 @@ github.com/openshift/api/config/v1.OperatorHubSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>OperatorHub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
+<p>operatorhub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
 The OperatorHub configuration will be constantly reconciled if catalog placement is management, but only on cluster creation otherwise.</p>
 </td>
 </tr>
@@ -3803,7 +3828,7 @@ github.com/openshift/api/config/v1.SchedulerSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
+<p>scheduler holds cluster-wide config information to run the Kubernetes Scheduler
 and influence its placement decisions. The canonical name for this config is <code>cluster</code>.</p>
 </td>
 </tr>
@@ -3818,6 +3843,11 @@ github.com/openshift/api/config/v1.ProxySpec
 </td>
 <td>
 <em>(Optional)</em>
+<p>proxy holds cluster-wide information on how to configure default proxies for the cluster.
+This affects traffic flowing from the hosted cluster data plane.
+The controllers will generate a machineConfig with the proxy config for the cluster.
+This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+Changing this value will trigger a rollout for all existing NodePools in the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -3967,6 +3997,7 @@ APIServerNetworking
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>apiServer contains advanced network settings for the API server that affect
 how the APIServer is exposed inside a hosted cluster node.</p>
 </td>
@@ -4408,6 +4439,8 @@ Kubernetes meta/v1.ObjectMeta
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the ControlPlaneComponent.</p>
 Refer to the Kubernetes API documentation for the fields of the
 <code>metadata</code> field.
 </td>
@@ -4422,6 +4455,8 @@ ControlPlaneComponentSpec
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>spec is the specification for the ControlPlaneComponent.</p>
 <br/>
 <br/>
 <table>
@@ -4438,6 +4473,8 @@ ControlPlaneComponentStatus
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>status is the status of the ControlPlaneComponent.</p>
 </td>
 </tr>
 </tbody>
@@ -4468,6 +4505,22 @@ ControlPlaneComponentStatus
 <tbody>
 <tr>
 <td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions contains details for the current state of the ControlPlane Component.
+If there is an error, then the Available condition will be false.</p>
+<p>Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>version</code></br>
 <em>
 string
@@ -4490,22 +4543,6 @@ string
 <td>
 <em>(Optional)</em>
 <p>resources is a list of the resources reconciled by this component.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>conditions</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
-[]Kubernetes meta/v1.Condition
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Conditions contains details for the current state of the ControlPlane Component.
-If there is an error, then the Available condition will be false.</p>
-<p>Current condition types are: &ldquo;Available&rdquo;</p>
 </td>
 </tr>
 </tbody>
@@ -4634,7 +4671,7 @@ ManagedIdentity
 </em>
 </td>
 <td>
-<p>diskClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+<p>disk is a pre-existing managed identity associated with the azure-disk-controller.</p>
 </td>
 </tr>
 <tr>
@@ -4647,7 +4684,7 @@ ManagedIdentity
 </em>
 </td>
 <td>
-<p>fileClientID is a pre-existing managed identity associated with the azure-disk-controller.</p>
+<p>file is a pre-existing managed identity associated with the azure-disk-controller.</p>
 </td>
 </tr>
 </tbody>
@@ -4944,7 +4981,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ClientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
+<p>clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
 may have the following key/value pairs:</p>
 <pre><code>etcd-client-ca.crt: Certificate Authority value
 etcd-client.crt: Client certificate value
@@ -4978,7 +5015,7 @@ string
 </em>
 </td>
 <td>
-<p>Name of the filter. Filter names are case-sensitive.</p>
+<p>name is the name of the filter.</p>
 </td>
 </tr>
 <tr>
@@ -4989,7 +5026,7 @@ string
 </em>
 </td>
 <td>
-<p>Values includes one or more filter values. Filter values are case-sensitive.</p>
+<p>values is a list of values for the filter.</p>
 </td>
 </tr>
 </tbody>
@@ -5022,7 +5059,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tags is a list of tags to filter by. If specified, the resource must
+<p>tags is a list of tags to filter by. If specified, the resource must
 have all of the tags specified to be included in the result.</p>
 </td>
 </tr>
@@ -5037,7 +5074,7 @@ have all of the tags specified to be included in the result.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>TagsAny is a list of tags to filter by. If specified, the resource
+<p>tagsAny is a list of tags to filter by. If specified, the resource
 must have at least one of the tags specified to be included in the
 result.</p>
 </td>
@@ -5053,7 +5090,7 @@ result.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>NotTags is a list of tags to filter by. If specified, resources which
+<p>notTags is a list of tags to filter by. If specified, resources which
 contain all of the given tags will be excluded from the result.</p>
 </td>
 </tr>
@@ -5068,7 +5105,7 @@ contain all of the given tags will be excluded from the result.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>NotTagsAny is a list of tags to filter by. If specified, resources
+<p>notTagsAny is a list of tags to filter by. If specified, resources
 which contain any of the given tags will be excluded from the result.</p>
 </td>
 </tr>
@@ -5310,6 +5347,7 @@ AutoNode
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
@@ -5438,7 +5476,7 @@ ClusterConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>Configuration specifies configuration for individual OCP components in the
+<p>configuration specifies configuration for individual OCP components in the
 cluster, represented as embedded resources that correspond to the openshift
 configuration API.</p>
 </td>
@@ -5468,7 +5506,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AuditWebhook contains metadata for configuring an audit webhook endpoint
+<p>auditWebhook contains metadata for configuring an audit webhook endpoint
 for a cluster to process cluster audit events. It references a secret that
 contains the webhook information for the audit webhook endpoint. It is a
 secret because if the endpoint has mTLS the kubeconfig will contain client
@@ -5568,7 +5606,7 @@ OLMCatalogPlacement
 </td>
 <td>
 <em>(Optional)</em>
-<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+<p>olmCatalogPlacement specifies the placement of OLM catalog components. By default,
 this is set to management and OLM catalog components are deployed onto the management
 cluster. If set to guest, the OLM catalog components will be deployed onto the guest
 cluster.</p>
@@ -5583,7 +5621,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+<p>nodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
 It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
 Changes to this field will propagate to existing Deployments and StatefulSets.
 TODO(alberto): add additional validation for the map key/values.</p>
@@ -5600,7 +5638,7 @@ TODO(alberto): add additional validation for the map key/values.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+<p>tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 <tr>
@@ -5656,6 +5694,21 @@ This field is optional and once set cannot be changed.</p>
 <tbody>
 <tr>
 <td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represents the latest available observations of a control
+plane&rsquo;s current state.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>version</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ClusterVersionStatus">
@@ -5665,7 +5718,7 @@ ClusterVersionStatus
 </td>
 <td>
 <em>(Optional)</em>
-<p>Version is the status of the release version applied to the
+<p>version is the status of the release version applied to the
 HostedCluster.</p>
 </td>
 </tr>
@@ -5680,7 +5733,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeConfig is a reference to the secret containing the default kubeconfig
+<p>kubeconfig is a reference to the secret containing the default kubeconfig
 for the cluster.</p>
 </td>
 </tr>
@@ -5695,7 +5748,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+<p>customKubeconfig is a local secret reference to the external custom kubeconfig.
 Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the <code>HostedCluster</code> namespace.</p>
 </td>
 </tr>
@@ -5710,7 +5763,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeadminPassword is a reference to the secret that contains the initial
+<p>kubeadminPassword is a reference to the secret that contains the initial
 kubeadmin user password for the guest cluster.</p>
 </td>
 </tr>
@@ -5723,7 +5776,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IgnitionEndpoint is the endpoint injected in the ign config userdata.
+<p>ignitionEndpoint is the endpoint injected in the ign config userdata.
 It exposes the config for instances to become kubernetes nodes.</p>
 </td>
 </tr>
@@ -5737,7 +5790,8 @@ APIEndpoint
 </em>
 </td>
 <td>
-<p>ControlPlaneEndpoint contains the endpoint information by which
+<em>(Optional)</em>
+<p>controlPlaneEndpoint contains the endpoint information by which
 external clients can access the control plane. This is populated
 after the infrastructure is ready.</p>
 </td>
@@ -5750,25 +5804,11 @@ string
 </em>
 </td>
 <td>
-<p>OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+<em>(Optional)</em>
+<p>oauthCallbackURLTemplate contains a template for the URL to use as a callback
 for identity providers. The [identity-provider-name] placeholder must be replaced
 with the name of an identity provider defined on the HostedCluster.
 This is populated after the infrastructure is ready.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>conditions</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
-[]Kubernetes meta/v1.Condition
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Conditions represents the latest available observations of a control
-plane&rsquo;s current state.</p>
 </td>
 </tr>
 <tr>
@@ -5797,7 +5837,7 @@ PlatformStatus
 </td>
 <td>
 <em>(Optional)</em>
-<p>Platform contains platform-specific status of the HostedCluster</p>
+<p>platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
 </tbody>
@@ -5822,7 +5862,7 @@ string
 </em>
 </td>
 <td>
-<p>ReleaseImage is the release image applied to the hosted control plane.</p>
+<p>releaseImage is the release image applied to the hosted control plane.</p>
 </td>
 </tr>
 <tr>
@@ -5833,7 +5873,8 @@ string
 </em>
 </td>
 <td>
-<p>ControlPlaneReleaseImage specifies the desired OCP release payload for
+<em>(Optional)</em>
+<p>controlPlaneReleaseImage specifies the desired OCP release payload for
 control plane components running on the management cluster.
 If not defined, ReleaseImage is used</p>
 </td>
@@ -5877,6 +5918,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
+<p>pullSecret is a reference to a secret containing the pull secret for the hosted control plane.</p>
 </td>
 </tr>
 <tr>
@@ -5887,7 +5929,7 @@ string
 </em>
 </td>
 <td>
-<p>IssuerURL is an OIDC issuer URL which is used as the issuer in all
+<p>issuerURL is an OIDC issuer URL which is used as the issuer in all
 ServiceAccount tokens generated by the control plane API server. The
 default value is kubernetes.default.svc, which only works for in-cluster
 validation.</p>
@@ -5904,7 +5946,7 @@ ClusterNetworking
 </td>
 <td>
 <em>(Optional)</em>
-<p>Networking specifies network configuration for the cluster.
+<p>networking specifies network configuration for the cluster.
 Temporarily optional for backward compatibility, required in future releases.</p>
 </td>
 </tr>
@@ -5918,6 +5960,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
+<p>sshKey is a reference to a secret containing the SSH key for the hosted control plane.</p>
 </td>
 </tr>
 <tr>
@@ -5929,7 +5972,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ClusterID is the unique id that identifies the cluster externally.
+<p>clusterID is the unique id that identifies the cluster externally.
 Making it optional here allows us to keep compatibility with previous
 versions of the control-plane-operator that have no knowledge of this
 field.</p>
@@ -5943,6 +5986,7 @@ string
 </em>
 </td>
 <td>
+<p>infraID is the unique id that identifies the cluster internally.</p>
 </td>
 </tr>
 <tr>
@@ -5955,6 +5999,7 @@ PlatformSpec
 </em>
 </td>
 <td>
+<p>platform is the platform configuration for the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -5967,6 +6012,7 @@ DNSSpec
 </em>
 </td>
 <td>
+<p>dns is the DNS configuration for the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -5980,7 +6026,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>ServiceAccountSigningKey is a reference to a secret containing the private key
+<p>serviceAccountSigningKey is a reference to a secret containing the private key
 used by the service account token issuer. The secret is expected to contain
 a single key named &ldquo;key&rdquo;. If not specified, a service account signing key will
 be generated automatically for the cluster.</p>
@@ -5997,7 +6043,7 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ControllerAvailabilityPolicy specifies the availability policy applied to
+<p>controllerAvailabilityPolicy specifies the availability policy applied to
 critical control plane components. The default value is SingleReplica.</p>
 </td>
 </tr>
@@ -6012,7 +6058,7 @@ AvailabilityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>InfrastructureAvailabilityPolicy specifies the availability policy applied
+<p>infrastructureAvailabilityPolicy specifies the availability policy applied
 to infrastructure services which run on cluster nodes. The default value is
 SingleReplica.</p>
 </td>
@@ -6026,7 +6072,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>FIPS specifies if the nodes for the cluster will be running in FIPS mode</p>
+<p>fips specifies if the nodes for the cluster will be running in FIPS mode</p>
 </td>
 </tr>
 <tr>
@@ -6040,7 +6086,7 @@ KubeconfigSecretRef
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeConfig specifies the name and key for the kubeconfig secret</p>
+<p>kubeconfig specifies the name and key for the kubeconfig secret</p>
 </td>
 </tr>
 <tr>
@@ -6071,7 +6117,7 @@ for the custom domain, while this field triggers the generation of a kubeconfig 
 </em>
 </td>
 <td>
-<p>Services defines metadata about how control plane services are published
+<p>services defines metadata about how control plane services are published
 in the management cluster.</p>
 </td>
 </tr>
@@ -6086,7 +6132,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AuditWebhook contains metadata for configuring an audit webhook
+<p>auditWebhook contains metadata for configuring an audit webhook
 endpoint for a cluster to process cluster audit events. It references
 a secret that contains the webhook information for the audit webhook endpoint.
 It is a secret because if the endpoint has MTLS the kubeconfig will contain client
@@ -6104,7 +6150,7 @@ EtcdSpec
 </em>
 </td>
 <td>
-<p>Etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
+<p>etcd contains metadata about the etcd cluster the hypershift managed Openshift control plane components
 use to store data.</p>
 </td>
 </tr>
@@ -6118,7 +6164,8 @@ ClusterConfiguration
 </em>
 </td>
 <td>
-<p>Configuration embeds resources that correspond to the openshift configuration API:
+<em>(Optional)</em>
+<p>configuration embeds resources that correspond to the openshift configuration API:
 <a href="https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html">https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html</a></p>
 </td>
 </tr>
@@ -6147,7 +6194,7 @@ OperatorConfiguration
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageContentSources lists sources/repositories for the release-image content.</p>
+<p>imageContentSources lists sources/repositories for the release-image content.</p>
 </td>
 </tr>
 <tr>
@@ -6161,7 +6208,7 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle</p>
+<p>additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle</p>
 </td>
 </tr>
 <tr>
@@ -6175,7 +6222,7 @@ SecretEncryptionSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>SecretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
+<p>secretEncryption contains metadata about the kubernetes secret encryption strategy being used for the
 cluster when applicable.</p>
 </td>
 </tr>
@@ -6188,7 +6235,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>PausedUntil is a field that can be used to pause reconciliation on a resource.
+<p>pausedUntil is a field that can be used to pause reconciliation on a resource.
 Either a date can be provided in RFC3339 format or a boolean. If a date is
 provided: reconciliation is paused on the resource until that date. If the boolean true is
 provided: reconciliation is paused on the resource until the field is removed.</p>
@@ -6205,7 +6252,7 @@ OLMCatalogPlacement
 </td>
 <td>
 <em>(Optional)</em>
-<p>OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+<p>olmCatalogPlacement specifies the placement of OLM catalog components. By default,
 this is set to management and OLM catalog components are deployed onto the management
 cluster. If set to guest, the OLM catalog components will be deployed onto the guest
 cluster.</p>
@@ -6222,7 +6269,7 @@ ClusterAutoscaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>Autoscaling specifies auto-scaling behavior that applies to all NodePools
+<p>autoscaling specifies auto-scaling behavior that applies to all NodePools
 associated with the control plane.</p>
 </td>
 </tr>
@@ -6236,6 +6283,7 @@ AutoNode
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
@@ -6248,7 +6296,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
+<p>nodeSelector when specified, must be true for the pods managed by the HostedCluster to be scheduled.</p>
 </td>
 </tr>
 <tr>
@@ -6262,7 +6310,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
+<p>tolerations when specified, define what custom tolerations are added to the hcp pods.</p>
 </td>
 </tr>
 <tr>
@@ -6314,13 +6362,28 @@ This field is optional and once set cannot be changed.</p>
 <tbody>
 <tr>
 <td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions contains details for one aspect of the current state of the HostedControlPlane.
+Current condition types are: &ldquo;Available&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>ready</code></br>
 <em>
 bool
 </em>
 </td>
 <td>
-<p>Ready denotes that the HostedControlPlane API Server is ready to
+<p>ready denotes that the HostedControlPlane API Server is ready to
 receive requests
 This satisfies CAPI contract <a href="https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230">https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230</a></p>
 </td>
@@ -6333,7 +6396,7 @@ bool
 </em>
 </td>
 <td>
-<p>Initialized denotes whether or not the control plane has
+<p>initialized denotes whether or not the control plane has
 provided a kubeadm-config.
 Once this condition is marked true, its value is never changed. See the Ready condition for an indication of
 the current readiness of the cluster&rsquo;s control plane.
@@ -6348,7 +6411,8 @@ bool
 </em>
 </td>
 <td>
-<p>ExternalManagedControlPlane indicates to cluster-api that the control plane
+<em>(Optional)</em>
+<p>externalManagedControlPlane indicates to cluster-api that the control plane
 is managed by an external service.
 <a href="https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468">https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468</a></p>
 </td>
@@ -6363,7 +6427,8 @@ APIEndpoint
 </em>
 </td>
 <td>
-<p>ControlPlaneEndpoint contains the endpoint information by which
+<em>(Optional)</em>
+<p>controlPlaneEndpoint contains the endpoint information by which
 external clients can access the control plane.  This is populated
 after the infrastructure is ready.</p>
 </td>
@@ -6376,7 +6441,8 @@ string
 </em>
 </td>
 <td>
-<p>OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+<em>(Optional)</em>
+<p>oauthCallbackURLTemplate contains a template for the URL to use as a callback
 for identity providers. The [identity-provider-name] placeholder must be replaced
 with the name of an identity provider defined on the HostedCluster.
 This is populated after the infrastructure is ready.</p>
@@ -6405,7 +6471,8 @@ string
 </em>
 </td>
 <td>
-<p>Version is the semantic version of the release applied by
+<em>(Optional)</em>
+<p>version is the semantic version of the release applied by
 the hosted control plane operator</p>
 <p>Deprecated: Use versionStatus.desired.version instead.</p>
 </td>
@@ -6419,7 +6486,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ReleaseImage is the release image applied to the hosted control plane.</p>
+<p>releaseImage is the release image applied to the hosted control plane.</p>
 <p>Deprecated: Use versionStatus.desired.image instead.</p>
 </td>
 </tr>
@@ -6433,6 +6500,7 @@ Kubernetes meta/v1.Time
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>lastReleaseImageTransitionTime is the time of the last update to the current
 releaseImage property.</p>
 <p>Deprecated: Use versionStatus.history[0].startedTime instead.</p>
@@ -6448,7 +6516,8 @@ KubeconfigSecretRef
 </em>
 </td>
 <td>
-<p>KubeConfig is a reference to the secret containing the default kubeconfig
+<em>(Optional)</em>
+<p>kubeConfig is a reference to the secret containing the default kubeconfig
 for this control plane.</p>
 </td>
 </tr>
@@ -6482,23 +6551,8 @@ Kubernetes core/v1.LocalObjectReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeadminPassword is a reference to the secret containing the initial kubeadmin password
+<p>kubeadminPassword is a reference to the secret containing the initial kubeadmin password
 for the guest cluster.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>conditions</code></br>
-<em>
-<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
-[]Kubernetes meta/v1.Condition
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>Condition contains details for one aspect of the current state of the HostedControlPlane.
-Current condition types are: &ldquo;Available&rdquo;</p>
 </td>
 </tr>
 <tr>
@@ -6512,7 +6566,7 @@ PlatformStatus
 </td>
 <td>
 <em>(Optional)</em>
-<p>Platform contains platform-specific status of the HostedCluster</p>
+<p>platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
 <tr>
@@ -6523,7 +6577,8 @@ int
 </em>
 </td>
 <td>
-<p>NodeCount tracks the number of nodes in the HostedControlPlane.</p>
+<em>(Optional)</em>
+<p>nodeCount tracks the number of nodes in the HostedControlPlane.</p>
 </td>
 </tr>
 </tbody>
@@ -6554,7 +6609,7 @@ IBMCloudKMSAuthType
 </em>
 </td>
 <td>
-<p>Type defines the IBM Cloud KMS authentication strategy</p>
+<p>type defines the IBM Cloud KMS authentication strategy</p>
 </td>
 </tr>
 <tr>
@@ -6568,7 +6623,7 @@ IBMCloudKMSUnmanagedAuthSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Unmanaged defines the auth metadata the customer provides to interact with IBM Cloud KMS</p>
+<p>unmanaged defines the auth metadata the customer provides to interact with IBM Cloud KMS</p>
 </td>
 </tr>
 <tr>
@@ -6582,7 +6637,7 @@ IBMCloudKMSManagedAuthSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Managed defines metadata around the service to service authentication strategy for the IBM Cloud
+<p>managed defines metadata around the service to service authentication strategy for the IBM Cloud
 KMS system (all provider managed).</p>
 </td>
 </tr>
@@ -6637,7 +6692,7 @@ string
 </em>
 </td>
 <td>
-<p>CRKID is the customer rook key id</p>
+<p>crkID is the customer rook key id</p>
 </td>
 </tr>
 <tr>
@@ -6648,7 +6703,7 @@ string
 </em>
 </td>
 <td>
-<p>InstanceID is the id for the key protect instance</p>
+<p>instanceID is the id for the key protect instance</p>
 </td>
 </tr>
 <tr>
@@ -6659,7 +6714,7 @@ string
 </em>
 </td>
 <td>
-<p>CorrelationID is an identifier used to track all api call usage from hypershift</p>
+<p>correlationID is an identifier used to track all api call usage from hypershift</p>
 </td>
 </tr>
 <tr>
@@ -6670,7 +6725,7 @@ string
 </em>
 </td>
 <td>
-<p>URL is the url to call key protect apis over</p>
+<p>url is the url to call key protect apis over</p>
 </td>
 </tr>
 <tr>
@@ -6681,7 +6736,7 @@ int
 </em>
 </td>
 <td>
-<p>KeyVersion is a unique number associated with the key. The number increments whenever a new
+<p>keyVersion is a unique number associated with the key. The number increments whenever a new
 key is enabled for data encryption.</p>
 </td>
 </tr>
@@ -6720,7 +6775,7 @@ string
 </em>
 </td>
 <td>
-<p>Region is the IBM Cloud region</p>
+<p>region is the IBM Cloud region</p>
 </td>
 </tr>
 <tr>
@@ -6733,7 +6788,7 @@ IBMCloudKMSAuthSpec
 </em>
 </td>
 <td>
-<p>Auth defines metadata for how authentication is done with IBM Cloud KMS</p>
+<p>auth defines metadata for how authentication is done with IBM Cloud KMS</p>
 </td>
 </tr>
 <tr>
@@ -6746,7 +6801,7 @@ IBMCloudKMSAuthSpec
 </em>
 </td>
 <td>
-<p>KeyList defines the list of keys used for data encryption</p>
+<p>keyList defines the list of keys used for data encryption</p>
 </td>
 </tr>
 </tbody>
@@ -6777,7 +6832,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>Credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
+<p>credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
 call IBM Cloud KMS APIs</p>
 </td>
 </tr>
@@ -6810,7 +6865,8 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 </em>
 </td>
 <td>
-<p>ProviderType is a specific supported infrastructure provider within IBM Cloud.</p>
+<em>(Optional)</em>
+<p>providerType is a specific supported infrastructure provider within IBM Cloud.</p>
 </td>
 </tr>
 </tbody>
@@ -6843,7 +6899,7 @@ string
 </em>
 </td>
 <td>
-<p>Source is the repository that users refer to, e.g. in image pull
+<p>source is the repository that users refer to, e.g. in image pull
 specifications.</p>
 </td>
 </tr>
@@ -6856,7 +6912,7 @@ specifications.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Mirrors are one or more repositories that may also contain the same images.</p>
+<p>mirrors are one or more repositories that may also contain the same images.</p>
 </td>
 </tr>
 </tbody>
@@ -6904,6 +6960,9 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###InstanceType { #hypershift.openshift.io/v1beta1.InstanceType }
+<p>
+</p>
 ###KMSProvider { #hypershift.openshift.io/v1beta1.KMSProvider }
 <p>
 (<em>Appears on:</em>
@@ -6953,7 +7012,7 @@ KMSProvider
 </em>
 </td>
 <td>
-<p>Provider defines the KMS provider</p>
+<p>provider defines the KMS provider</p>
 </td>
 </tr>
 <tr>
@@ -6967,7 +7026,7 @@ IBMCloudKMSSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>IBMCloud defines metadata for the IBM Cloud KMS encryption strategy</p>
+<p>ibmcloud defines metadata for the IBM Cloud KMS encryption strategy</p>
 </td>
 </tr>
 <tr>
@@ -6981,7 +7040,7 @@ AWSKMSSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>AWS defines metadata about the configuration of the AWS KMS Secret Encryption provider</p>
+<p>aws defines metadata about the configuration of the AWS KMS Secret Encryption provider</p>
 </td>
 </tr>
 <tr>
@@ -6995,7 +7054,7 @@ AzureKMSSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
+<p>azure defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault</p>
 </td>
 </tr>
 </tbody>
@@ -7023,7 +7082,7 @@ string
 </em>
 </td>
 <td>
-<p>arn specifies the ARN of the Karpenter provisioner.</p>
+<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
 </td>
 </tr>
 </tbody>
@@ -7097,7 +7156,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>CacheName holds the name of the cache DataVolume, if exists</p>
+<p>cacheName holds the name of the cache DataVolume, if exists</p>
 </td>
 </tr>
 <tr>
@@ -7111,7 +7170,7 @@ KubevirtPlatformCredentials
 </td>
 <td>
 <em>(Optional)</em>
-<p>Credentials shows the client credentials used when creating KubeVirt virtual machines.
+<p>credentials shows the client credentials used when creating KubeVirt virtual machines.
 This filed is only exists when the KubeVirt virtual machines are being placed
 on a cluster separate from the one hosting the Hosted Control Plane components.</p>
 <p>The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
@@ -7146,7 +7205,7 @@ KubevirtCachingStrategyType
 </em>
 </td>
 <td>
-<p>Type is the type of the caching strategy</p>
+<p>type is the type of the caching strategy</p>
 </td>
 </tr>
 </tbody>
@@ -7202,7 +7261,7 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 </td>
 <td>
 <em>(Optional)</em>
-<p>Memory represents how much guest memory the VM should have</p>
+<p>memory represents how much guest memory the VM should have</p>
 </td>
 </tr>
 <tr>
@@ -7214,7 +7273,7 @@ uint32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Cores represents how many cores the guest VM should have</p>
+<p>cores is the number of CPU cores for the KubeVirt VM.</p>
 </td>
 </tr>
 <tr>
@@ -7228,7 +7287,7 @@ QoSClass
 </td>
 <td>
 <em>(Optional)</em>
-<p>QosClass If set to &ldquo;Guaranteed&rdquo;, requests the scheduler to place the VirtualMachineInstance on a node with
+<p>qosClass if set to &ldquo;Guaranteed&rdquo;, requests the scheduler to place the VirtualMachineInstance on a node with
 limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
 See here for more details:
 <a href="https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances">https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances</a></p>
@@ -7261,7 +7320,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ContainerDiskImage is a string representing the container image that holds the root disk</p>
+<p>containerDiskImage is a string representing the container image that holds the root disk</p>
 </td>
 </tr>
 </tbody>
@@ -7289,7 +7348,7 @@ string
 </em>
 </td>
 <td>
-<p>DeviceName is the name of the host device that is desired to be utilized in the HostedCluster&rsquo;s NodePool
+<p>deviceName is the name of the host device that is desired to be utilized in the HostedCluster&rsquo;s NodePool
 The device can be any supported PCI device, including GPU, either as a passthrough or a vGPU slice.</p>
 </td>
 </tr>
@@ -7302,7 +7361,7 @@ int
 </td>
 <td>
 <em>(Optional)</em>
-<p>Count is the number of instances the specified host device will be attached to each of the
+<p>count is the number of instances the specified host device will be attached to each of the
 NodePool&rsquo;s nodes. Default is 1.</p>
 </td>
 </tr>
@@ -7334,7 +7393,7 @@ NodePool&rsquo;s nodes. Default is 1.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageClassMapping maps StorageClasses on the infra cluster hosting
+<p>storageClassMapping maps StorageClasses on the infra cluster hosting
 the KubeVirt VMs to StorageClasses that are made available within the
 Guest Cluster.</p>
 <p>NOTE: It is possible that not all capabilities of an infra cluster&rsquo;s
@@ -7352,6 +7411,9 @@ storageclass will be present for the corresponding guest clusters storageclass.<
 </td>
 <td>
 <em>(Optional)</em>
+<p>volumeSnapshotClassMapping maps VolumeSnapshotClasses on the infra cluster hosting
+the KubeVirt VMs to VolumeSnapshotClasses that are made available within the
+Guest Cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -7381,7 +7443,7 @@ string
 </em>
 </td>
 <td>
-<p>Name specify the network attached to the nodes
+<p>name specify the network attached to the nodes
 it is a value with the format &ldquo;[namespace]/[name]&rdquo; to reference the
 multus network attachment definition</p>
 </td>
@@ -7415,7 +7477,7 @@ KubevirtRootVolume
 </em>
 </td>
 <td>
-<p>RootVolume represents values associated with the VM volume that will host rhcos</p>
+<p>rootVolume represents values associated with the VM volume that will host rhcos</p>
 </td>
 </tr>
 <tr>
@@ -7429,7 +7491,7 @@ KubevirtCompute
 </td>
 <td>
 <em>(Optional)</em>
-<p>Compute contains values representing the virtual hardware requested for the VM</p>
+<p>compute contains values representing the virtual hardware requested for the VM</p>
 </td>
 </tr>
 <tr>
@@ -7443,7 +7505,7 @@ MultiQueueSetting
 </td>
 <td>
 <em>(Optional)</em>
-<p>NetworkInterfaceMultiQueue If set to &ldquo;Enable&rdquo;, virtual network interfaces configured with a virtio bus will also
+<p>networkInterfaceMultiqueue if set to &ldquo;Enable&rdquo;, virtual network interfaces configured with a virtio bus will also
 enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
 factors of the VirtualMachineInstance, like the number of guest CPUs.</p>
 </td>
@@ -7459,7 +7521,7 @@ factors of the VirtualMachineInstance, like the number of guest CPUs.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalNetworks specify the extra networks attached to the nodes</p>
+<p>additionalNetworks specify the extra networks attached to the nodes</p>
 </td>
 </tr>
 <tr>
@@ -7471,7 +7533,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>AttachDefaultNetwork specify if the default pod network should be attached to the nodes
+<p>attachDefaultNetwork specify if the default pod network should be attached to the nodes
 this can only be set to false if AdditionalNetworks are configured</p>
 </td>
 </tr>
@@ -7484,7 +7546,7 @@ map[string]string
 </td>
 <td>
 <em>(Optional)</em>
-<p>NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
+<p>nodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
 Selector which must match a node&rsquo;s labels for the VM to be scheduled on that node. More info:
 <a href="https://kubernetes.io/docs/concepts/configuration/assign-pod-node/">https://kubernetes.io/docs/concepts/configuration/assign-pod-node/</a></p>
 </td>
@@ -7499,7 +7561,8 @@ Selector which must match a node&rsquo;s labels for the VM to be scheduled on th
 </em>
 </td>
 <td>
-<p>KubevirtHostDevices specifies the host devices (e.g. GPU devices) to be passed
+<em>(Optional)</em>
+<p>hostDevices specifies the host devices (e.g. GPU devices) to be passed
 from the management cluster, to the nodepool nodes</p>
 </td>
 </tr>
@@ -7532,7 +7595,7 @@ k8s.io/apimachinery/pkg/api/resource.Quantity
 </td>
 <td>
 <em>(Optional)</em>
-<p>Size is the size of the persistent storage volume</p>
+<p>size is the size of the persistent storage volume</p>
 </td>
 </tr>
 <tr>
@@ -7544,7 +7607,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageClass is the storageClass used for the underlying PVC that hosts the volume</p>
+<p>storageClass is the storageClass used for the underlying PVC that hosts the volume</p>
 </td>
 </tr>
 <tr>
@@ -7558,7 +7621,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AccessModes is an array that contains the desired Access Modes the root volume should have.
+<p>accessModes is an array that contains the desired Access Modes the root volume should have.
 More info: <a href="https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes">https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes</a></p>
 </td>
 </tr>
@@ -7573,7 +7636,7 @@ Kubernetes core/v1.PersistentVolumeMode
 </td>
 <td>
 <em>(Optional)</em>
-<p>VolumeMode defines what type of volume is required by the claim.
+<p>volumeMode defines what type of volume is required by the claim.
 Value of Filesystem is implied when not included in claim spec.</p>
 </td>
 </tr>
@@ -7605,8 +7668,9 @@ KubeconfigSecretRef
 </em>
 </td>
 <td>
-<p>InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
-that will be used to host the KubeVirt virtual machines for this cluster.</p>
+<em>(Optional)</em>
+<p>infraKubeConfigSecret is a reference to the secret containing the kubeconfig
+of an external infrastructure cluster for kubevirt provider</p>
 </td>
 </tr>
 <tr>
@@ -7617,10 +7681,8 @@ string
 </em>
 </td>
 <td>
-<p>InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
-virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
-referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
-namespace.</p>
+<p>infraNamespace is the namespace in the external infrastructure cluster
+where kubevirt resources will be created</p>
 </td>
 </tr>
 </tbody>
@@ -7650,7 +7712,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>BaseDomainPassthrough toggles whether or not an automatically
+<p>baseDomainPassthrough toggles whether or not an automatically
 generated base domain for the guest cluster should be used that
 is a subdomain of the management cluster&rsquo;s *.apps DNS.</p>
 <p>For the KubeVirt platform, the basedomain can be autogenerated using
@@ -7678,7 +7740,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>GenerateID is used to uniquely apply a name suffix to resources associated with
+<p>generateID is used to uniquely apply a name suffix to resources associated with
 kubevirt infrastructure resources</p>
 </td>
 </tr>
@@ -7693,7 +7755,7 @@ KubevirtPlatformCredentials
 </td>
 <td>
 <em>(Optional)</em>
-<p>Credentials defines the client credentials used when creating KubeVirt virtual machines.
+<p>credentials defines the client credentials used when creating KubeVirt virtual machines.
 Defining credentials is only necessary when the KubeVirt virtual machines are being placed
 on a cluster separate from the one hosting the Hosted Control Plane components.</p>
 <p>The default behavior when Credentials is not defined is for the KubeVirt VMs to be placed on
@@ -7711,7 +7773,7 @@ KubevirtStorageDriverSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+<p>storageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
 the infra cluster (hosting the VMs) to the guest cluster.</p>
 </td>
 </tr>
@@ -7744,7 +7806,7 @@ KubevirtDiskImage
 </td>
 <td>
 <em>(Optional)</em>
-<p>Image represents what rhcos image to use for the node pool</p>
+<p>diskImage represents what rhcos image to use for the node pool</p>
 </td>
 </tr>
 <tr>
@@ -7760,7 +7822,7 @@ KubevirtVolume
 <p>
 (Members of <code>KubevirtVolume</code> are embedded into this type.)
 </p>
-<p>KubevirtVolume represents of type of storage to run the image on</p>
+<p>kubevirtVolume represents of type of storage to run the image on</p>
 </td>
 </tr>
 <tr>
@@ -7774,7 +7836,7 @@ KubevirtCachingStrategy
 </td>
 <td>
 <em>(Optional)</em>
-<p>CacheStrategy defines the boot image caching strategy. Default - no caching</p>
+<p>cacheStrategy defines the boot image caching strategy. Default - no caching</p>
 </td>
 </tr>
 </tbody>
@@ -7802,7 +7864,8 @@ string
 </em>
 </td>
 <td>
-<p>Group contains which group this mapping belongs to.</p>
+<em>(Optional)</em>
+<p>group contains which group this mapping belongs to.</p>
 </td>
 </tr>
 <tr>
@@ -7813,7 +7876,7 @@ string
 </em>
 </td>
 <td>
-<p>InfraStorageClassName is the name of the infra cluster storage class that
+<p>infraStorageClassName is the name of the infra cluster storage class that
 will be exposed to the guest.</p>
 </td>
 </tr>
@@ -7825,7 +7888,7 @@ string
 </em>
 </td>
 <td>
-<p>GuestStorageClassName is the name that the corresponding storageclass will
+<p>guestStorageClassName is the name that the corresponding storageclass will
 be called within the guest cluster</p>
 </td>
 </tr>
@@ -7885,7 +7948,7 @@ KubevirtStorageDriverConfigType
 </td>
 <td>
 <em>(Optional)</em>
-<p>Type represents the type of kubevirt csi driver configuration to use</p>
+<p>type represents the type of kubevirt csi driver configuration to use</p>
 </td>
 </tr>
 <tr>
@@ -7899,7 +7962,7 @@ KubevirtManualStorageDriverConfig
 </td>
 <td>
 <em>(Optional)</em>
-<p>Manual is used to explicitly define how the infra storageclasses are
+<p>manual is used to explicitly define how the infra storageclasses are
 mapped to guest storageclasses</p>
 </td>
 </tr>
@@ -7932,7 +7995,7 @@ KubevirtVolumeType
 </td>
 <td>
 <em>(Optional)</em>
-<p>Type represents the type of storage to associate with the kubevirt VMs.</p>
+<p>type represents the type of storage to associate with the kubevirt VMs.</p>
 </td>
 </tr>
 <tr>
@@ -7946,7 +8009,7 @@ KubevirtPersistentVolume
 </td>
 <td>
 <em>(Optional)</em>
-<p>Persistent volume type means the VM&rsquo;s storage is backed by a PVC
+<p>persistent volume type means the VM&rsquo;s storage is backed by a PVC
 VMs that use persistent volumes can survive disruption events like restart and eviction
 This is the default type used when no storage type is defined.</p>
 </td>
@@ -7976,7 +8039,8 @@ string
 </em>
 </td>
 <td>
-<p>Group contains which group this mapping belongs to.</p>
+<em>(Optional)</em>
+<p>group contains which group this mapping belongs to.</p>
 </td>
 </tr>
 <tr>
@@ -7987,7 +8051,7 @@ string
 </em>
 </td>
 <td>
-<p>InfraStorageClassName is the name of the infra cluster volume snapshot class that
+<p>infraVolumeSnapshotClassName is the name of the infra cluster volume snapshot class that
 will be exposed to the guest.</p>
 </td>
 </tr>
@@ -7999,7 +8063,7 @@ string
 </em>
 </td>
 <td>
-<p>GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+<p>guestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
 be called within the guest cluster</p>
 </td>
 </tr>
@@ -8089,7 +8153,7 @@ github.com/openshift/hypershift/api/util/ipnet.IPNet
 </em>
 </td>
 <td>
-<p>CIDR is the IP block address pool for machines within the cluster.</p>
+<p>cidr is the IP block address pool for machines within the cluster.</p>
 </td>
 </tr>
 </tbody>
@@ -8307,13 +8371,7 @@ ObjectEncodingFormat
 </em>
 </td>
 <td>
-<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
-unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-SecretProviderClass custom resource related to the managed identity.</p>
-<p>The default value is utf-8.</p>
-<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
+<p>objectEncoding is the encoding format for the object.</p>
 </td>
 </tr>
 <tr>
@@ -8324,6 +8382,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
 format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
 ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.</p>
@@ -8404,7 +8463,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Name is the name of the network to filter by.</p>
+<p>name is the name of the network to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -8416,7 +8475,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is the description of the network to filter by.</p>
+<p>description is the description of the network to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -8428,7 +8487,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ProjectID is the project ID of the network to filter by.</p>
+<p>projectID is the project ID of the network to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -8476,7 +8535,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ID is the ID of the network to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
+<p>id is the ID of the network to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
 </td>
 </tr>
 <tr>
@@ -8490,7 +8549,7 @@ NetworkFilter
 </td>
 <td>
 <em>(Optional)</em>
-<p>Filter specifies a filter to select an OpenStack network. If provided, cannot be empty.</p>
+<p>filter specifies a filter to select an OpenStack network. If provided, cannot be empty.</p>
 </td>
 </tr>
 </tbody>
@@ -8557,7 +8616,7 @@ int32
 </em>
 </td>
 <td>
-<p>Min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1 and &lt;= .Max.</p>
+<p>min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1 and &lt;= .Max.</p>
 </td>
 </tr>
 <tr>
@@ -8568,7 +8627,7 @@ int32
 </em>
 </td>
 <td>
-<p>Max is the maximum number of nodes allowed in the pool. Must be &gt;= 1 and &gt;= Min.</p>
+<p>max is the maximum number of nodes allowed in the pool. Must be &gt;= 1 and &gt;= Min.</p>
 </td>
 </tr>
 </tbody>
@@ -8599,7 +8658,7 @@ string
 </em>
 </td>
 <td>
-<p>Type of condition in CamelCase or in foo.example.com/CamelCase.
+<p>type of condition in CamelCase or in foo.example.com/CamelCase.
 Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
 can be useful (see .node.status.conditions), the ability to deconflict is important.</p>
 </td>
@@ -8614,7 +8673,7 @@ Kubernetes core/v1.ConditionStatus
 </em>
 </td>
 <td>
-<p>Status of the condition, one of True, False, Unknown.</p>
+<p>status of the condition, one of True, False, Unknown.</p>
 </td>
 </tr>
 <tr>
@@ -8626,7 +8685,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Severity provides an explicit classification of Reason code, so the users or machines can immediately
+<p>severity provides an explicit classification of Reason code, so the users or machines can immediately
 understand the current situation and act accordingly.
 The Severity field MUST be set only when Status=False.</p>
 </td>
@@ -8641,7 +8700,7 @@ Kubernetes meta/v1.Time
 </em>
 </td>
 <td>
-<p>Last time the condition transitioned from one status to another.
+<p>lastTransitionTime is the last time the condition transitioned from one status to another.
 This should be when the underlying condition changed. If that is not known, then using the time when
 the API field changed is acceptable.</p>
 </td>
@@ -8655,7 +8714,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>The reason for the condition&rsquo;s last transition in CamelCase.
+<p>reason for the condition&rsquo;s last transition in CamelCase.
 The specific API may choose whether or not this field is considered a guaranteed API.
 This field may not be empty.</p>
 </td>
@@ -8669,7 +8728,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>A human readable message indicating details about the transition.
+<p>message is a human readable message indicating details about the transition.
 This field may be empty.</p>
 </td>
 </tr>
@@ -8681,6 +8740,8 @@ int64
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>observedGeneration represents the .metadata.generation that the condition was set based upon.</p>
 </td>
 </tr>
 </tbody>
@@ -8728,6 +8789,7 @@ ReplaceUpgrade
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>replace is the configuration for rolling upgrades.
 It defaults to a RollingUpdate strategy with maxSurge of 1 and maxUnavailable of 0.</p>
 </td>
@@ -8742,6 +8804,7 @@ InPlaceUpgrade
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>inPlace is the configuration for in-place upgrades.</p>
 </td>
 </tr>
@@ -8790,7 +8853,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>Type specifies the platform name.</p>
+<p>type specifies the platform name.</p>
 </td>
 </tr>
 <tr>
@@ -8804,7 +8867,7 @@ AWSNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>AWS specifies the configuration used when operating on AWS.</p>
+<p>aws specifies the configuration used when operating on AWS.</p>
 </td>
 </tr>
 <tr>
@@ -8817,7 +8880,8 @@ IBMCloudPlatformSpec
 </em>
 </td>
 <td>
-<p>IBMCloud defines IBMCloud specific settings for components</p>
+<em>(Optional)</em>
+<p>ibmcloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 <tr>
@@ -8831,7 +8895,7 @@ KubevirtNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>Kubevirt specifies the configuration used when operating on KubeVirt platform.</p>
+<p>kubevirt specifies the configuration used when operating on KubeVirt platform.</p>
 </td>
 </tr>
 <tr>
@@ -8845,7 +8909,7 @@ AgentNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>Agent specifies the configuration used when using Agent platform.</p>
+<p>agent specifies the configuration used when using Agent platform.</p>
 </td>
 </tr>
 <tr>
@@ -8858,6 +8922,8 @@ AzureNodePoolPlatform
 </em>
 </td>
 <td>
+<em>(Optional)</em>
+<p>azure specifies the configuration used when using Azure platform.</p>
 </td>
 </tr>
 <tr>
@@ -8871,7 +8937,7 @@ PowerVSNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>PowerVS specifies the configuration used when using IBMCloud PowerVS platform.</p>
+<p>powervs specifies the configuration used when using IBMCloud PowerVS platform.</p>
 </td>
 </tr>
 <tr>
@@ -8885,7 +8951,7 @@ OpenStackNodePoolPlatform
 </td>
 <td>
 <em>(Optional)</em>
-<p>OpenStack specifies the configuration used when using OpenStack platform.</p>
+<p>openstack specifies the configuration used when using OpenStack platform.</p>
 </td>
 </tr>
 </tbody>
@@ -8896,7 +8962,7 @@ OpenStackNodePoolPlatform
 <a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
 </p>
 <p>
-<p>NodePoolPlatformStatus contains specific platform statuses</p>
+<p>NodePoolPlatformStatus struct contains platform-specific status information.</p>
 </p>
 <table>
 <thead>
@@ -8917,7 +8983,7 @@ KubeVirtNodePoolStatus
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeVirt contains the KubeVirt platform statuses</p>
+<p>kubeVirt contains the KubeVirt platform statuses</p>
 </td>
 </tr>
 </tbody>
@@ -9022,8 +9088,8 @@ NodePoolAutoScaling
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoscaling specifies auto-scaling behavior for the NodePool.
-autoscaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
+<p>autoScaling specifies auto-scaling behavior for the NodePool.
+autoScaling is mutually exclusive with replicas. If replicas is set, this field must be omitted.</p>
 </td>
 </tr>
 <tr>
@@ -9036,6 +9102,7 @@ autoscaling is mutually exclusive with replicas. If replicas is set, this field 
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>config is a list of references to ConfigMaps containing serialized
 MachineConfig resources to be injected into the ignition configurations of
 nodes in the NodePool. The MachineConfig API schema is defined here:</p>
@@ -9140,6 +9207,7 @@ provided: reconciliation is paused on the resource until the field is removed.</
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>tuningConfig is a list of references to ConfigMaps containing serialized
 Tuned or PerformanceProfile resources to define the tuning configuration to be applied to
 nodes in the NodePool. The Tuned API is defined here:</p>
@@ -9193,7 +9261,7 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>Replicas is the latest observed number of nodes in the pool.</p>
+<p>replicas is the latest observed number of nodes in the pool.</p>
 </td>
 </tr>
 <tr>
@@ -9204,7 +9272,8 @@ string
 </em>
 </td>
 <td>
-<p>Version is the semantic version of the latest applied release specified by
+<em>(Optional)</em>
+<p>version is the semantic version of the latest applied release specified by
 the NodePool.</p>
 </td>
 </tr>
@@ -9218,7 +9287,8 @@ NodePoolPlatformStatus
 </em>
 </td>
 <td>
-<p>Platform hols the specific statuses</p>
+<em>(Optional)</em>
+<p>platform holds the specific statuses</p>
 </td>
 </tr>
 <tr>
@@ -9232,7 +9302,7 @@ NodePoolPlatformStatus
 </td>
 <td>
 <em>(Optional)</em>
-<p>Conditions represents the latest available observations of the node pool&rsquo;s
+<p>conditions represents the latest available observations of the node pool&rsquo;s
 current state.</p>
 </td>
 </tr>
@@ -9273,6 +9343,7 @@ int32
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
 assigned when the service is created.</p>
 </td>
@@ -9311,7 +9382,13 @@ the management cluster.</p>
 <a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>)
 </p>
 <p>
-<p>ObjectEncodingFormat is the type of encoding for an Azure Key Vault secret</p>
+<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
+unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+SecretProviderClass custom resource related to the managed identity.</p>
+<p>The default value is utf-8.</p>
+<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </p>
 ###OpenStackIdentityReference { #hypershift.openshift.io/v1beta1.OpenStackIdentityReference }
 <p>
@@ -9338,7 +9415,7 @@ string
 </em>
 </td>
 <td>
-<p>Name is the name of a secret in the same namespace as the resource being provisioned.
+<p>name is the name of a secret in the same namespace as the resource being provisioned.
 The secret must contain a key named <code>clouds.yaml</code> which contains an OpenStack clouds.yaml file.
 The secret may optionally contain a key named <code>cacert</code> containing a PEM-encoded CA certificate.</p>
 </td>
@@ -9351,7 +9428,7 @@ string
 </em>
 </td>
 <td>
-<p>CloudName specifies the name of the entry in the clouds.yaml file to use.</p>
+<p>cloudName specifies the name of the entry in the clouds.yaml file to use.</p>
 </td>
 </tr>
 </tbody>
@@ -9379,7 +9456,7 @@ string
 </em>
 </td>
 <td>
-<p>Flavor is the OpenStack flavor to use for the node instances.</p>
+<p>flavor is the OpenStack flavor to use for the node instances.</p>
 </td>
 </tr>
 <tr>
@@ -9391,7 +9468,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
+<p>imageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
@@ -9423,7 +9500,7 @@ The maximum length of availability zone name is 63 as per labels limits.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>AdditionalPorts is a list of additional ports to create on the node instances.</p>
+<p>additionalPorts is a list of additional ports to create on the node instances.</p>
 </td>
 </tr>
 </tbody>
@@ -9454,7 +9531,7 @@ OpenStackIdentityReference
 </em>
 </td>
 <td>
-<p>IdentityRef is a reference to a secret holding OpenStack credentials
+<p>identityRef is a reference to a secret holding OpenStack credentials
 to be used when reconciling the hosted cluster.</p>
 </td>
 </tr>
@@ -9469,7 +9546,7 @@ to be used when reconciling the hosted cluster.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
+<p>managedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
 and a subnet with the defined DNSNameservers, AllocationPools and the CIDR defined in the HostedCluster
 MachineNetwork, and a router connected to the subnet. Currently only one IPv4
 subnet is supported.</p>
@@ -9486,7 +9563,7 @@ RouterParam
 </td>
 <td>
 <em>(Optional)</em>
-<p>Router specifies an existing router to be used if ManagedSubnets are
+<p>router specifies an existing router to be used if ManagedSubnets are
 specified. If specified, no new router will be created.</p>
 </td>
 </tr>
@@ -9501,7 +9578,7 @@ NetworkParam
 </td>
 <td>
 <em>(Optional)</em>
-<p>Network specifies an existing network to use if no ManagedSubnets
+<p>network specifies an existing network to use if no ManagedSubnets
 are specified.</p>
 </td>
 </tr>
@@ -9516,7 +9593,7 @@ are specified.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>Subnets specifies existing subnets to use if not ManagedSubnets are
+<p>subnets specifies existing subnets to use if not ManagedSubnets are
 specified. All subnets must be in the network specified by Network.
 There can be zero, one, or two subnets. If no subnets are specified,
 all subnets in Network will be used. If 2 subnets are specified, one
@@ -9532,10 +9609,7 @@ int
 </td>
 <td>
 <em>(Optional)</em>
-<p>NetworkMTU sets the maximum transmission unit (MTU) value to address fragmentation for the private network ID.
-This value will be used only if the Cluster actuator creates the network.
-If left empty, the network will have the default MTU defined in Openstack network service.
-To use this field, the Openstack installation requires the net-mtu neutron API extension.</p>
+<p>networkMTU is the MTU for the network.</p>
 </td>
 </tr>
 <tr>
@@ -9549,7 +9623,7 @@ NetworkParam
 </td>
 <td>
 <em>(Optional)</em>
-<p>ExternalNetwork is the OpenStack Network to be used to get public internet to the VMs.
+<p>externalNetwork is the OpenStack Network to be used to get public internet to the VMs.
 This option is ignored if DisableExternalNetwork is set to true.</p>
 <p>If ExternalNetwork is defined it must refer to exactly one external network.</p>
 <p>If ExternalNetwork is not defined or is empty the controller will use any
@@ -9569,7 +9643,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>DisableExternalNetwork specifies whether or not to attempt to connect the cluster
+<p>disableExternalNetwork specifies whether or not to attempt to connect the cluster
 to an external network. This allows for the creation of clusters when connecting
 to an external network is not possible or desirable, e.g. if using a provider network.</p>
 </td>
@@ -9583,7 +9657,7 @@ to an external network is not possible or desirable, e.g. if using a provider ne
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tags to set on all resources in cluster which support tags</p>
+<p>tags to set on all resources in cluster which support tags</p>
 </td>
 </tr>
 <tr>
@@ -9595,7 +9669,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+<p>ingressFloatingIP is an available floating IP in your OpenStack cluster that will
 be associated with the OpenShift ingress port.
 When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
 When specified, the floating IP has to be pre-created.  If the
@@ -9765,7 +9839,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Tenancy indicates if instance should run on shared or single-tenant hardware.</p>
+<p>tenancy indicates if instance should run on shared or single-tenant hardware.</p>
 <p>Possible values:
 default: NodePool instances run on shared hardware.
 dedicated: Each NodePool instance runs on single-tenant hardware.
@@ -9816,7 +9890,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>Type is the type of infrastructure provider for the cluster.</p>
+<p>type is the type of infrastructure provider for the cluster.</p>
 </td>
 </tr>
 <tr>
@@ -9830,7 +9904,7 @@ AWSPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>AWS specifies configuration for clusters running on Amazon Web Services.</p>
+<p>aws specifies configuration for clusters running on Amazon Web Services.</p>
 </td>
 </tr>
 <tr>
@@ -9844,7 +9918,7 @@ AgentPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>Agent specifies configuration for agent-based installations.</p>
+<p>agent specifies configuration for agent-based installations.</p>
 </td>
 </tr>
 <tr>
@@ -9857,7 +9931,8 @@ IBMCloudPlatformSpec
 </em>
 </td>
 <td>
-<p>IBMCloud defines IBMCloud specific settings for components</p>
+<em>(Optional)</em>
+<p>ibmcloud defines IBMCloud specific settings for components</p>
 </td>
 </tr>
 <tr>
@@ -9870,7 +9945,8 @@ AzurePlatformSpec
 </em>
 </td>
 <td>
-<p>Azure defines azure specific settings</p>
+<em>(Optional)</em>
+<p>azure defines azure specific settings</p>
 </td>
 </tr>
 <tr>
@@ -9884,7 +9960,7 @@ PowerVSPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
+<p>powervs specifies configuration for clusters running on IBMCloud Power VS Service.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -9899,7 +9975,7 @@ KubevirtPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>KubeVirt defines KubeVirt specific settings for cluster components.</p>
+<p>kubevirt defines KubeVirt specific settings for cluster components.</p>
 </td>
 </tr>
 <tr>
@@ -9913,7 +9989,7 @@ OpenStackPlatformSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>OpenStack specifies configuration for clusters running on OpenStack.</p>
+<p>openstack specifies configuration for clusters running on OpenStack.</p>
 </td>
 </tr>
 </tbody>
@@ -9946,6 +10022,7 @@ AWSPlatformStatus
 </td>
 <td>
 <em>(Optional)</em>
+<p>aws contains platform-specific status for AWS</p>
 </td>
 </tr>
 </tbody>
@@ -10046,7 +10123,7 @@ NetworkParam
 </td>
 <td>
 <em>(Optional)</em>
-<p>Network is a query for an openstack network that the port will be created or discovered on.
+<p>network is a query for an openstack network that the port will be created or discovered on.
 This will fail if the query returns more than one network.</p>
 </td>
 </tr>
@@ -10059,7 +10136,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is a human-readable description for the port.</p>
+<p>description is a human-readable description for the port.</p>
 </td>
 </tr>
 <tr>
@@ -10073,7 +10150,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>AllowedAddressPairs is a list of address pairs which Neutron will
+<p>allowedAddressPairs is a list of address pairs which Neutron will
 allow the port to send traffic from in addition to the port&rsquo;s
 addresses. If not specified, the MAC Address will be the MAC Address
 of the port. Depending on the configuration of Neutron, it may be
@@ -10089,7 +10166,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>VNICType specifies the type of vNIC which this port should be
+<p>vnicType specifies the type of vNIC which this port should be
 attached to. This is used to determine which mechanism driver(s) to
 be used to bind the port. The valid values are normal, macvtap,
 direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
@@ -10110,7 +10187,7 @@ PortSecurityPolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>PortSecurityPolicy specifies whether or not to enable port security on the port.
+<p>portSecurityPolicy specifies whether or not to enable port security on the port.
 Allowed values are &ldquo;Enabled&rdquo;, &ldquo;Disabled&rdquo; and omitted.
 When not set, it takes the value of the corresponding field at the network level.</p>
 </td>
@@ -10151,7 +10228,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>SystemType is the System type used to host the instance.
+<p>systemType is the System type used to host the instance.
 systemType determines the number of cores and memory that is available.
 Few of the supported SystemTypes are s922,e880,e980.
 e880 systemType available only in Dallas Datacenters.
@@ -10171,9 +10248,9 @@ PowerVSNodePoolProcType
 </td>
 <td>
 <em>(Optional)</em>
-<p>ProcessorType is the VM instance processor type.
+<p>processorType is the VM instance processor type.
 It must be set to one of the following values: Dedicated, Capped or Shared.</p>
-<p>Dedicated: resources are allocated for a specific client, The hypervisor makes a 1:1 binding of a partition’s processor to a physical processor core.
+<p>Dedicated: resources are allocated for a specific client, The hypervisor makes a 1:1 binding of a partition&rsquo;s processor to a physical processor core.
 Shared: Shared among other clients.
 Capped: Shared, but resources do not expand beyond those that are requested, the amount of CPU time is Capped to the value specified for the entitlement.</p>
 <p>if the processorType is selected as Dedicated, then Processors value cannot be fractional.
@@ -10192,7 +10269,7 @@ k8s.io/apimachinery/pkg/util/intstr.IntOrString
 </td>
 <td>
 <em>(Optional)</em>
-<p>Processors is the number of virtual processors in a virtual machine.
+<p>processors is the number of virtual processors in a virtual machine.
 when the processorType is selected as Dedicated the processors value cannot be fractional.
 maximum value for the Processors depends on the selected SystemType.
 when SystemType is set to e880 or e980 maximum Processors value is 143.
@@ -10215,7 +10292,7 @@ int32
 </td>
 <td>
 <em>(Optional)</em>
-<p>MemoryGiB is the size of a virtual machine&rsquo;s memory, in GiB.
+<p>memoryGiB is the size of a virtual machine&rsquo;s memory, in GiB.
 maximum value for the MemoryGiB depends on the selected SystemType.
 when SystemType is set to e880 maximum MemoryGiB value is 7463 GiB.
 when SystemType is set to e980 maximum MemoryGiB value is 15307 GiB.
@@ -10236,7 +10313,7 @@ PowerVSResourceReference
 </td>
 <td>
 <em>(Optional)</em>
-<p>Image used for deploying the nodes. If unspecified, the default
+<p>image used for deploying the nodes. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
 </td>
 </tr>
@@ -10251,7 +10328,7 @@ PowerVSNodePoolStorageType
 </td>
 <td>
 <em>(Optional)</em>
-<p>StorageType for the image and nodes, this will be ignored if Image is specified.
+<p>storageType for the image and nodes, this will be ignored if Image is specified.
 The storage tiers in PowerVS are based on I/O operations per second (IOPS).
 It means that the performance of your storage volumes is limited to the maximum number of IOPS based on volume size and storage tier.
 Although, the exact numbers might change over time, the Tier 3 storage is currently set to 3 IOPS/GB, and the Tier 1 storage is currently set to 10 IOPS/GB.</p>
@@ -10269,7 +10346,7 @@ PowerVSNodePoolImageDeletePolicy
 </td>
 <td>
 <em>(Optional)</em>
-<p>ImageDeletePolicy is policy for the image deletion.</p>
+<p>imageDeletePolicy is policy for the image deletion.</p>
 <p>delete: delete the image from the infrastructure.
 retain: delete the image from the openshift but retain in the infrastructure.</p>
 <p>The default is delete</p>
@@ -10335,7 +10412,7 @@ string
 </em>
 </td>
 <td>
-<p>AccountID is the IBMCloud account id.
+<p>accountID is the IBMCloud account id.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10347,7 +10424,7 @@ string
 </em>
 </td>
 <td>
-<p>CISInstanceCRN is the IBMCloud CIS Service Instance&rsquo;s Cloud Resource Name
+<p>cisInstanceCRN is the IBMCloud CIS Service Instance&rsquo;s Cloud Resource Name
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10359,7 +10436,7 @@ string
 </em>
 </td>
 <td>
-<p>ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
+<p>resourceGroup is the IBMCloud Resource Group in which the cluster resides.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10371,7 +10448,7 @@ string
 </em>
 </td>
 <td>
-<p>Region is the IBMCloud region in which the cluster resides. This configures the
+<p>region is the IBMCloud region in which the cluster resides. This configures the
 OCP control plane cloud integrations, and is used by NodePool to resolve
 the correct boot image for a given release.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
@@ -10385,7 +10462,7 @@ string
 </em>
 </td>
 <td>
-<p>Zone is the availability zone where control plane cloud resources are
+<p>zone is the availability zone where control plane cloud resources are
 created.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
@@ -10400,7 +10477,7 @@ PowerVSResourceReference
 </em>
 </td>
 <td>
-<p>Subnet is the subnet to use for control plane cloud resources.
+<p>subnet is the subnet to use for control plane cloud resources.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10412,7 +10489,7 @@ string
 </em>
 </td>
 <td>
-<p>ServiceInstance is the reference to the Power VS service on which the server instance(VM) will be created.
+<p>serviceInstanceID is the reference to the Power VS service on which the server instance(VM) will be created.
 Power VS service is a container for all Power VS instances at a specific geographic region.
 serviceInstance can be created via IBM Cloud catalog or CLI.
 ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.</p>
@@ -10431,7 +10508,7 @@ PowerVSVPC
 </em>
 </td>
 <td>
-<p>VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
+<p>vpc specifies IBM Cloud PowerVS Load Balancing configuration for the control
 plane.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
@@ -10446,7 +10523,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>KubeCloudControllerCreds is a reference to a secret containing cloud
+<p>kubeCloudControllerCreds is a reference to a secret containing cloud
 credentials with permissions matching the cloud controller policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
@@ -10462,7 +10539,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>NodePoolManagementCreds is a reference to a secret containing cloud
+<p>nodePoolManagementCreds is a reference to a secret containing cloud
 credentials with permissions matching the node pool management policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 <p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
@@ -10478,7 +10555,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
+<p>ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
 credentials for ingress operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
@@ -10492,7 +10569,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
+<p>storageOperatorCloudCreds is a reference to a secret containing ibm cloud
 credentials for storage operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
@@ -10506,7 +10583,7 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+<p>imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
 credentials for image registry operator to get authenticated with ibm cloud.</p>
 </td>
 </tr>
@@ -10540,7 +10617,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ID of resource</p>
+<p>id of resource</p>
 </td>
 </tr>
 <tr>
@@ -10552,7 +10629,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Name of resource</p>
+<p>name of resource</p>
 </td>
 </tr>
 </tbody>
@@ -10582,7 +10659,7 @@ string
 </em>
 </td>
 <td>
-<p>Name for VPC to used for all the service load balancer.
+<p>name for VPC to used for all the service load balancer.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10594,7 +10671,7 @@ string
 </em>
 </td>
 <td>
-<p>Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
+<p>region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
 into the OCP cluster.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
@@ -10608,7 +10685,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Zone is the availability zone where load balancer cloud resources are
+<p>zone is the availability zone where load balancer cloud resources are
 created.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
@@ -10622,7 +10699,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Subnet is the subnet to use for load balancer.
+<p>subnet is the subnet to use for load balancer.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
 </td>
 </tr>
@@ -10745,7 +10822,7 @@ string
 </em>
 </td>
 <td>
-<p>Image is the image pullspec of an OCP release payload image.
+<p>image is the image pullspec of an OCP release payload image.
 See <a href="https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags">https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags</a> for a list of available images.</p>
 </td>
 </tr>
@@ -10778,6 +10855,7 @@ UpgradeStrategy
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>strategy is the node replacement strategy for nodes in the pool.
 In can be either &ldquo;RollingUpdate&rdquo; or &ldquo;OnDelete&rdquo;. RollingUpdate will rollout Nodes honoring maxSurge and maxUnavailable.
 OnDelete provide more granular control and will replace nodes as the old ones are manually deleted.</p>
@@ -10793,6 +10871,7 @@ RollingUpdate
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>rollingUpdate specifies a rolling update strategy which upgrades nodes by
 creating new nodes and deleting the old ones.</p>
 </td>
@@ -10914,7 +10993,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+<p>hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
 If omitted, the value will be inferred from management ingress.Spec.Domain.</p>
 </td>
 </tr>
@@ -10945,7 +11024,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Name is the name of the router to filter by.</p>
+<p>name is the name of the router to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -10957,7 +11036,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is the description of the router to filter by.</p>
+<p>description is the description of the router to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -10969,7 +11048,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ProjectID is the project ID of the router to filter by.</p>
+<p>projectID is the project ID of the router to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11016,7 +11095,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ID is the ID of the router to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
+<p>id is the ID of the router to use. If ID is provided, the other filters cannot be provided. Must be in UUID format.</p>
 </td>
 </tr>
 <tr>
@@ -11030,7 +11109,7 @@ RouterFilter
 </td>
 <td>
 <em>(Optional)</em>
-<p>Filter specifies a filter to select an OpenStack router. If provided, cannot be empty.</p>
+<p>filter specifies a filter to select an OpenStack router. If provided, cannot be empty.</p>
 </td>
 </tr>
 </tbody>
@@ -11063,7 +11142,7 @@ SecretEncryptionType
 </em>
 </td>
 <td>
-<p>Type defines the type of kube secret encryption being used</p>
+<p>type defines the type of kube secret encryption being used</p>
 </td>
 </tr>
 <tr>
@@ -11077,7 +11156,7 @@ KMSSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>KMS defines metadata about the kms secret encryption strategy</p>
+<p>kms defines metadata about the kms secret encryption strategy</p>
 </td>
 </tr>
 <tr>
@@ -11091,7 +11170,7 @@ AESCBCSpec
 </td>
 <td>
 <em>(Optional)</em>
-<p>AESCBC defines metadata about the AESCBC secret encryption strategy</p>
+<p>aescbc defines metadata about the AESCBC secret encryption strategy</p>
 </td>
 </tr>
 </tbody>
@@ -11308,7 +11387,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Name is the name of the subnet to filter by.</p>
+<p>name is the name of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11320,7 +11399,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>Description is the description of the subnet to filter by.</p>
+<p>description is the description of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11332,7 +11411,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ProjectID is the project ID of the subnet to filter by.</p>
+<p>projectID is the project ID of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11344,7 +11423,7 @@ int
 </td>
 <td>
 <em>(Optional)</em>
-<p>IPVersion is the IP version of the subnet to filter by.</p>
+<p>ipVersion is the IP version of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11356,7 +11435,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>GatewayIP is the gateway IP of the subnet to filter by.</p>
+<p>gatewayIP is the gateway IP of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11368,7 +11447,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>CIDR is the CIDR of the subnet to filter by.</p>
+<p>cidr is the CIDR of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11380,7 +11459,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IPv6AddressMode is the IPv6 address mode of the subnet to filter by.</p>
+<p>ipv6AddressMode is the IPv6 address mode of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11392,7 +11471,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>IPv6RAMode is the IPv6 RA mode of the subnet to filter by.</p>
+<p>ipv6RAMode is the IPv6 RA mode of the subnet to filter by.</p>
 </td>
 </tr>
 <tr>
@@ -11439,7 +11518,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>ID is the uuid of the subnet. It will not be validated.</p>
+<p>id is the uuid of the subnet. It will not be validated.</p>
 </td>
 </tr>
 <tr>
@@ -11453,7 +11532,7 @@ SubnetFilter
 </td>
 <td>
 <em>(Optional)</em>
-<p>Filter specifies a filter to select the subnet. It must match exactly one subnet.</p>
+<p>filter specifies a filter to select the subnet. It must match exactly one subnet.</p>
 </td>
 </tr>
 </tbody>
@@ -11482,7 +11561,7 @@ SubnetFilter
 </td>
 <td>
 <em>(Optional)</em>
-<p>DNSNameservers holds a list of DNS server addresses that will be provided when creating
+<p>dnsNameservers holds a list of DNS server addresses that will be provided when creating
 the subnet. These addresses need to have the same IP version as CIDR.</p>
 </td>
 </tr>
@@ -11497,7 +11576,7 @@ the subnet. These addresses need to have the same IP version as CIDR.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>AllocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
+<p>allocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
 If set, OpenStack will only allocate these IPs for Machines. It will still be possible to create ports from
 outside of these ranges manually.</p>
 </td>
@@ -11716,7 +11795,7 @@ int64
 </em>
 </td>
 <td>
-<p>Size specifies size (in Gi) of the storage device.</p>
+<p>size is the size of the volume in gibibytes (GiB).</p>
 <p>Must be greater than the image snapshot size or 8 (whichever is greater).</p>
 </td>
 </tr>
@@ -11728,7 +11807,7 @@ string
 </em>
 </td>
 <td>
-<p>Type is the type of the volume.</p>
+<p>type is the type of volume to provision.</p>
 </td>
 </tr>
 <tr>
@@ -11740,7 +11819,7 @@ int64
 </td>
 <td>
 <em>(Optional)</em>
-<p>IOPS is the number of IOPS requested for the disk. This is only valid
+<p>iops is the number of IOPS requested for the disk. This is only valid
 for type io1.</p>
 </td>
 </tr>
@@ -11753,7 +11832,7 @@ bool
 </td>
 <td>
 <em>(Optional)</em>
-<p>Encrypted is whether the volume should be encrypted or not.</p>
+<p>encrypted indicates whether the EBS volume should be encrypted or not.</p>
 </td>
 </tr>
 <tr>
@@ -11765,9 +11844,7 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>EncryptionKey is the KMS key to use to encrypt the volume. Can be either a KMS key ID or ARN.
-If Encrypted is set and this is omitted, the default AWS key will be used.
-The key must already exist and be accessible by the controller.</p>
+<p>encryptionKey is the KMS key to use for volume encryption.</p>
 </td>
 </tr>
 </tbody>
