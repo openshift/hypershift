@@ -67,14 +67,14 @@ func ReconcileIgnitionServer(ctx context.Context,
 		}
 		ignitionServerProxyService := ignitionserver.ProxyService(controlPlaneNamespace)
 		if _, err := createOrUpdate(ctx, c, ignitionServerProxyService, func() error {
-			return reconcileIgnitionServerProxyService(ignitionServerProxyService, serviceStrategy)
+			return reconcileIgnitionServerProxyService(ignitionServerProxyService, serviceStrategy, hcp.Spec.Platform.Type)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition proxy service: %w", err)
 		}
 		routeServiceName = ignitionServerProxyService.Name
 	} else {
 		if _, err := createOrUpdate(ctx, c, ignitionServerService, func() error {
-			return reconcileIgnitionServerService(ignitionServerService, serviceStrategy)
+			return reconcileIgnitionServerService(ignitionServerService, serviceStrategy, hcp.Spec.Platform.Type)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile ignition service: %w", err)
 		}
@@ -291,15 +291,15 @@ func ReconcileIgnitionServer(ctx context.Context,
 	return nil
 }
 
-func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
-	return reconcileIgnitionExternalService(svc, strategy, false)
+func reconcileIgnitionServerService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType) error {
+	return reconcileIgnitionExternalService(svc, strategy, false, platformType)
 }
 
-func reconcileIgnitionServerProxyService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy) error {
-	return reconcileIgnitionExternalService(svc, strategy, true)
+func reconcileIgnitionServerProxyService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType) error {
+	return reconcileIgnitionExternalService(svc, strategy, true, platformType)
 }
 
-func reconcileIgnitionExternalService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, isProxy bool) error {
+func reconcileIgnitionExternalService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, isProxy bool, platformType hyperv1.PlatformType) error {
 	appLabel := ignitionserver.ResourceName
 	targetPort := intstr.FromInt(9090)
 	if isProxy {
@@ -327,7 +327,9 @@ func reconcileIgnitionExternalService(svc *corev1.Service, strategy *hyperv1.Ser
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if ((platformType == hyperv1.IBMCloudPlatform) && (svc.Spec.Type != corev1.ServiceTypeNodePort)) || (platformType != hyperv1.IBMCloudPlatform) {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Ignition service: %s", strategy.Type)
 	}

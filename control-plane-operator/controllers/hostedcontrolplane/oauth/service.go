@@ -25,7 +25,7 @@ var (
 	}
 )
 
-func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy) error {
+func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *hyperv1.ServicePublishingStrategy, platformType hyperv1.PlatformType) error {
 	ownerRef.ApplyTo(svc)
 	if svc.Spec.Selector == nil {
 		svc.Spec.Selector = oauthServerLabels
@@ -51,7 +51,9 @@ func ReconcileService(svc *corev1.Service, ownerRef config.OwnerRef, strategy *h
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if ((platformType == hyperv1.IBMCloudPlatform) && (svc.Spec.Type != corev1.ServiceTypeNodePort)) || (platformType != hyperv1.IBMCloudPlatform) {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for OAuth service: %s", strategy.Type)
 	}
