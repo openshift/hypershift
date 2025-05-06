@@ -28,6 +28,7 @@ func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.Secre
 
 	podSpec.Containers = append(podSpec.Containers, kmsPodConfig.Containers...)
 	podSpec.Volumes = append(podSpec.Volumes, kmsPodConfig.Volumes...)
+	podSpec.InitContainers = append(podSpec.InitContainers, kmsPodConfig.InitContainers...)
 	util.UpdateContainer(ComponentName, podSpec.Containers, kmsPodConfig.KASContainerMutate)
 
 	return nil
