@@ -347,13 +347,6 @@ const (
 	// KubeAPIServerGoAwayChance allows the --goaway-chance parameter of the kube-apiserver to be overridden from its default of 0
 	KubeAPIServerGoAwayChance = "hypershift.openshift.io/kube-apiserver-goaway-chance"
 
-	// ControlPlaneOperatorV2Annotation tells the hosted cluster to set 'CPO_V2' env variable on the CPO deployment which enables
-	// the new manifest based CPO implementation.
-	ControlPlaneOperatorV2Annotation = "hypershift.openshift.io/cpo-v2"
-
-	// ControlPlaneOperatorV2EnvVar when set on the CPO deployment, enables the new manifest based CPO implementation.
-	ControlPlaneOperatorV2EnvVar = "CPO_V2"
-
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"

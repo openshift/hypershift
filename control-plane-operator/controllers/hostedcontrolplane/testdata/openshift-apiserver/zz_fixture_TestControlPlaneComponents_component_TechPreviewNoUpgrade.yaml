@@ -14,10 +14,11 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: openshift-apiserver Deployment Progressing condition not found
-    reason: NotFound
+    message: 'Waiting for deployment openshift-apiserver rollout to finish: 0 out
+      of 3 new replicas have been updated'
+    reason: WaitingForRolloutComplete
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: ""
     kind: ConfigMap

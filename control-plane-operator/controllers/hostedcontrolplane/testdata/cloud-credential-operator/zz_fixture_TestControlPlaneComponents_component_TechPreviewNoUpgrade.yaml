@@ -14,10 +14,11 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: cloud-credential-operator Deployment Progressing condition not found
-    reason: NotFound
+    message: 'Waiting for deployment cloud-credential-operator rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: ""
     kind: Secret

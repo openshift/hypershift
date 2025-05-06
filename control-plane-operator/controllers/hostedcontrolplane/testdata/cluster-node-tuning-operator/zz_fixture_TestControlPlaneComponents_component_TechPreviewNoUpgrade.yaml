@@ -14,10 +14,11 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: cluster-node-tuning-operator Deployment Progressing condition not found
-    reason: NotFound
+    message: 'Waiting for deployment cluster-node-tuning-operator rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   resources:
   - group: rbac.authorization.k8s.io
     kind: Role

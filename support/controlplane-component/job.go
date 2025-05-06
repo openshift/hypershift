@@ -46,6 +46,22 @@ func (c *jobProvider) Replicas(object *batchv1.Job) *int32 {
 	return ptr.To(int32(1))
 }
 
+// IsAvailable implements WorkloadProvider.
+func (c *jobProvider) IsAvailable(job *batchv1.Job) (status metav1.ConditionStatus, reason string, message string) {
+	complete := util.FindJobCondition(job, batchv1.JobComplete)
+	if complete != nil {
+		return metav1.ConditionStatus(complete.Status), complete.Reason, complete.Message
+	}
+	failed := util.FindJobCondition(job, batchv1.JobFailed)
+	if failed != nil {
+		return metav1.ConditionFalse, failed.Reason, failed.Message
+	}
+	if job.Status.Active > 0 {
+		return metav1.ConditionTrue, "JobActive", "Job is still running"
+	}
+	return metav1.ConditionFalse, "Unknown", "Job status unknown"
+}
+
 // IsReady implements WorkloadProvider.
 func (c *jobProvider) IsReady(job *batchv1.Job) (status metav1.ConditionStatus, reason string, message string) {
 	complete := util.FindJobCondition(job, batchv1.JobComplete)
@@ -58,22 +74,6 @@ func (c *jobProvider) IsReady(job *batchv1.Job) (status metav1.ConditionStatus, 
 	}
 	if job.Status.Active > 0 {
 		return metav1.ConditionFalse, "JobActive", "Job is still running"
-	}
-	return metav1.ConditionFalse, "Unknown", "Job status unknown"
-}
-
-// IsProgressing implements WorkloadProvider.
-func (c *jobProvider) IsProgressing(job *batchv1.Job) (status metav1.ConditionStatus, reason string, message string) {
-	complete := util.FindJobCondition(job, batchv1.JobComplete)
-	if complete != nil && complete.Status == corev1.ConditionTrue {
-		return metav1.ConditionFalse, "JobComplete", "Job has completed"
-	}
-	failed := util.FindJobCondition(job, batchv1.JobFailed)
-	if failed != nil {
-		return metav1.ConditionFalse, "JobFailed", failed.Message
-	}
-	if job.Status.Active > 0 {
-		return metav1.ConditionTrue, "JobActive", "Job is still running"
 	}
 	return metav1.ConditionFalse, "Unknown", "Job status unknown"
 }

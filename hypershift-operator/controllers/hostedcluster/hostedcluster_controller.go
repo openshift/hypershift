@@ -2147,7 +2147,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, defaultingToControlPlan
 		if hc.Annotations[hyperv1.DisablePKIReconciliationAnnotation] == "true" {
 			return false
 		}
-		if defaultingToControlPlaneV2 || hc.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] != "" {
+		if defaultingToControlPlaneV2 {
 			return false
 		}
 		return true
@@ -2608,7 +2608,8 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		}
 	}
 
-	if _, exist := hcluster.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; exist {
+	// TODO: move CRD installation to the CLI.
+	if releaseVersion.Major == 4 && releaseVersion.Minor >= 19 {
 		if err := componentcrd.InstallCRDs(ctx, r.Client); err != nil {
 			return fmt.Errorf("failed to install controlplanecomponent CRDs: %w", err)
 		}
@@ -2973,15 +2974,6 @@ func reconcileControlPlaneOperatorDeployment(
 			corev1.EnvVar{
 				Name:  certs.CertificateRenewalEnvVar,
 				Value: certRenewalPercentage,
-			},
-		)
-	}
-
-	if _, exist := hc.Annotations[hyperv1.ControlPlaneOperatorV2Annotation]; exist {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  hyperv1.ControlPlaneOperatorV2EnvVar,
-				Value: "true",
 			},
 		)
 	}

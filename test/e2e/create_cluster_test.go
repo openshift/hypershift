@@ -1226,68 +1226,6 @@ func TestCreateCluster(t *testing.T) {
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
 
-// TestCreateClusterV2 tests the new CPO implementation, which is currently hidden behind an annotation.
-func TestCreateClusterV2(t *testing.T) {
-	e2eutil.AtLeast(t, e2eutil.Version419)
-
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
-	if len(zones) >= 3 {
-		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
-		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
-		clusterOpts.AWSPlatform.Zones = zones
-		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
-		clusterOpts.NodePoolReplicas = 1
-	}
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch obj := o.(type) {
-		case *hyperv1.HostedCluster:
-			if obj.Annotations == nil {
-				obj.Annotations = make(map[string]string)
-			}
-			obj.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] = "true"
-		}
-	}
-
-	clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
-	clusterOpts.PodsLabels = map[string]string{
-		"hypershift-e2e-test-label": "test",
-	}
-
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// Sanity check the cluster by waiting for the nodes to report ready
-		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
-
-		t.Logf("fetching mgmt kubeconfig")
-		mgmtCfg, err := e2eutil.GetConfig()
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
-		mgmtCfg.QPS = -1
-		mgmtCfg.Burst = -1
-
-		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
-
-		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-		guestConfig.QPS = -1
-		guestConfig.Burst = -1
-
-		guestClients, err := integrationframework.NewClients(guestConfig)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
-
-		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
-		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
-		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster-v2", globalOpts.ServiceAccountSigningKey)
-}
-
 func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	if !globalOpts.RequestServingIsolation {
 		t.Skip("Skipping request serving isolation test")
@@ -1379,55 +1317,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
-}
-
-func TestCreateClusterCustomConfigV2(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
-	}
-	e2eutil.AtLeast(t, e2eutil.Version419)
-
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-	clusterOpts.BeforeApply = func(o crclient.Object) {
-		switch obj := o.(type) {
-		case *hyperv1.HostedCluster:
-			if obj.Annotations == nil {
-				obj.Annotations = make(map[string]string)
-			}
-			obj.Annotations[hyperv1.ControlPlaneOperatorV2Annotation] = "true"
-			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{
-				Image: &configv1.ImageSpec{
-					RegistrySources: configv1.RegistrySources{
-						BlockedRegistries: []string{"badregistry.io"},
-					},
-				},
-			}
-		}
-	}
-
-	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
-	if err != nil || kmsKeyArn == nil {
-		t.Fatal("failed to retrieve kms key arn")
-	}
-
-	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
-
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
-
-		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
-		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
-		// test oauth with identity provider
-		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config-v2", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {

@@ -54,30 +54,32 @@ func (d *statefulSetProvider) Replicas(object *appsv1.StatefulSet) *int32 {
 	return object.Spec.Replicas
 }
 
-// IsReady implements WorkloadProvider.
-func (s *statefulSetProvider) IsReady(object *appsv1.StatefulSet) (status metav1.ConditionStatus, reason string, message string) {
+// IsAvailable implements WorkloadProvider.
+func (s *statefulSetProvider) IsAvailable(object *appsv1.StatefulSet) (status metav1.ConditionStatus, reason string, message string) {
 	// statefulSet is considered available if at least 1 replica is available.
 	if ptr.Deref(object.Spec.Replicas, 0) == 0 || object.Status.AvailableReplicas > 0 {
 		status = metav1.ConditionTrue
 		reason = hyperv1.AsExpectedReason
-		message = fmt.Sprintf("%s StatefulSet is available", object.Name)
+		message = fmt.Sprintf("StatefulSet %s is available", object.Name)
 	} else {
 		status = metav1.ConditionFalse
 		reason = hyperv1.WaitingForAvailableReason
-		message = fmt.Sprintf("%s StatefulSet is not available: %d/%d replicas ready", object.Name, object.Status.ReadyReplicas, *object.Spec.Replicas)
+		message = fmt.Sprintf("StatefulSet %s is not available: %d/%d replicas ready", object.Name, object.Status.ReadyReplicas, *object.Spec.Replicas)
 	}
 	return
 }
 
-// IsProgressing implements WorkloadProvider.
-func (s *statefulSetProvider) IsProgressing(object *appsv1.StatefulSet) (status metav1.ConditionStatus, reason string, message string) {
-	if util.IsStatefulSetReady(context.TODO(), object) {
-		status = metav1.ConditionFalse
-		reason = hyperv1.AsExpectedReason
-	} else {
+// IsReady implements WorkloadProvider.
+func (s *statefulSetProvider) IsReady(sts *appsv1.StatefulSet) (status metav1.ConditionStatus, reason string, message string) {
+	if util.IsStatefulSetReady(context.TODO(), sts) {
 		status = metav1.ConditionTrue
-		reason = hyperv1.WaitingForAvailableReason
-		message = fmt.Sprintf("%s StatefulSet progressing: %d/%d replicas ready", object.Name, object.Status.ReadyReplicas, *object.Spec.Replicas)
+		reason = hyperv1.AsExpectedReason
+		message = fmt.Sprintf("Statefulset %s successfully rolled out", sts.Name)
+	} else {
+		status = metav1.ConditionFalse
+		reason = "WaitingForRolloutComplete"
+		message = fmt.Sprintf("Waiting for statefulset %s rollout to finish: %d out of %d new replicas have been updated", sts.Name, sts.Status.UpdatedReplicas, *sts.Spec.Replicas)
 	}
+
 	return
 }

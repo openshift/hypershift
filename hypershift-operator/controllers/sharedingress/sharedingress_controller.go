@@ -49,16 +49,27 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// Afterwards, the controller syncs on HostedClusters.
 	initialSync := make(chan event.GenericEvent)
 
-	builder := ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1.HostedCluster{}).
-		WatchesRawSource(source.Channel(initialSync, &handler.EnqueueRequestForObject{})).
-		Named("SharedIngressController")
-
 	go func() {
 		initialSync <- event.GenericEvent{Object: &hyperv1.HostedCluster{}}
 	}()
 
-	return builder.Complete(r)
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&hyperv1.HostedCluster{}).
+		WatchesRawSource(source.Channel(initialSync, &handler.EnqueueRequestForObject{})).
+		Watches(
+			&routev1.Route{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if _, hasHCPLabel := obj.GetLabels()[util.HCPRouteLabel]; !hasHCPLabel {
+					return nil
+				}
+				return []ctrl.Request{{NamespacedName: client.ObjectKey{
+					Name:      obj.GetName(),
+					Namespace: obj.GetNamespace(),
+				}}}
+			}),
+		).
+		Named("SharedIngressController").
+		Complete(r)
 }
 
 func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

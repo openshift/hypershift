@@ -44,7 +44,7 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 
 		util.UpdateContainer("fetch-feature-gate", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 			util.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "FEAUTRE_GATE_YAML",
+				Name:  "FEATURE_GATE_YAML",
 				Value: featureGateYAML,
 			})
 		})

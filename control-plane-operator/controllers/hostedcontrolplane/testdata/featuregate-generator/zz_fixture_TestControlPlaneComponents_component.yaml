@@ -17,5 +17,5 @@ status:
     message: Job status unknown
     reason: Unknown
     status: "False"
-    type: Progressing
+    type: RolloutComplete
   version: 4.18.0
