@@ -6,8 +6,9 @@ import (
 )
 
 type KMSPodConfig struct {
-	Containers []corev1.Container
-	Volumes    []corev1.Volume
+	InitContainers []corev1.Container
+	Containers     []corev1.Container
+	Volumes        []corev1.Volume
 
 	KASContainerMutate func(c *corev1.Container)
 }
@@ -32,5 +33,9 @@ func kasVolumeKMSSocket() *corev1.Volume {
 }
 
 func buildVolumeKMSSocket(v *corev1.Volume) {
+	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
+}
+
+func buildVolumeKMSEncryptionClusterSeed(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
 }
