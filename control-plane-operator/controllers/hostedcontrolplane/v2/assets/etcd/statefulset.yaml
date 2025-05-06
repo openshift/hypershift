@@ -69,6 +69,8 @@ spec:
           value: /etc/etcd/tls/server/server.key
         - name: ETCD_TRUSTED_CA_FILE
           value: /etc/etcd/tls/etcd-ca/ca.crt
+        - name:  ETCD_ENABLE_PPROF
+          value: "true"
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:
