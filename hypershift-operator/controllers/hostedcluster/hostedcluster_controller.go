@@ -3510,6 +3510,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	// Enforce pull policy.
 	for i := range deployment.Spec.Template.Spec.Containers {
 		deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		deployment.Spec.Template.Spec.Containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 	}
 
 	// Enforce labels.
@@ -3648,6 +3649,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "capi-webhooks-tls",

@@ -86,6 +86,8 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	if err != nil {
 		return err
 	}
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
 
 	if err := replaceContainersImageFromPayload(cpContext.ReleaseImageProvider, hcp, podTemplateSpec.Spec.Containers); err != nil {
 		return err
@@ -547,6 +549,12 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 	}
 	return nil
+}
+
+func enforceTerminationMessagePolicy(containers []corev1.Container) {
+	for i := range containers {
+		containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
+	}
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
