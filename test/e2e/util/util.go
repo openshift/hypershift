@@ -814,12 +814,29 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 
 func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError", func(t *testing.T) {
-
+		AtLeast(t, Version420)
 		var podList corev1.PodList
-		if err := client.List(ctx, &podList); err != nil {
+		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)}); err != nil {
 			t.Fatalf("failed to list pods in cluster: %v", err)
 		}
+		// CNO is not setting terminationMessagePolicy for its pods
+		// https://issues.redhat.com/browse/OCPBUGS-56051
+		excludedPods := []string{
+			"cloud-network-config-controller",
+			"network-node-identity",
+			"ovnkube-control-plane",
+		}
 		for _, pod := range podList.Items {
+			skip := false
+			for _, excludedPod := range excludedPods {
+				if strings.HasPrefix(pod.Name, excludedPod) {
+					skip = true
+					break
+				}
+			}
+			if skip {
+				continue
+			}
 			for _, initContainer := range pod.Spec.InitContainers {
 				if initContainer.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
 					t.Errorf("ns/%s pod/%s initContainer/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, initContainer.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)

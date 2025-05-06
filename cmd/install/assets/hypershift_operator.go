@@ -267,6 +267,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
 								Privileged:             &privileged,
 							},
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "credentials",
