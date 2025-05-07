@@ -19,10 +19,6 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-const (
-	defaultAccessTokenMaxAgeSeconds int32 = 86400
-)
-
 type OAuthServerParams struct {
 	OwnerRef                config.OwnerRef `json:"ownerRef"`
 	ExternalHost            string          `json:"externalHost"`

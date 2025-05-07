@@ -35,7 +35,6 @@ import (
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
 	ccov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_credential_operator"
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
@@ -2285,13 +2284,13 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
 		// TODO: why is this not done in CNO?
 		multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
-		if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
+		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
 			return fmt.Errorf("failed to restart multus admission controller: %w", err)
 		}
 
 		// CNO manages overall network-node-identity deployment. CPO manages restarts.
 		networkNodeIdentityDeployment := manifests.NetworkNodeIdentityDeployment(hcp.Namespace)
-		if err := cno.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, restartAnnotation); err != nil {
+		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, restartAnnotation); err != nil {
 			return fmt.Errorf("failed to restart network node identity: %w", err)
 		}
 	}
@@ -3297,20 +3296,6 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 		r.SREConfigHash = currentMetricsSetConfigHash
 	}
 	return nil
-}
-
-func doesOpenShiftTrustedCABundleConfigMapForCPOExist(ctx context.Context, c client.Client, hcpNamespace string) (bool, error) {
-	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleFromCPO(hcpNamespace)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(openShiftTrustedCABundleConfigMapForCPO), openShiftTrustedCABundleConfigMapForCPO); err != nil {
-		// It's okay if this ConfigMap doesn't exist. It won't for non-OCP clusters. Only return an error if the error is something other than not existing.
-		if !apierrors.IsNotFound(err) {
-			return false, fmt.Errorf("error getting %T: %w", openShiftTrustedCABundleConfigMapForCPO, err)
-		}
-	}
-	if openShiftTrustedCABundleConfigMapForCPO.Data != nil {
-		return true, nil
-	}
-	return false, nil
 }
 
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
