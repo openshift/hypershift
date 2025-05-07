@@ -468,14 +468,6 @@ type ManagedIdentity struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
 	ClientID string `json:"clientID,omitempty"`
 
-	// certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-	// reside in an Azure Key Vault on the management cluster.
-	// Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-	// removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
-	//
-	// +optional
-	CertificateName string `json:"certificateName,omitempty"`
-
 	// objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
 	// CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
 	// Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
@@ -499,10 +491,11 @@ type ManagedIdentity struct {
 	// credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
 	// credentialsSecretName must also be unique within the Azure Key Vault. See more details here - https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/.
 	//
-	// TODO set the validation:MinLength=1
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=127
-	// TODO set validation:Pattern=`^[a-zA-Z0-9-]+$`
-	CredentialsSecretName string `json:"credentialsSecretName,omitempty"`
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9-]+$`
+	// +kubebuilder:validation:Required
+	CredentialsSecretName string `json:"credentialsSecretName"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with
