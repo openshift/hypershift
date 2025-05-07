@@ -23,10 +23,19 @@ func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.L
 	name := o.BaseDomain
 	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
-		logger.Error(err, "Public zone not found", "name", name)
+		// redact base domain if requested
+		if o.RedactBaseDomain {
+			logger.Error(err, "Public zone not found", "name", "[REDACTED]")
+		} else {
+			logger.Error(err, "Public zone not found", "name", name)
+		}
 		return "", err
 	}
-	logger.Info("Found existing public zone", "name", name, "id", id)
+	if o.RedactBaseDomain {
+		logger.Info("Found existing public zone", "name", "[REDACTED]", "id", id)
+	} else {
+		logger.Info("Found existing public zone", "name", name, "id", id)
+	}
 	return id, nil
 }
 
@@ -181,7 +190,11 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 			return fmt.Errorf("failed to delete wildcard record from public zone %s: %w", id, err)
 		}
 	} else {
-		o.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
+		if o.RedactBaseDomain {
+			o.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", fmt.Sprintf("*.apps.%s.[REDACTED]", o.Name))
+		} else {
+			o.Log.Info("Deleted wildcard record from public hosted zone", "id", id, "name", recordName)
+		}
 	}
 	return nil
 }
