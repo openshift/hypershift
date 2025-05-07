@@ -28,9 +28,6 @@ import (
 var resources embed.FS
 
 var (
-	controllerDeployment               = mustDeployment("controller.yaml")
-	infraRole                          = mustRole("infra_role.yaml")
-	infraRoleBinding                   = mustRoleBinding("infra_rolebinding.yaml")
 	tenantControllerClusterRole        = mustClusterRole("tenant_controller_clusterrole.yaml")
 	tenantControllerClusterRoleBinding = mustClusterRoleBinding("tenant_controller_clusterrolebinding.yaml")
 
@@ -44,17 +41,6 @@ var (
 		corev1.ResourceMemory: resource.MustParse("50Mi"),
 	}}
 )
-
-func mustDeployment(file string) *appsv1.Deployment {
-
-	controllerBytes := getContentsOrDie(file)
-	controller := &appsv1.Deployment{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(controllerBytes), 500).Decode(&controller); err != nil {
-		panic(err)
-	}
-
-	return controller
-}
 
 func mustDaemonSet(file string) *appsv1.DaemonSet {
 	b := getContentsOrDie(file)
@@ -79,26 +65,6 @@ func mustClusterRole(file string) *rbacv1.ClusterRole {
 func mustClusterRoleBinding(file string) *rbacv1.ClusterRoleBinding {
 	b := getContentsOrDie(file)
 	obj := &rbacv1.ClusterRoleBinding{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
-		panic(err)
-	}
-
-	return obj
-}
-
-func mustRole(file string) *rbacv1.Role {
-	b := getContentsOrDie(file)
-	obj := &rbacv1.Role{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
-		panic(err)
-	}
-
-	return obj
-}
-
-func mustRoleBinding(file string) *rbacv1.RoleBinding {
-	b := getContentsOrDie(file)
-	obj := &rbacv1.RoleBinding{}
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
 		panic(err)
 	}
