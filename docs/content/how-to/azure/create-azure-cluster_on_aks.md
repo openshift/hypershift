@@ -17,8 +17,12 @@ to set up the AKS cluster, to set up external DNS, install the HyperShift Operat
 
 ## Variables
 Set the following variables according to your environment.
-Note: Some of the variables set here, e.g. persistent rg name and dns related vars, are given as examples for the
-HyperShift team, before proceeding please ensure that the variables are set according to your environment.
+
+!!! tip
+
+    Some of the variables set here, e.g. `PERSISTENT_RG_NAME`, `DNS_RECORD_NAME`, and other DNS related variables, are 
+    given as examples for the HyperShift development team, before proceeding please ensure that the variables are set 
+    according to your environment.
 
 ```sh
 PERSONAL_SP_NAME=<NAME_OF_PERSONAL_SP>
@@ -91,7 +95,13 @@ cat <<EOF > $SP_AKS_CREDS
 }
 EOF
 ```
-Note: In order for your Hypershift cluster to create properly, the Microsoft Graph ```Application.ReadWrite.OwnedBy``` permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the subscription level.
+!!! warning
+      
+    In order for your Hypershift cluster to create properly, the Microsoft Graph `Application.ReadWrite.OwnedBy` 
+    permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the 
+    subscription level. 
+
+    In most cases, you'll need to submit a DPTP request to have this done.
 
 ### 3. Create Managed Identities for AKS Cluster Creation
 
@@ -310,8 +320,10 @@ az role assignment create --role "Reader" --assignee "${EXTERNAL_DNS_SP_APP_ID}"
 az role assignment create --role "Contributor" --assignee "${EXTERNAL_DNS_SP_APP_ID}" --scope "${DNS_ID}"
 ```
 
-Note: if your DNS Zone is not in the same resource group where the parent DNS zone is located, you will need to add
-these same role assignments to the resource group where the parent DNS zone is located.
+!!! tip
+
+    If your DNS Zone is not in the same resource group where the parent DNS zone is located, you will need to add
+    these same role assignments to the resource group where the parent DNS zone is located.
 
 #### Create DNS Credentials for AKS
 
@@ -377,13 +389,13 @@ kubectl delete secret azure-config-file --namespace "default" --ignore-not-found
 kubectl create secret generic azure-config-file --namespace "default" --from-file $EXTERNAL_DNS_CREDS
 ```
 
-### 14. Install Hypershift Operator
+### 14. Install HyperShift Operator
 
 ```sh
 oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
 oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
 oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-oc apply -f https://raw.githubusercontent.com/openshift/api/master/route/v1/zz_generated.crd-manifests/routes-Default.crd.yaml
+oc apply -f https://raw.githubusercontent.com/openshift/api/6bababe9164ea6c78274fd79c94a3f951f8d5ab2/route/v1/zz_generated.crd-manifests/routes.crd.yaml
 
 hypershift install \
     --enable-conversion-webhook=false \
@@ -411,16 +423,17 @@ Save the public and private key path off as you will need it in the next steps. 
 `SA_TOKEN_ISSUER_PUBLIC_KEY_PATH` and `SA_TOKEN_ISSUER_PRIVATE_KEY_PATH` in the rest of this guide.
 
 ### 16. Create the OIDC Issuer URL and ServiceAccount Keys
-Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer)
-to run this command.
+Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer) to run this command.
 
-The NAME provided in the ccoctl tool below can only be alphanumerical characters and must be between 3 and 24 characters 
-in length.
+!!! note 
 
-If you are using `os4-common` for the PERSISTENT_RG_NAME, this is in the `centralus` region.
+    The NAME provided in the ccoctl tool below can only be alphanumerical characters and must be between 3 and 24 
+    characters in length.
+
+    If you are using `os4-common` for the PERSISTENT_RG_NAME, this is in the `centralus` region.
 
 ```shell
-NAME="wiOIDC"
+NAME="wiodic"
 PERSISTENT_RG_LOCATION="centralus"
 
 ./ccoctl azure create-oidc-issuer \
@@ -491,5 +504,5 @@ You can delete the cluster by using the following command:
 ```shell
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
 --name $HC_NAME \
---azure-creds $ASP_AKS_CREDS
+--azure-creds $SP_AKS_CREDS
 ```
