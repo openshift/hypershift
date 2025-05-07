@@ -6,17 +6,10 @@ import (
 	"embed"
 	"fmt"
 	"io"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/configoperator"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
-	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -27,7 +20,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	sigyaml "sigs.k8s.io/yaml"
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 )
@@ -36,9 +28,6 @@ import (
 var resources embed.FS
 
 var (
-	controllerDeployment               = mustDeployment("controller.yaml")
-	infraRole                          = mustRole("infra_role.yaml")
-	infraRoleBinding                   = mustRoleBinding("infra_rolebinding.yaml")
 	tenantControllerClusterRole        = mustClusterRole("tenant_controller_clusterrole.yaml")
 	tenantControllerClusterRoleBinding = mustClusterRoleBinding("tenant_controller_clusterrolebinding.yaml")
 
@@ -52,17 +41,6 @@ var (
 		corev1.ResourceMemory: resource.MustParse("50Mi"),
 	}}
 )
-
-func mustDeployment(file string) *appsv1.Deployment {
-
-	controllerBytes := getContentsOrDie(file)
-	controller := &appsv1.Deployment{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(controllerBytes), 500).Decode(&controller); err != nil {
-		panic(err)
-	}
-
-	return controller
-}
 
 func mustDaemonSet(file string) *appsv1.DaemonSet {
 	b := getContentsOrDie(file)
@@ -87,26 +65,6 @@ func mustClusterRole(file string) *rbacv1.ClusterRole {
 func mustClusterRoleBinding(file string) *rbacv1.ClusterRoleBinding {
 	b := getContentsOrDie(file)
 	obj := &rbacv1.ClusterRoleBinding{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
-		panic(err)
-	}
-
-	return obj
-}
-
-func mustRole(file string) *rbacv1.Role {
-	b := getContentsOrDie(file)
-	obj := &rbacv1.Role{}
-	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
-		panic(err)
-	}
-
-	return obj
-}
-
-func mustRoleBinding(file string) *rbacv1.RoleBinding {
-	b := getContentsOrDie(file)
-	obj := &rbacv1.RoleBinding{}
 	if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(b), 500).Decode(&obj); err != nil {
 		panic(err)
 	}
@@ -142,184 +100,6 @@ func getStorageDriverType(hcp *hyperv1.HostedControlPlane) hyperv1.KubevirtStora
 		storageDriverType = hcp.Spec.Platform.Kubevirt.StorageDriver.Type
 	}
 	return storageDriverType
-}
-
-type StorageSnapshotMapping struct {
-	VolumeSnapshotClasses []string `yaml:"volumeSnapshotClasses,omitempty"`
-	StorageClasses        []string `yaml:"storageClasses"`
-}
-
-func reconcileInfraConfigMap(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane) error {
-	var storageClassEnforcement string
-
-	storageDriverType := getStorageDriverType(hcp)
-
-	switch storageDriverType {
-	case hyperv1.ManualKubevirtStorageDriverConfigType:
-		allowedSC := []string{}
-		storageMap := make(map[string][]string)
-		snapshotMap := make(map[string][]string)
-
-		if hcp.Spec.Platform.Kubevirt.StorageDriver.Manual != nil {
-			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.StorageClassMapping {
-				allowedSC = append(allowedSC, mapping.InfraStorageClassName)
-				storageMap[mapping.Group] = append(storageMap[mapping.Group], mapping.InfraStorageClassName)
-			}
-			for _, mapping := range hcp.Spec.Platform.Kubevirt.StorageDriver.Manual.VolumeSnapshotClassMapping {
-				snapshotMap[mapping.Group] = append(snapshotMap[mapping.Group], mapping.InfraVolumeSnapshotClassName)
-			}
-		}
-
-		storageSnapshotMapping := []StorageSnapshotMapping{}
-		for group, storageClasses := range storageMap {
-			mapping := StorageSnapshotMapping{}
-			mapping.StorageClasses = storageClasses
-			mapping.VolumeSnapshotClasses = snapshotMap[group]
-			delete(snapshotMap, group)
-			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
-		}
-		for _, snapshotClasses := range snapshotMap {
-			mapping := StorageSnapshotMapping{}
-			mapping.VolumeSnapshotClasses = snapshotClasses
-			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
-		}
-		mappingBytes, err := sigyaml.Marshal(storageSnapshotMapping)
-		if err != nil {
-			return err
-		}
-		// For some reason yaml.Marhsal is generating upper case keys, so we need to convert them to lower case
-		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("VolumeSnapshotClasses"), []byte("volumeSnapshotClasses"))
-		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("StorageClasses"), []byte("storageClasses"))
-		storageClassEnforcement = fmt.Sprintf("allowAll: false\nallowList: [%s]\nstorageSnapshotMapping: \n%s", strings.Join(allowedSC, ", "), string(mappingBytes))
-	case hyperv1.NoneKubevirtStorageDriverConfigType:
-		storageClassEnforcement = "allowDefault: false\nallowAll: false\n"
-	case hyperv1.DefaultKubevirtStorageDriverConfigType:
-		storageClassEnforcement = "allowDefault: true\nallowAll: false\n"
-	default:
-		storageClassEnforcement = "allowDefault: true\nallowAll: false\n"
-	}
-	var infraClusterNamespace string
-	if configoperator.IsExternalInfraKv(hcp) {
-		infraClusterNamespace = hcp.Spec.Platform.Kubevirt.Credentials.InfraNamespace
-	} else {
-		infraClusterNamespace = cm.Namespace
-	}
-	cm.Data = map[string]string{
-		"infraClusterNamespace":        infraClusterNamespace,
-		"infraClusterLabels":           fmt.Sprintf("%s=%s", hyperv1.InfraIDLabel, hcp.Spec.InfraID),
-		"infraStorageClassEnforcement": storageClassEnforcement,
-	}
-	return nil
-}
-
-func reconcileController(controller *appsv1.Deployment, releaseImageProvider imageprovider.ReleaseImageProvider, deploymentConfig *config.DeploymentConfig, hcp *hyperv1.HostedControlPlane) error {
-	controller.Spec = *controllerDeployment.Spec.DeepCopy()
-
-	csiDriverImage, exists := releaseImageProvider.ImageExist("kubevirt-csi-driver")
-	if !exists {
-		return fmt.Errorf("unable to detect kubevirt-csi-driver image from release payload")
-	}
-
-	csiProvisionerImage, exists := releaseImageProvider.ImageExist("csi-external-provisioner")
-	if !exists {
-		return fmt.Errorf("unable to detect csi-external-provisioner image from release payload")
-	}
-
-	csiAttacherImage, exists := releaseImageProvider.ImageExist("csi-external-attacher")
-	if !exists {
-		return fmt.Errorf("unable to detect csi-external-attacher image from release payload")
-	}
-
-	csiLivenessProbeImage, exists := releaseImageProvider.ImageExist("csi-livenessprobe")
-	if !exists {
-		return fmt.Errorf("unable to detect csi-livenessprobe image from release payload")
-	}
-
-	csiExternalSnapshotterImage, exists := releaseImageProvider.ImageExist("csi-external-snapshotter")
-	if !exists {
-		return fmt.Errorf("unable to detect csi-external-snapshotter image from release payload")
-	}
-
-	for i, container := range controller.Spec.Template.Spec.Containers {
-		if len(container.Resources.Requests) == 0 && len(container.Resources.Limits) == 0 {
-			controller.Spec.Template.Spec.Containers[i].Resources = defaultResourceRequirements
-		}
-		controller.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
-		switch container.Name {
-		case "csi-driver":
-			controller.Spec.Template.Spec.Containers[i].Image = csiDriverImage
-		case "csi-provisioner":
-			controller.Spec.Template.Spec.Containers[i].Image = csiProvisionerImage
-		case "csi-attacher":
-			controller.Spec.Template.Spec.Containers[i].Image = csiAttacherImage
-		case "csi-liveness-probe":
-			controller.Spec.Template.Spec.Containers[i].Image = csiLivenessProbeImage
-		case "csi-snapshotter":
-			controller.Spec.Template.Spec.Containers[i].Image = csiExternalSnapshotterImage
-		}
-	}
-
-	if configoperator.IsExternalInfraKv(hcp) {
-		csiDriverContainerIndex := func() int {
-			for i, container := range controller.Spec.Template.Spec.Containers {
-				if container.Name == "csi-driver" {
-					return i
-				}
-			}
-			return -1
-		}
-		containerIndex := csiDriverContainerIndex()
-		if containerIndex == -1 {
-			return fmt.Errorf("unable to find csi-driver container in %s pod", controllerDeployment.Name)
-		}
-		csiDriverContainer := controller.Spec.Template.Spec.Containers[containerIndex]
-		const infraClusterKubeconfigMount = "/var/run/secrets/infracluster"
-		csiDriverContainer.Args = append(csiDriverContainer.Args, fmt.Sprintf("--infra-cluster-kubeconfig=%s/kubeconfig", infraClusterKubeconfigMount))
-
-		externalKubeconfigVolumeMount := corev1.VolumeMount{
-			Name:      "infracluster",
-			MountPath: infraClusterKubeconfigMount,
-		}
-		csiDriverContainer.VolumeMounts = append(csiDriverContainer.VolumeMounts, externalKubeconfigVolumeMount)
-		controller.Spec.Template.Spec.Containers[containerIndex] = csiDriverContainer
-
-		infraClusterVolume := corev1.Volume{
-			Name: "infracluster",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: hyperv1.KubeVirtInfraCredentialsSecretName,
-				},
-			},
-		}
-		controller.Spec.Template.Spec.Volumes = append(controller.Spec.Template.Spec.Volumes, infraClusterVolume)
-	}
-
-	deploymentConfig.ApplyTo(controller)
-
-	return nil
-}
-
-func reconcileInfraSA(sa *corev1.ServiceAccount) error {
-	util.EnsurePullSecret(sa, common.PullSecret("").Name)
-
-	return nil
-}
-
-func reconcileInfraRole(role *rbacv1.Role) error {
-	role.Rules = infraRole.DeepCopy().Rules
-	return nil
-}
-
-func reconcileInfraRoleBinding(roleBinding *rbacv1.RoleBinding) error {
-	dc := infraRoleBinding.DeepCopy()
-
-	roleBinding.RoleRef = dc.RoleRef
-	roleBinding.Subjects = dc.Subjects
-
-	for i := range roleBinding.Subjects {
-		roleBinding.Subjects[i].Namespace = roleBinding.Namespace
-	}
-	return nil
 }
 
 func reconcileTenantControllerSA(sa *corev1.ServiceAccount) error {
@@ -589,83 +369,6 @@ func ReconcileTenant(client crclient.Client, hcp *hyperv1.HostedControlPlane, ct
 	csidriverResource := manifests.KubevirtCSIDriverResource()
 	_, err = createOrUpdate(ctx, client, csidriverResource, func() error {
 		return reconcileDefaultTenantCSIDriverResource(csidriverResource)
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// ReconcileInfra reconciles the csi driver controller on the underlying infra/Mgmt cluster
-// that is hosting the KubeVirt VMs.
-func ReconcileInfra(client crclient.Client, hcp *hyperv1.HostedControlPlane, ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider imageprovider.ReleaseImageProvider) error {
-
-	// Do not install kubevirt-csi if the storage driver is set to NONE
-	if getStorageDriverType(hcp) == hyperv1.NoneKubevirtStorageDriverConfigType {
-		return nil
-	}
-
-	deploymentConfig := &config.DeploymentConfig{}
-	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
-	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
-
-	infraNamespace := hcp.Namespace
-
-	infraServiceAccount := manifests.KubevirtCSIDriverInfraSA(infraNamespace)
-	_, err := createOrUpdate(ctx, client, infraServiceAccount, func() error {
-		return reconcileInfraSA(infraServiceAccount)
-	})
-	if err != nil {
-		return err
-	}
-
-	infraRole := manifests.KubevirtCSIDriverInfraRole(infraNamespace)
-	_, err = createOrUpdate(ctx, client, infraRole, func() error {
-		return reconcileInfraRole(infraRole)
-	})
-	if err != nil {
-		return err
-	}
-
-	infraRoleBinding := manifests.KubevirtCSIDriverInfraRoleBinding(infraNamespace)
-	_, err = createOrUpdate(ctx, client, infraRoleBinding, func() error {
-		return reconcileInfraRoleBinding(infraRoleBinding)
-	})
-	if err != nil {
-		return err
-	}
-
-	rootCA := manifests.RootCAConfigMap(hcp.Namespace)
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		return fmt.Errorf("failed to get root ca cert secret: %w", err)
-	}
-
-	csrSigner := manifests.CSRSignerCASecret(hcp.Namespace)
-	if err := client.Get(ctx, crclient.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
-		return fmt.Errorf("failed to get csr signer cert secret: %w", err)
-	}
-
-	tenantControllerKubeconfigSecret := manifests.KubevirtCSIDriverTenantKubeConfig(infraNamespace)
-	_, err = createOrUpdate(ctx, client, tenantControllerKubeconfigSecret, func() error {
-		return pki.ReconcileServiceAccountKubeconfig(tenantControllerKubeconfigSecret, csrSigner, rootCA, hcp, manifests.KubevirtCSIDriverTenantNamespaceStr, "kubevirt-csi-controller-sa")
-	})
-	if err != nil {
-		return err
-	}
-
-	infraConfigMap := manifests.KubevirtCSIDriverInfraConfigMap(infraNamespace)
-	_, err = createOrUpdate(ctx, client, infraConfigMap, func() error {
-		return reconcileInfraConfigMap(infraConfigMap, hcp)
-	})
-	if err != nil {
-		return err
-	}
-
-	controller := manifests.KubevirtCSIDriverController(infraNamespace)
-	_, err = createOrUpdate(ctx, client, controller, func() error {
-		return reconcileController(controller, releaseImageProvider, deploymentConfig, hcp)
 	})
 	if err != nil {
 		return err

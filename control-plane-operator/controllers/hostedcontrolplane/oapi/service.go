@@ -9,10 +9,9 @@ import (
 )
 
 const (
-	OpenShiftAPIServerPort      = 8443
-	OpenShiftOAuthAPIServerPort = 8443
-	OpenShiftServicePort        = 443
-	OLMPackageServerPort        = 5443
+	OpenShiftAPIServerPort = 8443
+	OpenShiftServicePort   = 443
+	OLMPackageServerPort   = 5443
 )
 
 var (

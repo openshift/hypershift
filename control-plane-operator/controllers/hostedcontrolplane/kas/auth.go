@@ -7,18 +7,13 @@ import (
 	"fmt"
 
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
-	hcpconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/supportedversion"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apiserver/pkg/apis/apiserver"
-	"k8s.io/apiserver/pkg/apis/apiserver/validation"
 	authenticationcel "k8s.io/apiserver/pkg/authentication/cel"
-	"k8s.io/apiserver/pkg/cel/environment"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,31 +23,6 @@ const (
 	AuthConfigMapKey                 = "auth.json"
 	certificateAuthorityConfigMapKey = "ca-bundle.crt"
 )
-
-func ReconcileAuthConfig(ctx context.Context, c crclient.Client, config *corev1.ConfigMap, ownerRef hcpconfig.OwnerRef, p KubeAPIServerConfigParams) error {
-	ownerRef.ApplyTo(config)
-	if config.Data == nil {
-		config.Data = map[string]string{}
-	}
-
-	authConfig, err := GenerateAuthConfig(p.Authentication, ctx, c, config.Namespace)
-	if err != nil {
-		return fmt.Errorf("failed to generate authentication config: %w", err)
-	}
-
-	err = validateAuthConfig(authConfig, []string{p.ServiceAccountIssuerURL})
-	if err != nil {
-		return fmt.Errorf("validating generated authentication config: %w", err)
-	}
-
-	serializedConfig, err := json.Marshal(authConfig)
-	if err != nil {
-		return fmt.Errorf("failed to serialize kube apiserver authentication config: %w", err)
-	}
-
-	config.Data[AuthenticationConfigKey] = string(serializedConfig)
-	return nil
-}
 
 func GenerateAuthConfig(spec *configv1.AuthenticationSpec, ctx context.Context, c crclient.Client, namespace string) (*AuthenticationConfiguration, error) {
 	config := &AuthenticationConfiguration{
@@ -316,39 +286,6 @@ func validateClaimMappingExpression(expression string) error {
 func validateExtraMappingExpression(expression string) error {
 	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ExtraMappingExpression{Expression: expression})
 	return err
-}
-
-func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers []string) error {
-	if authConfig == nil {
-		// nothing to validate
-		return nil
-	}
-
-	// TODO: implement logic for getting the current/desired version for the control plane and get the corresponding kube version based on that.
-	// For now, always use the minimum supported OCP version to ensure we are never getting false positives when validating CEL expression compiliation.
-	// Older versions of Kubernetes are not guaranteed to have the same CEL libraries available as newer ones.
-	// Always using the minimum supported OCP version will likely result in false negatives and the workaround is for users to adapt their CEL expressions
-	// accordingly.
-	// The current line of thinking is that false negatives are better than false positives because false positives could result in invalid configurations
-	// attempting to be rolled out.
-	kubeVersion, err := supportedversion.GetKubeVersionForSupportedVersion(supportedversion.MinSupportedVersion)
-	if err != nil {
-		return fmt.Errorf("getting the corresponding kubernetes version for OCP version %q", supportedversion.MinSupportedVersion.String())
-	}
-
-	envVersion, err := version.Parse(kubeVersion.String())
-	if err != nil {
-		return fmt.Errorf("parsing kubernetes version %q", kubeVersion.String())
-	}
-	celCompiler := authenticationcel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
-
-	apiServerAuthConfig, err := HCPAuthConfigToAPIServerAuthConfig(authConfig)
-	if err != nil {
-		return fmt.Errorf("converting from HCP auth config type to apiserver auth config type: %v", err)
-	}
-
-	fieldErrors := validation.ValidateAuthenticationConfiguration(celCompiler, apiServerAuthConfig, disallowIssuers)
-	return fieldErrors.ToAggregate()
 }
 
 // HCPAuthConfigToAPIServerAuthConfig converts the HyperShift version of the AuthenticationConfiguration type
