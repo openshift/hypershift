@@ -19,6 +19,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+func kasLabels() map[string]string {
+	return map[string]string{
+		"app":                              "kube-apiserver",
+		hyperv1.ControlPlaneComponentLabel: "kube-apiserver",
+	}
+}
+
 func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingStrategy, owner *metav1.OwnerReference, apiServerServicePort int, apiAllowedCIDRBlocks []string, hcp *hyperv1.HostedControlPlane) error {
 	isPublic := util.IsPublicHCP(hcp)
 	isPrivate := util.IsPrivateHCP(hcp)

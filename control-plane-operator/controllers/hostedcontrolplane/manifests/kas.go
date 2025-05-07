@@ -7,10 +7,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 const (
@@ -19,17 +16,9 @@ const (
 )
 
 const (
-	// KubeconfigScopeExternal means the kubeconfig is for use by cluster-external
-	// clients
-	KubeconfigScopeExternal KubeconfigScope = "external"
-
 	// KubeconfigScopeLocal means the kubeconfig is for use by cluster-local
 	// clients (e.g. the service network)
 	KubeconfigScopeLocal KubeconfigScope = "local"
-
-	// KubeconfigScopeBootstrap means the kubeconfig is passed via ignition to
-	// worker nodes so they can bootstrap
-	KubeconfigScopeBootstrap KubeconfigScope = "bootstrap"
 )
 
 type KubeconfigScope string
@@ -107,92 +96,11 @@ func KASBootstrapKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
-func KASPodDisruptionBudget(ns string) *policyv1.PodDisruptionBudget {
-	return &policyv1.PodDisruptionBudget{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
-			Namespace: ns,
-		},
-	}
-}
-
 func KASDeployment(controlPlaneNamespace string) *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kube-apiserver",
 			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASAuditConfig(controlPlaneNamespace string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-audit-config",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASEgressSelectorConfig(controlPlaneNamespace string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-egress-selector-config",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASConfig(controlPlaneNamespace string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-config",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func AuthConfig(controlPlaneNamespace string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "auth-config",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASOAuthMetadata(controlPlaneNamespace string) *corev1.ConfigMap {
-	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "oauth-metadata",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASAuthenticationTokenWebhookConfigSecret(controlPlaneNamespace string) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kas-authentication-token-webhook-config",
-			Namespace: controlPlaneNamespace,
-		},
-	}
-}
-
-func KASServiceMonitor(ns string) *prometheusoperatorv1.ServiceMonitor {
-	return &prometheusoperatorv1.ServiceMonitor{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
-			Namespace: ns,
-		},
-	}
-}
-
-func ControlPlaneRecordingRules(ns string) *prometheusoperatorv1.PrometheusRule {
-	return &prometheusoperatorv1.PrometheusRule{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "recording-rules",
-			Namespace: ns,
 		},
 	}
 }

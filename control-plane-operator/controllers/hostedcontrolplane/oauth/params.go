@@ -15,7 +15,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
@@ -51,28 +50,6 @@ type OAuthServerParams struct {
 	// konnectivity. Currently only used for IBM Cloud specific addresses.
 	OAuthNoProxy    []string
 	AuditWebhookRef *corev1.LocalObjectReference
-}
-
-type OAuthConfigParams struct {
-	ExternalAPIHost              string
-	ExternalAPIPort              int32
-	ExternalHost                 string
-	ExternalPort                 int32
-	ServingCert                  *corev1.Secret
-	NamedCertificates            []configv1.APIServerNamedServingCert
-	CipherSuites                 []string
-	MinTLSVersion                string
-	IdentityProviders            []configv1.IdentityProvider
-	AccessTokenMaxAgeSeconds     int32
-	AccessTokenInactivityTimeout *metav1.Duration
-	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
-	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
-	OauthConfigOverrides map[string]*ConfigOverride
-	// LoginURLOverride can be used to specify an override for the oauth config login url. The need for this arises
-	// when the login a provider uses doesn't conform to the standard login url in hypershift. The only supported use case
-	// for this is IBMCloud Red Hat Openshift
-	LoginURLOverride string
-	OAuthTemplates   configv1.OAuthTemplates
 }
 
 // ConfigOverride defines the oauth parameters that can be overridden in special use cases. The only supported
@@ -198,87 +175,11 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 	return p
 }
 
-func (p *OAuthServerParams) NamedCertificates() []configv1.APIServerNamedServingCert {
-	if p.APIServer != nil {
-		return p.APIServer.ServingCerts.NamedCertificates
-	} else {
-		return nil
-	}
-}
-
-func (p *OAuthServerParams) OauthTemplates() configv1.OAuthTemplates {
-	emptyTemplates := configv1.OAuthTemplates{}
-
-	if p.OAuth != nil {
-		if p.OAuth.Templates != emptyTemplates {
-			return p.OAuth.Templates
-		}
-	}
-	return emptyTemplates
-}
-
 func (p *OAuthServerParams) IdentityProviders() []configv1.IdentityProvider {
 	if p.OAuth != nil {
 		return p.OAuth.IdentityProviders
 	}
 	return []configv1.IdentityProvider{}
-}
-
-func (p *OAuthServerParams) AccessTokenMaxAgeSeconds() int32 {
-	if p.OAuth != nil && p.OAuth.TokenConfig.AccessTokenMaxAgeSeconds > 0 {
-		return p.OAuth.TokenConfig.AccessTokenMaxAgeSeconds
-	}
-	return defaultAccessTokenMaxAgeSeconds
-}
-
-func (p *OAuthServerParams) AccessTokenInactivityTimeout() *metav1.Duration {
-	if p.OAuth != nil {
-		return p.OAuth.TokenConfig.AccessTokenInactivityTimeout
-	}
-	return nil
-}
-
-func (p *OAuthServerParams) MinTLSVersion() string {
-	if p.APIServer != nil {
-		return config.MinTLSVersion(p.APIServer.TLSSecurityProfile)
-	}
-	return config.MinTLSVersion(nil)
-}
-
-func (p *OAuthServerParams) CipherSuites() []string {
-	if p.APIServer != nil {
-		return config.CipherSuites(p.APIServer.TLSSecurityProfile)
-	}
-	return config.CipherSuites(nil)
-}
-
-func (p *OAuthServerParams) ConfigParams(servingCert *corev1.Secret) *OAuthConfigParams {
-	return &OAuthConfigParams{
-		ExternalHost:                 p.ExternalHost,
-		ExternalPort:                 p.ExternalPort,
-		ExternalAPIHost:              p.ExternalAPIHost,
-		ExternalAPIPort:              p.ExternalAPIPort,
-		ServingCert:                  servingCert,
-		CipherSuites:                 p.CipherSuites(),
-		MinTLSVersion:                p.MinTLSVersion(),
-		IdentityProviders:            p.IdentityProviders(),
-		AccessTokenMaxAgeSeconds:     p.AccessTokenMaxAgeSeconds(),
-		AccessTokenInactivityTimeout: p.AccessTokenInactivityTimeout(),
-		OauthConfigOverrides:         p.OauthConfigOverrides,
-		LoginURLOverride:             p.LoginURLOverride,
-		NamedCertificates:            p.NamedCertificates(),
-		OAuthTemplates:               p.OauthTemplates(),
-	}
-}
-
-func (p *OAuthServerParams) AuditPolicyConfig() configv1.Audit {
-	if p.APIServer != nil && p.APIServer.Audit.Profile != "" {
-		return p.APIServer.Audit
-	} else {
-		return configv1.Audit{
-			Profile: configv1.DefaultAuditProfileType,
-		}
-	}
 }
 
 type OAuthServiceParams struct {
