@@ -3,6 +3,9 @@ package util
 import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
+	autoscalingv1 "github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1"
+	autoscalingv1beta1 "github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1"
+
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -32,4 +35,7 @@ func init() {
 	metav1.AddToGroupVersion(scheme, awsKarpanterGroupVersion)
 	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClass{})
 	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClassList{})
+
+	_ = autoscalingv1.SchemeBuilder.AddToScheme(scheme)
+	_ = autoscalingv1beta1.SchemeBuilder.AddToScheme(scheme)
 }
