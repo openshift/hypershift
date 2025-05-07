@@ -15,6 +15,60 @@ import (
 )
 
 // Ensure certain deployment fields do not get set
+func TestReconcileOpenshiftAPIServerDeploymentNoChanges(t *testing.T) {
+
+	imageName := "oapiImage"
+	// Setup expected values that are universal
+
+	// Setup hypershift hosted control plane.
+	targetNamespace := "test"
+	oapiDeployment := manifests.OpenShiftAPIServerDeployment(targetNamespace)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: targetNamespace,
+		},
+	}
+	hcp.Name = "name"
+	hcp.Namespace = "namespace"
+	ownerRef := config.OwnerRefFrom(hcp)
+	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
+
+	testCases := []struct {
+		cm                    corev1.ConfigMap
+		auditConfig           *corev1.ConfigMap
+		deploymentConfig      config.DeploymentConfig
+		additionalTrustBundle *corev1.LocalObjectReference
+		clusterConf           *hyperv1.ClusterConfiguration
+	}{
+		// empty deployment config
+		{
+			cm: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-oapi-config",
+					Namespace: targetNamespace,
+				},
+				Data: map[string]string{"config.yaml": "test-data"},
+			},
+			auditConfig:           manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			deploymentConfig:      config.DeploymentConfig{},
+			additionalTrustBundle: &corev1.LocalObjectReference{Name: "test-trust-bundle"},
+			clusterConf:           nil,
+		},
+	}
+	for _, tc := range testCases {
+		g := NewGomegaWithT(t)
+		expectedTermGraceSeconds := oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds
+		oapiDeployment.Spec.MinReadySeconds = 60
+		expectedMinReadySeconds := oapiDeployment.Spec.MinReadySeconds
+		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		err := ReconcileDeployment(oapiDeployment, nil, ownerRef, &tc.cm, tc.auditConfig, serviceServingCA, tc.deploymentConfig, imageName, "konnectivityProxyImage", config.DefaultEtcdURL, util.AvailabilityProberImageName, false, hyperv1.IBMCloudPlatform, tc.additionalTrustBundle, nil, tc.clusterConf, nil, "")
+		g.Expect(err).To(BeNil())
+		g.Expect(expectedTermGraceSeconds).To(Equal(oapiDeployment.Spec.Template.Spec.TerminationGracePeriodSeconds))
+		g.Expect(expectedMinReadySeconds).To(Equal(oapiDeployment.Spec.MinReadySeconds))
+	}
+}
+
 func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	var (
 		imageName       = "oapiImage"
@@ -38,16 +92,18 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 	hcp.Namespace = "namespace"
 	ownerRef := config.OwnerRefFrom(hcp)
 	testCases := []struct {
-		name                         string
-		cm                           corev1.ConfigMap
-		expectedVolume               *corev1.Volume
-		auditConfig                  *corev1.ConfigMap
-		expectedVolumeProjection     []corev1.VolumeProjection
-		deploymentConfig             config.DeploymentConfig
-		additionalTrustBundle        *corev1.LocalObjectReference
-		clusterConf                  *hyperv1.ClusterConfiguration
-		imageRegistryAdditionalCAs   *corev1.ConfigMap
-		expectProjectedVolumeMounted bool
+		name                              string
+		cm                                corev1.ConfigMap
+		expectedVolume                    *corev1.Volume
+		expectedProxyVolume               *corev1.Volume
+		auditConfig                       *corev1.ConfigMap
+		expectedVolumeProjection          []corev1.VolumeProjection
+		deploymentConfig                  config.DeploymentConfig
+		additionalTrustBundle             *corev1.LocalObjectReference
+		clusterConf                       *hyperv1.ClusterConfiguration
+		imageRegistryAdditionalCAs        *corev1.ConfigMap
+		expectProjectedVolumeMounted      bool
+		expectProjectedProxyVolumeMounted bool
 	}{
 		{
 			name:             "Trust bundle provided",
@@ -65,15 +121,17 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 					},
 				},
 			},
-			expectProjectedVolumeMounted: true,
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: false,
 		},
 		{
-			name:                         "Trust bundle not provided",
-			auditConfig:                  manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
-			deploymentConfig:             config.DeploymentConfig{},
-			expectedVolume:               nil,
-			additionalTrustBundle:        nil,
-			expectProjectedVolumeMounted: false,
+			name:                              "Trust bundle not provided",
+			auditConfig:                       manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			deploymentConfig:                  config.DeploymentConfig{},
+			expectedVolume:                    nil,
+			additionalTrustBundle:             nil,
+			expectProjectedVolumeMounted:      false,
+			expectProjectedProxyVolumeMounted: false,
 		},
 		{
 			name:             "Trust bundle and image registry additional CAs provided",
@@ -104,7 +162,36 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 					},
 				},
 			},
-			expectProjectedVolumeMounted: true,
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: false,
+		},
+		{
+			name:             "Trust bundle and proxy trust bundle provided",
+			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			deploymentConfig: config.DeploymentConfig{},
+			additionalTrustBundle: &corev1.LocalObjectReference{
+				Name: "user-ca-bundle",
+			},
+			expectedVolume: &corev1.Volume{
+				Name: "additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle()},
+						DefaultMode: ptr.To[int32](420),
+					},
+				},
+			},
+			expectedProxyVolume: &corev1.Volume{
+				Name: "proxy-additional-trust-bundle",
+				VolumeSource: corev1.VolumeSource{
+					Projected: &corev1.ProjectedVolumeSource{
+						Sources:     []corev1.VolumeProjection{getFakeVolumeProjectionCABundle()},
+						DefaultMode: ptr.To[int32](420),
+					},
+				},
+			},
+			expectProjectedVolumeMounted:      true,
+			expectProjectedProxyVolumeMounted: true,
 		},
 	}
 	for _, tc := range testCases {
@@ -118,7 +205,53 @@ func TestReconcileOpenshiftAPIServerDeploymentTrustBundle(t *testing.T) {
 			} else {
 				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).NotTo(ContainElement(&corev1.Volume{Name: "additional-trust-bundle"}))
 			}
+			if tc.expectProjectedProxyVolumeMounted {
+				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).To(ContainElement(*tc.expectedProxyVolume))
+			} else {
+				g.Expect(oapiDeployment.Spec.Template.Spec.Volumes).NotTo(ContainElement(&corev1.Volume{Name: "proxy-additional-trust-bundle"}))
+			}
 		})
+	}
+}
+
+func TestReconcileOpenshiftOAuthAPIServerDeployment(t *testing.T) {
+	// Setup expected values that are universal
+
+	// Setup hypershift hosted control plane.
+	targetNamespace := "test"
+	oauthAPIDeployment := manifests.OpenShiftOAuthAPIServerDeployment(targetNamespace)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: targetNamespace,
+		},
+	}
+	hcp.Name = "name"
+	hcp.Namespace = "namespace"
+	ownerRef := config.OwnerRefFrom(hcp)
+
+	testCases := []struct {
+		deploymentConfig config.DeploymentConfig
+		auditConfig      *corev1.ConfigMap
+		params           OAuthDeploymentParams
+	}{
+		// empty deployment config and oauth params
+		{
+			deploymentConfig: config.DeploymentConfig{},
+			auditConfig:      manifests.OpenShiftOAuthAPIServerAuditConfig(targetNamespace),
+			params: OAuthDeploymentParams{
+				EtcdURL: "https://etcd-client:2379",
+			},
+		},
+	}
+	for _, tc := range testCases {
+		g := NewGomegaWithT(t)
+		oauthAPIDeployment.Spec.MinReadySeconds = 60
+		expectedMinReadySeconds := oauthAPIDeployment.Spec.MinReadySeconds
+		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		err := ReconcileOAuthAPIServerDeployment(oauthAPIDeployment, ownerRef, tc.auditConfig, &tc.params, hyperv1.IBMCloudPlatform)
+		g.Expect(err).To(BeNil())
+		g.Expect(expectedMinReadySeconds).To(Equal(oauthAPIDeployment.Spec.MinReadySeconds))
 	}
 }
 
