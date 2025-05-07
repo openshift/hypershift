@@ -11,13 +11,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/autoscaler"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
@@ -57,7 +55,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
@@ -164,73 +161,6 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 				if !apierrors.IsNotFound(err) {
 					g.Expect(err).NotTo(HaveOccurred())
 				}
-			}
-		})
-	}
-}
-
-func TestBuildOAuthVolumeTemplates(t *testing.T) {
-	testsCases := []struct {
-		name                   string
-		params                 oauth.OAuthConfigParams
-		expectedLoginSecret    string
-		expectedProviderSecret string
-		expectedErrorSecret    string
-	}{
-		{
-			name: "When OAuthTemplates has secret names specified, they should be used in volume",
-			params: oauth.OAuthConfigParams{
-				OAuthTemplates: configv1.OAuthTemplates{
-					Login: configv1.SecretNameReference{
-						Name: "custom-login-template-secret",
-					},
-					ProviderSelection: configv1.SecretNameReference{
-						Name: "custom-provider-selection-template-secret",
-					},
-					Error: configv1.SecretNameReference{
-						Name: "custom-error-template-secret",
-					},
-				},
-			},
-			expectedLoginSecret:    "custom-login-template-secret",
-			expectedProviderSecret: "custom-provider-selection-template-secret",
-			expectedErrorSecret:    "custom-error-template-secret",
-		},
-		{
-			name:                   "When OAuthTemplates is empty, it should use default secrets",
-			params:                 oauth.OAuthConfigParams{},
-			expectedLoginSecret:    manifests.OAuthServerDefaultLoginTemplateSecret("").Name,
-			expectedProviderSecret: manifests.OAuthServerDefaultProviderSelectionTemplateSecret("").Name,
-			expectedErrorSecret:    manifests.OAuthServerDefaultErrorTemplateSecret("").Name,
-		},
-	}
-
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			loginVolume := &corev1.Volume{}
-			providerVolume := &corev1.Volume{}
-			errorVolume := &corev1.Volume{}
-
-			oauth.BuildOAuthVolumeLoginTemplate(loginVolume, &tc.params)
-			oauth.BuildOAuthVolumeProvidersTemplate(providerVolume, &tc.params)
-			oauth.BuildOAuthVolumeErrorTemplate(errorVolume, &tc.params)
-
-			// Check Login Template
-			actualLoginSecretName := loginVolume.Secret.SecretName
-			if actualLoginSecretName != tc.expectedLoginSecret {
-				t.Errorf("Expected login secret name %s, but got %s", tc.expectedLoginSecret, actualLoginSecretName)
-			}
-
-			// Check Provider Template
-			actualProviderSecretName := providerVolume.Secret.SecretName
-			if actualProviderSecretName != tc.expectedProviderSecret {
-				t.Errorf("Expected provider secret name %s, but got %s", tc.expectedProviderSecret, actualProviderSecretName)
-			}
-
-			// Check Error Template
-			actualErrorSecretName := errorVolume.Secret.SecretName
-			if actualErrorSecretName != tc.expectedErrorSecret {
-				t.Errorf("Expected error secret name %s, but got %s", tc.expectedErrorSecret, actualErrorSecretName)
 			}
 		})
 	}
@@ -543,98 +473,6 @@ func TestReconcileAPIServerService(t *testing.T) {
 			}
 			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: tc.expectedRoutes}, t); diff != "" {
 				t.Errorf("actual routes differ from expected: %s", diff)
-			}
-		})
-	}
-}
-
-// TestClusterAutoscalerArgs checks to make sure that fields specified in a ClusterAutoscaling spec
-// become arguments to the autoscaler.
-func TestClusterAutoscalerArgs(t *testing.T) {
-	IgnoreLabelArgs := make([]string, 0)
-	for _, v := range autoscaler.GetIgnoreLabels() {
-		IgnoreLabelArgs = append(IgnoreLabelArgs, fmt.Sprintf("%s=%v", autoscaler.BalancingIgnoreLabelArg, v))
-	}
-
-	tests := map[string]struct {
-		AutoscalerOptions   hyperv1.ClusterAutoscaling
-		ExpectedArgs        []string
-		ExpectedMissingArgs []string
-	}{
-		"contains only default arguments": {
-			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
-			ExpectedArgs: []string{
-				"--cloud-provider=clusterapi",
-				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-				"--clusterapi-cloud-config-authoritative",
-				"--skip-nodes-with-local-storage=false",
-				"--alsologtostderr",
-				"--v=4",
-			},
-			ExpectedMissingArgs: []string{
-				"--max-nodes-total",
-				"--max-graceful-termination-sec",
-				"--max-node-provision-time",
-				"--expendable-pods-priority-cutoff",
-			},
-		},
-		"contains all optional parameters": {
-			AutoscalerOptions: hyperv1.ClusterAutoscaling{
-				MaxNodesTotal:        ptr.To[int32](100),
-				MaxPodGracePeriod:    ptr.To[int32](300),
-				MaxNodeProvisionTime: "20m",
-				PodPriorityThreshold: ptr.To[int32](-5),
-			},
-			ExpectedArgs: []string{
-				"--cloud-provider=clusterapi",
-				"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
-				"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
-				"--clusterapi-cloud-config-authoritative",
-				"--skip-nodes-with-local-storage=false",
-				"--alsologtostderr",
-				"--v=4",
-				"--max-nodes-total=100",
-				"--max-graceful-termination-sec=300",
-				"--max-node-provision-time=20m",
-				"--expendable-pods-priority-cutoff=-5",
-			},
-			ExpectedMissingArgs: []string{},
-		},
-		"balancing ignore labels": {
-			AutoscalerOptions: hyperv1.ClusterAutoscaling{},
-			ExpectedArgs:      IgnoreLabelArgs,
-		},
-	}
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			deployment := manifests.AutoscalerDeployment("test-ns")
-			sa := manifests.AutoscalerServiceAccount("test-ns")
-			secret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "test-ns",
-					Name:      "test-secret",
-				},
-			}
-			hcp := &hyperv1.HostedControlPlane{}
-			hcp.Name = "name"
-			hcp.Namespace = "namespace"
-			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false, config.OwnerRefFrom(hcp))
-			if err != nil {
-				t.Error(err)
-			}
-
-			observedArgs := sets.NewString(deployment.Spec.Template.Spec.Containers[0].Args...)
-			for _, arg := range test.ExpectedArgs {
-				if !observedArgs.Has(arg) {
-					t.Errorf("Expected to find \"%s\" in observed arguments: %v", arg, observedArgs)
-				}
-			}
-
-			for _, arg := range test.ExpectedMissingArgs {
-				if observedArgs.Has(arg) {
-					t.Errorf("Did not expect to find \"%s\" in observed arguments", arg)
-				}
 			}
 		})
 	}
@@ -2101,26 +1939,4 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
 
 	return fakeComponents
-}
-
-type fakeReleaseProvider struct{}
-
-func (*fakeReleaseProvider) GetImage(key string) string {
-	return key
-}
-
-func (*fakeReleaseProvider) ImageExist(key string) (string, bool) {
-	return key, true
-}
-
-func (*fakeReleaseProvider) Version() string {
-	return "1.0.0"
-}
-
-func (*fakeReleaseProvider) ComponentVersions() (map[string]string, error) {
-	return map[string]string{}, nil
-}
-
-func (*fakeReleaseProvider) ComponentImages() map[string]string {
-	return map[string]string{}
 }
