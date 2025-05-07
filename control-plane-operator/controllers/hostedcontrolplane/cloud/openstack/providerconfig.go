@@ -44,21 +44,6 @@ func ReconcileCloudConfigSecret(platformSpec *hyperv1.OpenStackPlatformSpec, sec
 	return nil
 }
 
-// ReconcileCloudConfigConfigMap reconciles the cloud config configmap.
-// In some cases (e.g. CCM, kube cloud config, etc), the cloud config needs to be stored in a configmap.
-func ReconcileCloudConfigConfigMap(platformSpec *hyperv1.OpenStackPlatformSpec, cm *corev1.ConfigMap, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) error {
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	config := getCloudConfig(platformSpec, credentialsSecret, caCertData, machineNetwork)
-	if caCertData != nil {
-		cm.Data[CABundleKey] = string(caCertData)
-	}
-	cm.Data[CloudConfigKey] = config
-
-	return nil
-}
-
 // getCloudConfig returns the cloud config.
 func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecret *corev1.Secret, caCertData []byte, machineNetwork []hyperv1.MachineNetworkEntry) string {
 	config := string(credentialsSecret.Data[CloudConfigKey])
@@ -85,15 +70,6 @@ func getCloudConfig(platformSpec *hyperv1.OpenStackPlatformSpec, credentialsSecr
 	config += "address-sort-order = " + util.MachineNetworksToList(machineNetwork) + "\n"
 
 	return config
-}
-
-// ReconcileTrustedCA reconciles as expected by Nodes Kubelet.
-func ReconcileTrustedCA(cm *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, caCertData []byte) error {
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-	cm.Data[CABundleKey] = string(caCertData)
-	return nil
 }
 
 // GetCloudConfigFromCredentialsSecret returns the CA cert from the credentials secret.
