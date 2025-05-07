@@ -852,10 +852,12 @@ func invokeAuthBootstrapRenderScript(workDir, payloadVersion, featureGateYaml st
 cd /tmp
 mkdir input output manifests
 
-touch /tmp/manifests/99_feature-gate.yaml
-cat <<EOF >/tmp/manifests/99_feature-gate.yaml
-%[3]s
-EOF
+if [ ! -f /tmp/manifests/99_feature-gate.yaml ]; then
+  touch /tmp/manifests/99_feature-gate.yaml
+  cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+  %[3]s
+  EOF
+fi
 
 /usr/bin/authentication-operator render \
    --asset-output-dir /tmp/output \
