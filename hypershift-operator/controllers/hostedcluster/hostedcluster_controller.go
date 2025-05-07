@@ -72,7 +72,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -101,9 +100,6 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2" // Need this dep atm to satisfy IBM provider dep.
-	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -253,10 +249,7 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 // managedResources are all the resources that are managed as childresources for a HostedCluster
 func (r *HostedClusterReconciler) managedResources() []client.Object {
 	managedResources := []client.Object{
-		&capiaws.AWSCluster{},
 		&hyperv1.HostedControlPlane{},
-		&hyperv1.AWSEndpointService{},
-		&capiv1.Cluster{},
 		&appsv1.Deployment{},
 		&prometheusoperatorv1.PodMonitor{},
 		&networkingv1.NetworkPolicy{},
@@ -270,25 +263,46 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
 		&corev1.Endpoints{},
-		&agentv1.AgentCluster{},
-		&capiibmv1.IBMVPCCluster{},
-		&capikubevirt.KubevirtCluster{},
 		&hyperv1.NodePool{},
 	}
 
+	// Watch based on platforms installed
+	if platformsInstalled := os.Getenv("PLATFORMS_INSTALLED"); len(platformsInstalled) > 0 {
+		managedResources = append(managedResources, hyperutil.GetHostedClusterManagedResources(platformsInstalled)...)
+	} else {
+		managedResources = append(managedResources, hyperutil.BaseResources...)
+		managedResources = append(managedResources, hyperutil.AWSResources...)
+		managedResources = append(managedResources, hyperutil.AzureResources...)
+		managedResources = append(managedResources, hyperutil.IBMCloudResources...)
+		managedResources = append(managedResources, hyperutil.KubevirtResources...)
+		managedResources = append(managedResources, hyperutil.AgentResources...)
+		managedResources = append(managedResources, hyperutil.OpenStackResources...)
+	}
+
+	// Only watch managed Azure resources if the HO is explicitly configured to do so. Otherwise, the HO will fail to
+	// reconcile HostedClusters since some CRs are only installed in the managed Azure use case.
+	if azureutil.IsAroHCP() {
+		managedResources = append(managedResources, hyperutil.ManagedAzure...)
+	}
+
+	// Watch if etcd recovery is enabled
 	if r.EnableEtcdRecovery {
 		managedResources = append(managedResources, []client.Object{
 			&appsv1.StatefulSet{},
 			&batchv1.Job{},
 		}...)
 	}
+
 	// Watch based on Routes capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
 		managedResources = append(managedResources, &routev1.Route{})
 	}
+
+	// Watch based on Ingress capability
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityIngress) {
 		managedResources = append(managedResources, &configv1.Ingress{})
 	}
+
 	return managedResources
 }
 
@@ -2005,7 +2019,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
 		}
 
-		if hcluster.Spec.SecretEncryption.KMS != nil {
+		if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil {
 			// Reconcile KMS SecretProviderClass CR
 			kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
 			if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
@@ -3130,7 +3144,7 @@ func reconcileControlPlaneOperatorDeployment(
 		)
 
 		// Mount the KMS credentials so the HCP reconciliation can validate the Azure KMS configuration.
-		if hcp.Spec.SecretEncryption.KMS != nil {
+		if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil {
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
 				azureutil.CreateVolumeMountForKMSAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName),
 			)
@@ -4246,13 +4260,15 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
-	exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
-	if err != nil {
-		return false, err
-	}
-	if exists {
-		log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
-		return false, nil
+	if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
+		exists, err := deleteAWSEndpointServices(ctx, r.Client, hc, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
 	}
 
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
@@ -4276,7 +4292,7 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// We want to ensure the HCP resource is deleted before deleting the Namespace.
 	// Otherwise the CPO will be deleted leaving the HCP in a perpetual terminating state preventing further progress.
 	// NOTE: The advancing case is when Get() or Delete() returns an error that the HCP is not found
-	exists, err = hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
+	exists, err := hyperutil.DeleteIfNeeded(ctx, r.Client, controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name))
 	if err != nil {
 		return false, err
 	}
@@ -5603,10 +5619,12 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 		if err := r.Get(ctx, mgmtInfraKey, mgmtInfra); err != nil {
 			return fmt.Errorf("failed to get infrastructure.config.openshift.io status: %w", err)
 		}
-		mgmtPlatformType := mgmtInfra.Status.PlatformStatus.Type
-		hc.Annotations[hyperv1.ManagementPlatformAnnotation] = string(mgmtPlatformType)
-		if err := r.Client.Update(ctx, hc); err != nil {
-			return fmt.Errorf("failed to update hostedcluster %s annotation: %w", hc.Name, err)
+		if mgmtInfra.Status.PlatformStatus != nil {
+			mgmtPlatformType := mgmtInfra.Status.PlatformStatus.Type
+			hc.Annotations[hyperv1.ManagementPlatformAnnotation] = string(mgmtPlatformType)
+			if err := r.Client.Update(ctx, hc); err != nil {
+				return fmt.Errorf("failed to update hostedcluster %s annotation: %w", hc.Name, err)
+			}
 		}
 	}
 

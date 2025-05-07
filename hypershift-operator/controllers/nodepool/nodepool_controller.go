@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -113,17 +114,20 @@ var (
 	isSetupCounterCondMessage = regexp.MustCompile(`\d+ of \d+ completed`)
 )
 
+var capiRelatedNodePoolManagedResourcesToWatch = []client.Object{
+	&capiaws.AWSMachineTemplate{},
+	&capiazure.AzureMachineTemplate{},
+	&agentv1.AgentMachineTemplate{},
+	&capiopenstackv1beta1.OpenStackMachineTemplate{},
+}
+
 func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := ctrl.NewControllerManagedBy(mgr).
+	bldr := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.NodePool{}, builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the HostedCluster IgnitionEndpoint is available.
 		Watches(&hyperv1.HostedCluster{}, handler.EnqueueRequestsFromMapFunc(r.enqueueNodePoolsForHostedCluster), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineDeployment{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		Watches(&capiv1.MachineSet{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiaws.AWSMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&agentv1.AgentMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiazure.AzureMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
-		Watches(&capiopenstackv1beta1.OpenStackMachineTemplate{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the user data Secret or the token Secret is unexpectedly changed out of band.
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient()))).
 		// We want to reconcile when the ConfigMaps referenced by the spec.config and also the core ones change.
@@ -131,8 +135,11 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 			MaxConcurrentReconciles: 10,
-		}).
-		Complete(r); err != nil {
+		})
+	for _, managedResource := range r.managedResources() {
+		bldr.Watches(managedResource, handler.EnqueueRequestsFromMapFunc(enqueueParentNodePool), builder.WithPredicates(supportutil.PredicatesForHostedClusterAnnotationScoping(mgr.GetClient())))
+	}
+	if err := bldr.Complete(r); err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
 
@@ -151,6 +158,21 @@ func (r *NodePoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.recorder = mgr.GetEventRecorderFor("nodepool-controller")
 
 	return nil
+}
+
+// managedResources are all the resources that are managed as childresources for a HostedCluster
+func (r *NodePoolReconciler) managedResources() []client.Object {
+	var managedResources []client.Object
+
+	if platformsInstalled := os.Getenv("PLATFORMS_INSTALLED"); len(platformsInstalled) > 0 {
+		// Watch based on platforms installed
+		managedResources = append(managedResources, supportutil.GetNodePoolManagedResources(platformsInstalled)...)
+	} else {
+		// Watch all CAPI platform related resources
+		managedResources = append(managedResources, capiRelatedNodePoolManagedResourcesToWatch...)
+	}
+
+	return managedResources
 }
 
 func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

@@ -40,6 +40,14 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 						From: &corev1.ObjectReference{Name: ""},
 					},
 					{
+						Name: "azure-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
+						Name: "openstack-cluster-api-controllers",
+						From: &corev1.ObjectReference{Name: ""},
+					},
+					{
 						Name: util.AvailabilityProberImageName,
 						From: &corev1.ObjectReference{Name: ""},
 					},
