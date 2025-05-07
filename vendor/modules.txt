@@ -849,6 +849,10 @@ github.com/openshift/cloud-credential-operator/pkg/ibmcloud
 ## explicit; go 1.21
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
+# github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
+## explicit; go 1.22.0
+github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1
+github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1
 # github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 ## explicit; go 1.22.0
 github.com/openshift/cluster-node-tuning-operator/pkg/apis/performanceprofile/v1
