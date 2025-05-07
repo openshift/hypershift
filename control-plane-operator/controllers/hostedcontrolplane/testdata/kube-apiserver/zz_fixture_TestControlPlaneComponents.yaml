@@ -81,26 +81,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       automountServiceAccountToken: false
       containers:
-      - command:
-        - /usr/bin/control-plane-operator
-        - kas-bootstrap
-        - --resources-path
-        - /work
-        env:
-        - name: KUBECONFIG
-          value: /var/secrets/localhost-kubeconfig/kubeconfig
-        image: controlplane-operator
-        imagePullPolicy: IfNotPresent
-        name: bootstrap
-        resources:
-          requests:
-            cpu: 10m
-            memory: 10Mi
-        volumeMounts:
-        - mountPath: /work
-          name: bootstrap-manifests
-        - mountPath: /var/secrets/localhost-kubeconfig
-          name: localhost-kubeconfig
       - args:
         - kube-apiserver
         - --openshift-config=/etc/kubernetes/config/config.json
@@ -115,6 +95,17 @@ spec:
               fieldPath: status.podIP
         image: hyperkube
         imagePullPolicy: IfNotPresent
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                until curl -k https://localhost:6443/readyz; do
+                  echo "Waiting for kube-apiserver to be ready..."
+                  sleep 5
+                done
         livenessProbe:
           failureThreshold: 6
           httpGet:
@@ -183,6 +174,26 @@ spec:
         - mountPath: /etc/kubernetes/secrets/svcacct-key
           name: svcacct-key
         workingDir: /var/log/kube-apiserver
+      - command:
+        - /usr/bin/control-plane-operator
+        - kas-bootstrap
+        - --resources-path
+        - /work
+        env:
+        - name: KUBECONFIG
+          value: /var/secrets/localhost-kubeconfig/kubeconfig
+        image: controlplane-operator
+        imagePullPolicy: IfNotPresent
+        name: bootstrap
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+        - mountPath: /var/secrets/localhost-kubeconfig
+          name: localhost-kubeconfig
       - args:
         - --logtostderr=true
         - --log-file-max-size=0
