@@ -686,7 +686,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
-		acceptedValues := []string{"ImageRegistry"}
+		acceptedValues := []string{string(hyperv1.ImageRegistryCapability)}
 		if !reflect.DeepEqual(opts.DisableClusterCapabilities, acceptedValues) {
 			return nil, fmt.Errorf("unknown capability, accepted values are: %v", acceptedValues)
 		}
