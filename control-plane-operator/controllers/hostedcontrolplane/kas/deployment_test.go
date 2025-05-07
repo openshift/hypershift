@@ -35,6 +35,7 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 	testCases := []struct {
 		config           *corev1.ConfigMap
 		auditConfig      *corev1.ConfigMap
+		auditEnabled     bool
 		authConfig       *corev1.ConfigMap
 		deploymentConfig config.DeploymentConfig
 		params           KubeAPIServerParams
@@ -45,6 +46,16 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 		{
 			config:           manifests.OpenShiftAPIServerConfig(targetNamespace),
 			auditConfig:      manifests.OpenShiftAPIServerAuditConfig(targetNamespace),
+			auditEnabled:     true,
+			authConfig:       manifests.AuthConfig(targetNamespace),
+			deploymentConfig: config.DeploymentConfig{},
+			params: KubeAPIServerParams{
+				CloudProvider: "test-cloud-provider",
+			},
+		},
+		// auditing is disabled
+		{
+			config:           manifests.OpenShiftAPIServerConfig(targetNamespace),
 			authConfig:       manifests.AuthConfig(targetNamespace),
 			deploymentConfig: config.DeploymentConfig{},
 			params: KubeAPIServerParams{
@@ -57,10 +68,12 @@ func TestReconcileKubeAPIServerDeploymentNoChanges(t *testing.T) {
 		kubeAPIDeployment.Spec.MinReadySeconds = 60
 		expectedMinReadySeconds := kubeAPIDeployment.Spec.MinReadySeconds
 		tc.config.Data = map[string]string{"config.json": "test-json"}
-		tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		if tc.auditEnabled {
+			tc.auditConfig.Data = map[string]string{"policy.yaml": "test-data"}
+		}
 		tc.authConfig.Data = map[string]string{"auth.json": "test-data"}
 		err := ReconcileKubeAPIServerDeployment(kubeAPIDeployment, hcp, ownerRef, tc.deploymentConfig, tc.params.NamedCertificates(), tc.params.CloudProvider,
-			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditConfig, tc.authConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
+			tc.params.CloudProviderConfig, tc.params.CloudProviderCreds, tc.params.Images, tc.config, tc.auditEnabled, tc.auditConfig, tc.authConfig, tc.params.AuditWebhookRef, tc.activeKey, tc.backupKey, 6443, "test-payload-version", tc.params.FeatureGate, nil, tc.params.CipherSuites())
 		g.Expect(err).To(BeNil())
 		g.Expect(expectedMinReadySeconds).To(Equal(kubeAPIDeployment.Spec.MinReadySeconds))
 	}

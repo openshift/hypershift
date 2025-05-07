@@ -112,6 +112,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	awssdk "github.com/aws/aws-sdk-go/aws"
@@ -1527,6 +1528,29 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile etcd-backup cronJob: %w", err)
 			}
+		}
+	}
+
+	// Delete all auditing configmaps if auditing is disabled
+	if hostedControlPlane.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+		kubeAPIServerAuditConfig := manifests.KASAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, kubeAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove kas-audit-config configmap: %w", err)
+		}
+
+		openshiftAPIServerAuditConfig := manifests.OpenShiftAPIServerAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-apiserver-audit configmap: %w", err)
+		}
+
+		openshiftOAuthAPIServerAuditConfig := manifests.OpenShiftOAuthAPIServerAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftOAuthAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-oauth-apiserver-audit configmap: %w", err)
+		}
+
+		oAuthAuditConfig := manifests.OAuthAuditConfig(hostedControlPlane.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, oAuthAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove oauth-openshift-audit configmap: %w", err)
 		}
 	}
 
@@ -3219,10 +3243,12 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 	}
 
 	kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
-		return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyConfig())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile api server audit config: %w", err)
+	if p.AuditEnabled {
+		if _, err := createOrUpdate(ctx, r, kubeAPIServerAuditConfig, func() error {
+			return kas.ReconcileAuditConfig(kubeAPIServerAuditConfig, p.OwnerRef, p.AuditPolicyConfig())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile api server audit config: %w", err)
+		}
 	}
 
 	kubeAPIServerConfig := manifests.KASConfig(hcp.Namespace)
@@ -3410,6 +3436,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.CloudProviderCreds,
 			p.Images,
 			kubeAPIServerConfig,
+			p.AuditEnabled,
 			kubeAPIServerAuditConfig,
 			kubeAPIServerAuthConfig,
 			p.AuditWebhookRef,
@@ -3553,16 +3580,18 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
 	oapicfg := manifests.OpenShiftAPIServerConfig(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, oapicfg, func() error {
-		return oapi.ReconcileConfig(oapicfg, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project, hcp.Spec.Capabilities, featureGates)
+		return oapi.ReconcileConfig(oapicfg, p.AuditEnabled, p.AuditWebhookRef, p.OwnerRef, p.EtcdURL, p.IngressDomain(), p.MinTLSVersion(), p.CipherSuites(), p.Image, p.Project, hcp.Spec.Capabilities, featureGates)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver config: %w", err)
 	}
 
 	auditCfg := manifests.OpenShiftAPIServerAuditConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
-		return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
+	if p.AuditEnabled {
+		if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
+			return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift apiserver audit config: %w", err)
+		}
 	}
 
 	pdb := manifests.OpenShiftAPIServerPodDisruptionBudget(hcp.Namespace)
@@ -3603,7 +3632,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 	}
 
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, imageRegistryAdditionalTrustedCAs, hcp.Spec.Configuration, p.Proxy, noProxy)
+		return oapi.ReconcileDeployment(deployment, p.AuditWebhookRef, p.OwnerRef, oapicfg, p.AuditEnabled, auditCfg, serviceServingCA, p.OpenShiftAPIServerDeploymentConfig, p.OpenShiftAPIServerImage, p.ProxyImage, p.EtcdURL, p.AvailabilityProberImage, p.InternalOAuthDisable, hcp.Spec.Platform.Type, hcp.Spec.AdditionalTrustBundle, imageRegistryAdditionalTrustedCAs, hcp.Spec.Configuration, p.Proxy, noProxy)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift apiserver deployment: %w", err)
 	}
@@ -3615,11 +3644,14 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftAPIServer(ctx context.C
 //lint:ignore U1000 Ignore unused function until CPOv2 switch is complete.
 func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx context.Context, hcp *hyperv1.HostedControlPlane, observedConfig *globalconfig.ObservedConfig, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
 	p := oapi.NewOpenShiftAPIServerParams(hcp, observedConfig, releaseImageProvider, r.SetDefaultSecurityContext)
+
 	auditCfg := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
-		return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
+	if p.AuditEnabled {
+		if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
+			return oapi.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile openshift oauth apiserver audit config: %w", err)
+		}
 	}
 
 	pdb := manifests.OpenShiftOAuthAPIServerDisruptionBudget(hcp.Namespace)
@@ -3633,7 +3665,7 @@ func (r *HostedControlPlaneReconciler) reconcileOpenShiftOAuthAPIServer(ctx cont
 
 	deployment := manifests.OpenShiftOAuthAPIServerDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oapi.ReconcileOAuthAPIServerDeployment(deployment, p.OwnerRef, auditCfg, p.OAuthAPIServerDeploymentParams(hcp), hcp.Spec.Platform.Type)
+		return oapi.ReconcileOAuthAPIServerDeployment(deployment, p.OwnerRef, auditCfg, p.AuditEnabled, p.OAuthAPIServerDeploymentParams(hcp), hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile openshift oauth apiserver deployment: %w", err)
 	}
@@ -3695,16 +3727,18 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServer(ctx context.Context,
 	}
 
 	auditCfg := manifests.OAuthAuditConfig(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
-		return oauth.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile oauth openshift audit config: %w", err)
+	if p.AuditEnabled {
+		if _, err := createOrUpdate(ctx, r, auditCfg, func() error {
+			return oauth.ReconcileAuditConfig(auditCfg, p.OwnerRef, p.AuditPolicyConfig())
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile oauth openshift audit config: %w", err)
+		}
 	}
 
 	deployment := manifests.OAuthServerDeployment(hcp.Namespace)
 	clusterNoProxy := proxy.DefaultNoProxy(hcp)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return oauth.ReconcileDeployment(ctx, r, deployment, p.AuditWebhookRef, p.OwnerRef, oauthConfig, auditCfg, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
+		return oauth.ReconcileDeployment(ctx, r, deployment, p.AuditWebhookRef, p.OwnerRef, oauthConfig, auditCfg, p.AuditEnabled, p.OAuthServerImage, p.DeploymentConfig, p.IdentityProviders(), p.OauthConfigOverrides, p.AvailabilityProberImage, p.NamedCertificates(), p.ProxyImage, p.ProxyConfig, clusterNoProxy, p.OAuthNoProxy, p.ConfigParams(oauthServingCert), hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile oauth deployment: %w", err)
 	}
