@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // GetConfig creates a REST config from current context
@@ -35,4 +37,8 @@ func GetClient() (crclient.Client, error) {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
 	return client, nil
+}
+
+func GetFakeClient(objects ...runtime.Object) crclient.Client {
+	return fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objects...).Build()
 }

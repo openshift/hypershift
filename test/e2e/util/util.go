@@ -304,6 +304,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	guestConfig.QPS = -1
 	guestConfig.Burst = -1
 
+	connectTimeout := 10 * time.Minute
+	if timeoutOverride := os.Getenv("GUEST_CONNECT_TIMEOUT"); timeoutOverride != "" {
+		connectTimeout, err = time.ParseDuration(timeoutOverride)
+		if err != nil {
+			t.Fatalf("failed to parse GUEST_CONNECT_TIMEOUT: %v", err)
+		}
+	}
+
 	kubeClient, err := kubernetes.NewForConfig(guestConfig)
 	if err != nil {
 		t.Fatalf("failed to create kube client for guest cluster: %v", err)
@@ -326,7 +334,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(10*time.Minute),
+			}, nil, WithTimeout(connectTimeout),
 		)
 
 	}
