@@ -95,6 +95,11 @@ func TestReconcile(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testComponentNamespace,
 					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Labels: map[string]string{
+							"test-label": "test",
+						},
+					},
 				},
 				Client: fake.NewClientBuilder().WithScheme(scheme).
 					WithObjects(fakeObjects...).Build(),
@@ -118,6 +123,16 @@ func TestReconcile(t *testing.T) {
 			// core labels.
 			g.Expect(got.Labels).To(HaveKeyWithValue("hypershift.openshift.io/managed-by", "control-plane-operator"))
 
+			// pod template labels
+			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, testComponentName))
+			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue("test-label", "test"))
+
+			// pod template annotations
+			g.Expect(got.Spec.Template.Annotations).To(HaveKey(hyperv1.ReleaseImageAnnotation))
+
+			// PriorityClassName should be set
+			g.Expect(got.Spec.Template.Spec.PriorityClassName).ToNot(BeEmpty())
+
 			// enforce image pull policy.
 			for _, container := range got.Spec.Template.Spec.Containers {
 				g.Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
@@ -129,10 +144,10 @@ func TestReconcile(t *testing.T) {
 			// enforce volume permissions.
 			for _, volume := range got.Spec.Template.Spec.Volumes {
 				if volume.ConfigMap != nil {
-					g.Expect(volume.ConfigMap.DefaultMode).To(Equal(ptr.To(int32(420))))
+					g.Expect(volume.ConfigMap.DefaultMode).To(HaveValue(BeEquivalentTo(420)))
 				}
 				if volume.Secret != nil {
-					g.Expect(volume.Secret.DefaultMode).To(Equal(ptr.To(int32(416))))
+					g.Expect(volume.Secret.DefaultMode).To(HaveValue(BeEquivalentTo(416)))
 				}
 			}
 			// enforce automount token sa is false.

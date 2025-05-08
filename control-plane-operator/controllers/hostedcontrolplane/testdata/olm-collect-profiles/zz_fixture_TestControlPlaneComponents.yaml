@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-collect-profiles
   namespace: hcp-namespace
   ownerReferences:
