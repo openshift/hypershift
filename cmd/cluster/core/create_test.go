@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -180,6 +182,14 @@ func TestPrototypeResources(t *testing.T) {
 func TestValidate(t *testing.T) {
 	g := NewWithT(t)
 	ctx := context.Background()
+	tempDir := t.TempDir()
+
+	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+
+	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+		t.Fatalf("failed to write pullSecret: %v", err)
+	}
+
 	tests := []struct {
 		name        string
 		rawOpts     *RawCreateOptions
@@ -190,6 +200,7 @@ func TestValidate(t *testing.T) {
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"UnsupportedCapability"},
 			},
@@ -200,6 +211,7 @@ func TestValidate(t *testing.T) {
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"ImageRegistry"},
 			},
@@ -210,6 +222,7 @@ func TestValidate(t *testing.T) {
 			rawOpts: &RawCreateOptions{
 				Name:                 "test-hc",
 				Namespace:            "test-hc",
+				PullSecretFile:       pullSecretFile,
 				Arch:                 "amd64",
 				KubeAPIServerDNSName: "INVALID-DNS-NAME.example.com",
 			},
@@ -220,6 +233,7 @@ func TestValidate(t *testing.T) {
 			rawOpts: &RawCreateOptions{
 				Name:                 "test-hc",
 				Namespace:            "test-hc",
+				PullSecretFile:       pullSecretFile,
 				Arch:                 "amd64",
 				KubeAPIServerDNSName: "test-dns-name.example.com",
 			},

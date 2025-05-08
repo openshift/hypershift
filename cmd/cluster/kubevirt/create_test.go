@@ -121,7 +121,14 @@ func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(context.Background())
+	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
+
+	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
+
+	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
+		t.Fatalf("failed to write pullSecret: %v", err)
+	}
 
 	for _, testCase := range []struct {
 		name string
@@ -131,6 +138,8 @@ func TestCreateCluster(t *testing.T) {
 			name: "minimal flags necessary to render",
 			args: []string{
 				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
 			},
 		},
 		{
@@ -156,6 +165,7 @@ func TestCreateCluster(t *testing.T) {
 				"--toleration", "key=key1,value=value1,effect=noSchedule",
 				"--toleration", "key=key2,value=value2,effect=noSchedule",
 				"--render-sensitive",
+				"--pull-secret=" + pullSecretFile,
 			},
 		},
 	} {
