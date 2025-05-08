@@ -6,12 +6,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -26,9 +27,8 @@ type WorkloadProvider[T client.Object] interface {
 	PodTemplateSpec(object T) *corev1.PodTemplateSpec
 	// PodTemplateSpec knows how to extract replicas field from the given workload object.
 	Replicas(object T) *int32
-	// ApplyOptionsTo knows how to apply the given deploymentConfig options to the given workload object.
-	// TODO(Mulham): remove all usage of deploymentConfig in cpov2 and remove this function eventually.
-	ApplyOptionsTo(cpContext ControlPlaneContext, object T, oldObject T, deploymentConfig *config.DeploymentConfig)
+	// SetReplicasAndStrategy knows how to set a strategy and replicas on the given workload object.
+	SetReplicasAndStrategy(object T, replicas int32, isRequestServing bool)
 
 	// IsAvailable returns the status, reason and message describing the availability status of the workload object.
 	IsAvailable(object T) (status metav1.ConditionStatus, reason string, message string)
@@ -41,24 +41,36 @@ var _ WorkloadProvider[*appsv1.Deployment] = &deploymentProvider{}
 type deploymentProvider struct {
 }
 
-// ApplyOptionsTo implements WorkloadProvider.
-func (d *deploymentProvider) ApplyOptionsTo(cpContext ControlPlaneContext, object *appsv1.Deployment, oldObject *appsv1.Deployment, deploymentConfig *config.DeploymentConfig) {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldObject.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-	// preserve old label selector if it exist, this field is immutable and shouldn't be changed for the lifecycle of the component.
-	if oldObject.Spec.Selector != nil {
-		object.Spec.Selector = oldObject.Spec.Selector.DeepCopy()
-	}
-
-	deploymentConfig.Resources = existingResources
-	deploymentConfig.ApplyTo(object)
-}
-
 func (d *deploymentProvider) NewObject() *appsv1.Deployment {
 	return &appsv1.Deployment{}
+}
+
+// SetReplicasAndStrategy implements WorkloadProvider.
+func (d *deploymentProvider) SetReplicasAndStrategy(object *appsv1.Deployment, replicas int32, isRequestServing bool) {
+	object.Spec.Replicas = ptr.To(replicas)
+	object.Spec.RevisionHistoryLimit = ptr.To[int32](2)
+
+	// there are three standard cases currently with hypershift: HA mode where there are 3 replicas spread across
+	// zones, HA mode with 2 replicas, and then non ha with one replica. When only 3 zones are available you need
+	// to be able to set maxUnavailable in order to progress the rollout. However, you do not want to set that in
+	// the single replica case because it will result in downtime.
+	if replicas > 1 {
+		maxSurge := intstr.FromInt(1)
+		maxUnavailable := intstr.FromInt(0)
+		if isRequestServing {
+			maxUnavailable = intstr.FromInt(1)
+		}
+		if replicas > 2 {
+			maxSurge = intstr.FromInt(0)
+			maxUnavailable = intstr.FromInt(1)
+		}
+		if object.Spec.Strategy.RollingUpdate == nil {
+			object.Spec.Strategy.RollingUpdate = &appsv1.RollingUpdateDeployment{}
+			object.Spec.Strategy.Type = appsv1.RollingUpdateDeploymentStrategyType
+		}
+		object.Spec.Strategy.RollingUpdate.MaxSurge = &maxSurge
+		object.Spec.Strategy.RollingUpdate.MaxUnavailable = &maxUnavailable
+	}
 }
 
 // LoadManifest implements WorkloadProvider.

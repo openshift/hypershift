@@ -1302,6 +1302,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
+			"etcd":                                   "app",
 			"cloud-controller-manager":               "app",
 			"cloud-credential-operator":              "app",
 			"aws-ebs-csi-driver-controller":          "app",
@@ -1348,6 +1349,12 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		// involved as an string  and separated by comma, to satisfy CA operator contract.
 		// more info here: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
 		for _, pod := range hcpPods.Items {
+			// skip etcd and feature-gate-generator pods
+			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
+			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
+				continue
+			}
+
 			var labelKey, labelValue string
 			// Go through our audited list looking for the label that matches the pod Labels
 			// Get the key and value and delete the entry from the audited list.

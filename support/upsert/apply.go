@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/support/util"
 
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -102,6 +103,11 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 	switch existingTyped := existing.(type) {
 	case *corev1.ServiceAccount:
 		preserveServiceAccountPullSecrets(existingTyped, obj.(*corev1.ServiceAccount))
+	case *appsv1.Deployment:
+		// Selector field is immutable, always preserve original Selector to avoid hot error loops.
+		if existingTyped.Spec.Selector != nil {
+			obj.(*appsv1.Deployment).Spec.Selector = existingTyped.Spec.Selector
+		}
 	}
 	preserveOriginalMetadata(existing, obj)
 

@@ -2,7 +2,6 @@ package controlplanecomponent
 
 import (
 	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
-	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -16,20 +15,13 @@ var _ WorkloadProvider[*batchv1.Job] = &jobProvider{}
 type jobProvider struct {
 }
 
-// ApplyOptionsTo implements WorkloadProvider.
-func (c *jobProvider) ApplyOptionsTo(cpContext ControlPlaneContext, object *batchv1.Job, oldObject *batchv1.Job, deploymentConfig *config.DeploymentConfig) {
-	// preserve existing resource requirements.
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldObject.Spec.Template.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-
-	deploymentConfig.Resources = existingResources
-	deploymentConfig.ApplyToJob(object)
-}
-
 func (c *jobProvider) NewObject() *batchv1.Job {
 	return &batchv1.Job{}
+}
+
+// SetReplicasAndStrategy implements WorkloadProvider.
+func (d *jobProvider) SetReplicasAndStrategy(object *batchv1.Job, replicas int32, isRequestServing bool) {
+	// nothing to do.
 }
 
 // LoadManifest implements WorkloadProvider.

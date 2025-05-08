@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
   name: featuregate-generator
   namespace: hcp-namespace
   ownerReferences:
@@ -17,6 +19,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: manifests,work
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
