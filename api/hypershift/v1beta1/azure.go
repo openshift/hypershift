@@ -27,12 +27,13 @@ type AzureNodePoolPlatform struct {
 	// The size may also be versioned, in which case it should be suffixed with _v<version> where the version is a number.
 	// For example, "D32ads_v5" would be a suitable general purpose VM size, or "ND96_MI300X_v5" would represent a GPU accelerated VM.
 	//
-	// +kubebuilder:validation:Pattern=`^(Standard_|Basic_)?[A-Z]+[0-9]+(-[0-9]+)?[abdilmptsCNP]*(_[A-Z]*[0-9]+[A-Z]*)?(_v[0-9]+)?$`
-	// +kubebuilder:validation:Required
 	// + Azure VM size format described in https://learn.microsoft.com/en-us/azure/virtual-machines/vm-naming-conventions
 	// + "[A-Z]+[0-9]+(-[0-9]+)?" - Series, size and constrained CPU size
 	// + "[abdilmptsCNP]*" - Additive features
 	// + "(_[A-Z]*[0-9]+[A-Z]*)?" - Optional accelerator types
+	// +kubebuilder:validation:Pattern=`^(Standard_|Basic_)?[A-Z]+[0-9]+(-[0-9]+)?[abdilmptsCNP]*(_[A-Z]*[0-9]+[A-Z]*)?(_v[0-9]+)?$`
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	VMSize string `json:"vmSize"`
 
 	// image is used to configure the VM boot image. If unset, the default image at the location below will be used and
@@ -41,19 +42,21 @@ type AzureNodePoolPlatform struct {
 	// Hosted Cluster specification respectively, HostedCluster.Spec.Platform.Azure.SubscriptionID and
 	// HostedCluster.Spec.Platform.Azure.ResourceGroupName.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	Image AzureVMImage `json:"image"`
 
 	// osDisk provides configuration for the OS disk for the nodepool.
 	// This can be used to configure the size, storage account type, encryption options and whether the disk is persistent or ephemeral.
 	// When not provided, the platform will choose reasonable defaults which are subject to change over time.
 	// Review the fields within the osDisk for more details.
+	// +required
 	OSDisk AzureNodePoolOSDisk `json:"osDisk"`
 
 	// availabilityZone is the failure domain identifier where the VM should be attached to. This must not be specified
 	// for clusters in a location that does not support AvailabilityZone because it would cause a failure from Azure API.
-	//kubebuilder:validation:XValidation:rule='availabilityZone in ["1", "2", "3"]'
+	// +kubebuilder:validation:XValidation:rule="self in ['1', '2', '3']"
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
 
 	// encryptionAtHost enables encryption at host on virtual machines. According to Microsoft documentation, this
@@ -61,7 +64,7 @@ type AzureNodePoolPlatform struct {
 	// https://learn.microsoft.com/en-us/azure/virtual-machines/disks-enable-host-based-encryption-portal?tabs=azure-powershell
 	// for more information.
 	//
-	// +kubebuilder:default:=Enabled
+	// +kubebuilder:default=Enabled
 	// +kubebuilder:validation:Enum=Enabled;Disabled
 	// +optional
 	EncryptionAtHost string `json:"encryptionAtHost,omitempty"`
@@ -78,7 +81,7 @@ type AzureNodePoolPlatform struct {
 	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
 	//
 	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
-	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
 	// +kubebuilder:validation:XValidation:rule=`self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
 	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
 	// +kubebuilder:validation:XValidation:rule=`self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')`,message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods"
@@ -88,7 +91,7 @@ type AzureNodePoolPlatform struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=355
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
-	// +kubebuilder:validation:Required
+	// +required
 	SubnetID string `json:"subnetID"`
 
 	// diagnostics specifies the diagnostics settings for a virtual machine.
@@ -108,7 +111,7 @@ type AzureVMImage struct {
 	// AzureMarketplace means the VM will boot from an Azure Marketplace image.
 	// Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	// +unionDiscriminator
 	Type AzureVMImageType `json:"type"`
 
@@ -117,6 +120,7 @@ type AzureVMImage struct {
 	//
 	// +optional
 	// +unionMember
+	// +kubebuilder:validation:MaxLength=255
 	ImageID *string `json:"imageID,omitempty"`
 
 	// azureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.
@@ -137,14 +141,15 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]{2,49}$`
 	// +kubebuilder:validation:MinLength=3
 	// +kubebuilder:validation:MaxLength=50
-	// +kubeubilder:validation:Required
+	// +required
 	Publisher string `json:"publisher"`
 
 	// offer specifies the name of a group of related images created by the publisher.
 	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
 	//
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	Offer string `json:"offer"`
 
 	// sku specifies an instance of an offer, such as a major release of a distribution.
@@ -154,6 +159,8 @@ type AzureMarketplaceImage struct {
 	//
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-_]+$`
 	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	SKU string `json:"sku"`
 
 	// version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
@@ -164,6 +171,7 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$|^latest$`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
+	// +required
 	Version string `json:"version"`
 }
 
@@ -223,8 +231,8 @@ type UserManagedDiagnostics struct {
 	// `az storage account list --query='[].{name: name, "resource group": resourceGroup, "blob endpoint": primaryEndpoints.blob}'`.
 	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getScheme() == 'https'", message="storageAccountURI must be a valid HTTPS URL"
 	// +kubebuilder:validation:MaxLength=1024
-	// +kubebuilder:validation:Required
-	StorageAccountURI string `json:"storageAccountURI,omitempty"`
+	// +required
+	StorageAccountURI string `json:"storageAccountURI"`
 }
 
 // +kubebuilder:validation:Enum=Premium_LRS;PremiumV2_LRS;Standard_LRS;StandardSSD_LRS;UltraSSD_LRS
@@ -263,7 +271,7 @@ const (
 
 // +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD_LRS' || self.sizeGiB <= 32767",message="When not using diskStorageAccountType UltraSSD_LRS, the SizeGB value must be less than or equal to 32,767"
 type AzureNodePoolOSDisk struct {
-	// SizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
+	// sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
 	// This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
 	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 	// The current default is 30.
@@ -296,13 +304,13 @@ type AzureNodePoolOSDisk struct {
 	// The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
 	// TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?
 	//
-	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Copmute/diskEncryptionSets/{resourceName}`"
-	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{resourceName}`"
+	// +kubebuilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
 	// +kubebuilder:validation:XValidation:rule=`self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
 	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the encryptionSetID must not end with a period (.) character"
 	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_]{1,80}')",message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
-	// +kubeubilder:validation:MinLength:=1
-	// +kubebuilder:validation:MaxLength:=285
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=285
 	// +optional
 	EncryptionSetID string `json:"encryptionSetID,omitempty"`
 
@@ -322,23 +330,24 @@ type AzureNodePoolOSDisk struct {
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
 type AzurePlatformSpec struct {
-	// Cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
+	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
 	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud;AzureStackCloud
 	// +kubebuilder:default="AzurePublicCloud"
+	// +optional
 	Cloud string `json:"cloud,omitempty"`
 
-	// Location is the Azure region in where all the cloud infrastructure resources will be created.
+	// location is the Azure region in where all the cloud infrastructure resources will be created.
 	//
 	// Example: eastus
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Location is immutable"
-	// +immutable
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Location is immutable"
+	// +kubebuilder:validation:MaxLength=255
+	// +immutable
 	Location string `json:"location"`
 
-	// ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+	// resourceGroup is the name of an existing resource group where all cloud resources created by the Hosted
 	// Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
 	//
 	// In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
@@ -349,14 +358,14 @@ type AzurePlatformSpec struct {
 	//          ResourceGroupName is <resourceGroupName>.
 	//
 	// +kubebuilder:default:=default
-	// +kubebuilder:validation:Required
+	// +required
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ResourceGroupName is immutable"
+	// +kubebuilder:validation:MaxLength=90
 	// +immutable
-	// +required
 	ResourceGroupName string `json:"resourceGroup"`
 
-	// VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+	// vnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
 	// other than the one specified in ResourceGroupName, but it must exist under the same subscription as
 	// SubscriptionID.
 	//
@@ -364,11 +373,11 @@ type AzurePlatformSpec struct {
 	//
 	// Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="VnetID is immutable"
-	// +immutable
 	// +required
-	VnetID string `json:"vnetID,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="VnetID is immutable"
+	// +kubebuilder:validation:MaxLength=255
+	// +immutable
+	VnetID string `json:"vnetID"`
 
 	// subnetID is the subnet ID of an existing subnet where the nodes in the nodepool will be created. This can be a
 	// different subnet than the one listed in the HostedCluster, HostedCluster.Spec.Platform.Azure.SubnetID, but must
@@ -392,53 +401,66 @@ type AzurePlatformSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=355
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
-	// +kubebuilder:validation:Required
+	// +required
 	SubnetID string `json:"subnetID"`
 
-	// SubscriptionID is a unique identifier for an Azure subscription used to manage resources.
+	// subscriptionID is a unique identifier for an Azure subscription used to manage resources.
 	//
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SubscriptionID is immutable"
-	// +immutable
 	// +required
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SubscriptionID is immutable"
+	// +kubebuilder:validation:MaxLength=255
+	// +immutable
 	SubscriptionID string `json:"subscriptionID"`
 
-	// SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+	// securityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
 	// configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
 	// expected to exist under the same subscription as SubscriptionID.
 	//
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="SecurityGroupID is immutable"
-	// +kubebuilder:validation:Required
-	// +immutable
 	// +required
+	// +kubebuilder:validation:MaxLength=255
+	// +immutable
 	SecurityGroupID string `json:"securityGroupID"`
 
 	// managedIdentities contains the managed identities needed for HCP control plane and data plane components that
 	// authenticate with Azure's API.
 	//
-	// +kubebuilder:validation:Required
-	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
+	// +required
+	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities"`
 
 	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
 	//
 	// +required
+	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
 }
 
-// ObjectEncodingFormat is the type of encoding for an Azure Key Vault secret
+// objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+// CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
+// Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
+// unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+// SecretProviderClass custom resource related to the managed identity.
+//
+// The default value is utf-8.
+//
+// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+//
 // +kubebuilder:validation:Enum:=utf-8;hex;base64
+// +kubebuilder:default:="utf-8"
 type ObjectEncodingFormat string
 
 // ManagedAzureKeyVault is an Azure Key Vault on the management cluster.
 type ManagedAzureKeyVault struct {
 	// name is the name of the Azure Key Vault on the management cluster.
 	//
-	// +kubebuilder:validation:Required
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name"`
 
 	// tenantID is the tenant ID of the Azure Key Vault on the management cluster.
 	//
-	// +kubebuilder:validation:Required
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
 }
 
@@ -448,13 +470,13 @@ type AzureResourceManagedIdentities struct {
 	// controlPlane contains the client IDs of all the managed identities on the HCP control plane needing to
 	// authenticate with Azure's API.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	ControlPlane ControlPlaneManagedIdentities `json:"controlPlane"`
 
 	// dataPlane contains the client IDs of all the managed identities on the data plane needing to authenticate with
 	// Azure's API.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	DataPlane DataPlaneManagedIdentities `json:"dataPlane"`
 }
 
@@ -466,6 +488,7 @@ type ManagedIdentity struct {
 	//
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
 	ClientID string `json:"clientID,omitempty"`
 
 	// certificateName is the name of the certificate backing the managed identity. This certificate is expected to
@@ -474,20 +497,11 @@ type ManagedIdentity struct {
 	// removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	CertificateName string `json:"certificateName,omitempty"`
 
-	// objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-	// CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-	// Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-	// unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-	// SecretProviderClass custom resource related to the managed identity.
-	//
-	// The default value is utf-8.
-	//
-	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
-	//
-	// +kubebuilder:validation:Enum:=utf-8;hex;base64
-	// +kubebuilder:default:="utf-8"
+	// objectEncoding is the encoding format for the object.
+	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
 	// credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
@@ -502,6 +516,7 @@ type ManagedIdentity struct {
 	// TODO set the validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=127
 	// TODO set validation:Pattern=`^[a-zA-Z0-9-]+$`
+	// +optional
 	CredentialsSecretName string `json:"credentialsSecretName,omitempty"`
 }
 
@@ -516,48 +531,48 @@ type ControlPlaneManagedIdentities struct {
 	// More information on how the Secrets Store CSI driver works to do this can be found here:
 	// https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-driver.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	ManagedIdentitiesKeyVault ManagedAzureKeyVault `json:"managedIdentitiesKeyVault"`
 
 	// cloudProvider is a pre-existing managed identity associated with the azure cloud provider, aka cloud controller
 	// manager.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	CloudProvider ManagedIdentity `json:"cloudProvider"`
 
 	// nodePoolManagement is a pre-existing managed identity associated with the operator managing the NodePools.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	NodePoolManagement ManagedIdentity `json:"nodePoolManagement"`
 
 	// controlPlaneOperator is a pre-existing managed identity associated with the control plane operator.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	ControlPlaneOperator ManagedIdentity `json:"controlPlaneOperator"`
 
 	// imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	ImageRegistry ManagedIdentity `json:"imageRegistry"`
 
 	// ingress is a pre-existing managed identity associated with the cluster-ingress-operator.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	Ingress ManagedIdentity `json:"ingress"`
 
 	// network is a pre-existing managed identity associated with the cluster-network-operator.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	Network ManagedIdentity `json:"network"`
 
-	// diskClientID is a pre-existing managed identity associated with the azure-disk-controller.
+	// disk is a pre-existing managed identity associated with the azure-disk-controller.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	Disk ManagedIdentity `json:"disk"`
 
-	// fileClientID is a pre-existing managed identity associated with the azure-disk-controller.
+	// file is a pre-existing managed identity associated with the azure-disk-controller.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	File ManagedIdentity `json:"file"`
 }
 
@@ -567,44 +582,55 @@ type DataPlaneManagedIdentities struct {
 	// imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
 	//registry controller.
 	//
-	// +kubebuilder:validation:Required
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	ImageRegistryMSIClientID string `json:"imageRegistryMSIClientID"`
 
 	// diskMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI Disk driver.
 	//
-	// +kubebuilder:validation:Required
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	DiskMSIClientID string `json:"diskMSIClientID"`
 
 	// fileMSIClientID is the client ID of a pre-existing managed identity ID associated with the CSI File driver.
 	//
-	// +kubebuilder:validation:Required
+	// +required
+	// +kubebuilder:validation:MaxLength=255
 	FileMSIClientID string `json:"fileMSIClientID"`
 }
 
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
 type AzureKMSSpec struct {
-	// ActiveKey defines the active key used to encrypt new secrets
+	// activeKey defines the active key used to encrypt new secrets
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	ActiveKey AzureKMSKey `json:"activeKey"`
-	// BackupKey defines the old key during the rotation process so previously created
+	// backupKey defines the old key during the rotation process so previously created
 	// secrets can continue to be decrypted until they are all re-encrypted with the active key.
 	// +optional
 	BackupKey *AzureKMSKey `json:"backupKey,omitempty"`
 
 	// kms is a pre-existing managed identity used to authenticate with Azure KMS.
 	//
-	// +kubebuilder:validation:Required
+	// +required
 	KMS ManagedIdentity `json:"kms"`
 }
 
 type AzureKMSKey struct {
-	// KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+	// keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
 	// Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
 	// `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	KeyVaultName string `json:"keyVaultName"`
-	// KeyName is the name of the keyvault key used for encrypt/decrypt
+
+	// keyName is the name of the keyvault key used for encrypt/decrypt
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	KeyName string `json:"keyName"`
-	// KeyVersion contains the version of the key to use
+
+	// keyVersion contains the version of the key to use
+	// +kubebuilder:validation:MaxLength=255
+	// +required
 	KeyVersion string `json:"keyVersion"`
 }

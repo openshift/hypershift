@@ -35,8 +35,6 @@ func assert(p bool, msg string) {
 
 //// AST utilities
 
-func unparen(e ast.Expr) ast.Expr { return ast.Unparen(e) }
-
 // isBlankIdent returns true iff e is an Ident with name "_".
 // They have no associated types.Object, and thus no type.
 func isBlankIdent(e ast.Expr) bool {
@@ -168,7 +166,7 @@ func declaredWithin(obj types.Object, fn *types.Func) bool {
 // returns a closure that prints the corresponding "end" message.
 // Call using 'defer logStack(...)()' to show builder stack on panic.
 // Don't forget trailing parens!
-func logStack(format string, args ...interface{}) func() {
+func logStack(format string, args ...any) func() {
 	msg := fmt.Sprintf(format, args...)
 	io.WriteString(os.Stderr, msg)
 	io.WriteString(os.Stderr, "\n")
@@ -195,7 +193,7 @@ func makeLen(T types.Type) *Builtin {
 	lenParams := types.NewTuple(anonVar(T))
 	return &Builtin{
 		name: "len",
-		sig:  types.NewSignature(nil, lenParams, lenResults, false),
+		sig:  types.NewSignatureType(nil, nil, nil, lenParams, lenResults, false),
 	}
 }
 
@@ -387,7 +385,7 @@ func (m *typeListMap) hash(ts []types.Type) uint32 {
 	// Some smallish prime far away from typeutil.Hash.
 	n := len(ts)
 	h := uint32(13619) + 2*uint32(n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		h += 3 * m.hasher.Hash(ts[i])
 	}
 	return h

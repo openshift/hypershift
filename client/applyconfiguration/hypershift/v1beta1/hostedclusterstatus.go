@@ -19,21 +19,21 @@ package v1beta1
 
 import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
+	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 // HostedClusterStatusApplyConfiguration represents a declarative configuration of the HostedClusterStatus type for use
 // with apply.
 type HostedClusterStatusApplyConfiguration struct {
+	Conditions               []v1.ConditionApplyConfiguration        `json:"conditions,omitempty"`
 	Version                  *ClusterVersionStatusApplyConfiguration `json:"version,omitempty"`
-	KubeConfig               *v1.LocalObjectReference                `json:"kubeconfig,omitempty"`
-	CustomKubeconfig         *v1.LocalObjectReference                `json:"customKubeconfig,omitempty"`
-	KubeadminPassword        *v1.LocalObjectReference                `json:"kubeadminPassword,omitempty"`
+	KubeConfig               *corev1.LocalObjectReference            `json:"kubeconfig,omitempty"`
+	CustomKubeconfig         *corev1.LocalObjectReference            `json:"customKubeconfig,omitempty"`
+	KubeadminPassword        *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
 	IgnitionEndpoint         *string                                 `json:"ignitionEndpoint,omitempty"`
 	ControlPlaneEndpoint     *APIEndpointApplyConfiguration          `json:"controlPlaneEndpoint,omitempty"`
 	OAuthCallbackURLTemplate *string                                 `json:"oauthCallbackURLTemplate,omitempty"`
-	Conditions               []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
 	PayloadArch              *hypershiftv1beta1.PayloadArchType      `json:"payloadArch,omitempty"`
 	Platform                 *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 }
@@ -42,6 +42,19 @@ type HostedClusterStatusApplyConfiguration struct {
 // apply.
 func HostedClusterStatus() *HostedClusterStatusApplyConfiguration {
 	return &HostedClusterStatusApplyConfiguration{}
+}
+
+// WithConditions adds the given value to the Conditions field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Conditions field.
+func (b *HostedClusterStatusApplyConfiguration) WithConditions(values ...*v1.ConditionApplyConfiguration) *HostedClusterStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithConditions")
+		}
+		b.Conditions = append(b.Conditions, *values[i])
+	}
+	return b
 }
 
 // WithVersion sets the Version field in the declarative configuration to the given value
@@ -55,7 +68,7 @@ func (b *HostedClusterStatusApplyConfiguration) WithVersion(value *ClusterVersio
 // WithKubeConfig sets the KubeConfig field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the KubeConfig field is set to the value of the last call.
-func (b *HostedClusterStatusApplyConfiguration) WithKubeConfig(value v1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
+func (b *HostedClusterStatusApplyConfiguration) WithKubeConfig(value corev1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
 	b.KubeConfig = &value
 	return b
 }
@@ -63,7 +76,7 @@ func (b *HostedClusterStatusApplyConfiguration) WithKubeConfig(value v1.LocalObj
 // WithCustomKubeconfig sets the CustomKubeconfig field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the CustomKubeconfig field is set to the value of the last call.
-func (b *HostedClusterStatusApplyConfiguration) WithCustomKubeconfig(value v1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
+func (b *HostedClusterStatusApplyConfiguration) WithCustomKubeconfig(value corev1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
 	b.CustomKubeconfig = &value
 	return b
 }
@@ -71,7 +84,7 @@ func (b *HostedClusterStatusApplyConfiguration) WithCustomKubeconfig(value v1.Lo
 // WithKubeadminPassword sets the KubeadminPassword field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the KubeadminPassword field is set to the value of the last call.
-func (b *HostedClusterStatusApplyConfiguration) WithKubeadminPassword(value v1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
+func (b *HostedClusterStatusApplyConfiguration) WithKubeadminPassword(value corev1.LocalObjectReference) *HostedClusterStatusApplyConfiguration {
 	b.KubeadminPassword = &value
 	return b
 }
@@ -97,19 +110,6 @@ func (b *HostedClusterStatusApplyConfiguration) WithControlPlaneEndpoint(value *
 // If called multiple times, the OAuthCallbackURLTemplate field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithOAuthCallbackURLTemplate(value string) *HostedClusterStatusApplyConfiguration {
 	b.OAuthCallbackURLTemplate = &value
-	return b
-}
-
-// WithConditions adds the given value to the Conditions field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *HostedClusterStatusApplyConfiguration) WithConditions(values ...*metav1.ConditionApplyConfiguration) *HostedClusterStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithConditions")
-		}
-		b.Conditions = append(b.Conditions, *values[i])
-	}
 	return b
 }
 

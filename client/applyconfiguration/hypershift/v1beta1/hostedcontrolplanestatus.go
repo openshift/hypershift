@@ -19,13 +19,14 @@ package v1beta1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1 "k8s.io/client-go/applyconfigurations/meta/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/client-go/applyconfigurations/meta/v1"
 )
 
 // HostedControlPlaneStatusApplyConfiguration represents a declarative configuration of the HostedControlPlaneStatus type for use
 // with apply.
 type HostedControlPlaneStatusApplyConfiguration struct {
+	Conditions                     []v1.ConditionApplyConfiguration        `json:"conditions,omitempty"`
 	Ready                          *bool                                   `json:"ready,omitempty"`
 	Initialized                    *bool                                   `json:"initialized,omitempty"`
 	ExternalManagedControlPlane    *bool                                   `json:"externalManagedControlPlane,omitempty"`
@@ -34,11 +35,10 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	VersionStatus                  *ClusterVersionStatusApplyConfiguration `json:"versionStatus,omitempty"`
 	Version                        *string                                 `json:"version,omitempty"`
 	ReleaseImage                   *string                                 `json:"releaseImage,omitempty"`
-	LastReleaseImageTransitionTime *v1.Time                                `json:"lastReleaseImageTransitionTime,omitempty"`
+	LastReleaseImageTransitionTime *metav1.Time                            `json:"lastReleaseImageTransitionTime,omitempty"`
 	KubeConfig                     *KubeconfigSecretRefApplyConfiguration  `json:"kubeConfig,omitempty"`
 	CustomKubeconfig               *KubeconfigSecretRefApplyConfiguration  `json:"customKubeconfig,omitempty"`
 	KubeadminPassword              *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
-	Conditions                     []metav1.ConditionApplyConfiguration    `json:"conditions,omitempty"`
 	Platform                       *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 	NodeCount                      *int                                    `json:"nodeCount,omitempty"`
 }
@@ -47,6 +47,19 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 // apply.
 func HostedControlPlaneStatus() *HostedControlPlaneStatusApplyConfiguration {
 	return &HostedControlPlaneStatusApplyConfiguration{}
+}
+
+// WithConditions adds the given value to the Conditions field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Conditions field.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithConditions(values ...*v1.ConditionApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithConditions")
+		}
+		b.Conditions = append(b.Conditions, *values[i])
+	}
+	return b
 }
 
 // WithReady sets the Ready field in the declarative configuration to the given value
@@ -116,7 +129,7 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithReleaseImage(value stri
 // WithLastReleaseImageTransitionTime sets the LastReleaseImageTransitionTime field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the LastReleaseImageTransitionTime field is set to the value of the last call.
-func (b *HostedControlPlaneStatusApplyConfiguration) WithLastReleaseImageTransitionTime(value v1.Time) *HostedControlPlaneStatusApplyConfiguration {
+func (b *HostedControlPlaneStatusApplyConfiguration) WithLastReleaseImageTransitionTime(value metav1.Time) *HostedControlPlaneStatusApplyConfiguration {
 	b.LastReleaseImageTransitionTime = &value
 	return b
 }
@@ -142,19 +155,6 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithCustomKubeconfig(value 
 // If called multiple times, the KubeadminPassword field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithKubeadminPassword(value corev1.LocalObjectReference) *HostedControlPlaneStatusApplyConfiguration {
 	b.KubeadminPassword = &value
-	return b
-}
-
-// WithConditions adds the given value to the Conditions field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *HostedControlPlaneStatusApplyConfiguration) WithConditions(values ...*metav1.ConditionApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithConditions")
-		}
-		b.Conditions = append(b.Conditions, *values[i])
-	}
 	return b
 }
 

@@ -64,15 +64,14 @@ spec:
           metadata:
             type: object
           spec:
-            description: ControlPlaneComponentSpec defines the desired state of ControlPlaneComponent
+            description: spec is the specification for the ControlPlaneComponent.
             type: object
           status:
-            description: ControlPlaneComponentStatus defines the observed state of
-              ControlPlaneComponent
+            description: status is the status of the ControlPlaneComponent.
             properties:
               conditions:
                 description: |-
-                  Conditions contains details for the current state of the ControlPlane Component.
+                  conditions contains details for the current state of the ControlPlane Component.
                   If there is an error, then the Available condition will be false.
 
                   Current condition types are: "Available"
@@ -130,6 +129,7 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
@@ -143,21 +143,26 @@ spec:
                   properties:
                     group:
                       description: group is the API group for this resource type.
+                      maxLength: 255
                       type: string
                     kind:
                       description: kind is the name of the resource schema.
+                      maxLength: 255
                       type: string
                     name:
                       description: name is the name of this resource.
+                      maxLength: 255
                       type: string
                   required:
                   - group
                   - kind
                   - name
                   type: object
+                maxItems: 100
                 type: array
               version:
                 description: version reports the current version of this component.
+                maxLength: 255
                 type: string
             type: object
         type: object

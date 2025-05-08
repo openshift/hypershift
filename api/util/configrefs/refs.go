@@ -2,6 +2,7 @@ package configrefs
 
 import (
 	configv1 "github.com/openshift/api/config/v1"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 

@@ -1,11 +1,11 @@
 package v1alpha1
 
 import (
+	"github.com/openshift/hypershift/api/certificates"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	"github.com/openshift/hypershift/api/certificates"
 )
 
 // SchemeGroupVersion is group version used to register these objects.

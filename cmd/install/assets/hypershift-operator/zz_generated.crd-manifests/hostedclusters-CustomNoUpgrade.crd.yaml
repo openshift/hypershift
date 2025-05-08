@@ -72,7 +72,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: Spec is the desired behavior of the HostedCluster.
+            description: spec is the desired behavior of the HostedCluster.
             properties:
               additionalTrustBundle:
                 description: |-
@@ -95,7 +95,7 @@ spec:
                 x-kubernetes-map-type: atomic
               auditWebhook:
                 description: |-
-                  AuditWebhook contains metadata for configuring an audit webhook endpoint
+                  auditWebhook contains metadata for configuring an audit webhook endpoint
                   for a cluster to process cluster audit events. It references a secret that
                   contains the webhook information for the audit webhook endpoint. It is a
                   secret because if the endpoint has mTLS the kubeconfig will contain client
@@ -118,8 +118,8 @@ spec:
                   feature.
                 properties:
                   provisionerConfig:
-                    description: provisioner is the implementation used for Node auto
-                      provisioning.
+                    description: provisionerConfig is the implementation used for
+                      Node auto provisioning.
                     properties:
                       karpenter:
                         description: karpenter specifies the configuration for the
@@ -130,8 +130,9 @@ spec:
                               for Karpenter.
                             properties:
                               roleARN:
-                                description: arn specifies the ARN of the Karpenter
+                                description: roleARN specifies the ARN of the Karpenter
                                   provisioner.
+                                maxLength: 255
                                 type: string
                             required:
                             - roleARN
@@ -139,6 +140,7 @@ spec:
                           platform:
                             description: platform specifies the platform-specific
                               configuration for Karpenter.
+                            maxLength: 100
                             type: string
                         required:
                         - platform
@@ -168,6 +170,7 @@ spec:
                       maxNodeProvisionTime is the maximum time to wait for node provisioning
                       before considering the provisioning to be unsuccessful, expressed as a Go
                       duration string. The default is 15 minutes.
+                    maxLength: 100
                     pattern: ^([0-9]+(\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$
                     type: string
                   maxNodesTotal:
@@ -217,6 +220,7 @@ spec:
                       enum:
                       - ImageRegistry
                       type: string
+                    maxItems: 25
                     type: array
                     x-kubernetes-list-type: atomic
                     x-kubernetes-validations:
@@ -253,13 +257,13 @@ spec:
                   rule: oldSelf == "" || self == oldSelf
               configuration:
                 description: |-
-                  Configuration specifies configuration for individual OCP components in the
+                  configuration specifies configuration for individual OCP components in the
                   cluster, represented as embedded resources that correspond to the openshift
                   configuration API.
                 properties:
                   apiServer:
                     description: |-
-                      APIServer holds configuration (like serving certificates, client CA and CORS domains)
+                      apiServer holds configuration (like serving certificates, client CA and CORS domains)
                       shared by all API servers in the system, among them especially kube-apiserver
                       and openshift-apiserver.
                     properties:
@@ -712,7 +716,7 @@ spec:
                     type: object
                   authentication:
                     description: |-
-                      Authentication specifies cluster-wide settings for authentication (like OAuth and
+                      authentication specifies cluster-wide settings for authentication (like OAuth and
                       webhook token authenticators).
                     properties:
                       oauthMetadata:
@@ -1213,7 +1217,7 @@ spec:
                         x-kubernetes-list-type: atomic
                     type: object
                   featureGate:
-                    description: FeatureGate holds cluster-wide information about
+                    description: featureGate holds cluster-wide information about
                       feature gates.
                     properties:
                       customNoUpgrade:
@@ -1265,7 +1269,7 @@ spec:
                     type: object
                   image:
                     description: |-
-                      Image governs policies related to imagestream imports and runtime configuration
+                      image governs policies related to imagestream imports and runtime configuration
                       for external registries. It allows cluster admins to configure which registries
                       OpenShift is allowed to import images from, extra CA trust bundles for external
                       registries, and policies to block or allow registry hostnames.
@@ -1396,7 +1400,7 @@ spec:
                     type: object
                   ingress:
                     description: |-
-                      Ingress holds cluster-wide information about ingress, including the default ingress domain
+                      ingress holds cluster-wide information about ingress, including the default ingress domain
                       used for routes.
                     properties:
                       appsDomain:
@@ -1694,7 +1698,7 @@ spec:
                     type: object
                   network:
                     description: |-
-                      Network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
+                      network holds cluster-wide information about the network. It is used to configure the desired network configuration, such as: IP address pools for services/pod IPs, network plugin, etc.
                       Please view network.spec for an explanation on what applies when configuring this resource.
                     properties:
                       clusterNetwork:
@@ -1942,7 +1946,7 @@ spec:
                         && !has(self.networkDiagnostics.targetPlacement)'
                   oauth:
                     description: |-
-                      OAuth holds cluster-wide information about OAuth.
+                      oauth holds cluster-wide information about OAuth.
                       It is used to configure the integrated OAuth server.
                       This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.
                     properties:
@@ -2595,7 +2599,7 @@ spec:
                         >= 300'
                   operatorhub:
                     description: |-
-                      OperatorHub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
+                      operatorhub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
                       The OperatorHub configuration will be constantly reconciled if catalog placement is management, but only on cluster creation otherwise.
                     properties:
                       disableAllDefaultSources:
@@ -2632,7 +2636,12 @@ spec:
                         type: array
                     type: object
                   proxy:
-                    description: ProxySpec contains cluster proxy creation configuration.
+                    description: |-
+                      proxy holds cluster-wide information on how to configure default proxies for the cluster.
+                      This affects traffic flowing from the hosted cluster data plane.
+                      The controllers will generate a machineConfig with the proxy config for the cluster.
+                      This MachineConfig will be part of every payload generated by the controllers for any NodePool of the HostedCluster.
+                      Changing this value will trigger a rollout for all existing NodePools in the cluster.
                     properties:
                       httpProxy:
                         description: httpProxy is the URL of the proxy for HTTP requests.  Empty
@@ -2690,7 +2699,7 @@ spec:
                     type: object
                   scheduler:
                     description: |-
-                      Scheduler holds cluster-wide config information to run the Kubernetes Scheduler
+                      scheduler holds cluster-wide config information to run the Kubernetes Scheduler
                       and influence its placement decisions. The canonical name for this config is `cluster`.
                     properties:
                       defaultNodeSelector:
@@ -2791,7 +2800,7 @@ spec:
                 properties:
                   image:
                     description: |-
-                      Image is the image pullspec of an OCP release payload image.
+                      image is the image pullspec of an OCP release payload image.
                       See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
                     maxLength: 253
                     minLength: 1
@@ -2920,6 +2929,7 @@ spec:
                                 description: |-
                                   storageClassName is the StorageClass of the data volume for each etcd member.
                                   See https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1.
+                                maxLength: 255
                                 type: string
                                 x-kubernetes-validations:
                                 - message: storageClassName is immutable
@@ -2933,8 +2943,11 @@ spec:
                               This snapshot will be restored on initial startup, only when the etcd PV
                               is empty.
                             items:
+                              maxLength: 1024
                               type: string
+                            maxItems: 1
                             type: array
+                            x-kubernetes-list-type: set
                             x-kubernetes-validations:
                             - message: RestoreSnapshotURL shouldn't contain more than
                                 1 entry
@@ -2976,6 +2989,7 @@ spec:
                               https://etcd-client:2379
 
                           If the URL uses an HTTPS scheme, the TLS field is required.
+                        maxLength: 255
                         pattern: ^https://
                         type: string
                       tls:
@@ -2984,7 +2998,7 @@ spec:
                         properties:
                           clientSecret:
                             description: |-
-                              ClientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
+                              clientSecret refers to a secret for client mTLS authentication with the etcd cluster. It
                               may have the following key/value pairs:
 
                                   etcd-client-ca.crt: Certificate Authority value
@@ -3045,19 +3059,24 @@ spec:
                     in the pullspec and tried in order to fetch the image.
                   properties:
                     mirrors:
-                      description: Mirrors are one or more repositories that may also
+                      description: mirrors are one or more repositories that may also
                         contain the same images.
                       items:
+                        maxLength: 255
                         type: string
+                      maxItems: 25
                       type: array
+                      x-kubernetes-list-type: set
                     source:
                       description: |-
-                        Source is the repository that users refer to, e.g. in image pull
+                        source is the repository that users refer to, e.g. in image pull
                         specifications.
+                      maxLength: 255
                       type: string
                   required:
                   - source
                   type: object
+                maxItems: 25
                 type: array
               infraID:
                 description: |-
@@ -3098,6 +3117,7 @@ spec:
                   validation.
                   If the platform is AWS and this value is set, the controller will update an s3 object with the appropriate OIDC documents (using the serviceAccountSigningKey info) into that issuerURL.
                   The expectation is for this s3 url to be backed by an OIDC provider in the AWS IAM.
+                maxLength: 255
                 type: string
                 x-kubernetes-validations:
                 - message: issuerURL is immutable
@@ -3155,6 +3175,7 @@ spec:
                           node. If not specified, the controller will take default values.
                           The default values will be set as 172.20.0.1 or fd00::1.
                           This value is immutable.
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: advertiseAddress is immutable
@@ -3165,9 +3186,12 @@ spec:
                           If not specified, traffic is allowed from all addresses.
                           This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
                         items:
+                          maxLength: 255
                           pattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$
                           type: string
+                        maxItems: 25
                         type: array
+                        x-kubernetes-list-type: set
                       port:
                         description: |-
                           port is the port at which the APIServer is exposed inside a node. Other
@@ -3233,7 +3257,7 @@ spec:
                         for node IP blocks.
                       properties:
                         cidr:
-                          description: CIDR is the IP block address pool for machines
+                          description: cidr is the IP block address pool for machines
                             within the cluster.
                           maxLength: 43
                           type: string
@@ -3311,7 +3335,7 @@ spec:
                 additionalProperties:
                   type: string
                 description: |-
-                  NodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
+                  nodeSelector when specified, is propagated to all control plane Deployments and Stateful sets running management side.
                   It must be satisfied by the management Nodes for the pods to be scheduled. Otherwise the HostedCluster will enter a degraded state.
                   Changes to this field will propagate to existing Deployments and StatefulSets.
                 type: object
@@ -3321,7 +3345,7 @@ spec:
               olmCatalogPlacement:
                 default: management
                 description: |-
-                  OLMCatalogPlacement specifies the placement of OLM catalog components. By default,
+                  olmCatalogPlacement specifies the placement of OLM catalog components. By default,
                   this is set to management and OLM catalog components are deployed onto the management
                   cluster. If set to guest, the OLM catalog components will be deployed onto the guest
                   cluster.
@@ -3377,43 +3401,46 @@ spec:
                   and is used to configure platform specific behavior.
                 properties:
                   agent:
-                    description: Agent specifies configuration for agent-based installations.
+                    description: agent specifies configuration for agent-based installations.
                     properties:
                       agentNamespace:
-                        description: AgentNamespace is the namespace where to search
+                        description: agentNamespace is the namespace where to search
                           for Agents for this cluster
+                        maxLength: 63
                         type: string
                     required:
                     - agentNamespace
                     type: object
                   aws:
-                    description: AWS specifies configuration for clusters running
+                    description: aws specifies configuration for clusters running
                       on Amazon Web Services.
                     properties:
                       additionalAllowedPrincipals:
                         description: |-
-                          AdditionalAllowedPrincipals specifies a list of additional allowed principal ARNs
+                          additionalAllowedPrincipals specifies a list of additional allowed principal ARNs
                           to be added to the hosted control plane's VPC Endpoint Service to enable additional
                           VPC Endpoint connection requests to be automatically accepted.
                           See https://docs.aws.amazon.com/vpc/latest/privatelink/configure-endpoint-service.html
                           for more details around VPC Endpoint Service allowed principals.
                         items:
+                          maxLength: 255
                           type: string
+                        maxItems: 25
                         type: array
                       cloudProviderConfig:
                         description: |-
-                          CloudProviderConfig specifies AWS networking configuration for the control
+                          cloudProviderConfig specifies AWS networking configuration for the control
                           plane.
                           This is mainly used for cloud provider controller config:
                           https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364
                         properties:
                           subnet:
-                            description: Subnet is the subnet to use for control plane
+                            description: subnet is the subnet to use for control plane
                               cloud resources.
                             properties:
                               filters:
                                 description: |-
-                                  Filters is a set of key/value pairs used to identify a resource
+                                  filters is a set of key/value pairs used to identify a resource
                                   They are applied according to the rules defined by the AWS API:
                                   https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
                                 items:
@@ -3421,32 +3448,38 @@ spec:
                                     an AWS resource
                                   properties:
                                     name:
-                                      description: Name of the filter. Filter names
-                                        are case-sensitive.
+                                      description: name is the name of the filter.
+                                      maxLength: 255
                                       type: string
                                     values:
-                                      description: Values includes one or more filter
-                                        values. Filter values are case-sensitive.
+                                      description: values is a list of values for
+                                        the filter.
                                       items:
+                                        maxLength: 255
                                         type: string
+                                      maxItems: 50
                                       type: array
                                   required:
                                   - name
                                   - values
                                   type: object
+                                maxItems: 50
                                 type: array
                               id:
-                                description: ID of resource
+                                description: id of resource
+                                maxLength: 255
                                 type: string
                             type: object
                           vpc:
-                            description: VPC is the VPC to use for control plane cloud
+                            description: vpc is the VPC to use for control plane cloud
                               resources.
+                            maxLength: 255
                             type: string
                           zone:
                             description: |-
-                              Zone is the availability zone where control plane cloud resources are
+                              zone is the availability zone where control plane cloud resources are
                               created.
+                            maxLength: 255
                             type: string
                         required:
                         - vpc
@@ -3454,7 +3487,7 @@ spec:
                       endpointAccess:
                         default: Public
                         description: |-
-                          EndpointAccess specifies the publishing scope of cluster endpoints. The
+                          endpointAccess specifies the publishing scope of cluster endpoints. The
                           default is Public.
                         enum:
                         - Public
@@ -3464,7 +3497,7 @@ spec:
                       multiArch:
                         default: false
                         description: |-
-                          MultiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
+                          multiArch specifies whether the Hosted Cluster will be expected to support NodePools with different
                           CPU architectures, i.e., supporting arm64 NodePools and supporting amd64 NodePools on the same Hosted Cluster.
                           Deprecated: This field is no longer used. The HyperShift Operator now performs multi-arch validations
                           automatically despite the platform type. The HyperShift Operator will set HostedCluster.Status.PayloadArch based
@@ -3473,13 +3506,14 @@ spec:
                         type: boolean
                       region:
                         description: |-
-                          Region is the AWS region in which the cluster resides. This configures the
+                          region is the AWS region in which the cluster resides. This configures the
                           OCP control plane cloud integrations, and is used by NodePool to resolve
                           the correct boot AMI for a given release.
+                        maxLength: 255
                         type: string
                       resourceTags:
                         description: |-
-                          ResourceTags is a list of additional tags to apply to AWS resources created
+                          resourceTags is a list of additional tags to apply to AWS resources created
                           for the cluster. See
                           https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -3490,14 +3524,14 @@ spec:
                             created for the cluster.
                           properties:
                             key:
-                              description: Key is the key of the tag.
+                              description: key is the key of the tag.
                               maxLength: 128
                               minLength: 1
                               pattern: ^[0-9A-Za-z_.:/=+-@]+$
                               type: string
                             value:
                               description: |-
-                                Value is the value of the tag.
+                                value is the value of the tag.
 
                                 Some AWS service do not support empty values. Since tags are added to
                                 resources in many services, the length of the tag value must meet the
@@ -3514,11 +3548,11 @@ spec:
                         type: array
                       rolesRef:
                         description: |-
-                          RolesRef contains references to various AWS IAM roles required to enable
+                          rolesRef contains references to various AWS IAM roles required to enable
                           integrations such as OIDC.
                         properties:
                           controlPlaneOperatorARN:
-                            description: "ControlPlaneOperatorARN  is an ARN value
+                            description: "controlPlaneOperatorARN  is an ARN value
                               referencing a role appropriate for the Control Plane
                               Operator.\n\nThe following is an example of a valid
                               policy document:\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\":
@@ -3527,36 +3561,31 @@ spec:
                               \"*\"\n\t\t},\n\t\t{\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Action\":
                               [\n\t\t\t\t\"route53:ChangeResourceRecordSets\",\n\t\t\t\t\"route53:ListResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
                               \"arn:aws:route53:::%s\"\n\t\t}\n\t]\n}"
+                            maxLength: 2048
                             type: string
                           imageRegistryARN:
-                            description: "ImageRegistryARN is an ARN value referencing
+                            description: "imageRegistryARN is an ARN value referencing
                               a role appropriate for the Image Registry Operator.\n\nThe
                               following is an example of a valid policy document:\n\n{\n\t\"Version\":
                               \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
                               \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"s3:CreateBucket\",\n\t\t\t\t\"s3:DeleteBucket\",\n\t\t\t\t\"s3:PutBucketTagging\",\n\t\t\t\t\"s3:GetBucketTagging\",\n\t\t\t\t\"s3:PutBucketPublicAccessBlock\",\n\t\t\t\t\"s3:GetBucketPublicAccessBlock\",\n\t\t\t\t\"s3:PutEncryptionConfiguration\",\n\t\t\t\t\"s3:GetEncryptionConfiguration\",\n\t\t\t\t\"s3:PutLifecycleConfiguration\",\n\t\t\t\t\"s3:GetLifecycleConfiguration\",\n\t\t\t\t\"s3:GetBucketLocation\",\n\t\t\t\t\"s3:ListBucket\",\n\t\t\t\t\"s3:GetObject\",\n\t\t\t\t\"s3:PutObject\",\n\t\t\t\t\"s3:DeleteObject\",\n\t\t\t\t\"s3:ListBucketMultipartUploads\",\n\t\t\t\t\"s3:AbortMultipartUpload\",\n\t\t\t\t\"s3:ListMultipartUploadParts\"\n\t\t\t],\n\t\t\t\"Resource\":
                               \"*\"\n\t\t}\n\t]\n}"
+                            maxLength: 2048
                             type: string
                           ingressARN:
-                            description: "The referenced role must have a trust relationship
-                              that allows it to be assumed via web identity.\nhttps://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.\nExample:\n{\n\t\t\"Version\":
-                              \"2012-10-17\",\n\t\t\"Statement\": [\n\t\t\t{\n\t\t\t\t\"Effect\":
-                              \"Allow\",\n\t\t\t\t\"Principal\": {\n\t\t\t\t\t\"Federated\":
-                              \"{{ .ProviderARN }}\"\n\t\t\t\t},\n\t\t\t\t\t\"Action\":
-                              \"sts:AssumeRoleWithWebIdentity\",\n\t\t\t\t\"Condition\":
-                              {\n\t\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\t\"{{ .ProviderName
-                              }}:sub\": {{ .ServiceAccounts }}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t]\n\t}\n\nIngressARN
-                              is an ARN value referencing a role appropriate for the
-                              Ingress Operator.\n\nThe following is an example of
-                              a valid policy document:\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\":
-                              [\n\t\t{\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Action\":
-                              [\n\t\t\t\t\"elasticloadbalancing:DescribeLoadBalancers\",\n\t\t\t\t\"tag:GetResources\",\n\t\t\t\t\"route53:ListHostedZones\"\n\t\t\t],\n\t\t\t\"Resource\":
+                            description: "ingressARN is an ARN value referencing a
+                              role appropriate for the Ingress Operator.\n\nThe following
+                              is an example of a valid policy document:\n\n{\n\t\"Version\":
+                              \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
+                              \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"elasticloadbalancing:DescribeLoadBalancers\",\n\t\t\t\t\"tag:GetResources\",\n\t\t\t\t\"route53:ListHostedZones\"\n\t\t\t],\n\t\t\t\"Resource\":
                               \"*\"\n\t\t},\n\t\t{\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Action\":
                               [\n\t\t\t\t\"route53:ChangeResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
                               [\n\t\t\t\t\"arn:aws:route53:::PUBLIC_ZONE_ID\",\n\t\t\t\t\"arn:aws:route53:::PRIVATE_ZONE_ID\"\n\t\t\t]\n\t\t}\n\t]\n}"
+                            maxLength: 2048
                             type: string
                           kubeCloudControllerARN:
                             description: |-
-                              KubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
+                              kubeCloudControllerARN is an ARN value referencing a role appropriate for the KCM/KCC.
                               Source: https://cloud-provider-aws.sigs.k8s.io/prerequisites/#iam-policies
 
                               The following is an example of a valid policy document:
@@ -3631,9 +3660,10 @@ spec:
                                  }
                                ]
                               }
+                            maxLength: 2048
                             type: string
                           networkARN:
-                            description: "NetworkARN is an ARN value referencing a
+                            description: "networkARN is an ARN value referencing a
                               role appropriate for the Network Operator.\n\nThe following
                               is an example of a valid policy document:\n\n{\n\t\"Version\":
                               \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
@@ -3643,9 +3673,10 @@ spec:
                               \      \"ec2:UnassignIpv6Addresses\",\n       \"ec2:AssignIpv6Addresses\",\n
                               \      \"ec2:DescribeSubnets\",\n       \"ec2:DescribeNetworkInterfaces\"\n\t\t\t],\n\t\t\t\"Resource\":
                               \"*\"\n\t\t}\n\t]\n}"
+                            maxLength: 2048
                             type: string
                           nodePoolManagementARN:
-                            description: "NodePoolManagementARN is an ARN value referencing
+                            description: "nodePoolManagementARN is an ARN value referencing
                               a role appropriate for the CAPI Controller.\n\nThe following
                               is an example of a valid policy document:\n\n{\n  \"Version\":
                               \"2012-10-17\",\n \"Statement\": [\n   {\n     \"Action\":
@@ -3691,14 +3722,16 @@ spec:
                               \ \t\"Resource\": \"*\",\n\t  \t\"Condition\": {\n\t
                               \ \t\t\"Bool\": {\n\t  \t\t\t\"kms:GrantIsForAWSResource\":
                               true\n\t  \t\t}\n\t  \t}\n\t  }\n ]\n}"
+                            maxLength: 2048
                             type: string
                           storageARN:
-                            description: "StorageARN is an ARN value referencing a
+                            description: "storageARN is an ARN value referencing a
                               role appropriate for the Storage Operator.\n\nThe following
                               is an example of a valid policy document:\n\n{\n\t\"Version\":
                               \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
                               \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:AttachVolume\",\n\t\t\t\t\"ec2:CreateSnapshot\",\n\t\t\t\t\"ec2:CreateTags\",\n\t\t\t\t\"ec2:CreateVolume\",\n\t\t\t\t\"ec2:DeleteSnapshot\",\n\t\t\t\t\"ec2:DeleteTags\",\n\t\t\t\t\"ec2:DeleteVolume\",\n\t\t\t\t\"ec2:DescribeInstances\",\n\t\t\t\t\"ec2:DescribeSnapshots\",\n\t\t\t\t\"ec2:DescribeTags\",\n\t\t\t\t\"ec2:DescribeVolumes\",\n\t\t\t\t\"ec2:DescribeVolumesModifications\",\n\t\t\t\t\"ec2:DetachVolume\",\n\t\t\t\t\"ec2:ModifyVolume\"\n\t\t\t],\n\t\t\t\"Resource\":
                               \"*\"\n\t\t}\n\t]\n}"
+                            maxLength: 2048
                             type: string
                         required:
                         - controlPlaneOperatorARN
@@ -3711,7 +3744,7 @@ spec:
                         type: object
                       serviceEndpoints:
                         description: |-
-                          ServiceEndpoints specifies optional custom endpoints which will override
+                          serviceEndpoints specifies optional custom endpoints which will override
                           the default service endpoint of specific AWS Services.
 
                           There must be only one ServiceEndpoint for a given service name.
@@ -3722,40 +3755,43 @@ spec:
                           properties:
                             name:
                               description: |-
-                                Name is the name of the AWS service.
+                                name is the name of the AWS service.
                                 This must be provided and cannot be empty.
+                              maxLength: 255
                               type: string
                             url:
                               description: |-
-                                URL is fully qualified URI with scheme https, that overrides the default generated
+                                url is fully qualified URI with scheme https, that overrides the default generated
                                 endpoint for a client.
                                 This must be provided and cannot be empty.
+                              maxLength: 2048
                               pattern: ^https://
                               type: string
                           required:
                           - name
                           - url
                           type: object
+                        maxItems: 50
                         type: array
                       sharedVPC:
                         description: |-
-                          SharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
+                          sharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
                           created in a different AWS account and is shared with the AWS account where the HostedCluster
                           will be created.
                         properties:
                           localZoneID:
                             description: |-
-                              LocalZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
+                              localZoneID is the ID of the route53 hosted zone for [cluster-name].hypershift.local that is
                               associated with the HostedCluster's VPC and exists in the VPC owner account.
                             maxLength: 32
                             type: string
                           rolesRef:
                             description: |-
-                              RolesRef contains references to roles in the VPC owner account that enable a
+                              rolesRef contains references to roles in the VPC owner account that enable a
                               HostedCluster on a shared VPC.
                             properties:
                               controlPlaneARN:
-                                description: "ControlPlaneARN is an ARN value referencing
+                                description: "controlPlaneARN is an ARN value referencing
                                   the role in the VPC owner account that allows\nthe
                                   control plane operator in the cluster account to
                                   create and manage a VPC endpoint, its\ncorresponding
@@ -3773,10 +3809,11 @@ spec:
                                   \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
                                   \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"ec2:CreateVpcEndpoint\",\n\t\t\t\t\"ec2:DescribeVpcEndpoints\",\n\t\t\t\t\"ec2:ModifyVpcEndpoint\",\n\t\t\t\t\"ec2:DeleteVpcEndpoints\",\n\t\t\t\t\"ec2:CreateTags\",\n\t\t\t\t\"route53:ListHostedZones\",\n\t\t\t\t\"ec2:CreateSecurityGroup\",\n\t\t\t\t\"ec2:AuthorizeSecurityGroupIngress\",\n\t\t\t\t\"ec2:AuthorizeSecurityGroupEgress\",\n\t\t\t\t\"ec2:DeleteSecurityGroup\",\n\t\t\t\t\"ec2:RevokeSecurityGroupIngress\",\n\t\t\t\t\"ec2:RevokeSecurityGroupEgress\",\n\t\t\t\t\"ec2:DescribeSecurityGroups\",\n\t\t\t\t\"ec2:DescribeVpcs\",\n\t\t\t\t\"route53:ChangeResourceRecordSets\",\n\t\t\t\t\"route53:ListResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
                                   \"*\"\n\t\t}\n\t]\n}"
+                                maxLength: 2048
                                 pattern: ^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$
                                 type: string
                               ingressARN:
-                                description: "IngressARN is an ARN value referencing
+                                description: "ingressARN is an ARN value referencing
                                   the role in the VPC owner account that allows the\ningress
                                   operator in the cluster account to create and manage
                                   records in the private DNS\nhosted zone.\n\nThe
@@ -3793,6 +3830,7 @@ spec:
                                   \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
                                   \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"route53:ListHostedZones\",\n\t\t\t\t\"route53:ListHostedZonesByName\",\n\t\t\t\t\"route53:ChangeTagsForResource\",\n\t\t\t\t\"route53:GetAccountLimit\",\n\t\t\t\t\"route53:GetChange\",\n\t\t\t\t\"route53:GetHostedZone\",\n\t\t\t\t\"route53:ListTagsForResource\",\n\t\t\t\t\"route53:UpdateHostedZoneComment\",\n\t\t\t\t\"tag:GetResources\",\n\t\t\t\t\"tag:UntagResources\"\n\t\t\t\t\"route53:ChangeResourceRecordSets\",\n\t\t\t\t\"route53:ListResourceRecordSets\"\n\t\t\t],\n\t\t\t\"Resource\":
                                   \"*\"\n\t\t},\n\t]\n}"
+                                maxLength: 2048
                                 pattern: ^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role\/.*$
                                 type: string
                             required:
@@ -3808,11 +3846,11 @@ spec:
                     - rolesRef
                     type: object
                   azure:
-                    description: Azure defines azure specific settings
+                    description: azure defines azure specific settings
                     properties:
                       cloud:
                         default: AzurePublicCloud
-                        description: 'Cloud is the cloud environment identifier, valid
+                        description: 'cloud is the cloud environment identifier, valid
                           values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33'
                         enum:
                         - AzurePublicCloud
@@ -3823,9 +3861,10 @@ spec:
                         type: string
                       location:
                         description: |-
-                          Location is the Azure region in where all the cloud infrastructure resources will be created.
+                          location is the Azure region in where all the cloud infrastructure resources will be created.
 
                           Example: eastus
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: Location is immutable
@@ -3851,11 +3890,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3876,26 +3917,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -3911,11 +3938,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3936,33 +3965,19 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
                                 type: object
                               disk:
-                                description: diskClientID is a pre-existing managed
-                                  identity associated with the azure-disk-controller.
+                                description: disk is a pre-existing managed identity
+                                  associated with the azure-disk-controller.
                                 properties:
                                   certificateName:
                                     description: |-
@@ -3970,11 +3985,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -3995,33 +4012,19 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
                                 type: object
                               file:
-                                description: fileClientID is a pre-existing managed
-                                  identity associated with the azure-disk-controller.
+                                description: file is a pre-existing managed identity
+                                  associated with the azure-disk-controller.
                                 properties:
                                   certificateName:
                                     description: |-
@@ -4029,11 +4032,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4054,26 +4059,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -4088,11 +4079,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4113,26 +4106,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -4147,11 +4126,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4172,26 +4153,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -4209,10 +4176,12 @@ spec:
                                   name:
                                     description: name is the name of the Azure Key
                                       Vault on the management cluster.
+                                    maxLength: 255
                                     type: string
                                   tenantID:
                                     description: tenantID is the tenant ID of the
                                       Azure Key Vault on the management cluster.
+                                    maxLength: 255
                                     type: string
                                 required:
                                 - name
@@ -4228,11 +4197,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4253,26 +4224,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -4288,11 +4245,13 @@ spec:
                                       reside in an Azure Key Vault on the management cluster.
                                       Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                       removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                    maxLength: 255
                                     type: string
                                   clientID:
                                     description: |-
                                       clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                       mainly used for CI purposes.
+                                    maxLength: 255
                                     type: string
                                     x-kubernetes-validations:
                                     - message: the client ID of a managed identity
@@ -4313,26 +4272,12 @@ spec:
                                     maxLength: 127
                                     type: string
                                   objectEncoding:
-                                    allOf:
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    - enum:
-                                      - utf-8
-                                      - hex
-                                      - base64
-                                    default: utf-8
-                                    description: |-
-                                      objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                      CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                      Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                      unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                      SecretProviderClass custom resource related to the managed identity.
-
-                                      The default value is utf-8.
-
-                                      See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                    description: objectEncoding is the encoding format
+                                      for the object.
+                                    enum:
+                                    - utf-8
+                                    - hex
+                                    - base64
                                     type: string
                                 required:
                                 - objectEncoding
@@ -4357,16 +4302,19 @@ spec:
                                 description: diskMSIClientID is the client ID of a
                                   pre-existing managed identity ID associated with
                                   the CSI Disk driver.
+                                maxLength: 255
                                 type: string
                               fileMSIClientID:
                                 description: fileMSIClientID is the client ID of a
                                   pre-existing managed identity ID associated with
                                   the CSI File driver.
+                                maxLength: 255
                                 type: string
                               imageRegistryMSIClientID:
                                 description: |-
                                   imageRegistryMSIClientID is the client ID of a pre-existing managed identity ID associated with the image
                                   registry controller.
+                                maxLength: 255
                                 type: string
                             required:
                             - diskMSIClientID
@@ -4380,7 +4328,7 @@ spec:
                       resourceGroup:
                         default: default
                         description: |-
-                          ResourceGroupName is the name of an existing resource group where all cloud resources created by the Hosted
+                          resourceGroup is the name of an existing resource group where all cloud resources created by the Hosted
                           Cluster are to be placed. The resource group is expected to exist under the same subscription as SubscriptionID.
 
                           In ARO HCP, this will be the managed resource group where customer cloud resources will be created.
@@ -4389,6 +4337,7 @@ spec:
 
                           Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
                                    ResourceGroupName is <resourceGroupName>.
+                        maxLength: 90
                         pattern: ^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$
                         type: string
                         x-kubernetes-validations:
@@ -4396,9 +4345,10 @@ spec:
                           rule: self == oldSelf
                       securityGroupID:
                         description: |-
-                          SecurityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
+                          securityGroupID is the ID of an existing security group on the SubnetID. This field is provided as part of the
                           configuration for the Azure cloud provider, aka Azure cloud controller manager (CCM). This security group is
                           expected to exist under the same subscription as SubscriptionID.
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: SecurityGroupID is immutable
@@ -4445,8 +4395,9 @@ spec:
                         - message: SubnetID is immutable
                           rule: self == oldSelf
                       subscriptionID:
-                        description: SubscriptionID is a unique identifier for an
+                        description: subscriptionID is a unique identifier for an
                           Azure subscription used to manage resources.
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: SubscriptionID is immutable
@@ -4454,16 +4405,18 @@ spec:
                       tenantID:
                         description: tenantID is a unique identifier for the tenant
                           where Azure resources will be created and managed in.
+                        maxLength: 255
                         type: string
                       vnetID:
                         description: |-
-                          VnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
+                          vnetID is the ID of an existing VNET to use in creating VMs. The VNET can exist in a different resource group
                           other than the one specified in ResourceGroupName, but it must exist under the same subscription as
                           SubscriptionID.
 
                           In ARO HCP, this will be the ID of the customer provided VNET.
 
                           Example: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>
+                        maxLength: 255
                         type: string
                         x-kubernetes-validations:
                         - message: VnetID is immutable
@@ -4479,20 +4432,20 @@ spec:
                     - vnetID
                     type: object
                   ibmcloud:
-                    description: IBMCloud defines IBMCloud specific settings for components
+                    description: ibmcloud defines IBMCloud specific settings for components
                     properties:
                       providerType:
-                        description: ProviderType is a specific supported infrastructure
+                        description: providerType is a specific supported infrastructure
                           provider within IBM Cloud.
                         type: string
                     type: object
                   kubevirt:
-                    description: KubeVirt defines KubeVirt specific settings for cluster
+                    description: kubevirt defines KubeVirt specific settings for cluster
                       components.
                     properties:
                       baseDomainPassthrough:
                         description: |-
-                          BaseDomainPassthrough toggles whether or not an automatically
+                          baseDomainPassthrough toggles whether or not an automatically
                           generated base domain for the guest cluster should be used that
                           is a subdomain of the management cluster's *.apps DNS.
 
@@ -4518,7 +4471,7 @@ spec:
                           rule: self == oldSelf
                       credentials:
                         description: |-
-                          Credentials defines the client credentials used when creating KubeVirt virtual machines.
+                          credentials defines the client credentials used when creating KubeVirt virtual machines.
                           Defining credentials is only necessary when the KubeVirt virtual machines are being placed
                           on a cluster separate from the one hosting the Hosted Control Plane components.
 
@@ -4527,12 +4480,18 @@ spec:
                         properties:
                           infraKubeConfigSecret:
                             description: |-
-                              InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
-                              that will be used to host the KubeVirt virtual machines for this cluster.
+                              infraKubeConfigSecret is a reference to the secret containing the kubeconfig
+                              of an external infrastructure cluster for kubevirt provider
                             properties:
                               key:
+                                description: key is the key in the secret containing
+                                  the kubeconfig.
+                                maxLength: 255
                                 type: string
                               name:
+                                description: name is the name of the secret containing
+                                  the kubeconfig.
+                                maxLength: 255
                                 type: string
                             required:
                             - key
@@ -4543,21 +4502,19 @@ spec:
                               rule: self == oldSelf
                           infraNamespace:
                             description: |-
-                              InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
-                              virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
-                              referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
-                              namespace.
+                              infraNamespace is the namespace in the external infrastructure cluster
+                              where kubevirt resources will be created
+                            maxLength: 255
                             type: string
                             x-kubernetes-validations:
                             - message: infraNamespace is immutable
                               rule: self == oldSelf
                         required:
-                        - infraKubeConfigSecret
                         - infraNamespace
                         type: object
                       generateID:
                         description: |-
-                          GenerateID is used to uniquely apply a name suffix to resources associated with
+                          generateID is used to uniquely apply a name suffix to resources associated with
                           kubevirt infrastructure resources
                         maxLength: 11
                         type: string
@@ -4566,17 +4523,17 @@ spec:
                           rule: self == oldSelf
                       storageDriver:
                         description: |-
-                          StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+                          storageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
                           the infra cluster (hosting the VMs) to the guest cluster.
                         properties:
                           manual:
                             description: |-
-                              Manual is used to explicitly define how the infra storageclasses are
+                              manual is used to explicitly define how the infra storageclasses are
                               mapped to guest storageclasses
                             properties:
                               storageClassMapping:
                                 description: |-
-                                  StorageClassMapping maps StorageClasses on the infra cluster hosting
+                                  storageClassMapping maps StorageClasses on the infra cluster hosting
                                   the KubeVirt VMs to StorageClasses that are made available within the
                                   Guest Cluster.
 
@@ -4585,48 +4542,60 @@ spec:
                                 items:
                                   properties:
                                     group:
-                                      description: Group contains which group this
+                                      description: group contains which group this
                                         mapping belongs to.
+                                      maxLength: 255
                                       type: string
                                     guestStorageClassName:
                                       description: |-
-                                        GuestStorageClassName is the name that the corresponding storageclass will
+                                        guestStorageClassName is the name that the corresponding storageclass will
                                         be called within the guest cluster
+                                      maxLength: 255
                                       type: string
                                     infraStorageClassName:
                                       description: |-
-                                        InfraStorageClassName is the name of the infra cluster storage class that
+                                        infraStorageClassName is the name of the infra cluster storage class that
                                         will be exposed to the guest.
+                                      maxLength: 255
                                       type: string
                                   required:
                                   - guestStorageClassName
                                   - infraStorageClassName
                                   type: object
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-validations:
                                 - message: storageClassMapping is immutable
                                   rule: self == oldSelf
                               volumeSnapshotClassMapping:
+                                description: |-
+                                  volumeSnapshotClassMapping maps VolumeSnapshotClasses on the infra cluster hosting
+                                  the KubeVirt VMs to VolumeSnapshotClasses that are made available within the
+                                  Guest Cluster.
                                 items:
                                   properties:
                                     group:
-                                      description: Group contains which group this
+                                      description: group contains which group this
                                         mapping belongs to.
+                                      maxLength: 255
                                       type: string
                                     guestVolumeSnapshotClassName:
                                       description: |-
-                                        GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+                                        guestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
                                         be called within the guest cluster
+                                      maxLength: 255
                                       type: string
                                     infraVolumeSnapshotClassName:
                                       description: |-
-                                        InfraStorageClassName is the name of the infra cluster volume snapshot class that
+                                        infraVolumeSnapshotClassName is the name of the infra cluster volume snapshot class that
                                         will be exposed to the guest.
+                                      maxLength: 255
                                       type: string
                                   required:
                                   - guestVolumeSnapshotClassName
                                   - infraVolumeSnapshotClassName
                                   type: object
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-validations:
                                 - message: volumeSnapshotClassMapping is immutable
@@ -4637,7 +4606,7 @@ spec:
                               rule: self == oldSelf
                           type:
                             default: Default
-                            description: Type represents the type of kubevirt csi
+                            description: type represents the type of kubevirt csi
                               driver configuration to use
                             enum:
                             - None
@@ -4656,18 +4625,18 @@ spec:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
                   openstack:
-                    description: OpenStack specifies configuration for clusters running
+                    description: openstack specifies configuration for clusters running
                       on OpenStack.
                     properties:
                       disableExternalNetwork:
                         description: |-
-                          DisableExternalNetwork specifies whether or not to attempt to connect the cluster
+                          disableExternalNetwork specifies whether or not to attempt to connect the cluster
                           to an external network. This allows for the creation of clusters when connecting
                           to an external network is not possible or desirable, e.g. if using a provider network.
                         type: boolean
                       externalNetwork:
                         description: |-
-                          ExternalNetwork is the OpenStack Network to be used to get public internet to the VMs.
+                          externalNetwork is the OpenStack Network to be used to get public internet to the VMs.
                           This option is ignored if DisableExternalNetwork is set to true.
 
                           If ExternalNetwork is defined it must refer to exactly one external network.
@@ -4683,97 +4652,111 @@ spec:
                         minProperties: 1
                         properties:
                           filter:
-                            description: Filter specifies a filter to select an OpenStack
+                            description: filter specifies a filter to select an OpenStack
                               network. If provided, cannot be empty.
                             minProperties: 1
                             properties:
                               description:
-                                description: Description is the description of the
+                                description: description is the description of the
                                   network to filter by.
+                                maxLength: 255
                                 type: string
                               name:
-                                description: Name is the name of the network to filter
+                                description: name is the name of the network to filter
                                   by.
+                                maxLength: 255
                                 type: string
                               notTags:
                                 description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
+                                  notTags is a list of tags to filter by. If specified, resources which
                                   contain all of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               notTagsAny:
                                 description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
+                                  notTagsAny is a list of tags to filter by. If specified, resources
                                   which contain any of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               projectID:
-                                description: ProjectID is the project ID of the network
+                                description: projectID is the project ID of the network
                                   to filter by.
+                                maxLength: 255
                                 type: string
                               tags:
                                 description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
+                                  tags is a list of tags to filter by. If specified, the resource must
                                   have all of the tags specified to be included in the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               tagsAny:
                                 description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
+                                  tagsAny is a list of tags to filter by. If specified, the resource
                                   must have at least one of the tags specified to be included in the
                                   result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                             type: object
                           id:
-                            description: ID is the ID of the network to use. If ID
+                            description: id is the ID of the network to use. If ID
                               is provided, the other filters cannot be provided. Must
                               be in UUID format.
                             format: uuid
+                            maxLength: 36
                             type: string
                         type: object
                       identityRef:
                         description: |-
-                          IdentityRef is a reference to a secret holding OpenStack credentials
+                          identityRef is a reference to a secret holding OpenStack credentials
                           to be used when reconciling the hosted cluster.
                         properties:
                           cloudName:
-                            description: CloudName specifies the name of the entry
+                            description: cloudName specifies the name of the entry
                               in the clouds.yaml file to use.
+                            maxLength: 255
                             type: string
                           name:
                             description: |-
-                              Name is the name of a secret in the same namespace as the resource being provisioned.
+                              name is the name of a secret in the same namespace as the resource being provisioned.
                               The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
                               The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
+                            maxLength: 255
                             type: string
                         required:
                         - cloudName
@@ -4781,7 +4764,7 @@ spec:
                         type: object
                       ingressFloatingIP:
                         description: |-
-                          IngressFloatingIP is an available floating IP in your OpenStack cluster that will
+                          ingressFloatingIP is an available floating IP in your OpenStack cluster that will
                           be associated with the OpenShift ingress port.
                           When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
                           When specified, the floating IP has to be pre-created.  If the
@@ -4789,13 +4772,14 @@ spec:
                           OpenStack cloud provider won't be able to provision the load
                           balancer.
                           This value must be a valid IPv4 or IPv6 address.
+                        maxLength: 45
                         type: string
                         x-kubernetes-validations:
                         - message: floatingIP must be a valid IPv4 or IPv6 address
                           rule: isIP(self)
                       managedSubnets:
                         description: |-
-                          ManagedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
+                          managedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
                           and a subnet with the defined DNSNameservers, AllocationPools and the CIDR defined in the HostedCluster
                           MachineNetwork, and a router connected to the subnet. Currently only one IPv4
                           subnet is supported.
@@ -4803,31 +4787,36 @@ spec:
                           properties:
                             allocationPools:
                               description: |-
-                                AllocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
+                                allocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
                                 If set, OpenStack will only allocate these IPs for Machines. It will still be possible to create ports from
                                 outside of these ranges manually.
                               items:
                                 properties:
                                   end:
-                                    description: End represents the end of the AlloctionPool,
+                                    description: end represents the end of the AlloctionPool,
                                       that is the highest IP of the pool.
+                                    maxLength: 255
                                     type: string
                                   start:
-                                    description: Start represents the start of the
+                                    description: start represents the start of the
                                       AllocationPool, that is the lowest IP of the
                                       pool.
+                                    maxLength: 255
                                     type: string
                                 required:
                                 - end
                                 - start
                                 type: object
+                              maxItems: 10
                               type: array
                             dnsNameservers:
                               description: |-
-                                DNSNameservers holds a list of DNS server addresses that will be provided when creating
+                                dnsNameservers holds a list of DNS server addresses that will be provided when creating
                                 the subnet. These addresses need to have the same IP version as CIDR.
                               items:
+                                maxLength: 45
                                 type: string
+                              maxItems: 10
                               type: array
                           type: object
                         maxItems: 1
@@ -4835,184 +4824,206 @@ spec:
                         x-kubernetes-list-type: atomic
                       network:
                         description: |-
-                          Network specifies an existing network to use if no ManagedSubnets
+                          network specifies an existing network to use if no ManagedSubnets
                           are specified.
                         maxProperties: 1
                         minProperties: 1
                         properties:
                           filter:
-                            description: Filter specifies a filter to select an OpenStack
+                            description: filter specifies a filter to select an OpenStack
                               network. If provided, cannot be empty.
                             minProperties: 1
                             properties:
                               description:
-                                description: Description is the description of the
+                                description: description is the description of the
                                   network to filter by.
+                                maxLength: 255
                                 type: string
                               name:
-                                description: Name is the name of the network to filter
+                                description: name is the name of the network to filter
                                   by.
+                                maxLength: 255
                                 type: string
                               notTags:
                                 description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
+                                  notTags is a list of tags to filter by. If specified, resources which
                                   contain all of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               notTagsAny:
                                 description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
+                                  notTagsAny is a list of tags to filter by. If specified, resources
                                   which contain any of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               projectID:
-                                description: ProjectID is the project ID of the network
+                                description: projectID is the project ID of the network
                                   to filter by.
+                                maxLength: 255
                                 type: string
                               tags:
                                 description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
+                                  tags is a list of tags to filter by. If specified, the resource must
                                   have all of the tags specified to be included in the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               tagsAny:
                                 description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
+                                  tagsAny is a list of tags to filter by. If specified, the resource
                                   must have at least one of the tags specified to be included in the
                                   result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                             type: object
                           id:
-                            description: ID is the ID of the network to use. If ID
+                            description: id is the ID of the network to use. If ID
                               is provided, the other filters cannot be provided. Must
                               be in UUID format.
                             format: uuid
+                            maxLength: 36
                             type: string
                         type: object
                       networkMTU:
-                        description: |-
-                          NetworkMTU sets the maximum transmission unit (MTU) value to address fragmentation for the private network ID.
-                          This value will be used only if the Cluster actuator creates the network.
-                          If left empty, the network will have the default MTU defined in Openstack network service.
-                          To use this field, the Openstack installation requires the net-mtu neutron API extension.
+                        description: networkMTU is the MTU for the network.
+                        maximum: 9000
+                        minimum: 1500
                         type: integer
                       router:
                         description: |-
-                          Router specifies an existing router to be used if ManagedSubnets are
+                          router specifies an existing router to be used if ManagedSubnets are
                           specified. If specified, no new router will be created.
                         maxProperties: 1
                         minProperties: 1
                         properties:
                           filter:
-                            description: Filter specifies a filter to select an OpenStack
+                            description: filter specifies a filter to select an OpenStack
                               router. If provided, cannot be empty.
                             minProperties: 1
                             properties:
                               description:
-                                description: Description is the description of the
+                                description: description is the description of the
                                   router to filter by.
+                                maxLength: 255
                                 type: string
                               name:
-                                description: Name is the name of the router to filter
+                                description: name is the name of the router to filter
                                   by.
+                                maxLength: 255
                                 type: string
                               notTags:
                                 description: |-
-                                  NotTags is a list of tags to filter by. If specified, resources which
+                                  notTags is a list of tags to filter by. If specified, resources which
                                   contain all of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               notTagsAny:
                                 description: |-
-                                  NotTagsAny is a list of tags to filter by. If specified, resources
+                                  notTagsAny is a list of tags to filter by. If specified, resources
                                   which contain any of the given tags will be excluded from the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               projectID:
-                                description: ProjectID is the project ID of the router
+                                description: projectID is the project ID of the router
                                   to filter by.
+                                maxLength: 255
                                 type: string
                               tags:
                                 description: |-
-                                  Tags is a list of tags to filter by. If specified, the resource must
+                                  tags is a list of tags to filter by. If specified, the resource must
                                   have all of the tags specified to be included in the result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                               tagsAny:
                                 description: |-
-                                  TagsAny is a list of tags to filter by. If specified, the resource
+                                  tagsAny is a list of tags to filter by. If specified, the resource
                                   must have at least one of the tags specified to be included in the
                                   result.
                                 items:
                                   description: |-
                                     NeutronTag represents a tag on a Neutron resource.
                                     It may not be empty and may not contain commas.
+                                  maxLength: 255
                                   minLength: 1
                                   pattern: ^[^,]+$
                                   type: string
+                                maxItems: 50
                                 type: array
                                 x-kubernetes-list-type: set
                             type: object
                           id:
-                            description: ID is the ID of the router to use. If ID
+                            description: id is the ID of the router to use. If ID
                               is provided, the other filters cannot be provided. Must
                               be in UUID format.
                             format: uuid
+                            maxLength: 36
                             type: string
                         type: object
                       subnets:
                         description: |-
-                          Subnets specifies existing subnets to use if not ManagedSubnets are
+                          subnets specifies existing subnets to use if not ManagedSubnets are
                           specified. All subnets must be in the network specified by Network.
                           There can be zero, one, or two subnets. If no subnets are specified,
                           all subnets in Network will be used. If 2 subnets are specified, one
@@ -5025,110 +5036,130 @@ spec:
                           minProperties: 1
                           properties:
                             filter:
-                              description: Filter specifies a filter to select the
+                              description: filter specifies a filter to select the
                                 subnet. It must match exactly one subnet.
                               minProperties: 1
                               properties:
                                 cidr:
-                                  description: CIDR is the CIDR of the subnet to filter
+                                  description: cidr is the CIDR of the subnet to filter
                                     by.
+                                  maxLength: 45
                                   type: string
                                 description:
-                                  description: Description is the description of the
+                                  description: description is the description of the
                                     subnet to filter by.
+                                  maxLength: 255
                                   type: string
                                 gatewayIP:
-                                  description: GatewayIP is the gateway IP of the
+                                  description: gatewayIP is the gateway IP of the
                                     subnet to filter by.
+                                  maxLength: 45
                                   type: string
                                 ipVersion:
-                                  description: IPVersion is the IP version of the
+                                  description: ipVersion is the IP version of the
                                     subnet to filter by.
+                                  maximum: 2147483647
+                                  minimum: 0
                                   type: integer
                                 ipv6AddressMode:
-                                  description: IPv6AddressMode is the IPv6 address
+                                  description: ipv6AddressMode is the IPv6 address
                                     mode of the subnet to filter by.
+                                  maxLength: 255
                                   type: string
                                 ipv6RAMode:
-                                  description: IPv6RAMode is the IPv6 RA mode of the
+                                  description: ipv6RAMode is the IPv6 RA mode of the
                                     subnet to filter by.
+                                  maxLength: 255
                                   type: string
                                 name:
-                                  description: Name is the name of the subnet to filter
+                                  description: name is the name of the subnet to filter
                                     by.
+                                  maxLength: 255
                                   type: string
                                 notTags:
                                   description: |-
-                                    NotTags is a list of tags to filter by. If specified, resources which
+                                    notTags is a list of tags to filter by. If specified, resources which
                                     contain all of the given tags will be excluded from the result.
                                   items:
                                     description: |-
                                       NeutronTag represents a tag on a Neutron resource.
                                       It may not be empty and may not contain commas.
+                                    maxLength: 255
                                     minLength: 1
                                     pattern: ^[^,]+$
                                     type: string
+                                  maxItems: 50
                                   type: array
                                   x-kubernetes-list-type: set
                                 notTagsAny:
                                   description: |-
-                                    NotTagsAny is a list of tags to filter by. If specified, resources
+                                    notTagsAny is a list of tags to filter by. If specified, resources
                                     which contain any of the given tags will be excluded from the result.
                                   items:
                                     description: |-
                                       NeutronTag represents a tag on a Neutron resource.
                                       It may not be empty and may not contain commas.
+                                    maxLength: 255
                                     minLength: 1
                                     pattern: ^[^,]+$
                                     type: string
+                                  maxItems: 50
                                   type: array
                                   x-kubernetes-list-type: set
                                 projectID:
-                                  description: ProjectID is the project ID of the
+                                  description: projectID is the project ID of the
                                     subnet to filter by.
+                                  maxLength: 255
                                   type: string
                                 tags:
                                   description: |-
-                                    Tags is a list of tags to filter by. If specified, the resource must
+                                    tags is a list of tags to filter by. If specified, the resource must
                                     have all of the tags specified to be included in the result.
                                   items:
                                     description: |-
                                       NeutronTag represents a tag on a Neutron resource.
                                       It may not be empty and may not contain commas.
+                                    maxLength: 255
                                     minLength: 1
                                     pattern: ^[^,]+$
                                     type: string
+                                  maxItems: 50
                                   type: array
                                   x-kubernetes-list-type: set
                                 tagsAny:
                                   description: |-
-                                    TagsAny is a list of tags to filter by. If specified, the resource
+                                    tagsAny is a list of tags to filter by. If specified, the resource
                                     must have at least one of the tags specified to be included in the
                                     result.
                                   items:
                                     description: |-
                                       NeutronTag represents a tag on a Neutron resource.
                                       It may not be empty and may not contain commas.
+                                    maxLength: 255
                                     minLength: 1
                                     pattern: ^[^,]+$
                                     type: string
+                                  maxItems: 50
                                   type: array
                                   x-kubernetes-list-type: set
                               type: object
                             id:
-                              description: ID is the uuid of the subnet. It will not
+                              description: id is the uuid of the subnet. It will not
                                 be validated.
                               format: uuid
+                              maxLength: 36
                               type: string
                           type: object
                         maxItems: 2
                         type: array
                         x-kubernetes-list-type: atomic
                       tags:
-                        description: Tags to set on all resources in cluster which
+                        description: tags to set on all resources in cluster which
                           support tags
                         items:
+                          maxLength: 255
                           type: string
+                        maxItems: 50
                         type: array
                         x-kubernetes-list-type: set
                     required:
@@ -5136,23 +5167,25 @@ spec:
                     type: object
                   powervs:
                     description: |-
-                      PowerVS specifies configuration for clusters running on IBMCloud Power VS Service.
+                      powervs specifies configuration for clusters running on IBMCloud Power VS Service.
                       This field is immutable. Once set, It can't be changed.
                     properties:
                       accountID:
                         description: |-
-                          AccountID is the IBMCloud account id.
+                          accountID is the IBMCloud account id.
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         type: string
                       cisInstanceCRN:
                         description: |-
-                          CISInstanceCRN is the IBMCloud CIS Service Instance's Cloud Resource Name
+                          cisInstanceCRN is the IBMCloud CIS Service Instance's Cloud Resource Name
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         pattern: '^crn:'
                         type: string
                       imageRegistryOperatorCloudCreds:
                         description: |-
-                          ImageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
+                          imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
                           credentials for image registry operator to get authenticated with ibm cloud.
                         properties:
                           name:
@@ -5168,7 +5201,7 @@ spec:
                         x-kubernetes-map-type: atomic
                       ingressOperatorCloudCreds:
                         description: |-
-                          IngressOperatorCloudCreds is a reference to a secret containing ibm cloud
+                          ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
                           credentials for ingress operator to get authenticated with ibm cloud.
                         properties:
                           name:
@@ -5184,7 +5217,7 @@ spec:
                         x-kubernetes-map-type: atomic
                       kubeCloudControllerCreds:
                         description: |
-                          KubeCloudControllerCreds is a reference to a secret containing cloud
+                          kubeCloudControllerCreds is a reference to a secret containing cloud
                           credentials with permissions matching the cloud controller policy.
                           This field is immutable. Once set, It can't be changed.
                         properties:
@@ -5201,7 +5234,7 @@ spec:
                         x-kubernetes-map-type: atomic
                       nodePoolManagementCreds:
                         description: |
-                          NodePoolManagementCreds is a reference to a secret containing cloud
+                          nodePoolManagementCreds is a reference to a secret containing cloud
                           credentials with permissions matching the node pool management policy.
                           This field is immutable. Once set, It can't be changed.
                         properties:
@@ -5218,19 +5251,21 @@ spec:
                         x-kubernetes-map-type: atomic
                       region:
                         description: |-
-                          Region is the IBMCloud region in which the cluster resides. This configures the
+                          region is the IBMCloud region in which the cluster resides. This configures the
                           OCP control plane cloud integrations, and is used by NodePool to resolve
                           the correct boot image for a given release.
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         type: string
                       resourceGroup:
                         description: |-
-                          ResourceGroup is the IBMCloud Resource Group in which the cluster resides.
+                          resourceGroup is the IBMCloud Resource Group in which the cluster resides.
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         type: string
                       serviceInstanceID:
                         description: |-
-                          ServiceInstance is the reference to the Power VS service on which the server instance(VM) will be created.
+                          serviceInstanceID is the reference to the Power VS service on which the server instance(VM) will be created.
                           Power VS service is a container for all Power VS instances at a specific geographic region.
                           serviceInstance can be created via IBM Cloud catalog or CLI.
                           ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.
@@ -5239,10 +5274,11 @@ spec:
                           https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
 
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         type: string
                       storageOperatorCloudCreds:
                         description: |-
-                          StorageOperatorCloudCreds is a reference to a secret containing ibm cloud
+                          storageOperatorCloudCreds is a reference to a secret containing ibm cloud
                           credentials for storage operator to get authenticated with ibm cloud.
                         properties:
                           name:
@@ -5258,43 +5294,49 @@ spec:
                         x-kubernetes-map-type: atomic
                       subnet:
                         description: |-
-                          Subnet is the subnet to use for control plane cloud resources.
+                          subnet is the subnet to use for control plane cloud resources.
                           This field is immutable. Once set, It can't be changed.
                         properties:
                           id:
-                            description: ID of resource
+                            description: id of resource
+                            maxLength: 255
                             type: string
                           name:
-                            description: Name of resource
+                            description: name of resource
+                            maxLength: 255
                             type: string
                         type: object
                       vpc:
                         description: |-
-                          VPC specifies IBM Cloud PowerVS Load Balancing configuration for the control
+                          vpc specifies IBM Cloud PowerVS Load Balancing configuration for the control
                           plane.
                           This field is immutable. Once set, It can't be changed.
                         properties:
                           name:
                             description: |-
-                              Name for VPC to used for all the service load balancer.
+                              name for VPC to used for all the service load balancer.
                               This field is immutable. Once set, It can't be changed.
+                            maxLength: 255
                             type: string
                           region:
                             description: |-
-                              Region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
+                              region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
                               into the OCP cluster.
                               This field is immutable. Once set, It can't be changed.
+                            maxLength: 255
                             type: string
                           subnet:
                             description: |-
-                              Subnet is the subnet to use for load balancer.
+                              subnet is the subnet to use for load balancer.
                               This field is immutable. Once set, It can't be changed.
+                            maxLength: 255
                             type: string
                           zone:
                             description: |-
-                              Zone is the availability zone where load balancer cloud resources are
+                              zone is the availability zone where load balancer cloud resources are
                               created.
                               This field is immutable. Once set, It can't be changed.
+                            maxLength: 255
                             type: string
                         required:
                         - name
@@ -5302,9 +5344,10 @@ spec:
                         type: object
                       zone:
                         description: |-
-                          Zone is the availability zone where control plane cloud resources are
+                          zone is the availability zone where control plane cloud resources are
                           created.
                           This field is immutable. Once set, It can't be changed.
+                        maxLength: 255
                         type: string
                     required:
                     - accountID
@@ -5322,7 +5365,7 @@ spec:
                     - zone
                     type: object
                   type:
-                    description: Type is the type of infrastructure provider for the
+                    description: type is the type of infrastructure provider for the
                       cluster.
                     enum:
                     - AWS
@@ -5333,6 +5376,7 @@ spec:
                     - PowerVS
                     - None
                     - OpenStack
+                    maxLength: 100
                     type: string
                     x-kubernetes-validations:
                     - message: Type is immutable
@@ -5372,7 +5416,7 @@ spec:
                 properties:
                   image:
                     description: |-
-                      Image is the image pullspec of an OCP release payload image.
+                      image is the image pullspec of an OCP release payload image.
                       See https://quay.io/repository/openshift-release-dev/ocp-release?tab=tags for a list of available images.
                     maxLength: 253
                     minLength: 1
@@ -5390,11 +5434,11 @@ spec:
                   control plane.
                 properties:
                   aescbc:
-                    description: AESCBC defines metadata about the AESCBC secret encryption
+                    description: aescbc defines metadata about the AESCBC secret encryption
                       strategy
                     properties:
                       activeKey:
-                        description: ActiveKey defines the active key used to encrypt
+                        description: activeKey defines the active key used to encrypt
                           new secrets
                         properties:
                           name:
@@ -5410,7 +5454,7 @@ spec:
                         x-kubernetes-map-type: atomic
                       backupKey:
                         description: |-
-                          BackupKey defines the old key during the rotation process so previously created
+                          backupKey defines the old key during the rotation process so previously created
                           secrets can continue to be decrypted until they are all re-encrypted with the active key.
                         properties:
                           name:
@@ -5428,64 +5472,60 @@ spec:
                     - activeKey
                     type: object
                   kms:
-                    description: KMS defines metadata about the kms secret encryption
+                    description: kms defines metadata about the kms secret encryption
                       strategy
                     properties:
                       aws:
-                        description: AWS defines metadata about the configuration
+                        description: aws defines metadata about the configuration
                           of the AWS KMS Secret Encryption provider
                         properties:
                           activeKey:
-                            description: ActiveKey defines the active key used to
+                            description: activeKey defines the active key used to
                               encrypt new secrets
                             properties:
                               arn:
-                                description: ARN is the Amazon Resource Name for the
+                                description: arn is the Amazon Resource Name for the
                                   encryption key
+                                maxLength: 2048
                                 pattern: '^arn:'
                                 type: string
                             required:
                             - arn
                             type: object
                           auth:
-                            description: Auth defines metadata about the management
+                            description: auth defines metadata about the management
                               of credentials used to interact with AWS KMS
                             properties:
                               awsKms:
-                                description: "The referenced role must have a trust
-                                  relationship that allows it to be assumed via web
-                                  identity.\nhttps://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html.\nExample:\n{\n\t\t\"Version\":
-                                  \"2012-10-17\",\n\t\t\"Statement\": [\n\t\t\t{\n\t\t\t\t\"Effect\":
-                                  \"Allow\",\n\t\t\t\t\"Principal\": {\n\t\t\t\t\t\"Federated\":
-                                  \"{{ .ProviderARN }}\"\n\t\t\t\t},\n\t\t\t\t\t\"Action\":
-                                  \"sts:AssumeRoleWithWebIdentity\",\n\t\t\t\t\"Condition\":
-                                  {\n\t\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\t\"{{
-                                  .ProviderName }}:sub\": {{ .ServiceAccounts }}\n\t\t\t\t\t}\n\t\t\t\t}\n\t\t\t}\n\t\t]\n\t}\n\nAWSKMSARN
-                                  is an ARN value referencing a role appropriate for
-                                  managing the auth via the AWS KMS key.\n\nThe following
-                                  is an example of a valid policy document:\n\n{\n\t\"Version\":
-                                  \"2012-10-17\",\n\t\"Statement\": [\n   \t{\n\t\t\t\"Effect\":
-                                  \"Allow\",\n\t\t\t\"Action\": [\n\t\t\t\t\"kms:Encrypt\",\n\t\t\t\t\"kms:Decrypt\",\n\t\t\t\t\"kms:ReEncrypt*\",\n\t\t\t\t\"kms:GenerateDataKey*\",\n\t\t\t\t\"kms:DescribeKey\"\n\t\t\t],\n\t\t\t\"Resource\":
+                                description: "awsKms is an ARN value referencing a
+                                  role appropriate for managing the auth via the AWS
+                                  KMS key.\n\nThe following is an example of a valid
+                                  policy document:\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\":
+                                  [\n   \t{\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"kms:Encrypt\",\n\t\t\t\t\"kms:Decrypt\",\n\t\t\t\t\"kms:ReEncrypt*\",\n\t\t\t\t\"kms:GenerateDataKey*\",\n\t\t\t\t\"kms:DescribeKey\"\n\t\t\t],\n\t\t\t\"Resource\":
                                   %q\n\t\t}\n\t]\n}"
+                                maxLength: 2048
                                 type: string
                             required:
                             - awsKms
                             type: object
                           backupKey:
                             description: |-
-                              BackupKey defines the old key during the rotation process so previously created
+                              backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
                             properties:
                               arn:
-                                description: ARN is the Amazon Resource Name for the
+                                description: arn is the Amazon Resource Name for the
                                   encryption key
+                                maxLength: 2048
                                 pattern: '^arn:'
                                 type: string
                             required:
                             - arn
                             type: object
                           region:
-                            description: Region contains the AWS region
+                            description: region contains the AWS region
+                            maxLength: 255
                             type: string
                         required:
                         - activeKey
@@ -5493,27 +5533,30 @@ spec:
                         - region
                         type: object
                       azure:
-                        description: Azure defines metadata about the configuration
+                        description: azure defines metadata about the configuration
                           of the Azure KMS Secret Encryption provider using Azure
                           key vault
                         properties:
                           activeKey:
-                            description: ActiveKey defines the active key used to
+                            description: activeKey defines the active key used to
                               encrypt new secrets
                             properties:
                               keyName:
-                                description: KeyName is the name of the keyvault key
+                                description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
+                                maxLength: 255
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                maxLength: 255
                                 type: string
                               keyVersion:
-                                description: KeyVersion contains the version of the
+                                description: keyVersion contains the version of the
                                   key to use
+                                maxLength: 255
                                 type: string
                             required:
                             - keyName
@@ -5522,22 +5565,25 @@ spec:
                             type: object
                           backupKey:
                             description: |-
-                              BackupKey defines the old key during the rotation process so previously created
+                              backupKey defines the old key during the rotation process so previously created
                               secrets can continue to be decrypted until they are all re-encrypted with the active key.
                             properties:
                               keyName:
-                                description: KeyName is the name of the keyvault key
+                                description: keyName is the name of the keyvault key
                                   used for encrypt/decrypt
+                                maxLength: 255
                                 type: string
                               keyVaultName:
                                 description: |-
-                                  KeyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
+                                  keyVaultName is the name of the keyvault. Must match criteria specified at https://docs.microsoft.com/en-us/azure/key-vault/general/about-keys-secrets-certificates#vault-name-and-object-name
                                   Your Microsoft Entra application used to create the cluster must be authorized to access this keyvault, e.g using the AzureCLI:
                                   `az keyvault set-policy -n $KEYVAULT_NAME --key-permissions decrypt encrypt --spn <YOUR APPLICATION CLIENT ID>`
+                                maxLength: 255
                                 type: string
                               keyVersion:
-                                description: KeyVersion contains the version of the
+                                description: keyVersion contains the version of the
                                   key to use
+                                maxLength: 255
                                 type: string
                             required:
                             - keyName
@@ -5554,11 +5600,13 @@ spec:
                                   reside in an Azure Key Vault on the management cluster.
                                   Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
                                   removed as part of the MIWI phase 3 work, https://issues.redhat.com/browse/OCPSTRAT-1856.
+                                maxLength: 255
                                 type: string
                               clientID:
                                 description: |-
                                   clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
                                   mainly used for CI purposes.
+                                maxLength: 255
                                 type: string
                                 x-kubernetes-validations:
                                 - message: the client ID of a managed identity must
@@ -5578,26 +5626,12 @@ spec:
                                 maxLength: 127
                                 type: string
                               objectEncoding:
-                                allOf:
-                                - enum:
-                                  - utf-8
-                                  - hex
-                                  - base64
-                                - enum:
-                                  - utf-8
-                                  - hex
-                                  - base64
-                                default: utf-8
-                                description: |-
-                                  objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
-                                  CertificateName. objectEncoding needs to match the encoding format used when the certificate was stored in the
-                                  Azure Key Vault. If objectEncoding doesn't match the encoding format of the certificate, the certificate will
-                                  unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
-                                  SecretProviderClass custom resource related to the managed identity.
-
-                                  The default value is utf-8.
-
-                                  See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                description: objectEncoding is the encoding format
+                                  for the object.
+                                enum:
+                                - utf-8
+                                - hex
+                                - base64
                                 type: string
                             required:
                             - objectEncoding
@@ -5607,32 +5641,32 @@ spec:
                         - kms
                         type: object
                       ibmcloud:
-                        description: IBMCloud defines metadata for the IBM Cloud KMS
+                        description: ibmcloud defines metadata for the IBM Cloud KMS
                           encryption strategy
                         properties:
                           auth:
-                            description: Auth defines metadata for how authentication
+                            description: auth defines metadata for how authentication
                               is done with IBM Cloud KMS
                             properties:
                               managed:
                                 description: |-
-                                  Managed defines metadata around the service to service authentication strategy for the IBM Cloud
+                                  managed defines metadata around the service to service authentication strategy for the IBM Cloud
                                   KMS system (all provider managed).
                                 type: object
                               type:
-                                description: Type defines the IBM Cloud KMS authentication
+                                description: type defines the IBM Cloud KMS authentication
                                   strategy
                                 enum:
                                 - Managed
                                 - Unmanaged
                                 type: string
                               unmanaged:
-                                description: Unmanaged defines the auth metadata the
+                                description: unmanaged defines the auth metadata the
                                   customer provides to interact with IBM Cloud KMS
                                 properties:
                                   credentials:
                                     description: |-
-                                      Credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
+                                      credentials should reference a secret with a key field of IBMCloudIAMAPIKeySecretKey that contains a apikey to
                                       call IBM Cloud KMS APIs
                                     properties:
                                       name:
@@ -5653,31 +5687,37 @@ spec:
                             - type
                             type: object
                           keyList:
-                            description: KeyList defines the list of keys used for
+                            description: keyList defines the list of keys used for
                               data encryption
                             items:
                               description: IBMCloudKMSKeyEntry defines metadata for
                                 an IBM Cloud KMS encryption key
                               properties:
                                 correlationID:
-                                  description: CorrelationID is an identifier used
+                                  description: correlationID is an identifier used
                                     to track all api call usage from hypershift
+                                  maxLength: 255
                                   type: string
                                 crkID:
-                                  description: CRKID is the customer rook key id
+                                  description: crkID is the customer rook key id
+                                  maxLength: 255
                                   type: string
                                 instanceID:
-                                  description: InstanceID is the id for the key protect
+                                  description: instanceID is the id for the key protect
                                     instance
+                                  maxLength: 255
                                   type: string
                                 keyVersion:
                                   description: |-
-                                    KeyVersion is a unique number associated with the key. The number increments whenever a new
+                                    keyVersion is a unique number associated with the key. The number increments whenever a new
                                     key is enabled for data encryption.
+                                  maximum: 2147483647
+                                  minimum: 0
                                   type: integer
                                 url:
-                                  description: URL is the url to call key protect
+                                  description: url is the url to call key protect
                                     apis over
+                                  maxLength: 2048
                                   pattern: ^https://
                                   type: string
                               required:
@@ -5687,9 +5727,11 @@ spec:
                               - keyVersion
                               - url
                               type: object
+                            maxItems: 100
                             type: array
                           region:
-                            description: Region is the IBM Cloud region
+                            description: region is the IBM Cloud region
+                            maxLength: 255
                             type: string
                         required:
                         - auth
@@ -5697,7 +5739,7 @@ spec:
                         - region
                         type: object
                       provider:
-                        description: Provider defines the KMS provider
+                        description: provider defines the KMS provider
                         enum:
                         - IBMCloud
                         - AWS
@@ -5707,7 +5749,7 @@ spec:
                     - provider
                     type: object
                   type:
-                    description: Type defines the type of kube secret encryption being
+                    description: type defines the type of kube secret encryption being
                       used
                     enum:
                     - kms
@@ -5819,7 +5861,7 @@ spec:
                           properties:
                             hostname:
                               description: |-
-                                Hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
+                                hostname is the name of the DNS record that will be created pointing to the Route and passed through to consumers of the service.
                                 If omitted, the value will be inferred from management ingress.Spec.Domain.
                               maxLength: 253
                               minLength: 1
@@ -5889,7 +5931,7 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               tolerations:
-                description: Tolerations when specified, define what custom tolerations
+                description: tolerations when specified, define what custom tolerations
                   are added to the hcp pods.
                 items:
                   description: |-
@@ -5927,6 +5969,7 @@ spec:
                         If the operator is Exists, the value should be empty, otherwise just a regular string.
                       type: string
                   type: object
+                maxItems: 25
                 type: array
               updateService:
                 description: |-
@@ -5977,11 +6020,11 @@ spec:
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
           status:
-            description: Status is the latest observed status of the HostedCluster.
+            description: status is the latest observed status of the HostedCluster.
             properties:
               conditions:
                 description: |-
-                  Conditions represents the latest available observations of a control
+                  conditions represents the latest available observations of a control
                   plane's current state.
                 items:
                   description: Condition contains details for one aspect of the current
@@ -6037,21 +6080,23 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 100
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
               controlPlaneEndpoint:
                 description: |-
-                  ControlPlaneEndpoint contains the endpoint information by which
+                  controlPlaneEndpoint contains the endpoint information by which
                   external clients can access the control plane. This is populated
                   after the infrastructure is ready.
                 properties:
                   host:
-                    description: Host is the hostname on which the API server is serving.
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 255
                     type: string
                   port:
-                    description: Port is the port on which the API server is serving.
+                    description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
                 required:
@@ -6060,7 +6105,7 @@ spec:
                 type: object
               customKubeconfig:
                 description: |-
-                  CustomKubeconfig is a local secret reference to the external custom kubeconfig.
+                  customKubeconfig is a local secret reference to the external custom kubeconfig.
                   Once the hypershift operator sets this status field, it will generate a secret with the specified name containing a kubeconfig within the `HostedCluster` namespace.
                 properties:
                   name:
@@ -6076,12 +6121,13 @@ spec:
                 x-kubernetes-map-type: atomic
               ignitionEndpoint:
                 description: |-
-                  IgnitionEndpoint is the endpoint injected in the ign config userdata.
+                  ignitionEndpoint is the endpoint injected in the ign config userdata.
                   It exposes the config for instances to become kubernetes nodes.
+                maxLength: 1024
                 type: string
               kubeadminPassword:
                 description: |-
-                  KubeadminPassword is a reference to the secret that contains the initial
+                  kubeadminPassword is a reference to the secret that contains the initial
                   kubeadmin user password for the guest cluster.
                 properties:
                   name:
@@ -6097,7 +6143,7 @@ spec:
                 x-kubernetes-map-type: atomic
               kubeconfig:
                 description: |-
-                  KubeConfig is a reference to the secret containing the default kubeconfig
+                  kubeconfig is a reference to the secret containing the default kubeconfig
                   for the cluster.
                 properties:
                   name:
@@ -6113,10 +6159,11 @@ spec:
                 x-kubernetes-map-type: atomic
               oauthCallbackURLTemplate:
                 description: |-
-                  OAuthCallbackURLTemplate contains a template for the URL to use as a callback
+                  oauthCallbackURLTemplate contains a template for the URL to use as a callback
                   for identity providers. The [identity-provider-name] placeholder must be replaced
                   with the name of an identity provider defined on the HostedCluster.
                   This is populated after the infrastructure is ready.
+                maxLength: 1024
                 type: string
               payloadArch:
                 description: |-
@@ -6130,23 +6177,23 @@ spec:
                 - S390X
                 type: string
               platform:
-                description: Platform contains platform-specific status of the HostedCluster
+                description: platform contains platform-specific status of the HostedCluster
                 properties:
                   aws:
-                    description: AWSPlatformStatus contains status specific to the
-                      AWS platform
+                    description: aws contains platform-specific status for AWS
                     properties:
                       defaultWorkerSecurityGroupID:
                         description: |-
-                          DefaultWorkerSecurityGroupID is the ID of a security group created by
+                          defaultWorkerSecurityGroupID is the ID of a security group created by
                           the control plane operator. It is always added to worker machines in
                           addition to any security groups specified in the NodePool.
+                        maxLength: 255
                         type: string
                     type: object
                 type: object
               version:
                 description: |-
-                  Version is the status of the release version applied to the
+                  version is the status of the release version applied to the
                   HostedCluster.
                 properties:
                   availableUpdates:
@@ -6202,6 +6249,7 @@ spec:
                       - image
                       - version
                       type: object
+                    maxItems: 100
                     nullable: true
                     type: array
                   conditionalUpdates:
@@ -6421,6 +6469,7 @@ spec:
                       - release
                       - risks
                       type: object
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-type: atomic
                   desired:
@@ -6538,6 +6587,7 @@ spec:
                       - state
                       - verified
                       type: object
+                    maxItems: 10
                     type: array
                   observedGeneration:
                     description: |-
