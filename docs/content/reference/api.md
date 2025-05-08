@@ -3553,7 +3553,8 @@ string
 </em>
 </td>
 <td>
-<p>id specifies the target Capacity Reservation into which the EC2 instances should be launched.</p>
+<p>id specifies the target Capacity Reservation into which the EC2 instances should be launched.
+Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0</p>
 </td>
 </tr>
 <tr>
@@ -3567,9 +3568,11 @@ MarketType
 </td>
 <td>
 <em>(Optional)</em>
-<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
-&ldquo;On-demand&rdquo;: EC2 instances run as standard On-Demand instances.
-&ldquo;CapacityBlocks&rdquo; (default): scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.</p>
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+&ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
+&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+The current default value is CapacityBlocks.</p>
 </td>
 </tr>
 </tbody>
@@ -8413,7 +8416,7 @@ TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 <tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
 <td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
 </td>
-</tr><tr><td><p>&#34;On-demand&#34;</p></td>
+</tr><tr><td><p>&#34;OnDemand&#34;</p></td>
 <td><p>MarketTypeOnDemand is a MarketType enum value</p>
 </td>
 </tr></tbody>
