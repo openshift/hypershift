@@ -1,0 +1,24 @@
+references: &common_refs
+  skip_if_only_changed: &skip_regex (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+  test_env: &test_env
+    ENABLE_HYPERSHIFT_CERT_ROTATION_SCALE: "true"
+    REQUEST_SERVING_COMPONENT_TEST: "true"
+
+tests:
+- as: verify
+  commands: make verify
+  container:
+    from: src
+  skip_if_only_changed: *skip_regex
+- as: e2e-aws
+  capabilities:
+  - build-tmpfs
+  skip_if_only_changed: *skip_regex
+  steps:
+    cluster_profile: hypershift
+    dependencies:
+      OCP_IMAGE_N1: release:n1minor
+      OCP_IMAGE_N2: release:n2minor
+    env:
+      <<: *test_env
+    workflow: hypershift-aws-e2e-external
