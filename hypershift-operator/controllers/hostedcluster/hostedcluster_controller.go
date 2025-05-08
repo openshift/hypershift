@@ -31,14 +31,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/blang/semver"
+	"github.com/go-logr/logr"
+	"github.com/google/uuid"
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/machineapprover"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
-	ignitionserverreconciliation "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/ignitionserver"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -69,15 +76,8 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 	supportvalidations "github.com/openshift/hypershift/support/validations"
-
-	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"gopkg.in/ini.v1"
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -99,7 +99,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
-
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -110,12 +109,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
-	"github.com/blang/semver"
-	"github.com/go-logr/logr"
-	"github.com/google/uuid"
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"gopkg.in/ini.v1"
 )
 
 const (
@@ -123,17 +116,13 @@ const (
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
-	ImageStreamCAPI                        = "cluster-capi-controllers"
-	ImageStreamAutoscalerImage             = "cluster-autoscaler"
-	ImageStreamClusterMachineApproverImage = "cluster-machine-approver"
+	ImageStreamCAPI            = "cluster-capi-controllers"
+	ImageStreamAutoscalerImage = "cluster-autoscaler"
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
 	ignitionServerHealthzHandlerLabel                    = "io.openshift.hypershift.ignition-server-healthz-handler"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
 
-	controlplaneOperatorManagesIgnitionServerLabel             = "io.openshift.hypershift.control-plane-operator-manages-ignition-server"
-	controlPlaneOperatorManagesMachineApprover                 = "io.openshift.hypershift.control-plane-operator-manages.cluster-machine-approver"
-	controlPlaneOperatorManagesMachineAutoscaler               = "io.openshift.hypershift.control-plane-operator-manages.cluster-autoscaler"
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
 	controlPlanePKIOperatorSignsCSRsLabel                      = "io.openshift.hypershift.control-plane-pki-operator-signs-csrs"
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
@@ -1279,9 +1268,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !cpoHasUtilities {
 		utilitiesImage = r.HypershiftOperatorImage
 	}
-	_, ignitionServerHasHealthzHandler := controlPlaneOperatorImageLabels[ignitionServerHealthzHandlerLabel]
-	_, controlplaneOperatorManagesIgnitionServer := controlPlaneOperatorImageLabels[controlplaneOperatorManagesIgnitionServerLabel]
-	_, controlPlaneOperatorManagesMachineApprover := controlPlaneOperatorImageLabels[controlPlaneOperatorManagesMachineApprover]
+
 	_, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel := controlPlaneOperatorImageLabels[controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel]
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
@@ -1900,13 +1887,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if !controlPlaneOperatorManagesMachineApprover {
-		// Reconcile the machine approver.
-		if err = r.reconcileMachineApprover(ctx, createOrUpdate, hcluster, hcp, utilitiesImage, pullSecretBytes, releaseImageVersion, releaseProvider); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine approver: %w", err)
-		}
-	}
-
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
@@ -1933,31 +1913,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane PKI operator RBAC: %w", err)
-		}
-	}
-
-	// Reconcile the Ignition server
-	if !controlplaneOperatorManagesIgnitionServer {
-		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-		}
-		if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
-			if err := ignitionserverreconciliation.ReconcileIgnitionServer(ctx,
-				r.Client,
-				createOrUpdate,
-				utilitiesImage,
-				releaseInfo.ComponentImages(),
-				hcp,
-				defaultIngressDomain,
-				ignitionServerHasHealthzHandler,
-				releaseProvider.GetRegistryOverrides(),
-				hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
-				r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-				config.OwnerRefFrom(hcp),
-			); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile ignition server: %w", err)
-			}
 		}
 	}
 
@@ -4466,19 +4421,6 @@ func (r *HostedClusterReconciler) reconcileClusterPrometheusRBAC(ctx context.Con
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileMachineApprover(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, utilitiesImage string, pullSecretBytes []byte, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
-	machineApproverImage, err := hyperutil.GetPayloadImage(ctx, releaseProvider, hcluster, ImageStreamClusterMachineApproverImage, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to get image for machine approver: %w", err)
-	}
-	// TODO: can remove this override when all IBM production clusters upgraded to a version that uses the release image
-	if imageVal, ok := hcluster.Annotations[hyperv1.MachineApproverImage]; ok {
-		machineApproverImage = imageVal
-	}
-
-	return machineapprover.ReconcileMachineApprover(ctx, r.Client, hcp, machineApproverImage, utilitiesImage, createOrUpdate, r.SetDefaultSecurityContext, config.OwnerRefFrom(hcp))
-}
-
 func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hc *hyperv1.HostedCluster) error {
 	var errs []error
 	for _, svc := range hc.Spec.Services {
@@ -5074,13 +5016,6 @@ func compareCIDREntries(ce []cidrEntry) field.ErrorList {
 		}
 	}
 	return errs
-}
-
-type ClusterMachineApproverConfig struct {
-	NodeClientCert NodeClientCert `json:"nodeClientCert,omitempty"`
-}
-type NodeClientCert struct {
-	Disabled bool `json:"disabled,omitempty"`
 }
 
 const (
