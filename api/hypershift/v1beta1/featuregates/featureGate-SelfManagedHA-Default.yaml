@@ -31,9 +31,6 @@
                         "name": "ClusterVersionOperatorConfiguration"
                     },
                     {
-                        "name": "CapacityReservation"
-                    },
-                    {
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     }
                 ],
