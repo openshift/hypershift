@@ -267,6 +267,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
 								Privileged:             &privileged,
 							},
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "credentials",
@@ -691,7 +692,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								ReadOnlyRootFilesystem: &readOnlyRootFilesystem,
 								Privileged:             &privileged,
 							},
-							VolumeMounts: initVolumeMounts,
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							VolumeMounts:             initVolumeMounts,
 						},
 					},
 					Containers: []corev1.Container{
@@ -763,7 +765,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 									corev1.ResourceCPU:    resource.MustParse("10m"),
 								},
 							},
-							VolumeMounts: volumeMounts,
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							VolumeMounts:             volumeMounts,
 						},
 					},
 					Volumes: volumes,

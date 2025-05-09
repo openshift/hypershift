@@ -154,6 +154,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 				Value: proxy.NoProxy,
 			},
 		}
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
 	}
 }

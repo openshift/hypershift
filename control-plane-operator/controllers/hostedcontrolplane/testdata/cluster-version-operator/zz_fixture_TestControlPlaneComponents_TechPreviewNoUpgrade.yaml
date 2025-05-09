@@ -103,6 +103,7 @@ spec:
           requests:
             cpu: 20m
             memory: 70Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/openshift/kubeconfig
           name: kubeconfig
@@ -287,6 +288,7 @@ spec:
           requests:
             cpu: 10m
             memory: 20Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/payload
           name: payload
@@ -324,6 +326,7 @@ spec:
           requests:
             cpu: 10m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig

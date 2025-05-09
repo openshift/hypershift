@@ -355,11 +355,19 @@ func defaultContainer(original, mutated *corev1.Container) {
 	if mutated.ImagePullPolicy == "" {
 		mutated.ImagePullPolicy = original.ImagePullPolicy
 	}
+
 	if mutated.TerminationMessagePath == "" {
 		mutated.TerminationMessagePath = original.TerminationMessagePath
 	}
-	if mutated.TerminationMessagePolicy == "" {
+	switch {
+	case len(mutated.TerminationMessagePolicy) > 0:
+		// do nothing because we already have a value
+	case len(original.TerminationMessagePolicy) > 0:
+		// if the original had a value, use the value from the original
 		mutated.TerminationMessagePolicy = original.TerminationMessagePolicy
+	default:
+		// if the mutated and original both lack a value, set to collect the last few lines of the log
+		mutated.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 	}
 
 	if original.LivenessProbe != nil && mutated.LivenessProbe != nil {
