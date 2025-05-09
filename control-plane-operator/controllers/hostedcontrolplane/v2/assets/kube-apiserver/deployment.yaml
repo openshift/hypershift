@@ -280,6 +280,40 @@ spec:
         - -c
         - |
           #!/bin/sh
+          cd /tmp
+          mkdir input output manifests
+
+          if [ ! -f /tmp/manifests/99_feature-gate.yaml ]; then
+            touch /tmp/manifests/99_feature-gate.yaml
+            cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+            $(FEATURE_GATE_YAML)
+            EOF
+          fi
+
+          /usr/bin/authentication-operator render \
+            --asset-output-dir /tmp/output \
+            --rendered-manifest-dir=/tmp/manifests \
+            --cluster-profile=ibm-cloud-managed \
+            --payload-version=%[2]s
+
+          cp /tmp/output/* %[1]s
+          cp /tmp/manifests/* %[1]s
+        command:
+        - /bin/bash
+        image: cluster-authentication-operator
+        imagePullPolicy: IfNotPresent
+        name: init-auth-bootstrap-render
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+      - args:
+        - -c
+        - |
+          #!/bin/sh
           while ! nslookup etcd-client.$(POD_NAMESPACE).svc; do sleep 1; done
         command:
         - /bin/bash
