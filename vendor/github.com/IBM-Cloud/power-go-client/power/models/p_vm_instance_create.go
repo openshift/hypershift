@@ -21,6 +21,12 @@ import (
 // swagger:model PVMInstanceCreate
 type PVMInstanceCreate struct {
 
+	// Indicates if the boot volume should be replication enabled or not
+	BootVolumeReplicationEnabled *bool `json:"bootVolumeReplicationEnabled,omitempty"`
+
+	// The deployment of a dedicated host
+	DeploymentTarget *DeploymentTarget `json:"deploymentTarget,omitempty"`
+
 	// The custom deployment type
 	DeploymentType string `json:"deploymentType,omitempty"`
 
@@ -55,7 +61,7 @@ type PVMInstanceCreate struct {
 
 	// Processor type (dedicated, shared, capped)
 	// Required: true
-	// Enum: [dedicated shared capped]
+	// Enum: ["dedicated","shared","capped"]
 	ProcType *string `json:"procType"`
 
 	// Number of processors allocated
@@ -63,15 +69,18 @@ type PVMInstanceCreate struct {
 	Processors *float64 `json:"processors"`
 
 	// Affinity policy for replicants being created; affinity for the same host, anti-affinity for different hosts, none for no preference
-	// Enum: [affinity anti-affinity none]
+	// Enum: ["affinity","anti-affinity","none"]
 	ReplicantAffinityPolicy *string `json:"replicantAffinityPolicy,omitempty"`
 
 	// How to name the created vms
-	// Enum: [prefix suffix]
+	// Enum: ["prefix","suffix"]
 	ReplicantNamingScheme *string `json:"replicantNamingScheme,omitempty"`
 
 	// Number of duplicate instances to create in this request
 	Replicants float64 `json:"replicants,omitempty"`
+
+	// Indicates the replication site of the boot volume
+	ReplicationSites []string `json:"replicationSites"`
 
 	// Name of the server to create
 	// Required: true
@@ -87,15 +96,18 @@ type PVMInstanceCreate struct {
 	StorageAffinity *StorageAffinity `json:"storageAffinity,omitempty"`
 
 	// The storage connection type
-	// Enum: [vSCSI]
+	// Enum: ["vSCSI","maxVolumeSupport"]
 	StorageConnection string `json:"storageConnection,omitempty"`
 
 	// The storage connection type
-	// Enum: [vSCSI maxVolumeAttachement]
+	// Enum: ["vSCSI","maxVolumeSupport"]
 	StorageConnectionV2 string `json:"storageConnectionV2,omitempty"`
 
 	// Storage Pool for server deployment; if provided then storageAffinity will be ignored; Only valid when you deploy one of the IBM supplied stock images. Storage pool for a custom image (an imported image or an image that is created from a PVMInstance capture) defaults to the storage pool the image was created in
 	StoragePool string `json:"storagePool,omitempty"`
+
+	// Indicates if all volumes attached to the PVMInstance must reside in the same storage pool. If set to false, volumes from any storage pool can be attached to the PVMInstance. This flag only impacts PVMInstance snapshot and capture operations. For capture, only volumes that reside in the same storage pool as the PVMInstance's boot volume can be included. For snapshots, all volumes included in the snapshot must reside in the same storage pool.
+	StoragePoolAffinity *bool `json:"storagePoolAffinity,omitempty"`
 
 	// Storage type for server deployment; if storageType is not provided the storage type will default to 'tier3'.
 	StorageType string `json:"storageType,omitempty"`
@@ -103,11 +115,17 @@ type PVMInstanceCreate struct {
 	// System type used to host the instance
 	SysType string `json:"sysType,omitempty"`
 
-	// Cloud init user defined data
+	// Cloud init user defined data; For FLS, only cloud-config instance-data is supported and data must not be compressed or exceed 63K
 	UserData string `json:"userData,omitempty"`
+
+	// user tags
+	UserTags Tags `json:"userTags,omitempty"`
 
 	// The pvm instance virtual CPU information
 	VirtualCores *VirtualCores `json:"virtualCores,omitempty"`
+
+	// Virtual Serial Number information
+	VirtualSerialNumber *CreateServerVirtualSerialNumber `json:"virtualSerialNumber,omitempty"`
 
 	// List of volume IDs
 	VolumeIDs []string `json:"volumeIDs"`
@@ -116,6 +134,10 @@ type PVMInstanceCreate struct {
 // Validate validates this p VM instance create
 func (m *PVMInstanceCreate) Validate(formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.validateDeploymentTarget(formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.validateImageID(formats); err != nil {
 		res = append(res, err)
@@ -169,13 +191,40 @@ func (m *PVMInstanceCreate) Validate(formats strfmt.Registry) error {
 		res = append(res, err)
 	}
 
+	if err := m.validateUserTags(formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.validateVirtualCores(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateVirtualSerialNumber(formats); err != nil {
 		res = append(res, err)
 	}
 
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *PVMInstanceCreate) validateDeploymentTarget(formats strfmt.Registry) error {
+	if swag.IsZero(m.DeploymentTarget) { // not required
+		return nil
+	}
+
+	if m.DeploymentTarget != nil {
+		if err := m.DeploymentTarget.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("deploymentTarget")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("deploymentTarget")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -433,7 +482,7 @@ var pVmInstanceCreateTypeStorageConnectionPropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["vSCSI"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["vSCSI","maxVolumeSupport"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -445,6 +494,9 @@ const (
 
 	// PVMInstanceCreateStorageConnectionVSCSI captures enum value "vSCSI"
 	PVMInstanceCreateStorageConnectionVSCSI string = "vSCSI"
+
+	// PVMInstanceCreateStorageConnectionMaxVolumeSupport captures enum value "maxVolumeSupport"
+	PVMInstanceCreateStorageConnectionMaxVolumeSupport string = "maxVolumeSupport"
 )
 
 // prop value enum
@@ -472,7 +524,7 @@ var pVmInstanceCreateTypeStorageConnectionV2PropEnum []interface{}
 
 func init() {
 	var res []string
-	if err := json.Unmarshal([]byte(`["vSCSI","maxVolumeAttachement"]`), &res); err != nil {
+	if err := json.Unmarshal([]byte(`["vSCSI","maxVolumeSupport"]`), &res); err != nil {
 		panic(err)
 	}
 	for _, v := range res {
@@ -485,8 +537,8 @@ const (
 	// PVMInstanceCreateStorageConnectionV2VSCSI captures enum value "vSCSI"
 	PVMInstanceCreateStorageConnectionV2VSCSI string = "vSCSI"
 
-	// PVMInstanceCreateStorageConnectionV2MaxVolumeAttachement captures enum value "maxVolumeAttachement"
-	PVMInstanceCreateStorageConnectionV2MaxVolumeAttachement string = "maxVolumeAttachement"
+	// PVMInstanceCreateStorageConnectionV2MaxVolumeSupport captures enum value "maxVolumeSupport"
+	PVMInstanceCreateStorageConnectionV2MaxVolumeSupport string = "maxVolumeSupport"
 )
 
 // prop value enum
@@ -504,6 +556,23 @@ func (m *PVMInstanceCreate) validateStorageConnectionV2(formats strfmt.Registry)
 
 	// value enum
 	if err := m.validateStorageConnectionV2Enum("storageConnectionV2", "body", m.StorageConnectionV2); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (m *PVMInstanceCreate) validateUserTags(formats strfmt.Registry) error {
+	if swag.IsZero(m.UserTags) { // not required
+		return nil
+	}
+
+	if err := m.UserTags.Validate(formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("userTags")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("userTags")
+		}
 		return err
 	}
 
@@ -529,9 +598,32 @@ func (m *PVMInstanceCreate) validateVirtualCores(formats strfmt.Registry) error 
 	return nil
 }
 
+func (m *PVMInstanceCreate) validateVirtualSerialNumber(formats strfmt.Registry) error {
+	if swag.IsZero(m.VirtualSerialNumber) { // not required
+		return nil
+	}
+
+	if m.VirtualSerialNumber != nil {
+		if err := m.VirtualSerialNumber.Validate(formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("virtualSerialNumber")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("virtualSerialNumber")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 // ContextValidate validate this p VM instance create based on the context it is used
 func (m *PVMInstanceCreate) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
 	var res []error
+
+	if err := m.contextValidateDeploymentTarget(ctx, formats); err != nil {
+		res = append(res, err)
+	}
 
 	if err := m.contextValidateNetworks(ctx, formats); err != nil {
 		res = append(res, err)
@@ -549,13 +641,42 @@ func (m *PVMInstanceCreate) ContextValidate(ctx context.Context, formats strfmt.
 		res = append(res, err)
 	}
 
+	if err := m.contextValidateUserTags(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
 	if err := m.contextValidateVirtualCores(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.contextValidateVirtualSerialNumber(ctx, formats); err != nil {
 		res = append(res, err)
 	}
 
 	if len(res) > 0 {
 		return errors.CompositeValidationError(res...)
 	}
+	return nil
+}
+
+func (m *PVMInstanceCreate) contextValidateDeploymentTarget(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.DeploymentTarget != nil {
+
+		if swag.IsZero(m.DeploymentTarget) { // not required
+			return nil
+		}
+
+		if err := m.DeploymentTarget.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("deploymentTarget")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("deploymentTarget")
+			}
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -644,6 +765,20 @@ func (m *PVMInstanceCreate) contextValidateStorageAffinity(ctx context.Context, 
 	return nil
 }
 
+func (m *PVMInstanceCreate) contextValidateUserTags(ctx context.Context, formats strfmt.Registry) error {
+
+	if err := m.UserTags.ContextValidate(ctx, formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("userTags")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("userTags")
+		}
+		return err
+	}
+
+	return nil
+}
+
 func (m *PVMInstanceCreate) contextValidateVirtualCores(ctx context.Context, formats strfmt.Registry) error {
 
 	if m.VirtualCores != nil {
@@ -657,6 +792,27 @@ func (m *PVMInstanceCreate) contextValidateVirtualCores(ctx context.Context, for
 				return ve.ValidateName("virtualCores")
 			} else if ce, ok := err.(*errors.CompositeError); ok {
 				return ce.ValidateName("virtualCores")
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (m *PVMInstanceCreate) contextValidateVirtualSerialNumber(ctx context.Context, formats strfmt.Registry) error {
+
+	if m.VirtualSerialNumber != nil {
+
+		if swag.IsZero(m.VirtualSerialNumber) { // not required
+			return nil
+		}
+
+		if err := m.VirtualSerialNumber.ContextValidate(ctx, formats); err != nil {
+			if ve, ok := err.(*errors.Validation); ok {
+				return ve.ValidateName("virtualSerialNumber")
+			} else if ce, ok := err.(*errors.CompositeError); ok {
+				return ce.ValidateName("virtualSerialNumber")
 			}
 			return err
 		}

@@ -196,6 +196,10 @@ func Convert_v1beta2_IBMVPCMachineSpec_To_v1beta1_IBMVPCMachineSpec(in *infrav1b
 	return autoConvert_v1beta2_IBMVPCMachineSpec_To_v1beta1_IBMVPCMachineSpec(in, out, s)
 }
 
+func Convert_v1beta2_IBMVPCMachineTemplateStatus_To_v1beta1_IBMVPCMachineTemplateStatus(in *infrav1beta2.IBMVPCMachineTemplateStatus, out *IBMVPCMachineTemplateStatus, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMVPCMachineTemplateStatus_To_v1beta1_IBMVPCMachineTemplateStatus(in, out, s)
+}
+
 func Convert_Slice_Pointer_string_To_Slice_Pointer_v1beta2_IBMVPCResourceReference(in *[]*string, out *[]*infrav1beta2.IBMVPCResourceReference, _ apiconversion.Scope) error {
 	for _, sshKey := range *in {
 		*out = append(*out, &infrav1beta2.IBMVPCResourceReference{
@@ -214,4 +218,24 @@ func Convert_Slice_Pointer_v1beta2_IBMVPCResourceReference_To_Slice_Pointer_stri
 		}
 	}
 	return nil
+}
+
+func Convert_v1beta2_VPCLoadBalancerSpec_To_v1beta1_VPCLoadBalancerSpec(in *infrav1beta2.VPCLoadBalancerSpec, out *VPCLoadBalancerSpec, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_VPCLoadBalancerSpec_To_v1beta1_VPCLoadBalancerSpec(in, out, s)
+}
+
+func Convert_v1beta2_IBMVPCClusterSpec_To_v1beta1_IBMVPCClusterSpec(in *infrav1beta2.IBMVPCClusterSpec, out *IBMVPCClusterSpec, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMVPCClusterSpec_To_v1beta1_IBMVPCClusterSpec(in, out, s)
+}
+
+func Convert_v1beta2_IBMVPCClusterStatus_To_v1beta1_IBMVPCClusterStatus(in *infrav1beta2.IBMVPCClusterStatus, out *IBMVPCClusterStatus, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMVPCClusterStatus_To_v1beta1_IBMVPCClusterStatus(in, out, s)
+}
+
+func Convert_v1beta2_IBMVPCMachineStatus_To_v1beta1_IBMVPCMachineStatus(in *infrav1beta2.IBMVPCMachineStatus, out *IBMVPCMachineStatus, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMVPCMachineStatus_To_v1beta1_IBMVPCMachineStatus(in, out, s)
+}
+
+func Convert_v1beta2_NetworkInterface_To_v1beta1_NetworkInterface(in *infrav1beta2.NetworkInterface, out *NetworkInterface, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_NetworkInterface_To_v1beta1_NetworkInterface(in, out, s)
 }
