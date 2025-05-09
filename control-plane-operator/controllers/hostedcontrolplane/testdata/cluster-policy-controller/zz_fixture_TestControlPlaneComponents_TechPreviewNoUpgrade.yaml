@@ -96,6 +96,7 @@ spec:
           requests:
             cpu: 10m
             memory: 200Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/client-ca
           name: client-ca
@@ -115,6 +116,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

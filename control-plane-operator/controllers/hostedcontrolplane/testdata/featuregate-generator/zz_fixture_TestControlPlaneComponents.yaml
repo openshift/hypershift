@@ -73,6 +73,7 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /manifests
           name: manifests
@@ -118,6 +119,7 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /output
           name: manifests
