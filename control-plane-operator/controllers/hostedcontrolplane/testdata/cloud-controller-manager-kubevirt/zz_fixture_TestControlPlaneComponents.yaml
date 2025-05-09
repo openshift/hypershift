@@ -95,6 +95,7 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/cloud
           name: cloud-config
