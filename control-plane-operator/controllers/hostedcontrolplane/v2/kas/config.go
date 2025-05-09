@@ -193,7 +193,8 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		args.Set("profiling", "false")
 	}
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
-	args.Set("enable-admission-plugins", admissionPlugins()...)
+	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
+	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
@@ -306,8 +307,8 @@ func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) (runt
 	return cfg, nil
 }
 
-func admissionPlugins() []string {
-	return []string{
+func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
+	enabled := []string{
 		"CertificateApproval",
 		"CertificateSigning",
 		"CertificateSubjectRestriction",
@@ -330,8 +331,6 @@ func admissionPlugins() []string {
 		"TaintNodesByCondition",
 		"ValidatingAdmissionPolicy",
 		"ValidatingAdmissionWebhook",
-		"authorization.openshift.io/RestrictSubjectBindings",
-		"authorization.openshift.io/ValidateRoleBindingRestriction",
 		"config.openshift.io/DenyDeleteClusterConfiguration",
 		"config.openshift.io/ValidateAPIServer",
 		"config.openshift.io/ValidateAuthentication",
@@ -354,6 +353,22 @@ func admissionPlugins() []string {
 		"security.openshift.io/ValidateSecurityContextConstraints",
 		"storage.openshift.io/CSIInlineVolumeSecurity",
 	}
+
+	if util.ConfigOAuthEnabled(cfg.Authentication) {
+		enabled = append(enabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
+	}
+
+	return enabled
+}
+
+func disabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
+	disabled := []string{}
+
+	if !util.ConfigOAuthEnabled(cfg.Authentication) {
+		disabled = append(disabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
+	}
+
+	return disabled
 }
 
 func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {
