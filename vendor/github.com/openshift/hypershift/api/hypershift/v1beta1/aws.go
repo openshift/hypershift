@@ -73,7 +73,6 @@ type PlacementOptions struct {
 
 	// capacityReservation specifies Capacity Reservation options for the NodePool instances.
 	//
-	// +openshift:enable:FeatureGate=CapacityReservation
 	// +optional
 	CapacityReservation *CapacityReservationOptions `json:"capacityReservation,omitempty"`
 }
@@ -83,7 +82,7 @@ type MarketType string
 
 const (
 	// MarketTypeOnDemand is a MarketType enum value
-	MarketTypeOnDemand MarketType = "On-demand"
+	MarketTypeOnDemand MarketType = "OnDemand"
 
 	// MarketTypeCapacityBlock is a MarketType enum value
 	MarketTypeCapacityBlock MarketType = "CapacityBlocks"
@@ -92,18 +91,21 @@ const (
 // CapacityReservationOptions specifies Capacity Reservation options for the NodePool instances.
 type CapacityReservationOptions struct {
 	// id specifies the target Capacity Reservation into which the EC2 instances should be launched.
+	// Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
 	//
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('cr-')", message="capacity reservation ID is invalid"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^cr-[a-f0-9]{17}$')", message="AWS Capacity Reservation ID must start with 'cr-' followed by 17 lowercase hexadecimal characters (e.g., cr-0123456789abcdef0)"
 	// +required
-	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:MinLength=20
+	// +kubebuilder:validation:MaxLength=20
 	ID string `json:"id"`
 
-	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values:
-	// "On-demand": EC2 instances run as standard On-Demand instances.
-	// "CapacityBlocks" (default): scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+	// "OnDemand": EC2 instances run as standard On-Demand instances.
+	// "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+	// The current default value is CapacityBlocks.
 	//
-	// +kubebuilder:validation:Enum:=On-demand;CapacityBlocks
-	// +kubebuilder:default=CapacityBlocks
+	// +kubebuilder:validation:Enum:=OnDemand;CapacityBlocks
 	// +optional
 	MarketType MarketType `json:"marketType,omitempty"`
 }

@@ -421,6 +421,36 @@ spec:
                         description: placement specifies the placement options for
                           the EC2 instances.
                         properties:
+                          capacityReservation:
+                            description: capacityReservation specifies Capacity Reservation
+                              options for the NodePool instances.
+                            properties:
+                              id:
+                                description: |-
+                                  id specifies the target Capacity Reservation into which the EC2 instances should be launched.
+                                  Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
+                                maxLength: 20
+                                minLength: 20
+                                type: string
+                                x-kubernetes-validations:
+                                - message: AWS Capacity Reservation ID must start
+                                    with 'cr-' followed by 17 lowercase hexadecimal
+                                    characters (e.g., cr-0123456789abcdef0)
+                                  rule: self.matches('^cr-[a-f0-9]{17}$')
+                              marketType:
+                                description: |-
+                                  marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+                                  "OnDemand": EC2 instances run as standard On-Demand instances.
+                                  "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                                  The current default value is CapacityBlocks.
+                                enum:
+                                - OnDemand
+                                - CapacityBlocks
+                                type: string
+                            required:
+                            - id
+                            type: object
                           tenancy:
                             description: |-
                               tenancy indicates if instance should run on shared or single-tenant hardware.
