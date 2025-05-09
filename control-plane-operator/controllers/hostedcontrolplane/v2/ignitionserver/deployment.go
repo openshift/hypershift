@@ -92,6 +92,7 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.ReleaseImageProvider) (map[string]string, error) {
 	configAPIImage := imageProvider.GetImage("cluster-config-api")
 	machineConfigOperatorImage := imageProvider.GetImage("machine-config-operator")
+	clusterAuthenticationOperatorImage := imageProvider.GetImage("cluster-authentication-operator")
 
 	openShiftRegistryOverrides := util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides())
 	ocpRegistryMapping := util.ConvertImageRegistryOverrideStringToMap(openShiftRegistryOverrides)
@@ -106,6 +107,10 @@ func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.Rele
 	if err != nil {
 		return nil, err
 	}
+	overrideClusterAuthenticationOperatorImage, err := lookupMappedImage(ocpRegistryMapping, clusterAuthenticationOperatorImage)
+	if err != nil {
+		return nil, err
+	}
 
 	registryOverrides := maps.Clone(ign.releaseProvider.GetRegistryOverrides())
 	if overrideConfigAPIImage != configAPIImage {
@@ -113,6 +118,9 @@ func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.Rele
 	}
 	if overrideMachineConfigOperatorImage != machineConfigOperatorImage {
 		registryOverrides[machineConfigOperatorImage] = overrideMachineConfigOperatorImage
+	}
+	if overrideClusterAuthenticationOperatorImage != clusterAuthenticationOperatorImage {
+		registryOverrides[clusterAuthenticationOperatorImage] = overrideClusterAuthenticationOperatorImage
 	}
 
 	return registryOverrides, nil
