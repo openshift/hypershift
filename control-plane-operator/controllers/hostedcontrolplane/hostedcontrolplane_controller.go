@@ -110,6 +110,7 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/support/validations"
 
 	routev1 "github.com/openshift/api/route/v1"
 
@@ -170,9 +171,7 @@ const (
 	azureCredentials = "AzureCredentials"
 )
 
-var (
-	catalogImages map[string]string
-)
+var catalogImages map[string]string
 
 type HostedControlPlaneReconciler struct {
 	client.Client
@@ -926,6 +925,12 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 		}
 	}
 
+	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
+		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -937,11 +942,9 @@ func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, h
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer lookupCancel()
 	return r.ReleaseProvider.Lookup(lookupCtx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
-
 }
 
 func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) (reconcile.Result, error) {
-
 	createOrUpdate := r.createOrUpdate(hostedControlPlane)
 
 	r.Log.Info("Reconciling infrastructure services")
@@ -4936,7 +4939,6 @@ func (r *HostedControlPlaneReconciler) etcdStatefulSetCondition(ctx context.Cont
 		Reason:  hyperv1.EtcdWaitingForQuorumReason,
 		Message: message,
 	}, nil
-
 }
 
 func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
@@ -5033,10 +5035,8 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 
 		r.Log.Info("creating kubevirt cloud-config ConfigMap")
 		if _, err := createOrUpdate(ctx, r, ccmConfig, func() error {
-
 			r.Log.Info("reconciling kubevirt CCM ConfigMap")
 			return kubevirt.ReconcileCloudConfig(ccmConfig, hcp)
-
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s cloud config: %w", hcp.Spec.Platform.Type, err)
 		}
@@ -5096,7 +5096,6 @@ func shouldCleanupCloudResources(log logr.Logger, hcp *hyperv1.HostedControlPlan
 }
 
 func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
-
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Removing cloud resources")
 
