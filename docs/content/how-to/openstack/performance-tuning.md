@@ -86,7 +86,7 @@ export FLAVOR="m1.xlarge.nfv"
 hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
-  --node-count 0 \
+  --replicas 0 \
   --openstack-node-flavor $FLAVOR
 ```
 

@@ -139,7 +139,7 @@ You can also set the `enable-ephemeral-disk` flag when creating a NodePool.
 hypershift create nodepool azure \
 --name <name_of_nodepool> \
 --cluster-name <cluster_name> \
---node-count <number_of_replicas> \
+--replicas <number_of_replicas> \
 --release-image <release_image> \
 --enable-ephemeral-disk true \
 --instance-type Standard_DS4_v2 \

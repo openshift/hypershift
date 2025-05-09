@@ -12,7 +12,7 @@ export AZ="az1"
 hcp create nodepool openstack \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
-  --node-count $WORKER_COUNT \
+  --replicas $WORKER_COUNT \
   --openstack-node-flavor $FLAVOR \
   --openstack-node-availability-zone $AZ \
 ```

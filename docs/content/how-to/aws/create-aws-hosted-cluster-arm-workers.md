@@ -100,6 +100,6 @@ ARCH="arm64"
 hypershift create nodepool aws \
 --cluster-name $CLUSTER_NAME \
 --name $NODE_POOLNAME \
---node-count=3 \
+--replicas=3 \
 --arch $ARCH \
 ```

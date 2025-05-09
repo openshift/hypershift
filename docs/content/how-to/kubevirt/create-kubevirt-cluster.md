@@ -257,7 +257,7 @@ export DISK="16"
 hcp create nodepool kubevirt \
   --cluster-name $CLUSTER_NAME \
   --name $NODEPOOL_NAME \
-  --node-count $WORKER_COUNT \
+  --replicas $WORKER_COUNT \
   --memory $MEM \
   --cores $CPU \
   --root-volume-size $DISK
