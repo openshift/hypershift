@@ -6,6 +6,7 @@ data:
     VPC = my-vpc
     KubernetesClusterID = my-infra-ID
     SubnetID = my-subnet-ID
+    ClusterServiceLoadBalancerHealthProbeMode = Shared
 kind: ConfigMap
 metadata:
   creationTimestamp: null

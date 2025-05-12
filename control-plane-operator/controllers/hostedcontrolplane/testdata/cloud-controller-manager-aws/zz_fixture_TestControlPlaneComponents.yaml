@@ -26,7 +26,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
-        component.hypershift.openshift.io/config-hash: 53b6605a
+        component.hypershift.openshift.io/config-hash: 6cd2cf9e
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
