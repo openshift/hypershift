@@ -27,10 +27,11 @@ COPY --from=builder /hypershift/bin/    /opt/app-root/src/
 CMD ["nginx", "-g", "daemon off;"]
 
 LABEL name="multicluster-engine/hypershift-cli-rhel9"
-LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
+LABEL description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines."
 LABEL summary="HyperShift HCP CLI"
 LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/"
 LABEL version=4.19
 LABEL com.redhat.component="multicluster-engine-hypershift-cli-container"
 LABEL io.openshift.tags="data,images"
 LABEL io.k8s.display-name="multicluster-engine-hypershift-cli"
+LABEL io.k8s.description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines."
