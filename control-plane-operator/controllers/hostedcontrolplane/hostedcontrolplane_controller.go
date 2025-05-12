@@ -2444,59 +2444,6 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
-	routeList := &routev1.RouteList{}
-	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
-		return fmt.Errorf("failed to list routes: %w", err)
-	}
-
-	// reconcile the router's configuration
-	svcsNameToIP := make(map[string]string)
-	for _, route := range routeList.Items {
-		svc := &corev1.Service{
-			TypeMeta: metav1.TypeMeta{},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      route.Spec.To.Name,
-				Namespace: hcp.Namespace,
-			},
-		}
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-			return err
-		}
-
-		svcsNameToIP[route.Spec.To.Name] = svc.Spec.ClusterIP
-	}
-
-	routerConfig := manifests.RouterConfigurationConfigMap(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, routerConfig, func() error {
-		return ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(hcp), routerConfig, routeList, svcsNameToIP)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router configuration: %w", err)
-	}
-
-	deployment := manifests.RouterDeployment(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, deployment, func() error {
-		return ingress.ReconcileRouterDeployment(deployment,
-			config.OwnerRefFrom(hcp),
-			ingress.HCPRouterConfig(hcp, r.SetDefaultSecurityContext),
-			releaseImageProvider.GetImage(ingress.PrivateRouterImage),
-			routerConfig,
-		)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router deployment: %w", err)
-	}
-
-	pdb := manifests.RouterPodDisruptionBudget(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r.Client, pdb, func() error {
-		ingress.ReconcileRouterPodDisruptionBudget(pdb, hcp.Spec.ControllerAvailabilityPolicy, config.OwnerRefFrom(hcp))
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router pod disruption budget: %w", err)
-	}
-
-	return nil
-}
-
 func (r *HostedControlPlaneReconciler) admitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, privateRouterHost, externalRouterHost string) error {
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
