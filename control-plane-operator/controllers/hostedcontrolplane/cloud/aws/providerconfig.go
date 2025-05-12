@@ -18,7 +18,8 @@ const configTemplate = `[Global]
 Zone = %s
 VPC = %s
 KubernetesClusterID = %s
-SubnetID = %s`
+SubnetID = %s
+ClusterServiceLoadBalancerHealthProbeMode = Shared`
 
 func (p *AWSParams) ReconcileCloudConfig(cm *corev1.ConfigMap) error {
 	util.EnsureOwnerRef(cm, p.OwnerRef)
