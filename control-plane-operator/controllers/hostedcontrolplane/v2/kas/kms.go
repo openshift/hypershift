@@ -12,12 +12,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images kmsImages) error {
+func applyKMSConfig(namespace string, podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images kmsImages) error {
 	if secretEncryptionData.KMS == nil {
 		return fmt.Errorf("kms metadata not specified")
 	}
 
-	provider, err := getKMSProvider(secretEncryptionData.KMS, images)
+	provider, err := getKMSProvider(namespace, secretEncryptionData.KMS, images)
 	if err != nil {
 		return err
 	}
@@ -34,8 +34,8 @@ func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.Secre
 	return nil
 }
 
-func generateKMSEncryptionConfig(kmsSpec *hyperv1.KMSSpec, apiVersion string) ([]byte, error) {
-	provider, err := getKMSProvider(kmsSpec, kmsImages{})
+func generateKMSEncryptionConfig(namespace string, kmsSpec *hyperv1.KMSSpec, apiVersion string) ([]byte, error) {
+	provider, err := getKMSProvider(namespace, kmsSpec, kmsImages{})
 	if err != nil {
 		return nil, err
 	}
@@ -53,14 +53,14 @@ func generateKMSEncryptionConfig(kmsSpec *hyperv1.KMSSpec, apiVersion string) ([
 	return bufferInstance.Bytes(), nil
 }
 
-func getKMSProvider(kmsSpec *hyperv1.KMSSpec, images kmsImages) (kms.KMSProvider, error) {
+func getKMSProvider(namespace string, kmsSpec *hyperv1.KMSSpec, images kmsImages) (kms.KMSProvider, error) {
 	switch kmsSpec.Provider {
 	case hyperv1.IBMCloud:
 		return kms.NewIBMCloudKMSProvider(kmsSpec.IBMCloud, images.IBMCloudKMS)
 	case hyperv1.AWS:
 		return kms.NewAWSKMSProvider(kmsSpec.AWS, images.AWSKMS, images.TokenMinterImage)
 	case hyperv1.AZURE:
-		return kms.NewAzureKMSProvider(kmsSpec.Azure, images.AzureKMS)
+		return kms.NewAzureKMSProvider(namespace, kmsSpec.Azure, images.AzureKMS)
 	default:
 		return nil, fmt.Errorf("unrecognized kms provider %s", kmsSpec.Provider)
 	}
