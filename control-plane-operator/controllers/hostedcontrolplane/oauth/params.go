@@ -14,22 +14,18 @@ import (
 	osinv1 "github.com/openshift/api/osin/v1"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 )
 
 type OAuthServerParams struct {
-	OwnerRef                config.OwnerRef `json:"ownerRef"`
-	ExternalHost            string          `json:"externalHost"`
-	ExternalPort            int32           `json:"externalPort"`
-	ExternalAPIHost         string          `json:"externalAPIHost"`
-	ExternalAPIPort         int32           `json:"externalAPIPort"`
-	OAuthServerImage        string
-	config.DeploymentConfig `json:",inline"`
-	OAuth                   *configv1.OAuthSpec
-	ProxyConfig             *configv1.ProxySpec
-	APIServer               *configv1.APIServerSpec `json:"apiServer"`
+	OwnerRef         config.OwnerRef `json:"ownerRef"`
+	ExternalHost     string          `json:"externalHost"`
+	ExternalPort     int32           `json:"externalPort"`
+	ExternalAPIHost  string          `json:"externalAPIHost"`
+	ExternalAPIPort  int32           `json:"externalAPIPort"`
+	OAuthServerImage string
+	OAuth            *configv1.OAuthSpec
+	ProxyConfig      *configv1.ProxySpec
+	APIServer        *configv1.APIServerSpec `json:"apiServer"`
 	// OauthConfigOverrides contains a mapping from provider name to the config overrides specified for the provider.
 	// The only supported use case of using this is for the IBMCloud IAM OIDC provider.
 	OauthConfigOverrides map[string]*ConfigOverride
@@ -81,70 +77,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 		p.AuditWebhookRef = hcp.Spec.AuditWebhook
 	}
 
-	p.Scheduling = config.Scheduling{
-		PriorityClass: config.APICriticalPriorityClass,
-	}
-	if hcp.Annotations[hyperv1.APICriticalPriorityClass] != "" {
-		p.Scheduling.PriorityClass = hcp.Annotations[hyperv1.APICriticalPriorityClass]
-	}
-	p.Resources = map[string]corev1.ResourceRequirements{
-		oauthContainerMain().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("40Mi"),
-				corev1.ResourceCPU:    resource.MustParse("25m"),
-			},
-		},
-		oauthContainerHTTPProxy().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("30Mi"),
-			},
-		},
-		oauthContainerSocks5Proxy().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("10m"),
-				corev1.ResourceMemory: resource.MustParse("30Mi"),
-			},
-		},
-	}
-	p.LivenessProbes = config.LivenessProbes{
-		oauthContainerMain().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(OAuthServerPort),
-					Path:   "healthz",
-				},
-			},
-			InitialDelaySeconds: 120,
-			TimeoutSeconds:      10,
-			PeriodSeconds:       60,
-			FailureThreshold:    3,
-			SuccessThreshold:    1,
-		},
-	}
-	p.ReadinessProbes = config.ReadinessProbes{
-		oauthContainerMain().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTPS,
-					Port:   intstr.FromInt(OAuthServerPort),
-					Path:   "healthz",
-				},
-			},
-			TimeoutSeconds:   5,
-			PeriodSeconds:    10,
-			FailureThreshold: 3,
-			SuccessThreshold: 1,
-		},
-	}
-	replicas := ptr.To(2)
-	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-		replicas = ptr.To(1)
-	}
-	p.DeploymentConfig.SetRequestServingDefaults(hcp, oauthServerLabels, replicas)
-	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-
 	p.OauthConfigOverrides = map[string]*ConfigOverride{}
 	for annotationKey, annotationValue := range hcp.Annotations {
 		if strings.HasPrefix(annotationKey, hyperv1.IdentityProviderOverridesAnnotationPrefix) {
@@ -161,8 +93,6 @@ func NewOAuthServerParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider 
 			p.LoginURLOverride = annotationValue
 		}
 	}
-
-	p.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		p.OAuthNoProxy = append(p.OAuthNoProxy, "iam.cloud.ibm.com", "iam.test.cloud.ibm.com")
