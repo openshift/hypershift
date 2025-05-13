@@ -351,7 +351,7 @@ az group create --name $AKS_CLUSTER_RG_NAME --location eastus
 az aks create \
     --resource-group $AKS_CLUSTER_RG_NAME \
     --name $AKS_CLUSTER_NAME \
-    --node-count 3 \
+    --replicas 3 \
     --generate-ssh-keys \
     --load-balancer-sku standard \
     --os-sku AzureLinux \
