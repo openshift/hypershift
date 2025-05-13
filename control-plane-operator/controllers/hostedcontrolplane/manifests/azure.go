@@ -1,6 +1,8 @@
 package manifests
 
 import (
+	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -47,6 +49,15 @@ func AzureFileConfigWithCredentials(ns string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "azure-file-csi-config",
+			Namespace: ns,
+		},
+	}
+}
+
+func AzureKMSSeed(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      config.AzureKMSSeedSecretName,
 			Namespace: ns,
 		},
 	}
