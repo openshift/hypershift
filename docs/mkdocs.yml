@@ -51,6 +51,8 @@ validation:
   anchors: ignore
   nav:
     omitted_files: ignore
+extra_css:
+  - custom.css
 nav:
 - Home: index.md
 - 'Getting started': getting-started.md
