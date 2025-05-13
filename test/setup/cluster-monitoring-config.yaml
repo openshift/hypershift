@@ -1,4 +1,4 @@
-prometheusk8s:
+prometheusK8s:
 {{- if .RemoteWriteURL }}
   remoteWrite:
   - url: {{.RemoteWriteURL}}
