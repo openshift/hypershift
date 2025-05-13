@@ -354,6 +354,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 		EnableEtcdRecovery:                      enableEtcdRecovery,
 		FeatureSet:                              featuregate.FeatureSet(),
+		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
 		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)

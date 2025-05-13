@@ -202,6 +202,8 @@ type HostedClusterReconciler struct {
 	EnableEtcdRecovery bool
 
 	FeatureSet configv1.FeatureSet
+
+	OpenShiftTrustedCAFilePath string
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -2692,9 +2694,9 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	trustedCABundle := new(bytes.Buffer)
 	var trustCABundleFile []byte
 
-	_, err := os.Stat("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+	_, err := os.Stat(r.OpenShiftTrustedCAFilePath)
 	if err == nil {
-		trustCABundleFile, err = os.ReadFile("/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem")
+		trustCABundleFile, err = os.ReadFile(r.OpenShiftTrustedCAFilePath)
 		if err != nil {
 			return false, fmt.Errorf("unable to read trust bundle file: %w", err)
 		}
