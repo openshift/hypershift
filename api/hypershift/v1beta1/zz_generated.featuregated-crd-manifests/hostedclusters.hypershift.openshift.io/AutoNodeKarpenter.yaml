@@ -215,6 +215,7 @@ spec:
                       - openshift-samples
                       - Insights
                       - baremetal
+                      - Console
                       type: string
                     maxItems: 25
                     type: array
@@ -233,6 +234,7 @@ spec:
                       - openshift-samples
                       - Insights
                       - baremetal
+                      - Console
                       type: string
                     maxItems: 25
                     type: array

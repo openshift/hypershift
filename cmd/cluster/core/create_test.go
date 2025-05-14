@@ -255,6 +255,17 @@ func TestValidate(t *testing.T) {
 			expectedErr: "",
 		},
 		{
+			name: "passes with Console capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
 			name: "fails with an invalid DNS name as KubeAPIServerDNSName",
 			rawOpts: &RawCreateOptions{
 				Name:                 "test-hc",
