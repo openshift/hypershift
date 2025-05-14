@@ -68,6 +68,7 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	supportvalidations "github.com/openshift/hypershift/support/validations"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -4774,6 +4775,19 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client) error {
 	var errs field.ErrorList
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
+
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
+		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
+		if err != nil {
+			fieldErr := &field.Error{
+				Type:     field.ErrorTypeInvalid,
+				Field:    field.NewPath("spec", "configuration", "authentication").String(),
+				BadValue: hc.Spec.Configuration.Authentication,
+				Detail:   err.Error(),
+			}
+			errs = append(errs, fieldErr)
+		}
+	}
 
 	return errs.ToAggregate()
 }
