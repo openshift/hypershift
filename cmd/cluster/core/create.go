@@ -112,6 +112,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
+	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -175,6 +176,7 @@ type RawCreateOptions struct {
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
 	DisableMultiNetwork              bool
+	VersionCheck                     bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -660,6 +662,17 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, errors.New("--pull-secret is required")
 	}
 
+	if opts.VersionCheck {
+		versionCLI := supportedversion.GetRevision()
+		client, err := util.GetClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client: %w", err)
+		}
+		if err := validateVersion(ctx, versionCLI, client); err != nil {
+			return nil, fmt.Errorf("version validation failed: %w", err)
+		}
+	}
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
@@ -1130,5 +1143,18 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		}
 	}
 
+	return nil
+}
+
+// validateVersion is a version check when creating a Hypershift cluster that checks if the CLI and Hypershift
+// operator are both running the same version of Hypershift by comparing their commit SHAs.
+func validateVersion(ctx context.Context, versionCLI string, client crclient.Client) error {
+	_, operatorVersion, err := supportedversion.GetSupportedOCPVersions(ctx, "hypershift", client, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get supported OCP versions: %v", err)
+	}
+	if operatorVersion != versionCLI {
+		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)
+	}
 	return nil
 }
