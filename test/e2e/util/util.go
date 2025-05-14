@@ -2670,3 +2670,19 @@ func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomeg
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-insights\" not found"))
 	})
 }
+
+// EnsureConsoleCapabilityDisabled validates the expectations for when ConsoleCapability is Disabled
+func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+	t.Run("EnsureConsoleCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "console", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"console\" not found"))
+
+		// ensure console resources are not present
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-console", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-console\" not found"))
+	})
+}
