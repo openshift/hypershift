@@ -161,13 +161,14 @@ spec:
                       disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
                       Once set, this field cannot be changed.
 
-                      Note: Disabling 'openshift-samples','Insights' are only supported in OpenShift versions 4.20 and above.
+                      Note: Disabling 'openshift-samples','Insights', 'Console' are only supported in OpenShift versions 4.20 and above.
                     items:
                       enum:
                       - ImageRegistry
                       - openshift-samples
                       - Insights
                       - baremetal
+                      - Console
                       type: string
                     maxItems: 25
                     type: array
@@ -186,6 +187,7 @@ spec:
                       - openshift-samples
                       - Insights
                       - baremetal
+                      - Console
                       type: string
                     maxItems: 25
                     type: array
