@@ -69,22 +69,19 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	// That means the image reference should be pulled from the external registry
 	if len(r.OpenShiftImageRegistryOverrides) == 0 {
 		// If the image reference contains a digest, immediately look it up in the cache
-		if parsedImageRef.ID != "" {
-			if imageConfigObject, exists := imageMetadataCache.Get(parsedImageRef.ID); exists {
-				return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
-			}
+		if imageConfigObject, exists := imageMetadataCache.Get(imageRef); exists {
+			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 		}
 		ref = &parsedImageRef
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
 	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+	composedRef := ref.String()
 
 	// If the image reference contains a digest, immediately look it up in the cache
-	if ref.ID != "" {
-		if imageConfigObject, exists := imageMetadataCache.Get(ref.ID); exists {
-			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
-		}
+	if imageConfigObject, exists := imageMetadataCache.Get(composedRef); exists {
+		return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 	}
 
 	repo, err = getRepository(ctx, *ref, pullSecret)
@@ -99,10 +96,8 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	}
 
 	// If the image ref did not contain a digest, attempt looking it up by digest after we've fetched the digest
-	if ref.ID == "" {
-		if imageConfigObject, exists := imageMetadataCache.Get(string(location.Manifest)); exists {
-			return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
-		}
+	if imageConfigObject, exists := imageMetadataCache.Get(string(location.Manifest)); exists {
+		return imageConfigObject.(*dockerv1client.DockerImageConfig), nil
 	}
 
 	config, _, err := manifest.ManifestToImageConfig(ctx, firstManifest, repo.Blobs(ctx), location)
@@ -110,6 +105,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 		return nil, fmt.Errorf("failed to obtain image configuration for %s: %w", imageRef, err)
 	}
 	imageMetadataCache.Add(string(location.Manifest), config)
+	imageMetadataCache.Add(imageRef, config)
 
 	return config, nil
 }
@@ -218,31 +214,27 @@ func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, i
 	// That means the image reference should be pulled from the external registry
 	if len(r.OpenShiftImageRegistryOverrides) == 0 {
 		// If the image reference contains a digest, immediately look it up in the cache
-		if parsedImageRef.ID != "" {
-			if manifest, exists := manifestsCache.Get(parsedImageRef.ID); exists {
-				return manifest.(distribution.Manifest), nil
-			}
+		if manifest, exists := manifestsCache.Get(imageRef); exists {
+			return manifest.(distribution.Manifest), nil
 		}
 		ref = &parsedImageRef
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
 	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
+	composedRef := ref.String()
 
 	// If the image reference contains a digest, immediately look it up in the cache
-	if ref.ID != "" {
-		if manifest, exists := manifestsCache.Get(ref.ID); exists {
-			return manifest.(distribution.Manifest), nil
-		}
+	if manifest, exists := manifestsCache.Get(composedRef); exists {
+		return manifest.(distribution.Manifest), nil
 	}
-
-	composedRef := ref.String()
 
 	digestsManifest, srcDigest, err := getManifest(ctx, composedRef, pullSecret)
 	if err != nil {
 		return nil, err
 	}
 	manifestsCache.Add(srcDigest, digestsManifest)
+	manifestsCache.Add(imageRef, digestsManifest)
 
 	return digestsManifest, nil
 }
