@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -155,71 +156,80 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 			namespace := hostedCluster.Namespace
 			g := gomega.NewWithT(t)
 
-			postUpgradeNodePools := &hyperv1.NodePoolList{}
-			err = mgmtClient.List(ctx, postUpgradeNodePools, crclient.InNamespace(namespace))
-			g.Expect(err).ToNot(gomega.HaveOccurred(), "Listing NodePools in namespace %s shouldn't return errors",
-				namespace)
+			g.Consistently(func(g gomega.Gomega) bool {
+				postUpgradeNodePools := &hyperv1.NodePoolList{}
+				err = mgmtClient.List(ctx, postUpgradeNodePools, crclient.InNamespace(namespace))
+				if err != nil {
+					t.Logf("error in listing nodepools in namespace %s", namespace)
+					// Try again since it might be some intermittent error
+					return true
+				}
+				if len(postUpgradeNodePools.Items) != len(nodePoolsMap) {
+					gomega.StopTrying(fmt.Sprintf("Number of NodePools changed from %d to %d", len(nodePoolsMap), len(postUpgradeNodePools.Items))).Now()
+				}
 
-			g.Expect(postUpgradeNodePools.Items).ToNot(gomega.BeEmpty(), "Should find NodePools in namespace %s",
-				namespace)
-			g.Expect(len(postUpgradeNodePools.Items)).To(gomega.BeEquivalentTo(len(nodePoolsMap)),
-				"Number of pre-ugrade and post-upgrade NodePools should match")
+				for _, nodePool := range postUpgradeNodePools.Items {
+					t.Logf("Verifying NodePool %s", nodePool.Name)
+					var preUpgradeNodePool *hyperv1.NodePool
+					var ok bool
 
-			for _, nodePool := range postUpgradeNodePools.Items {
-				t.Logf("Verifying NodePool %s", nodePool.Name)
-				preUpgradeNodePool, ok := nodePoolsMap[nodePool.Name]
-				g.Expect(ok).To(gomega.BeTrue(), "Should have a pre-upgrade nodepool with the name %s",
-					nodePool.Name)
+					if preUpgradeNodePool, ok = nodePoolsMap[nodePool.Name]; !ok {
+						gomega.StopTrying(fmt.Sprintf("NodePool %s not found", nodePool.Name)).Now()
+					}
 
-				t.Logf("Generation: %d", nodePool.Generation)
-				t.Logf("CurrentConfig: %s", nodePool.Annotations[nodePoolAnnotationCurrentConfig])
-				t.Logf("CurrentConfigVersion:%s", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
+					t.Logf("Generation: %d", nodePool.Generation)
+					t.Logf("CurrentConfig: %s", nodePool.Annotations[nodePoolAnnotationCurrentConfig])
+					t.Logf("CurrentConfigVersion:%s", nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion])
 
-				// Check if the node pool has been updated
-				g.Expect(nodePool.Generation).To(gomega.Equal(preUpgradeNodePool.Generation),
-					"Pre-upgrade and post-upgrade NodePool generations should match")
-				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(
-					gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfig]),
-					"Pre-upgrade and post-upgrade NodePool current config should match")
-				g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(
-					gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]),
-					"Pre-upgrade and post-upgrade NodePool current config version should match")
+					// Check if the node pool has been updated
+					g.Expect(nodePool.Generation).To(gomega.Equal(preUpgradeNodePool.Generation),
+						"Pre-upgrade and post-upgrade NodePool generations should match")
+					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfig]).To(
+						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfig]),
+						"Pre-upgrade and post-upgrade NodePool current config should match")
+					g.Expect(nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]).To(
+						gomega.Equal(preUpgradeNodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]),
+						"Pre-upgrade and post-upgrade NodePool current config version should match")
 
-				conditions, err := e2eutil.Conditions(&nodePool)
-				g.Expect(err).ToNot(gomega.HaveOccurred(), "Retrieving NodePool conditions shouldn't return errors")
-				targetConditions := sets.NewString(hyperv1.NodePoolUpdatingVersionConditionType,
-					hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
-				for _, c := range conditions {
-					if targetConditions.Has(c.Type) {
-						t.Logf("Found condition %s of NodePool %s", c.String(), nodePool.Name)
-						g.Expect(c.Status).To(gomega.Equal(metav1.ConditionFalse), "Condition %s of nodepool %s shouldn't be True", nodePool.Name, c.Type)
+					conditions, err := e2eutil.Conditions(&nodePool)
+					if err != nil {
+						gomega.StopTrying(fmt.Sprintf("Error getting NodePool conditions: %v", err)).Now()
+					}
+					targetConditions := sets.NewString(hyperv1.NodePoolUpdatingVersionConditionType,
+						hyperv1.NodePoolUpdatingConfigConditionType, hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType)
+					for _, c := range conditions {
+						if targetConditions.Has(c.Type) {
+							t.Logf("Found condition %s of NodePool %s", c.String(), nodePool.Name)
+							g.Expect(c.Status).To(gomega.Equal(metav1.ConditionFalse), "Condition %s of nodepool %s shouldn't be True", nodePool.Name, c.Type)
+						}
 					}
 				}
 
-			}
+				postUpgradeMachineDeployments := &v1beta1.MachineDeploymentList{}
+				err = mgmtClient.List(ctx, postUpgradeMachineDeployments, crclient.InNamespace(hcpNameSpace))
+				if err != nil {
+					gomega.StopTrying(fmt.Sprintf("Error listing MachineDeployments: %v", err)).Now()
+				}
 
-			postUpgradeMachineDeployments := &v1beta1.MachineDeploymentList{}
-			err = mgmtClient.List(ctx, postUpgradeMachineDeployments, crclient.InNamespace(hcpNameSpace))
-			g.Expect(err).ToNot(gomega.HaveOccurred(),
-				"Listing MachineDeployments in namespace %s shouldn't return errors", hcpNameSpace)
+				if len(postUpgradeMachineDeployments.Items) != len(machineDeploymentMap) {
+					gomega.StopTrying(fmt.Sprintf("Number of MachineDeployments changed from %d to %d", len(machineDeploymentMap), len(postUpgradeMachineDeployments.Items))).Now()
+				}
+				for _, machineDeployment := range postUpgradeMachineDeployments.Items {
+					t.Logf("Verifying MachineDeployment %s", machineDeployment.Name)
+					var preUpgradeMachineDeployment *v1beta1.MachineDeployment
+					var ok bool
+					if preUpgradeMachineDeployment, ok = machineDeploymentMap[machineDeployment.Name]; !ok {
+						gomega.StopTrying(fmt.Sprintf("MachineDeployment %s not found", machineDeployment.Name)).Now()
+					}
 
-			g.Expect(postUpgradeMachineDeployments.Items).ToNot(gomega.BeEmpty(),
-				"Should find MachineDeployments in namespace %s", hcpNameSpace)
-			g.Expect(len(postUpgradeMachineDeployments.Items)).To(gomega.BeEquivalentTo(len(machineDeploymentMap)),
-				"Number of pre-upgrade and post-upgrade MachineDeployments should match")
+					t.Logf("Generation: Got %d", machineDeployment.Generation)
 
-			for _, machineDeployment := range postUpgradeMachineDeployments.Items {
-				t.Logf("Verifying MachineDeployment %s", machineDeployment.Name)
-				preUpgradeMachineDeployment, ok := machineDeploymentMap[machineDeployment.Name]
-				g.Expect(ok).To(gomega.BeTrue(), "Should have a pre-upgrade MachineDeployment with the name %s",
-					machineDeployment.Name)
-
-				t.Logf("Generation: Got %d", machineDeployment.Generation)
-
-				// Check if the machine deployment has been updated
-				g.Expect(machineDeployment.Generation).To(gomega.Equal(preUpgradeMachineDeployment.Generation),
-					"Pre-upgrade and post-upgrade MachineDeployment generations should match")
-			}
+					// Check if the machine deployment has been updated
+					g.Expect(machineDeployment.Generation).To(gomega.Equal(preUpgradeMachineDeployment.Generation),
+						"Pre-upgrade and post-upgrade MachineDeployment generations should match")
+				}
+				return true
+			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
 }
