@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1592,6 +1592,13 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, testCase.hostedCluster)
 	}
 
+	// create a temp file so that openshift-config-managed-trusted-ca-bundle configmap can be created
+	tmpCABundleFile, err := os.CreateTemp("/tmp", "tls-ca-bundle.pem")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpCABundleFile.Name())
+
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
@@ -1613,8 +1620,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							Manifest:  fakeimagemetadataprovider.FakeManifest{},
 						}, nil
 				},
-				EnableEtcdRecovery: true,
-				now:                metav1.Now,
+				EnableEtcdRecovery:         true,
+				now:                        metav1.Now,
+				OpenShiftTrustedCAFilePath: tmpCABundleFile.Name(),
 			}
 
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
@@ -1660,13 +1668,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				watchedResources.Insert(resourceType)
 			}
 
-			sortedCreatedTypes := client.createdTypes.UnsortedList()
-			sort.Strings(sortedCreatedTypes)
-
-			sortedWatchedTypes := watchedResources.UnsortedList()
-			sort.Strings(sortedWatchedTypes)
-
-			if diff := cmp.Diff(sortedCreatedTypes, sortedWatchedTypes); diff != "" {
+			if diff := cmp.Diff(sets.List(client.createdTypes), sets.List(watchedResources)); diff != "" {
 				t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 			}
 		})
