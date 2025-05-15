@@ -1236,16 +1236,18 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 }
 
 func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
-		if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
-				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
-			}
+		//if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
 		}
+		log.Info("reconcileClusterVersion: ", "clusterVersion.Spec.Capabilities", clusterVersion.Spec.Capabilities)
+		//}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
 		clusterVersion.Spec.DesiredUpdate = nil
