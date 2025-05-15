@@ -2159,64 +2159,61 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			t.Fatalf("failed to get hostedcontrolplane: %v", err)
 		}
 
-		expected := suppconfig.DeploymentConfig{
-			Scheduling: suppconfig.Scheduling{
-				Tolerations: []corev1.Toleration{
+		expectedTolerations := []corev1.Toleration{
+			{
+				Key:      controlPlaneLabelTolerationKey,
+				Operator: corev1.TolerationOpEqual,
+				Value:    "true",
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+			{
+				Key:      hyperv1.HostedClusterLabel,
+				Operator: corev1.TolerationOpEqual,
+				Value:    hcp.Namespace,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+		}
+
+		expectedAffinity := &corev1.Affinity{
+			NodeAffinity: &corev1.NodeAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 					{
-						Key:      controlPlaneLabelTolerationKey,
-						Operator: corev1.TolerationOpEqual,
-						Value:    "true",
-						Effect:   corev1.TaintEffectNoSchedule,
-					},
-					{
-						Key:      hyperv1.HostedClusterLabel,
-						Operator: corev1.TolerationOpEqual,
-						Value:    hcp.Namespace,
-						Effect:   corev1.TaintEffectNoSchedule,
-					},
-				},
-				Affinity: &corev1.Affinity{
-					NodeAffinity: &corev1.NodeAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
-							{
-								Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
-								Preference: corev1.NodeSelectorTerm{
-									MatchExpressions: []corev1.NodeSelectorRequirement{
-										{
-											Key:      controlPlaneLabelTolerationKey,
-											Operator: corev1.NodeSelectorOpIn,
-											Values:   []string{"true"},
-										},
-									},
-								},
-							},
-							{
-								Weight: int32(clusterNodeSchedulingAffinityWeight),
-								Preference: corev1.NodeSelectorTerm{
-									MatchExpressions: []corev1.NodeSelectorRequirement{
-										{
-											Key:      hyperv1.HostedClusterLabel,
-											Operator: corev1.NodeSelectorOpIn,
-											Values:   []string{hcp.Namespace},
-										},
-									},
+						Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      controlPlaneLabelTolerationKey,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{"true"},
 								},
 							},
 						},
 					},
-					PodAffinity: &corev1.PodAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
-							{
-								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											colocationLabelKey: hcp.Namespace,
-										},
-									},
-									TopologyKey: corev1.LabelHostname,
+					{
+						Weight: int32(clusterNodeSchedulingAffinityWeight),
+						Preference: corev1.NodeSelectorTerm{
+							MatchExpressions: []corev1.NodeSelectorRequirement{
+								{
+									Key:      hyperv1.HostedClusterLabel,
+									Operator: corev1.NodeSelectorOpIn,
+									Values:   []string{hcp.Namespace},
 								},
 							},
+						},
+					},
+				},
+			},
+			PodAffinity: &corev1.PodAffinity{
+				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					{
+						Weight: 100,
+						PodAffinityTerm: corev1.PodAffinityTerm{
+							LabelSelector: &metav1.LabelSelector{
+								MatchLabels: map[string]string{
+									colocationLabelKey: hcp.Namespace,
+								},
+							},
+							TopologyKey: corev1.LabelHostname,
 						},
 					},
 				},
@@ -2250,11 +2247,11 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
 				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations), "pod %s", pod.Name)
 			} else {
-				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations), "pod %s", pod.Name)
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(expectedTolerations), "pod %s", pod.Name)
 			}
 
-			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
-			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
+			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expectedAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
+			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expectedAffinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
 		}
 	})
 }

@@ -2,11 +2,6 @@ package konnectivity
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/config"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 const (
@@ -17,75 +12,16 @@ type KonnectivityParams struct {
 	Image           string
 	ExternalAddress string
 	ExternalPort    int32
-	config.DeploymentConfig
+
+	AdditionalAnnotations map[string]string
 }
 
 func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]string, externalAddress string, externalPort int32) *KonnectivityParams {
 	p := &KonnectivityParams{
-		Image:           images["konnectivity-agent"],
-		ExternalAddress: externalAddress,
-		ExternalPort:    externalPort,
-	}
-
-	p.DeploymentConfig.Resources = config.ResourcesSpec{
-		konnectivityAgentContainer().Name: {
-			Requests: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("50Mi"),
-				corev1.ResourceCPU:    resource.MustParse("40m"),
-			},
-		},
-	}
-	p.DeploymentConfig.Scheduling = config.Scheduling{
-		PriorityClass: systemNodeCriticalPriorityClass,
-		// Always run, even if nodes are not ready e.G. because there are networking issues as this helps a lot in debugging
-		Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-	}
-	p.DeploymentConfig.LivenessProbes = config.LivenessProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			TimeoutSeconds:   5,
-			PeriodSeconds:    30,
-			FailureThreshold: 6,
-			SuccessThreshold: 1,
-		},
-	}
-
-	p.DeploymentConfig.ReadinessProbes = config.ReadinessProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "readyz",
-				},
-			},
-			TimeoutSeconds:   5,
-			PeriodSeconds:    30,
-			FailureThreshold: 1,
-			SuccessThreshold: 1,
-		},
-	}
-
-	p.DeploymentConfig.StartupProbes = config.StartupProbes{
-		konnectivityAgentContainer().Name: {
-			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Scheme: corev1.URISchemeHTTP,
-					Port:   intstr.FromInt(int(healthPort)),
-					Path:   "healthz",
-				},
-			},
-			TimeoutSeconds:   5,
-			PeriodSeconds:    5,
-			FailureThreshold: 60,
-			SuccessThreshold: 1,
-		},
+		Image:                 images["konnectivity-agent"],
+		ExternalAddress:       externalAddress,
+		ExternalPort:          externalPort,
+		AdditionalAnnotations: map[string]string{},
 	}
 
 	// check apiserver-network-proxy image in ocp payload and use it
@@ -95,7 +31,11 @@ func NewKonnectivityParams(hcp *hyperv1.HostedControlPlane, images map[string]st
 	if _, ok := hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]; ok {
 		p.Image = hcp.Annotations[hyperv1.KonnectivityAgentImageAnnotation]
 	}
-	p.DeploymentConfig.SetReleaseImageAnnotation(hcp.Spec.ReleaseImage)
-	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+
+	p.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation] = hcp.Spec.ReleaseImage
+	if _, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+		p.AdditionalAnnotations[hyperv1.RestartDateAnnotation] = hcp.Annotations[hyperv1.RestartDateAnnotation]
+	}
+
 	return p
 }

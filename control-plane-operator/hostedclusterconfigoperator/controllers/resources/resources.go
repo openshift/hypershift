@@ -1226,7 +1226,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
-		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform, proxy.Status)
+		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p, hcp.Spec.Platform, proxy.Status)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err))

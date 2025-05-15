@@ -6,13 +6,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
@@ -33,7 +33,7 @@ var (
 	maxSurge       = intstr.FromInt(0)
 )
 
-func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig config.DeploymentConfig, image string, host string, port int32, platform hyperv1.PlatformSpec, proxy configv1.ProxyStatus) {
+func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityParams, platform hyperv1.PlatformSpec, proxy configv1.ProxyStatus) {
 	var labels map[string]string
 	if daemonset.Spec.Selector != nil && daemonset.Spec.Selector.MatchLabels != nil {
 		labels = daemonset.Spec.Selector.MatchLabels
@@ -49,7 +49,8 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: labels,
+				Labels:      labels,
+				Annotations: params.AdditionalAnnotations,
 			},
 			Spec: corev1.PodSpec{
 				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
@@ -60,12 +61,15 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 					RunAsUser: ptr.To[int64](1000),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(image, host, port, proxy)),
+					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(params.Image, params.ExternalAddress, params.ExternalPort, proxy)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
 					util.BuildVolume(konnectivityVolumeCACert(), buildKonnectivityVolumeCACert),
 				},
+				PriorityClassName: systemNodeCriticalPriorityClass,
+				// Always run, even if nodes are not ready e.G. because there are networking issues as this helps a lot in debugging
+				Tolerations: []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 			},
 		},
 		UpdateStrategy: appsv1.DaemonSetUpdateStrategy{
@@ -83,7 +87,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, deploymentConfig confi
 			daemonset.Spec.Template.Spec.DNSPolicy = corev1.DNSClusterFirst
 		}
 	}
-	deploymentConfig.ApplyToDaemonSet(daemonset)
+
 }
 
 func konnectivityAgentContainer() *corev1.Container {
@@ -155,6 +159,51 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.Resources = corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+				corev1.ResourceCPU:    resource.MustParse("40m"),
+			},
+		}
+		c.LivenessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 6,
+			SuccessThreshold: 1,
+		}
+		c.ReadinessProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "readyz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    30,
+			FailureThreshold: 1,
+			SuccessThreshold: 1,
+		}
+		c.StartupProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Scheme: corev1.URISchemeHTTP,
+					Port:   intstr.FromInt(int(healthPort)),
+					Path:   "healthz",
+				},
+			},
+			TimeoutSeconds:   5,
+			PeriodSeconds:    5,
+			FailureThreshold: 60,
+			SuccessThreshold: 1,
+		}
 	}
 }
 

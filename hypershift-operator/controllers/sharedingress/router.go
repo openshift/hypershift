@@ -145,9 +145,6 @@ func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {
 }
 
 func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.ConfigMap) error {
-	routerDeploymentConfig := config.DeploymentConfig{}
-	routerDeploymentConfig.SetMultizoneSpread(hcpRouterLabels(), false)
-
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](2),
 		Selector: &metav1.LabelSelector{
@@ -177,7 +174,19 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.
 				ServiceAccountName:           "",
 				AutomountServiceAccountToken: ptr.To(false),
 				Affinity: &corev1.Affinity{
-					PodAntiAffinity: routerDeploymentConfig.Scheduling.Affinity.PodAntiAffinity,
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									TopologyKey: corev1.LabelTopologyZone,
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: hcpRouterLabels(),
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
