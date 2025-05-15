@@ -28,9 +28,26 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return enabled
 }
 
+// IsBaremetalCapabilityEnabled returns true if the baremetal capability is
+// enabled, or false if disabled.
+//
+// The baremetal capability is disabled by default.
+func IsBaremetalCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return false
+	}
+	enabled := true
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.BaremetalCapability {
+			enabled = false
+		}
+	}
+	return enabled
+}
+
 // CalculateEnabledCapabilities returns the difference between the default set
-// of enabled capabilities (vCurrent) and the given set of capabilities to
-// disable, in alphabetical order.
+// of enabled capabilities and the given set of capabilities to disable, in
+// alphabetical order.
 func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
 	enabledCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
