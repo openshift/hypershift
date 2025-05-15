@@ -56,8 +56,8 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when capabilities.disabled is set to ImageRegistry it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.ImageRegistryCapability,
+								Disabled: []configv1.ClusterVersionCapability{
+									configv1.ClusterVersionCapabilityImageRegistry,
 								},
 							}
 						},
@@ -67,8 +67,8 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when capabilities.disabled is set to an unsupported capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("AnInvalidCapability"),
+								Disabled: []configv1.ClusterVersionCapability{
+									configv1.ClusterVersionCapability("AnInvalidCapability"),
 								},
 							}
 						},
@@ -1286,8 +1286,8 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				},
 			}
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
+				Disabled: []configv1.ClusterVersionCapability{
+					configv1.ClusterVersionCapabilityImageRegistry,
 				},
 			}
 		}

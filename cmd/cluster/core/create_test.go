@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+	configv1 "github.com/openshift/api/config/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
@@ -165,7 +166,7 @@ func TestPrototypeResources(t *testing.T) {
 			ValidatedCreateOptions: &ValidatedCreateOptions{
 				validatedCreateOptions: &validatedCreateOptions{
 					RawCreateOptions: &RawCreateOptions{
-						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+						DisableClusterCapabilities: []string{string(configv1.ClusterVersionCapabilityImageRegistry)},
 						KubeAPIServerDNSName:       "test-dns-name.example.com",
 					},
 				},
@@ -175,7 +176,7 @@ func TestPrototypeResources(t *testing.T) {
 	resources, err := prototypeResources(opts)
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
-		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+		To(Equal([]configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityImageRegistry}))
 	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
 }
 
