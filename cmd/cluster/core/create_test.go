@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
@@ -165,7 +167,8 @@ func TestPrototypeResources(t *testing.T) {
 			ValidatedCreateOptions: &ValidatedCreateOptions{
 				validatedCreateOptions: &validatedCreateOptions{
 					RawCreateOptions: &RawCreateOptions{
-						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
+						EnableClusterCapabilities:  []string{string(configv1.ClusterVersionCapabilityBaremetal)},
+						DisableClusterCapabilities: []string{string(configv1.ClusterVersionCapabilityImageRegistry)},
 						KubeAPIServerDNSName:       "test-dns-name.example.com",
 					},
 				},
@@ -175,7 +178,9 @@ func TestPrototypeResources(t *testing.T) {
 	resources, err := prototypeResources(opts)
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
-		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+		To(Equal([]configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityImageRegistry}))
+	g.Expect(resources.Cluster.Spec.Capabilities.Enabled).
+		To(Equal([]configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityBaremetal}))
 	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
 }
 
@@ -196,7 +201,7 @@ func TestValidate(t *testing.T) {
 		expectedErr string
 	}{
 		{
-			name: "fails with unsupported capability",
+			name: "fails with unsupported capability disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
@@ -204,15 +209,27 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"UnsupportedCapability"},
 			},
-			expectedErr: "unknown capability: UnsupportedCapability, accepted values are:",
+			expectedErr: "unknown disabled capability, accepted values are:",
 		},
 		{
-			name: "passes with ImageRegistry capability",
+			name: "fails with unsupported capability enabled",
+			rawOpts: &RawCreateOptions{
+				Name:                      "test-hc",
+				Namespace:                 "test-hc",
+				PullSecretFile:            pullSecretFile,
+				Arch:                      "amd64",
+				EnableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown enabled capability, accepted values are:",
+		},
+		{
+			name: "passes with valid capabilities enabled and disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
 				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
+				EnableClusterCapabilities:  []string{"baremetal"},
 				DisableClusterCapabilities: []string{"ImageRegistry"},
 			},
 			expectedErr: "",
