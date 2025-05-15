@@ -53,7 +53,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						name: "when capabilities.disabled is set to a valid capability it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -83,7 +83,8 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"baremetal\"",
 					},
 					{
 						name: "when baseDomain has invalid chars it should fail",
