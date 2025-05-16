@@ -403,19 +403,29 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	// TODO: cewong - re-enable when we fix loadbalancer subnet annotation
-	/*
-		if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-			return
-		}
-		if svc.Annotations == nil {
-			svc.Annotations = make(map[string]string)
-		}
-		subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
-		if ok {
-			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
-		}
-	*/
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
+	if ok {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
+	}
+}
+
+func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	selectors, ok := hcp.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation]
+	if ok {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"] = selectors
+	}
 }
 
 func GetKubeClientSet() (kubeclient.Interface, error) {
