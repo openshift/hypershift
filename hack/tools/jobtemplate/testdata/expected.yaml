@@ -1,0 +1,66 @@
+tests:
+- as: verify
+  commands: make verify
+  container:
+    from: src
+  skip_if_only_changed: (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+- as: e2e-aws-b1
+  capabilities:
+  - build-tmpfs
+  skip_if_only_changed: (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+  steps:
+    cluster_profile: hypershift
+    dependencies:
+      OCP_IMAGE_N1: release:n1minor
+      OCP_IMAGE_N2: release:n2minor
+    env:
+      ENABLE_HYPERSHIFT_CERT_ROTATION_SCALE: "true"
+      REQUEST_SERVING_COMPONENT_TEST: "true"
+      BUCKET_NUM: 1
+      BUCKET_TOTAL: 2
+    workflow: hypershift-aws-e2e-external
+- as: e2e-aws-b2
+  capabilities:
+  - build-tmpfs
+  skip_if_only_changed: (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+  steps:
+    cluster_profile: hypershift
+    dependencies:
+      OCP_IMAGE_N1: release:n1minor
+      OCP_IMAGE_N2: release:n2minor
+    env:
+      ENABLE_HYPERSHIFT_CERT_ROTATION_SCALE: "true"
+      REQUEST_SERVING_COMPONENT_TEST: "true"
+      BUCKET_NUM: 2
+      BUCKET_TOTAL: 2
+    workflow: hypershift-aws-e2e-external
+- as: e2e-aws-upgrade-b1
+  capabilities:
+  - build-tmpfs
+  skip_if_only_changed: (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+  steps:
+    cluster_profile: hypershift
+    dependencies:
+      OCP_IMAGE_N1: release:n1minor
+      OCP_IMAGE_N2: release:n2minor
+    env:
+      ENABLE_HYPERSHIFT_CERT_ROTATION_SCALE: "true"
+      REQUEST_SERVING_COMPONENT_TEST: "true"
+      BUCKET_NUM: 1
+      BUCKET_TOTAL: 2
+    workflow: hypershift-aws-e2e-external
+- as: e2e-aws-upgrade-b2
+  capabilities:
+  - build-tmpfs
+  skip_if_only_changed: (^(\.tekton|\.github|docs|examples|enhancements|contrib)/)|(^[A-Z]+\.md$)|((^|/)OWNERS$)|(/overrides\.yaml$)|(/\.testcoverage\.yml$)
+  steps:
+    cluster_profile: hypershift
+    dependencies:
+      OCP_IMAGE_N1: release:n1minor
+      OCP_IMAGE_N2: release:n2minor
+    env:
+      ENABLE_HYPERSHIFT_CERT_ROTATION_SCALE: "true"
+      REQUEST_SERVING_COMPONENT_TEST: "true"
+      BUCKET_NUM: 2
+      BUCKET_TOTAL: 2
+    workflow: hypershift-aws-e2e-external
