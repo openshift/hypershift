@@ -151,7 +151,8 @@ spec:
                     type: integer
                 type: object
               capabilities:
-                default: {}
+                default:
+                - disabled: '["BaremetalCapability"]'
                 description: |-
                   capabilities allows for disabling optional components at cluster install time.
                   This field is optional and once set cannot be changed.
@@ -169,6 +170,7 @@ spec:
                     items:
                       enum:
                       - ImageRegistry
+                      - BaremetalCapability
                       type: string
                     maxItems: 25
                     type: array

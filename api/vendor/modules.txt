@@ -666,6 +666,10 @@ k8s.io/utils/net
 k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/trace
+# knative.dev/pkg v0.0.0-20231010144348-ca8c009405dd
+## explicit; go 1.18
+knative.dev/pkg/apis
+knative.dev/pkg/kmp
 # sigs.k8s.io/controller-runtime v0.20.1
 ## explicit; go 1.23.0
 sigs.k8s.io/controller-runtime
