@@ -386,7 +386,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 					SuccessThreshold:    1,
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/version",
+							Path:   "/livez?exclude=etcd&exclude=log",
 							Scheme: corev1.URISchemeHTTPS,
 							Host:   internalAPIAddress,
 							Port:   intstr.FromInt(int(internalAPIPort)),
