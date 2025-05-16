@@ -35,3 +35,4 @@ LABEL com.redhat.component="multicluster-engine-hypershift-cli-container"
 LABEL io.openshift.tags="data,images"
 LABEL io.k8s.display-name="multicluster-engine-hypershift-cli"
 LABEL io.k8s.description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines."
+
