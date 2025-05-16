@@ -55,10 +55,12 @@ type ControlPlaneContext struct {
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
+	// OmitOwnerReference determines whether the HCP OwnerReference should be omitted from resources deployed by this component.
+	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
+	OmitOwnerReference bool
 
-	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
+	// SkipPredicate is used for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
-
 	// SkipCertificateSigning is used for the generic unit test to skip the signing of certificates and maintain a stable output.
 	SkipCertificateSigning bool
 }
@@ -230,7 +232,9 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 			return err
 		}
 		obj.SetNamespace(hcp.Namespace)
-		ownerRef.ApplyTo(obj)
+		if !cpContext.OmitOwnerReference {
+			ownerRef.ApplyTo(obj)
+		}
 
 		switch typedObj := obj.(type) {
 		case *rbacv1.RoleBinding:
@@ -291,8 +295,11 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		}
 	}
 
-	ownerRef := config.OwnerRefFrom(cpContext.HCP)
-	ownerRef.ApplyTo(workloadObj)
+	if !cpContext.OmitOwnerReference {
+		ownerRef := config.OwnerRefFrom(cpContext.HCP)
+		ownerRef.ApplyTo(workloadObj)
+	}
+
 	if c.adapt != nil {
 		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
 			return err
