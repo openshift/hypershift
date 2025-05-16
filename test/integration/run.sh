@@ -8,6 +8,8 @@ if [[ -z "${PULL_SECRET:-}" ]]; then
   echo "\$PULL_SECRET is required - visit https://console.redhat.com/openshift/create/local to download a secret."
 fi
 
+echo "test"
+
 workdir="${WORK_DIR:-}"
 if [[ -z "${workdir:-}" ]]; then
   workdir="$( mktemp -d )"
