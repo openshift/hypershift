@@ -1,13 +1,16 @@
 package kms
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 )
 
 type KMSPodConfig struct {
-	Containers []corev1.Container
-	Volumes    []corev1.Volume
+	InitContainers []corev1.Container
+	Containers     []corev1.Container
+	Volumes        []corev1.Volume
 
 	KASContainerMutate func(c *corev1.Container)
 }
@@ -19,9 +22,8 @@ type KMSProvider interface {
 }
 
 const (
-	KasMainContainerName        = "kube-apiserver"
-	encryptionConfigurationKind = "EncryptionConfiguration"
-
+	KasMainContainerName         = "kube-apiserver"
+	encryptionConfigurationKind  = "EncryptionConfiguration"
 	kasVolumeLocalhostKubeconfig = "localhost-kubeconfig"
 )
 
@@ -33,4 +35,16 @@ func kasVolumeKMSSocket() *corev1.Volume {
 
 func buildVolumeKMSSocket(v *corev1.Volume) {
 	v.EmptyDir = &corev1.EmptyDirVolumeSource{}
+}
+
+func buildVolumeKMSEncryptionClusterSeed(namespace string) corev1.Volume {
+	volume := corev1.Volume{
+		Name: "kms-encryption-cluster-seed",
+	}
+
+	secretName := fmt.Sprintf("azure-kms-provider-seed-active-%s", namespace)
+	volume.Secret = &corev1.SecretVolumeSource{
+		SecretName: secretName,
+	}
+	return volume
 }
