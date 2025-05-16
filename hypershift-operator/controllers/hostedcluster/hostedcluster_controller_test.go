@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -27,9 +28,11 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -1623,6 +1626,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				EnableEtcdRecovery:         true,
 				now:                        metav1.Now,
 				OpenShiftTrustedCAFilePath: tmpCABundleFile.Name(),
+				HypershiftOperatorImage:    "test-image",
 			}
 
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
@@ -1667,6 +1671,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				}
 				watchedResources.Insert(resourceType)
 			}
+			// We create a ControlPlaneComponent resource for the ControlPlaneOperator, but we don't watch it.
+			watchedResources.Insert("*v1beta1.ControlPlaneComponent")
 
 			if diff := cmp.Diff(sets.List(client.createdTypes), sets.List(watchedResources)); diff != "" {
 				t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
@@ -4334,5 +4340,111 @@ func TestReconcileCAPIManagerDeployment(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(sa.Name))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(image))
 		})
+	}
+}
+
+func TestReconcileControlPlaneOperator(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+			},
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
+		},
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hcluster",
+		},
+		Spec: hyperv1.HostedClusterSpec{},
+	}
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                context.Background(),
+		ReleaseImageProvider:   testutil.FakeImageProvider(),
+		HCP:                    hcp,
+		ApplyProvider:          upsert.NewApplyProvider(true),
+		SkipPredicate:          true,
+		SkipCertificateSigning: true,
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+		Build()
+	cpContext.Client = fakeClient
+
+	component := cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
+		HostedCluster:     hcluster,
+		Image:             "cpo-image",
+		UtilitiesImage:    "utilitiesImage",
+		HasUtilities:      true,
+		CertRotationScale: 2 * time.Minute,
+		FeatureSet:        configv1.CustomNoUpgrade,
+	})
+
+	// Reconcile multiple times to make sure multiple runs don't produce different results,
+	// and to check if resources are making a no-op update calls.
+	for range 2 {
+		if err := component.Reconcile(cpContext); err != nil {
+			t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+		}
+	}
+
+	var deployments appsv1.DeploymentList
+	if err := fakeClient.List(context.Background(), &deployments); err != nil {
+		t.Fatalf("failed to list deployments: %v", err)
+	}
+
+	if len(deployments.Items) == 0 {
+		t.Fatalf("expected a deployment to exist for component %s", component.Name())
+	}
+
+	workload := &deployments.Items[0]
+	yaml, err := hyperutil.SerializeResource(workload, api.Scheme)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+
+	controlPaneComponent := &hyperv1.ControlPlaneComponent{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      component.Name(),
+			Namespace: hcp.Namespace,
+		},
+	}
+	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+		t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
+	}
+
+	// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+	for i := range controlPaneComponent.Status.Conditions {
+		controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+	}
+
+	yaml, err = hyperutil.SerializeResource(controlPaneComponent, api.Scheme)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
+
+	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+		t.Fatalf("update loop detected: %v", err)
 	}
 }

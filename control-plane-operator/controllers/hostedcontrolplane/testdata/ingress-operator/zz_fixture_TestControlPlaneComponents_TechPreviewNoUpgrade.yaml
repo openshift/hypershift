@@ -145,10 +145,10 @@ spec:
             memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: admin-kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: admin-kubeconfig
       initContainers:
       - command:
         - /usr/bin/control-plane-operator

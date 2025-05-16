@@ -149,10 +149,10 @@ spec:
             memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       - args:
         - --token-audience=
         - --service-account-namespace=openshift-image-registry
@@ -171,10 +171,10 @@ spec:
             memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: apiserver-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

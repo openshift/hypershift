@@ -36,9 +36,13 @@ type TokenMinterContainerOptions struct {
 	// ServiceAccountNameSpace is the namespace of the service account for which to mint a token.
 	ServiceAccountNameSpace string
 
-	// KubeconfingVolumeName is the volume name which contains the kubeconfig to use mint the token in the target cluster.
+	// KubeconfingVolumeName is the volume name which contains the kubeconfig used to mint the token in the target cluster.
 	// defaults to 'kubeconfig'
 	KubeconfingVolumeName string
+
+	// KubeconfigSecretName is the name of the the kubeconfig secret used to mint the token in the target cluster.
+	KubeconfigSecretName string
+
 	// OneShot, if true, will cause the token-minter container to exit after minting the token.
 	OneShot bool
 }
@@ -79,7 +83,6 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 
 func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, tokenType TokenType, image string, tokenVolume corev1.Volume) corev1.Container {
 	tokenFileMountPath := "/var/run/secrets/openshift/serviceaccount"
-	kubeconfigMountPath := "/etc/kubernetes"
 
 	var audience string
 	if tokenType == CloudToken {
@@ -92,15 +95,9 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 		fmt.Sprintf("--service-account-namespace=%s", opts.ServiceAccountNameSpace),
 		fmt.Sprintf("--service-account-name=%s", opts.ServiceAccountName),
 		fmt.Sprintf("--token-file=%s", path.Join(tokenFileMountPath, "token")),
-		fmt.Sprintf("--kubeconfig=%s", path.Join(kubeconfigMountPath, util.KubeconfigKey)),
 	}
 	if opts.OneShot {
 		args = append(args, "--oneshot")
-	}
-
-	kubeconfingVolumeName := opts.KubeconfingVolumeName
-	if kubeconfingVolumeName == "" {
-		kubeconfingVolumeName = "kubeconfig"
 	}
 
 	container := corev1.Container{
@@ -117,14 +114,27 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
-				Name:      kubeconfingVolumeName,
-				MountPath: kubeconfigMountPath,
-			},
-			{
 				Name:      tokenVolume.Name,
 				MountPath: tokenFileMountPath,
 			},
 		},
+	}
+
+	if opts.KubeconfigSecretName != "" {
+		container.Args = append(container.Args, fmt.Sprintf("--kubeconfig-secret-namespace=%s", hcp.Namespace))
+		container.Args = append(container.Args, fmt.Sprintf("--kubeconfig-secret-name=%s", opts.KubeconfigSecretName))
+	} else {
+		kubeconfigMountPath := "/etc/kubernetes"
+		kubeconfingVolumeName := opts.KubeconfingVolumeName
+		if kubeconfingVolumeName == "" {
+			kubeconfingVolumeName = "kubeconfig"
+		}
+
+		container.Args = append(container.Args, fmt.Sprintf("--kubeconfig=%s", path.Join(kubeconfigMountPath, util.KubeconfigKey)))
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      kubeconfingVolumeName,
+			MountPath: kubeconfigMountPath,
+		})
 	}
 
 	return container
