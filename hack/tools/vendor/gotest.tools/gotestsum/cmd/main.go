@@ -108,6 +108,9 @@ func setupFlags(name string) (*pflag.FlagSet, *options) {
 	flags.BoolVar(&opts.junitHideEmptyPackages, "junitfile-hide-empty-pkg",
 		truthyFlag(lookEnvWithDefault("GOTESTSUM_JUNIT_HIDE_EMPTY_PKG", "")),
 		"omit packages with no tests from the junit.xml file")
+	flags.BoolVar(&opts.junitHideSkippedTests, "junitfile-hide-skipped-tests",
+		truthyFlag(lookEnvWithDefault("GOTESTSUM_JUNIT_HIDE_SKIPPED_TESTS", "")),
+		"omit skipped tests from the junit.xml file")
 
 	flags.IntVar(&opts.rerunFailsMaxAttempts, "rerun-fails", 0,
 		"rerun failed tests until they all pass, or attempts exceeds maximum. Defaults to max 2 reruns when enabled")
@@ -159,7 +162,7 @@ Format icons:
 
 Commands:
     %[1]s tool slowest   find or skip the slowest tests
-    %[1]s help           print this help next
+    %[1]s help           print this help text
 `, name)
 }
 
@@ -187,6 +190,7 @@ type options struct {
 	junitTestCaseClassnameFormat *junitFieldFormatValue
 	junitProjectName             string
 	junitHideEmptyPackages       bool
+	junitHideSkippedTests        bool
 	rerunFailsMaxAttempts        int
 	rerunFailsMaxInitialFailures int
 	rerunFailsReportFile         string
@@ -208,8 +212,10 @@ func (o options) Validate() error {
 			"when go test args are used with --rerun-fails " +
 				"the list of packages to test must be specified by the --packages flag")
 	}
-	if o.rerunFailsMaxAttempts > 0 && boolArgIndex("failfast", o.args) > -1 {
-		return fmt.Errorf("-failfast can not be used with --rerun-fails " +
+	if o.rerunFailsMaxAttempts > 0 &&
+		(boolArgIndex("failfast", o.args) > -1 ||
+			boolArgIndex("test.failfast", o.args) > -1) {
+		return fmt.Errorf("-(test.)failfast can not be used with --rerun-fails " +
 			"because not all test cases will run")
 	}
 	return nil
@@ -273,7 +279,7 @@ func run(opts *options) error {
 	if err != nil {
 		return err
 	}
-	defer handler.Close() // nolint: errcheck
+	defer handler.Close() //nolint:errcheck
 	cfg := testjson.ScanConfig{
 		Stdout:                   goTestProc.stdout,
 		Stderr:                   goTestProc.stderr,
