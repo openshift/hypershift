@@ -120,10 +120,10 @@ spec:
             memory: 30Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

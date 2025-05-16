@@ -35,7 +35,9 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/api/util/configrefs"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
@@ -53,6 +55,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	componentcrd "github.com/openshift/hypershift/support/controlplane-component/crds"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/images"
@@ -61,7 +64,6 @@ import (
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1668,11 +1670,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Get release image version
 	var releaseImageVersion semver.Version
-	releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
-	releaseImageVersion, err = semver.Parse(releaseInfo.Version())
+	releaseImageVersion, err = semver.Parse(releaseImage.Version())
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
@@ -1910,13 +1908,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
-	openShiftTrustedCABundleConfigMapExists, err := r.reconcileOpenShiftTrustedCAs(ctx, hcp)
+	_, err = r.reconcileOpenShiftTrustedCAs(ctx, hcp)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
 	}
 
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, openShiftTrustedCABundleConfigMapExists, r.CertRotationScale, releaseImageVersion, releaseProvider)
+	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, r.CertRotationScale, releaseImageVersion, releaseProvider, releaseImage)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
@@ -2511,48 +2509,17 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, openShiftTrustedCABundleConfigMapExists bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, releaseImage *releaseinfo.ReleaseImage) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
-	// Reconcile operator service account
-	controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorServiceAccount, func() error {
-		hyperutil.EnsurePullSecret(controlPlaneOperatorServiceAccount, controlplaneoperator.PullSecret("").Name)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator service account: %w", err)
-	}
-
-	// Reconcile operator role
-	// hostNetwork is required for CPO <= 4.13
-	needsHostNetwork := false
-	if hcluster.Spec.Platform.Type != hyperv1.IBMCloudPlatform && releaseVersion.Major == 4 && releaseVersion.Minor <= 13 {
-		needsHostNetwork = true
-	}
-	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess, needsHostNetwork)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
-	}
-
-	// Reconcile operator role binding
-	controlPlaneOperatorRoleBinding := controlplaneoperator.OperatorRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRoleBinding, func() error {
-		return reconcileControlPlaneOperatorRoleBinding(controlPlaneOperatorRoleBinding, controlPlaneOperatorRole, controlPlaneOperatorServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator rolebinding: %w", err)
-	}
-
 	// TODO: Remove this block after initial merge of this feature. It is not needed for latest CPO version
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) && releaseVersion.Major == 4 && releaseVersion.Minor <= 14 {
+		controlPlaneOperatorServiceAccount := controlplaneoperator.OperatorServiceAccount(controlPlaneNamespace.Name)
+
 		// Reconcile operator role - for ingress
 		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
 		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
@@ -2597,55 +2564,33 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		}
 	}
 
-	// Reconcile operator deployment
-	controlPlaneOperatorDeployment := controlplaneoperator.OperatorDeployment(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorDeployment, func() error {
-		return reconcileControlPlaneOperatorDeployment(
-			controlPlaneOperatorDeployment,
-			openShiftTrustedCABundleConfigMapExists,
-			hcluster,
-			hostedControlPlane,
-			controlPlaneOperatorImage,
-			utilitiesImage,
-			r.SetDefaultSecurityContext,
-			controlPlaneOperatorServiceAccount,
-			r.EnableCIDebugOutput,
-			hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
-			hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
-			defaultIngressDomain,
-			cpoHasUtilities,
-			r.MetricsSet,
-			certRotationScale,
-			r.EnableCVOManagementClusterMetricsAccess,
-			r.FeatureSet)
+	// Reconcile ControlPlaneOperator deployment and resources.
+	cpo := cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
+		HostedCluster:               hcluster,
+		Image:                       controlPlaneOperatorImage,
+		UtilitiesImage:              utilitiesImage,
+		HasUtilities:                cpoHasUtilities,
+		CertRotationScale:           certRotationScale,
+		RegistryOverrideCommandLine: hyperutil.ConvertRegistryOverridesToCommandLineFlag(releaseProvider.GetRegistryOverrides()),
+		OpenShiftRegistryOverrides:  hyperutil.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(releaseProvider.GetOpenShiftImageRegistryOverrides()),
+		DefaultIngressDomain:        defaultIngressDomain,
+		FeatureSet:                  r.FeatureSet,
+	})
+
+	imageProvider := imageprovider.New(releaseImage)
+	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
+	err = cpo.Reconcile(controlplanecomponent.ControlPlaneContext{
+		Context:                   ctx,
+		Client:                    r.Client,
+		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
+		HCP:                       hostedControlPlane,
+		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		EnableCIDebugOutput:       r.EnableCIDebugOutput,
+		MetricsSet:                r.MetricsSet,
+		ReleaseImageProvider:      imageProvider,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator deployment: %w", err)
-	}
-
-	// Reconcile operator PodMonitor
-	podMonitor := controlplaneoperator.PodMonitor(controlPlaneNamespace.Name)
-	if _, err := createOrUpdate(ctx, r.Client, podMonitor, func() error {
-		podMonitor.Spec.Selector = *controlPlaneOperatorDeployment.Spec.Selector
-		podMonitor.Spec.PodMetricsEndpoints = []prometheusoperatorv1.PodMetricsEndpoint{{
-			Port:                 "metrics",
-			MetricRelabelConfigs: metrics.ControlPlaneOperatorRelabelConfigs(r.MetricsSet),
-		}}
-		podMonitor.Spec.NamespaceSelector = prometheusoperatorv1.NamespaceSelector{MatchNames: []string{controlPlaneNamespace.Name}}
-		podMonitor.SetOwnerReferences([]metav1.OwnerReference{{
-			APIVersion: hyperv1.GroupVersion.String(),
-			Kind:       "HostedControlPlane",
-			Name:       hostedControlPlane.Name,
-			UID:        hostedControlPlane.UID,
-		}})
-		if podMonitor.Annotations == nil {
-			podMonitor.Annotations = map[string]string{}
-		}
-		podMonitor.Annotations[hyperutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(hcluster).String()
-		hyperutil.ApplyClusterIDLabelToPodMonitor(&podMonitor.Spec.PodMetricsEndpoints[0], hcluster.Spec.ClusterID)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile controlplane operator pod monitor: %w", err)
+		return fmt.Errorf("failed to reconcile controlplane operator component: %w", err)
 	}
 
 	return nil
@@ -2763,614 +2708,6 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 		if res == controllerutil.OperationResultUpdated {
 			log.Info("added owner reference of the Hosted cluster, to the secret", "secret", secret.Name)
 		}
-	}
-
-	return nil
-}
-
-func reconcileControlPlaneOperatorDeployment(
-	deployment *appsv1.Deployment,
-	openShiftTrustedCABundleConfigMapExists bool,
-	hc *hyperv1.HostedCluster,
-	hcp *hyperv1.HostedControlPlane,
-	cpoImage,
-	utilitiesImage string,
-	setDefaultSecurityContext bool,
-	sa *corev1.ServiceAccount,
-	enableCIDebugOutput bool,
-	registryOverrideCommandLine,
-	openShiftRegistryOverrides,
-	defaultIngressDomain string,
-	cpoHasUtilities bool,
-	metricsSet metrics.MetricsSet,
-	certRotationScale time.Duration,
-	enableCVOManagementClusterMetricsAccess bool,
-	hypershiftFeatureSet configv1.FeatureSet,
-) error {
-	cpoResources := corev1.ResourceRequirements{
-		Requests: corev1.ResourceList{
-			corev1.ResourceMemory: resource.MustParse("80Mi"),
-			corev1.ResourceCPU:    resource.MustParse("10m"),
-		},
-	}
-	// preserve existing resource requirements for main cpo container
-	mainContainer := hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
-	if mainContainer != nil {
-		if len(mainContainer.Resources.Requests) > 0 || len(mainContainer.Resources.Limits) > 0 {
-			cpoResources = mainContainer.Resources
-		}
-	}
-
-	args := []string{
-		"run",
-		"--namespace", "$(MY_NAMESPACE)",
-		"--deployment-name", "control-plane-operator",
-		"--metrics-addr", "0.0.0.0:8080",
-		fmt.Sprintf("--enable-ci-debug-output=%t", enableCIDebugOutput),
-		fmt.Sprintf("--registry-overrides=%s", registryOverrideCommandLine),
-	}
-	if !cpoHasUtilities {
-		args = append(args,
-			"--socks5-proxy-image", utilitiesImage,
-			"--availability-prober-image", utilitiesImage,
-			"--token-minter-image", utilitiesImage,
-		)
-	}
-	if imageOverrides := hc.Annotations[hyperv1.ImageOverridesAnnotation]; imageOverrides != "" {
-		args = append(args,
-			"--image-overrides", imageOverrides,
-		)
-	}
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: map[string]string{
-				"name": "control-plane-operator",
-			},
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				Labels: map[string]string{
-					"name":                             "control-plane-operator",
-					"app":                              "control-plane-operator",
-					hyperv1.ControlPlaneComponentLabel: "control-plane-operator",
-				},
-			},
-			Spec: corev1.PodSpec{
-				ImagePullSecrets: []corev1.LocalObjectReference{
-					{
-						Name: "pull-secret",
-					},
-				},
-				ServiceAccountName: sa.Name,
-				Containers: []corev1.Container{
-					{
-						Name:            "control-plane-operator",
-						Image:           cpoImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "MY_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-							{
-								Name: "POD_NAME",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.name",
-									},
-								},
-							},
-							{
-								Name:  "OPERATE_ON_RELEASE_IMAGE",
-								Value: hyperutil.HCControlPlaneReleaseImage(hc),
-							},
-							{
-								Name:  "OPENSHIFT_IMG_OVERRIDES",
-								Value: openShiftRegistryOverrides,
-							},
-							{
-								Name:  "CERT_ROTATION_SCALE",
-								Value: certRotationScale.String(),
-							},
-							{
-								Name:  "CONTROL_PLANE_OPERATOR_IMAGE",
-								Value: cpoImage,
-							},
-							{
-								Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
-								Value: cpoImage,
-							},
-							{
-								Name:  "SOCKS5_PROXY_IMAGE",
-								Value: utilitiesImage,
-							},
-							{
-								Name:  "AVAILABILITY_PROBER_IMAGE",
-								Value: utilitiesImage,
-							},
-							{
-								Name:  "TOKEN_MINTER_IMAGE",
-								Value: utilitiesImage,
-							},
-							metrics.MetricsSetToEnv(metricsSet),
-							{
-								Name:  "HYPERSHIFT_FEATURESET",
-								Value: string(hypershiftFeatureSet),
-							},
-						},
-						Command: []string{"/usr/bin/control-plane-operator"},
-						Args:    args,
-						Ports:   []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/healthz",
-									Port:   intstr.FromInt(6060),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/readyz",
-									Port:   intstr.FromInt(6060),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							PeriodSeconds:    10,
-							SuccessThreshold: 1,
-							FailureThreshold: 3,
-							TimeoutSeconds:   5,
-						},
-						Resources:                cpoResources,
-						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-					},
-				},
-			},
-		},
-	}
-
-	if hc.Annotations[certs.CertificateValidityAnnotation] != "" {
-		certValidity := hc.Annotations[certs.CertificateValidityAnnotation]
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  certs.CertificateValidityEnvVar,
-				Value: certValidity,
-			},
-		)
-	}
-
-	if hc.Annotations[certs.CertificateRenewalAnnotation] != "" {
-		certRenewalPercentage := hc.Annotations[certs.CertificateRenewalAnnotation]
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  certs.CertificateRenewalEnvVar,
-				Value: certRenewalPercentage,
-			},
-		)
-	}
-
-	if openShiftTrustedCABundleConfigMapExists {
-		hyperutil.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
-	}
-
-	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  rhobsmonitoring.EnvironmentVariable,
-				Value: "1",
-			},
-		)
-	}
-
-	if os.Getenv("ENABLE_SIZE_TAGGING") == "1" {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "ENABLE_SIZE_TAGGING",
-				Value: "1",
-			},
-		)
-	}
-
-	if envImage := os.Getenv(images.KonnectivityEnvVar); len(envImage) > 0 {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  images.KonnectivityEnvVar,
-				Value: envImage,
-			},
-		)
-	}
-	if len(defaultIngressDomain) > 0 {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  config.DefaultIngressDomainEnvVar,
-				Value: defaultIngressDomain,
-			},
-		)
-	}
-
-	if enableCVOManagementClusterMetricsAccess {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  config.EnableCVOManagementClusterMetricsAccessEnvVar,
-				Value: "1",
-			},
-		)
-	}
-
-	managedServiceType, ok := os.LookupEnv(managedServiceEnvVar)
-	if ok {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  managedServiceEnvVar,
-				Value: managedServiceType,
-			},
-		)
-	}
-
-	mainContainer = hyperutil.FindContainer("control-plane-operator", deployment.Spec.Template.Spec.Containers)
-	proxy.SetEnvVars(&mainContainer.Env)
-
-	// Add platform specific settings
-	switch hc.Spec.Platform.Type {
-	case hyperv1.AWSPlatform:
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-			corev1.Volume{
-				Name: "cloud-token",
-				VolumeSource: corev1.VolumeSource{
-					EmptyDir: &corev1.EmptyDirVolumeSource{
-						Medium: corev1.StorageMediumMemory,
-					},
-				},
-			},
-			corev1.Volume{
-				Name: "provider-creds",
-				VolumeSource: corev1.VolumeSource{
-					Secret: &corev1.SecretVolumeSource{
-						SecretName: platformaws.ControlPlaneOperatorCredsSecret("").Name,
-					},
-				},
-			})
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-			corev1.EnvVar{
-				Name:  "AWS_SHARED_CREDENTIALS_FILE",
-				Value: "/etc/provider/credentials",
-			},
-			corev1.EnvVar{
-				Name:  "AWS_REGION",
-				Value: hc.Spec.Platform.AWS.Region,
-			},
-			corev1.EnvVar{
-				Name:  "AWS_SDK_LOAD_CONFIG",
-				Value: "true",
-			})
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-			corev1.VolumeMount{
-				Name:      "cloud-token",
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
-			},
-			corev1.VolumeMount{
-				Name:      "provider-creds",
-				MountPath: "/etc/provider",
-			})
-		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "token-minter",
-			Image:           utilitiesImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/usr/bin/control-plane-operator", "token-minter"},
-			Args: []string{
-				"--service-account-namespace=kube-system",
-				"--service-account-name=control-plane-operator",
-				"--token-audience=openshift",
-				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
-				fmt.Sprintf("--kubeconfig-secret-namespace=%s", deployment.Namespace),
-				"--kubeconfig-secret-name=service-network-admin-kubeconfig",
-			},
-			Resources: corev1.ResourceRequirements{
-				Requests: corev1.ResourceList{
-					corev1.ResourceCPU:    resource.MustParse("10m"),
-					corev1.ResourceMemory: resource.MustParse("30Mi"),
-				},
-			},
-			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-			VolumeMounts: []corev1.VolumeMount{
-				{
-					Name:      "cloud-token",
-					MountPath: "/var/run/secrets/openshift/serviceaccount",
-				},
-			},
-		})
-	case hyperv1.AzurePlatform:
-		// Add the client ID of the managed Azure key vault as an environment variable on the CPO. This is used in
-		// configuring the SecretProviderClass CRs for OpenShift components on the HCP needing to authenticate with
-		// Azure cloud API.
-		aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
-		if ok {
-			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-				corev1.EnvVar{
-					Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-					Value: aroHCPKVMIClientID,
-				})
-		}
-
-		// Mount the control plane operator's credentials from the managed Azure key vault. The CPO authenticates with
-		// the Azure cloud API for validating resource group locations.
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName),
-		)
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName, config.ManagedAzureCPOSecretProviderClassName),
-		)
-
-		// Mount the KMS credentials so the HCP reconciliation can validate the Azure KMS configuration.
-		if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil {
-			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-				azureutil.CreateVolumeMountForKMSAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName),
-			)
-			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-				azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
-			)
-		}
-	}
-
-	if hcp.Spec.AdditionalTrustBundle != nil {
-		// Add trusted-ca mount with optional configmap
-		hyperutil.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
-	}
-
-	// set security context
-	if setDefaultSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
-		}
-	}
-
-	deploymentConfig := config.DeploymentConfig{
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
-		SetDefaultSecurityContext: setDefaultSecurityContext,
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-	}
-	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
-	}
-	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
-	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
-	deploymentConfig.ApplyTo(deployment)
-
-	return nil
-}
-
-func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool, hostNetwork bool) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{"hypershift.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"certificates.hypershift.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{
-				"bootstrap.cluster.x-k8s.io",
-				"controlplane.cluster.x-k8s.io",
-				"infrastructure.cluster.x-k8s.io",
-				"machines.cluster.x-k8s.io",
-				"exp.infrastructure.cluster.x-k8s.io",
-				"addons.cluster.x-k8s.io",
-				"exp.cluster.x-k8s.io",
-				"cluster.x-k8s.io",
-				"monitoring.coreos.com",
-				"monitoring.rhobs",
-				"capi-provider.agent-install.openshift.io",
-			},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"rbac.authorization.k8s.io"},
-			Resources: []string{"roles", "rolebindings"},
-			Verbs: []string{
-				"get",
-				"list",
-				"watch",
-				"create",
-				"update",
-				"patch",
-				"delete",
-			},
-		},
-		{
-			APIGroups: []string{"route.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"image.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"events",
-				"configmaps",
-				"configmaps/finalizers",
-				"persistentvolumeclaims",
-				"pods",
-				"pods/log",
-				"secrets",
-				"nodes",
-				"serviceaccounts",
-				"services",
-				"endpoints",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"apps"},
-			Resources: []string{"deployments", "replicasets", "statefulsets"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"batch"},
-			Resources: []string{"cronjobs", "jobs"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"policy"},
-			Resources: []string{"poddisruptionbudgets"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"coordination.k8s.io"},
-			Resources: []string{
-				"leases",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{
-				"discovery.k8s.io",
-			},
-			Resources: []string{
-				"endpointslices",
-				"endpointslices/restricted",
-			},
-			Verbs: []string{
-				"*",
-			},
-		},
-		// This is needed for CPO to grant Autoscaler its RBAC policy.
-		{
-			APIGroups: []string{"cluster.x-k8s.io"},
-			Resources: []string{
-				"machinedeployments",
-				"machinedeployments/scale",
-				"machines",
-				"machinesets",
-				"machinesets/scale",
-				"machinepools",
-				"machinepools/scale",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"apiextensions.k8s.io"},
-			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
-		},
-		{
-			APIGroups: []string{"kubevirt.io"},
-			Resources: []string{"virtualmachines", "virtualmachines/finalizers", "virtualmachineinstances"},
-			Verbs:     []string{rbacv1.VerbAll},
-		},
-		{
-			APIGroups: []string{
-				"cdi.kubevirt.io",
-			},
-			Resources: []string{
-				"datavolumes",
-			},
-			Verbs: []string{
-				"get",
-				"create",
-				"delete",
-			},
-		},
-		{
-			APIGroups: []string{
-				"subresources.kubevirt.io",
-			},
-			Resources: []string{
-				"virtualmachineinstances/addvolume",
-				"virtualmachineinstances/removevolume",
-				"virtualmachines/addvolume",
-				"virtualmachines/removevolume",
-			},
-			Verbs: []string{
-				"update",
-			},
-		},
-		{
-			APIGroups: []string{
-				"snapshot.storage.k8s.io",
-			},
-			Resources: []string{
-				"volumesnapshots",
-			},
-			Verbs: []string{
-				"get",
-				"create",
-				"delete",
-			},
-		},
-	}
-	if enableCVOManagementClusterMetricsAccess {
-		role.Rules = append(role.Rules,
-			rbacv1.PolicyRule{
-				APIGroups: []string{"metrics.k8s.io"},
-				Resources: []string{"pods"},
-				Verbs:     []string{"get"},
-			})
-	}
-	if hostNetwork {
-		role.Rules = append(role.Rules,
-			rbacv1.PolicyRule{
-				APIGroups:     []string{"security.openshift.io"},
-				ResourceNames: []string{"hostnetwork"},
-				Resources:     []string{"securitycontextconstraints"},
-				Verbs:         []string{"use"},
-			})
-	}
-	if azureutil.IsAroHCP() {
-		role.Rules = append(role.Rules,
-			rbacv1.PolicyRule{
-				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
-				Resources: []string{"secretproviderclasses"},
-				Verbs: []string{
-					"get",
-					"list",
-					"create",
-					"update",
-					"watch",
-				},
-			})
-	}
-
-	return nil
-}
-
-func reconcileControlPlaneOperatorRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
 	}
 
 	return nil

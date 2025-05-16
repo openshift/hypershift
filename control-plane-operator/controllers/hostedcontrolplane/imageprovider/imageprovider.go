@@ -52,3 +52,7 @@ func (p *SimpleReleaseImageProvider) ImageExist(key string) (string, bool) {
 	img, exist := p.componentsImages[key]
 	return img, exist
 }
+
+func (p *SimpleReleaseImageProvider) ComponentImages() map[string]string {
+	return p.componentsImages
+}

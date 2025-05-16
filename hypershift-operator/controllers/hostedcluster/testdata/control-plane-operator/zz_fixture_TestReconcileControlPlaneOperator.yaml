@@ -1,0 +1,205 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: control-plane-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: control-plane-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: control-plane-operator
+        hypershift.openshift.io/control-plane-component: control-plane-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+        name: control-plane-operator
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - run
+        - --namespace
+        - $(MY_NAMESPACE)
+        - --deployment-name
+        - control-plane-operator
+        - --metrics-addr
+        - 0.0.0.0:8080
+        - --enable-ci-debug-output=false
+        - --registry-overrides=
+        command:
+        - /usr/bin/control-plane-operator
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: CONTROL_PLANE_OPERATOR_IMAGE
+          value: cpo-image
+        - name: HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE
+          value: cpo-image
+        - name: SOCKS5_PROXY_IMAGE
+          value: utilitiesImage
+        - name: AVAILABILITY_PROBER_IMAGE
+          value: utilitiesImage
+        - name: TOKEN_MINTER_IMAGE
+          value: utilitiesImage
+        - name: OPERATE_ON_RELEASE_IMAGE
+          value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        - name: OPENSHIFT_IMG_OVERRIDES
+        - name: CERT_ROTATION_SCALE
+          value: 2m0s
+        - name: HYPERSHIFT_FEATURESET
+          value: CustomNoUpgrade
+        - name: METRICS_SET
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /etc/provider/credentials
+        - name: AWS_REGION
+        - name: AWS_SDK_LOAD_CONFIG
+          value: "true"
+        image: cpo-image
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: 6060
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: control-plane-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 6060
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: openshift-config-managed-trusted-ca-bundle
+          readOnly: true
+        - mountPath: /etc/provider
+          name: provider-creds
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=control-plane-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig-secret-namespace=hcp-namespace
+        - --kubeconfig-secret-name=service-network-admin-kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+      imagePullSecrets:
+      - name: pull-secret
+      priorityClassName: hypershift-control-plane
+      serviceAccount: control-plane-operator
+      serviceAccountName: control-plane-operator
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: openshift-config-managed-trusted-ca-bundle
+          optional: true
+        name: openshift-config-managed-trusted-ca-bundle
+      - name: provider-creds
+        secret:
+          defaultMode: 416
+          secretName: control-plane-operator-creds
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
+status: {}
