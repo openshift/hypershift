@@ -16,7 +16,7 @@ package grpcproxy
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math/rand"
 	"net/http"
 	"strings"
@@ -24,6 +24,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"go.etcd.io/etcd/server/v3/etcdserver/api/etcdhttp"
 )
 
@@ -94,7 +95,7 @@ func HandleMetrics(mux *http.ServeMux, c *http.Client, eps []string) {
 		}
 		defer resp.Body.Close()
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-		body, _ := ioutil.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body)
 		fmt.Fprintf(w, "%s", body)
 	})
 }

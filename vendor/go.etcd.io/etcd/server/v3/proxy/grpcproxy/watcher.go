@@ -19,8 +19,8 @@ import (
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/api/v3/mvccpb"
-	"go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/mvcc"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/storage/mvcc"
 )
 
 type watchRange struct {
@@ -71,12 +71,11 @@ func (w *watcher) send(wr clientv3.WatchResponse) {
 		ev := (*mvccpb.Event)(wr.Events[i])
 		if ev.Kv.ModRevision < w.nextrev {
 			continue
-		} else {
-			// We cannot update w.rev here.
-			// txn can have multiple events with the same rev.
-			// If w.nextrev updates here, it would skip events in the same txn.
-			lastRev = ev.Kv.ModRevision
 		}
+		// We cannot update w.rev here.
+		// txn can have multiple events with the same rev.
+		// If w.nextrev updates here, it would skip events in the same txn.
+		lastRev = ev.Kv.ModRevision
 
 		filtered := false
 		for _, filter := range w.filters {
