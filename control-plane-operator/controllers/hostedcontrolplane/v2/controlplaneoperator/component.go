@@ -56,6 +56,14 @@ func NewComponent(options *ControlPlaneOperatorOptions) component.ControlPlaneCo
 			"podmonitor.yaml",
 			component.WithAdaptFunction(options.adaptPodMonitor),
 		).
+		WithManifestAdapter(
+			"rolebinding.yaml",
+			component.SetHostedClusterAnnotation(),
+		).
+		WithManifestAdapter(
+			"serviceaccount.yaml",
+			component.SetHostedClusterAnnotation(),
+		).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
 			ServiceAccountName:      "control-plane-operator",

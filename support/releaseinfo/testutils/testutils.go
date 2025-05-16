@@ -33,7 +33,7 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 					},
 					{
 						Name: "aws-cluster-api-controllers",
-						From: &corev1.ObjectReference{Name: ""},
+						From: &corev1.ObjectReference{Name: "capi-aws"},
 					},
 					{
 						Name: "cluster-capi-controllers",
@@ -41,11 +41,11 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 					},
 					{
 						Name: "azure-cluster-api-controllers",
-						From: &corev1.ObjectReference{Name: ""},
+						From: &corev1.ObjectReference{Name: "capi-azure"},
 					},
 					{
 						Name: "openstack-cluster-api-controllers",
-						From: &corev1.ObjectReference{Name: ""},
+						From: &corev1.ObjectReference{Name: "capi-openstack"},
 					},
 					{
 						Name: util.AvailabilityProberImageName,

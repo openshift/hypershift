@@ -167,6 +167,11 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 
 	cpo.applyPlatformSpecificConfig(hcp, deployment)
 
+	if deployment.Annotations == nil {
+		deployment.Annotations = make(map[string]string)
+	}
+	deployment.Annotations[util.HostedClusterAnnotation] = hcp.Annotations[util.HostedClusterAnnotation]
+
 	return nil
 }
 

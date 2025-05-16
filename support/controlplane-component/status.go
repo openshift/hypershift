@@ -23,6 +23,16 @@ const (
 	controlPlaneOperatorComponentName = "control-plane-operator"
 )
 
+var (
+	componentsExcludedFromKubeAPIServerDependency = sets.New(
+		etcdComponentName,
+		featureGateGeneratorComponetName,
+		controlPlaneOperatorComponentName,
+		"cluster-api",
+		"capi-provider",
+	)
+)
+
 // checkDependencies checks the availability of dependencies for a control plane component.
 // It returns a list of unavailable dependencies or an error if the dependency check fails.
 //
@@ -33,8 +43,8 @@ const (
 // 4. Checks the availability and rollout completion status of each dependency against the desired version.
 func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContext) ([]string, error) {
 	unavailableDependencies := sets.New(c.dependencies...)
-	// always add kube-apiserver as a dependency, except for etcd, feature-gate-generator and control-plane-operator.
-	if c.Name() != etcdComponentName && c.Name() != featureGateGeneratorComponetName && c.Name() != controlPlaneOperatorComponentName {
+	// always add kube-apiserver as a dependency, except execluded components.
+	if !componentsExcludedFromKubeAPIServerDependency.Has(c.Name()) {
 		unavailableDependencies.Insert(kubeAPIServerComponentName)
 	}
 	// we don't deploy etcd for unmanaged, therefore components can't have a dependency on it.
