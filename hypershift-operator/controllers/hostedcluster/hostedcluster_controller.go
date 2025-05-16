@@ -1715,6 +1715,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if capiProviderDeploymentSpec != nil {
 		proxy.SetEnvVars(&capiProviderDeploymentSpec.Template.Spec.Containers[0].Env)
+		for i := range capiProviderDeploymentSpec.Template.Spec.Containers {
+			capiProviderDeploymentSpec.Template.Spec.Containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
+		}
+		for i := range capiProviderDeploymentSpec.Template.Spec.InitContainers {
+			capiProviderDeploymentSpec.Template.Spec.InitContainers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
+		}
 	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
@@ -2927,7 +2933,8 @@ func reconcileControlPlaneOperatorDeployment(
 							FailureThreshold: 3,
 							TimeoutSeconds:   5,
 						},
-						Resources: cpoResources,
+						Resources:                cpoResources,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 					},
 				},
 			},
@@ -3076,6 +3083,7 @@ func reconcileControlPlaneOperatorDeployment(
 					corev1.ResourceMemory: resource.MustParse("30Mi"),
 				},
 			},
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			VolumeMounts: []corev1.VolumeMount{
 				{
 					Name:      "cloud-token",
@@ -3510,6 +3518,7 @@ func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProvider
 	// Enforce pull policy.
 	for i := range deployment.Spec.Template.Spec.Containers {
 		deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		deployment.Spec.Template.Spec.Containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 	}
 
 	// Enforce labels.
@@ -3648,6 +3657,7 @@ func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.H
 								corev1.ResourceCPU:    resource.MustParse("10m"),
 							},
 						},
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "capi-webhooks-tls",

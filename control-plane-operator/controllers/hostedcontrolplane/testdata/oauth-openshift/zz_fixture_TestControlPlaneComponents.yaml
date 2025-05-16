@@ -108,6 +108,7 @@ spec:
           requests:
             cpu: 25m
             memory: 40Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/audit-config
           name: audit-config
@@ -155,6 +156,7 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: logs
@@ -174,6 +176,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
           name: kubeconfig
@@ -197,6 +200,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
           name: kubeconfig
@@ -214,6 +218,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-api-critical
       tolerations:
       - effect: NoSchedule

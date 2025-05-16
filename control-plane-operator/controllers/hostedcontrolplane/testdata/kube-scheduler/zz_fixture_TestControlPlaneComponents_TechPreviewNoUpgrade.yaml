@@ -205,6 +205,7 @@ spec:
           requests:
             cpu: 25m
             memory: 150Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: cert-work
@@ -222,6 +223,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule

@@ -90,6 +90,7 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/cloud
           name: cloud-config
@@ -117,6 +118,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig

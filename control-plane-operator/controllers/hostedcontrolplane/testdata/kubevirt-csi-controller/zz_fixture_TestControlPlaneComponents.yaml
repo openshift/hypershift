@@ -97,6 +97,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
@@ -119,6 +120,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
@@ -140,6 +142,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
@@ -156,6 +159,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
@@ -174,7 +178,7 @@ spec:
             cpu: 10m
             memory: 50Mi
         terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir

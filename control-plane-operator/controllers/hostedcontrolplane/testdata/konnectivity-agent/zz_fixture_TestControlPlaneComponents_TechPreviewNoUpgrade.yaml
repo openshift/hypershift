@@ -139,6 +139,7 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 5
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/agent
           name: agent-certs

@@ -118,6 +118,9 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 			util.WithOptions(c.availabilityProberOpts))
 	}
 
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
+
 	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() ||
 		c.Name() == "packageserver" { // TODO: investigate why packageserver needs AutomountServiceAccountToken or set NeedsManagementKASAccess to true.
 		podTemplateSpec.Spec.AutomountServiceAccountToken = ptr.To(true)
@@ -547,6 +550,12 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 	}
 	return nil
+}
+
+func enforceTerminationMessagePolicy(containers []corev1.Container) {
+	for i := range containers {
+		containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
+	}
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
