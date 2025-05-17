@@ -494,7 +494,7 @@ spec:
             - name: name
               value: deprecated-image-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:af0ea52fed6ff843464764d21940974b37984839340b4767be849d35c1fe1371
+              value: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.5@sha256:f87eeaf66582a82aa73c003fc0483986a830b0b68aa35954b458509c56af12be
             - name: kind
               value: task
           resolver: bundles
@@ -516,7 +516,7 @@ spec:
             - name: name
               value: clair-scan
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:3bfdf9dcb239e613491a42cbafef7d9036e3879cce6895ae4496150312e9df14
+              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:ab89cdd3aa207ef6db263a3725111607ee322e0addacb20bcf48640bfd0d300b
             - name: kind
               value: task
           resolver: bundles
@@ -563,7 +563,7 @@ spec:
             - name: name
               value: clamav-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:59094118aa07d5b0199565c4e0b2d0f4feb9a4741877c8716877572e2c4804f9
+              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:24182598bf5161c4007988a7236e240f361c77a0a9b6973a6712dbae50d296bc
             - name: kind
               value: task
           resolver: bundles
@@ -585,7 +585,7 @@ spec:
             - name: name
               value: rpms-signature-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:2366b2f394610192736dd8edac1a702964daeb961603dfc9ceb6b8188e39a009
+              value: quay.io/konflux-ci/tekton-catalog/task-rpms-signature-scan:0.2@sha256:297c2d8928aa3b114fcb1ba5d9da8b10226b68fed30706e78a6a5089c6cd30e3
             - name: kind
               value: task
           resolver: bundles
