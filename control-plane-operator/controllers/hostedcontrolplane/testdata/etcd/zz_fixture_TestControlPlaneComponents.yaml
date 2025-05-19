@@ -172,6 +172,7 @@ spec:
           periodSeconds: 10
           successThreshold: 1
           timeoutSeconds: 10
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib
           name: data
@@ -211,6 +212,7 @@ spec:
           requests:
             cpu: 40m
             memory: 200Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/peer
           name: peer-tls
@@ -242,6 +244,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/server
           name: server-tls
@@ -265,6 +268,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: ensure-dns
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       - args:
         - -c
         - |
@@ -319,6 +323,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: reset-member
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib
           name: data

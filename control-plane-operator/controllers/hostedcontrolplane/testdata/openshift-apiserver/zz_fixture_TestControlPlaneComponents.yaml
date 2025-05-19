@@ -134,6 +134,7 @@ spec:
           periodSeconds: 5
           successThreshold: 1
           timeoutSeconds: 10
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-client-ca
           name: aggregator-ca
@@ -183,6 +184,7 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/openshift-apiserver
           name: work-logs
@@ -200,6 +202,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
           name: kubeconfig
@@ -217,6 +220,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       - command:
         - /bin/bash
         - -c
@@ -240,6 +244,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: oas-trust-anchor-generator
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /run/ca-trust-generated
           name: oas-trust-anchor

@@ -112,6 +112,7 @@ spec:
           successThreshold: 1
           timeoutSeconds: 1
         terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /extracted-catalog
           name: catalog-content
