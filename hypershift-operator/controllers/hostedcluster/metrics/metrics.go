@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -92,6 +93,10 @@ const (
 
 	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
 	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
+
+	HostedClusterManagedAzureInfoMetricName = "hosted_cluster_managed_azure_info"
+	HostedClusterManagedAzureInfoMetricHelp = "Reports ARO specific information about the given HostedCluster"
+	HostedClusterManagedAzureResourceType   = "hcpOpenShiftClusters"
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -185,6 +190,15 @@ var (
 	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
 		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
 		append(hclusterLabels, "environment", "internal_id", "size"), nil)
+
+	hostedClusterInfoDesc = prometheus.NewDesc(
+		HostedClusterManagedAzureInfoMetricName, HostedClusterManagedAzureInfoMetricHelp,
+		append(hclusterLabels,
+			"location",
+			"microsoft_subscription_id",
+			"microsoft_resource_group_name",
+			"microsoft_resource_type",
+			"microsoft_resource_id"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -505,6 +519,25 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 						)
 					}
 				}
+			}
+
+			//  ARO specific hostedClusterInfo
+			if azureutil.IsAroHCP() {
+				azInfo := hcluster.Spec.Platform.Azure
+				subID := azInfo.SubscriptionID
+				resGroup := azInfo.ResourceGroupName
+				resourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/%s",
+					subID, resGroup, hcluster.Name)
+				ch <- prometheus.MustNewConstMetric(
+					hostedClusterInfoDesc,
+					prometheus.GaugeValue,
+					1.0,
+					append(hclusterLabelValues,
+						azInfo.Location,
+						subID,
+						resGroup,
+						HostedClusterManagedAzureResourceType,
+						resourceID)...)
 			}
 
 			// invalidAwsCredsMetric
