@@ -92,6 +92,9 @@ const (
 
 	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
 	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
+
+	HostedClusterInfoMetricName = "hosted_cluster_info"
+	HostedClusterInfoMetricHelp = "Reports ARO specific information about the given HostedCluster"
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -185,6 +188,14 @@ var (
 	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
 		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
 		append(hclusterLabels, "environment", "internal_id", "size"), nil)
+
+	hostedClusterInfoDesc = prometheus.NewDesc(
+		HostedClusterInfoMetricName, HostedClusterInfoMetricHelp,
+		append(hclusterLabels, "Microsoft_subscriptionId",
+			"Microsoft_resourceGroupName",
+			"Microsoft_resourceType",
+			"Microsoft_resourceId",
+			"Location"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -505,6 +516,25 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 						)
 					}
 				}
+			}
+
+			//  ARO specific hostedClusterInfo
+			if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && hcluster.Spec.Platform.Azure != nil {
+				azInfo := hcluster.Spec.Platform.Azure
+				subID := azInfo.SubscriptionID
+				resGroup := azInfo.ResourceGroupName
+				resourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/%s",
+					subID, resGroup, hcluster.Name)
+				ch <- prometheus.MustNewConstMetric(
+					hostedClusterInfoDesc,
+					prometheus.GaugeValue,
+					1.0,
+					append(hclusterLabelValues,
+						subID,
+						resGroup,
+						"hcpOpenShiftClusters",
+						resourceID,
+						azInfo.Location)...)
 			}
 
 			// invalidAwsCredsMetric
