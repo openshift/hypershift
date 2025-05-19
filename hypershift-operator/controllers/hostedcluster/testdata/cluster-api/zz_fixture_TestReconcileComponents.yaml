@@ -1,0 +1,127 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    hypershift.openshift.io/cluster: ""
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cluster-api
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cluster-api
+      name: cluster-api
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        component.hypershift.openshift.io/config-hash: 741638a5741638a5
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: cluster-api
+        hypershift.openshift.io/control-plane-component: cluster-api
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+        name: cluster-api
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --namespace
+        - $(MY_NAMESPACE)
+        - --v=4
+        - --leader-elect=true
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-retry-period=26s
+        - --leader-elect-renew-deadline=107s
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: cluster-capi-controllers
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: 9440
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: manager
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /readyz
+            port: 9440
+            scheme: HTTP
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: capi-webhooks-tls
+          readOnly: true
+      priorityClassName: hypershift-control-plane
+      serviceAccount: cluster-api
+      serviceAccountName: cluster-api
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: capi-webhooks-tls
+        secret:
+          defaultMode: 416
+          secretName: capi-webhooks-tls
+status: {}

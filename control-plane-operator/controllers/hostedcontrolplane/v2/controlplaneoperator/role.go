@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/util"
 
 	rbacv1 "k8s.io/api/rbac/v1"
 )
@@ -32,5 +33,11 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 			},
 		})
 	}
+
+	if role.Annotations == nil {
+		role.Annotations = map[string]string{}
+	}
+	role.Annotations[util.HostedClusterAnnotation] = cpContext.HCP.Annotations[util.HostedClusterAnnotation]
+
 	return nil
 }

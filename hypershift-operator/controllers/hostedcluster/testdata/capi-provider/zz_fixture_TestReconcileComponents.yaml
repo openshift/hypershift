@@ -1,0 +1,169 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    hypershift.openshift.io/cluster: ""
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: capi-provider
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: capi-provider-controller-manager
+      control-plane: capi-provider-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: capi-provider-controller-manager
+        control-plane: capi-provider-controller-manager
+        hypershift.openshift.io/control-plane-component: capi-provider
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --namespace
+        - $(MY_NAMESPACE)
+        - --v=4
+        - --leader-elect=true
+        - --feature-gates=EKS=false,ROSA=false
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /home/.aws/credentials
+        - name: AWS_SDK_LOAD_CONFIG
+          value: "true"
+        image: capi-provider-image
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: healthz
+        name: manager
+        ports:
+        - containerPort: 9440
+          name: healthz
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: healthz
+        resources:
+          requests:
+            cpu: 10m
+            memory: 100Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /home/.aws
+          name: credentials
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: capi-webhooks-tls
+          readOnly: true
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: token
+      - args:
+        - --service-account-namespace=kube-system
+        - --service-account-name=capa-controller-manager
+        - --token-audience=openshift
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: test-image
+        imagePullPolicy: IfNotPresent
+        name: token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: token
+        - mountPath: /etc/kubernetes
+          name: svc-kubeconfig
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:6443/readyz
+        image: test-image
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+      priorityClassName: hypershift-control-plane
+      serviceAccountName: capi-provider
+      terminationGracePeriodSeconds: 10
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: capi-webhooks-tls
+        secret:
+          defaultMode: 416
+          secretName: capi-webhooks-tls
+      - name: credentials
+        secret:
+          defaultMode: 416
+          secretName: node-management-creds
+      - name: svc-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - emptyDir:
+          medium: Memory
+        name: token
+status: {}

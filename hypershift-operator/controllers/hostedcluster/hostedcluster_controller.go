@@ -17,8 +17,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"errors"
 	"fmt"
 	"maps"
@@ -37,6 +35,8 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
+	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
@@ -58,11 +58,9 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	componentcrd "github.com/openshift/hypershift/support/controlplane-component/crds"
 	"github.com/openshift/hypershift/support/globalconfig"
-	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/oidc"
-	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/secretproviderclass"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -86,12 +84,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -1706,21 +1702,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
-	// Reconcile CAPI Provider Deployment.
-	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if capiProviderDeploymentSpec != nil {
-		proxy.SetEnvVars(&capiProviderDeploymentSpec.Template.Spec.Containers[0].Env)
-		for i := range capiProviderDeploymentSpec.Template.Spec.Containers {
-			capiProviderDeploymentSpec.Template.Spec.Containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
-		}
-		for i := range capiProviderDeploymentSpec.Template.Spec.InitContainers {
-			capiProviderDeploymentSpec.Template.Spec.InitContainers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
-		}
-	}
-
 	// Reconcile cluster prometheus RBAC resources if enabled
 	if r.EnableOCPClusterMonitoring {
 		if err := r.reconcileClusterPrometheusRBAC(ctx, createOrUpdate, hcp.Namespace); err != nil {
@@ -1884,20 +1865,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	// Disable machine management components if enabled
-	if _, exists := hcluster.Annotations[hyperv1.DisableMachineManagement]; !exists {
-		// Reconcile the CAPI manager components
-		err = r.reconcileCAPIManager(ctx, createOrUpdate, hcluster, hcp, pullSecretBytes, &releaseProvider)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
-		}
-
-		// Reconcile the CAPI provider components
-		if err = r.reconcileCAPIProvider(ctx, createOrUpdate, hcluster, hcp, capiProviderDeploymentSpec, p); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
-		}
-	}
-
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
@@ -1913,10 +1880,35 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
 	}
 
+	imageProvider := imageprovider.New(releaseImage)
+	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                   ctx,
+		Client:                    r.Client,
+		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
+		HCP:                       hcp,
+		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		EnableCIDebugOutput:       r.EnableCIDebugOutput,
+		MetricsSet:                r.MetricsSet,
+		ReleaseImageProvider:      imageProvider,
+		OmitOwnerReference:        true,
+	}
+
 	// Reconcile the control plane operator
-	err = r.reconcileControlPlaneOperator(ctx, createOrUpdate, hcluster, hcp, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, r.CertRotationScale, releaseImageVersion, releaseProvider, releaseImage)
+	err = r.reconcileControlPlaneOperator(cpContext, createOrUpdate, hcluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, r.CertRotationScale, releaseImageVersion, releaseProvider)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
+	}
+
+	// Reconcile the CAPI manager components
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
+	}
+
+	// Reconcile the CAPI provider components
+	if err = r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
 	if _, pkiDisabled := hcp.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; controlPlanePKIOperatorSignsCSRs && !pkiDisabled {
@@ -2331,60 +2323,18 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, pullSecretBytes []byte, releaseProvider *releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
+	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
-	// Reconcile CAPI webhooks TLS secret
-	capiWebhooksTLSSecret := clusterapi.CAPIWebhooksTLSSecret(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiWebhooksTLSSecret, func() error {
-		_, hasTLSPrivateKeyKey := capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey]
-		_, hasTLSCertKey := capiWebhooksTLSSecret.Data[corev1.TLSCertKey]
-		if hasTLSPrivateKeyKey && hasTLSCertKey {
-			return nil
-		}
-
-		// We currently don't expose CAPI webhooks but still they run as part of the manager
-		// and it breaks without a cert https://github.com/kubernetes-sigs/cluster-api/pull/4709.
-		cn := "capi-webhooks"
-		ou := "openshift"
-		cfg := &certs.CertCfg{
-			Subject:   pkix.Name{CommonName: cn, OrganizationalUnit: []string{ou}},
-			KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-			Validity:  certs.ValidityTenYears,
-			IsCA:      true,
-		}
-		key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-		if err != nil {
-			return fmt.Errorf("failed to generate CA (cn=%s,ou=%s): %w", cn, ou, err)
-		}
-		if capiWebhooksTLSSecret.Data == nil {
-			capiWebhooksTLSSecret.Data = map[string][]byte{}
-		}
-		capiWebhooksTLSSecret.Data[corev1.TLSCertKey] = certs.CertToPem(crt)
-		capiWebhooksTLSSecret.Data[corev1.TLSPrivateKeyKey] = certs.PrivateKeyToPem(key)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi webhook tls secret: %w", err)
-	}
-
-	// Reconcile CAPI manager service account
 	capiManagerServiceAccount := clusterapi.CAPIManagerServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerServiceAccount, func() error {
-		hyperutil.EnsurePullSecret(capiManagerServiceAccount, controlplaneoperator.PullSecret("").Name)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager service account: %w", err)
-	}
 
 	// Reconcile CAPI manager cluster role
 	capiManagerClusterRole := clusterapi.CAPIManagerClusterRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRole, func() error {
+	_, err = createOrUpdate(cpContext, r.Client, capiManagerClusterRole, func() error {
 		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
 	})
 	if err != nil {
@@ -2393,59 +2343,17 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 	// Reconcile CAPI manager cluster role binding
 	capiManagerClusterRoleBinding := clusterapi.CAPIManagerClusterRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerClusterRoleBinding, func() error {
+	_, err = createOrUpdate(cpContext, r.Client, capiManagerClusterRoleBinding, func() error {
 		return reconcileCAPIManagerClusterRoleBinding(capiManagerClusterRoleBinding, capiManagerClusterRole, capiManagerServiceAccount)
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile capi manager cluster role binding: %w", err)
 	}
 
-	// Reconcile CAPI manager role
-	capiManagerRole := clusterapi.CAPIManagerRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerRole, func() error {
-		return reconcileCAPIManagerRole(capiManagerRole)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
-	}
-
-	// Reconcile CAPI manager role binding
-	capiManagerRoleBinding := clusterapi.CAPIManagerRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerRoleBinding, func() error {
-		return reconcileCAPIManagerRoleBinding(capiManagerRoleBinding, capiManagerRole, capiManagerServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager role: %w", err)
-	}
-
-	// Reconcile CAPI manager deployment
-	var capiImage string
-	version, err := hyperutil.GetPayloadVersion(ctx, *releaseProvider, hcluster, pullSecretBytes)
-	if err != nil {
-		return fmt.Errorf("failed to lookup payload version: %w", err)
-	}
-	if envImage := os.Getenv(images.CAPIEnvVar); len(envImage) > 0 {
-		// Use environment variable image only if using HCP release < 4.12
-		if version.Major == 4 && version.Minor < 12 {
-			capiImage = envImage
-		}
-	}
-	if _, ok := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]; ok {
-		capiImage = hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
-	}
-	if capiImage == "" {
-		if capiImage, err = hyperutil.GetPayloadImage(ctx, *releaseProvider, hcluster, ImageStreamCAPI, pullSecretBytes); err != nil {
-			return fmt.Errorf("failed to retrieve capi image: %w", err)
-		}
-	}
-	capiManagerDeployment := clusterapi.ClusterAPIManagerDeployment(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiManagerDeployment, func() error {
-		// TODO (alberto): This image builds from https://github.com/kubernetes-sigs/cluster-api/pull/4709
-		// We need to build from main branch and push to quay.io/hypershift once this is merged or otherwise enable webhooks.
-		return reconcileCAPIManagerDeployment(capiManagerDeployment, hcluster, hcp, capiManagerServiceAccount, capiImage, r.SetDefaultSecurityContext, version)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi manager deployment: %w", err)
+	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+	capiManager := capimanagerv2.NewComponent(imageOverride)
+	if err := capiManager.Reconcile(cpContext); err != nil {
+		return fmt.Errorf("failed to reconcile capi manager component: %w", err)
 	}
 
 	return nil
@@ -2453,55 +2361,21 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(ctx context.Context, crea
 
 // reconcileCAPIProvider orchestrates reconciliation of the CAPI provider
 // components for a given platform.
-func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane,
-	capiProviderDeploymentSpec *appsv1.DeploymentSpec, p platform.Platform,
+func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, p platform.Platform,
 ) error {
+	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
+	if err != nil {
+		return fmt.Errorf("failed to get capi provider deployment spec: %w", err)
+	}
+
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
 	}
 
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to get control plane namespace: %w", err)
-	}
-
-	// Reconcile CAPI provider role
-	capiProviderRole := clusterapi.CAPIProviderRole(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiProviderRole, func() error {
-		return reconcileCAPIProviderRole(capiProviderRole, p)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi provider role: %w", err)
-	}
-
-	// Reconcile CAPI provider service account
-	capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiProviderServiceAccount, func() error {
-		hyperutil.EnsurePullSecret(capiProviderServiceAccount, controlplaneoperator.PullSecret("").Name)
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi provider service account: %w", err)
-	}
-
-	// Reconcile CAPI provider role binding
-	capiProviderRoleBinding := clusterapi.CAPIProviderRoleBinding(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, capiProviderRoleBinding, func() error {
-		return reconcileCAPIProviderRoleBinding(capiProviderRoleBinding, capiProviderRole, capiProviderServiceAccount)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi provider role binding: %w", err)
-	}
-
-	// Reconcile CAPI provider deployment
-	deployment := clusterapi.CAPIProviderDeployment(controlPlaneNamespace.Name)
-	_, err = createOrUpdate(ctx, r.Client, deployment, func() error {
-		return reconcileCAPIProviderDeployment(deployment, capiProviderDeploymentSpec, hcp, capiProviderServiceAccount, r.SetDefaultSecurityContext)
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile capi provider deployment: %w", err)
+	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
+	if err := capi.Reconcile(cpContext); err != nil {
+		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
 	}
 
 	return nil
@@ -2509,9 +2383,9 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(ctx context.Context, cre
 
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
-func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hostedControlPlane *hyperv1.HostedControlPlane, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, releaseImage *releaseinfo.ReleaseImage) error {
+func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
-	err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
+	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
@@ -2522,7 +2396,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 		// Reconcile operator role - for ingress
 		controlPlaneOperatorIngressRole := controlplaneoperator.OperatorIngressRole("openshift-ingress", controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRole, func() error {
+		_, err = createOrUpdate(cpContext, r.Client, controlPlaneOperatorIngressRole, func() error {
 			return reconcileControlPlaneOperatorIngressRole(controlPlaneOperatorIngressRole)
 		})
 		if err != nil {
@@ -2531,7 +2405,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 		// Reconcile operator role binding - for ingress
 		controlPlaneOperatorIngressRoleBinding := controlplaneoperator.OperatorIngressRoleBinding("openshift-ingress", controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressRoleBinding, func() error {
+		_, err = createOrUpdate(cpContext, r.Client, controlPlaneOperatorIngressRoleBinding, func() error {
 			return reconcileControlPlaneOperatorIngressRoleBinding(controlPlaneOperatorIngressRoleBinding, controlPlaneOperatorIngressRole, controlPlaneOperatorServiceAccount)
 		})
 		if err != nil {
@@ -2540,7 +2414,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 		// Reconcile operator role - for ingress operator
 		controlPlaneOperatorIngressOperatorRole := controlplaneoperator.OperatorIngressOperatorRole("openshift-ingress-operator", controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRole, func() error {
+		_, err = createOrUpdate(cpContext, r.Client, controlPlaneOperatorIngressOperatorRole, func() error {
 			return reconcilecontrolPlaneOperatorIngressOperatorRole(controlPlaneOperatorIngressOperatorRole)
 		})
 		if err != nil {
@@ -2549,7 +2423,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 		// Reconcile operator role binding - for ingress operator
 		controlPlaneOperatorIngressOperatorRoleBinding := controlplaneoperator.OperatorIngressOperatorRoleBinding("openshift-ingress-operator", controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorIngressOperatorRoleBinding, func() error {
+		_, err = createOrUpdate(cpContext, r.Client, controlPlaneOperatorIngressOperatorRoleBinding, func() error {
 			return reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(controlPlaneOperatorIngressOperatorRoleBinding, controlPlaneOperatorIngressOperatorRole, controlPlaneOperatorServiceAccount)
 		})
 		if err != nil {
@@ -2559,7 +2433,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 
 	// TODO: move CRD installation to the CLI.
 	if releaseVersion.Major == 4 && releaseVersion.Minor >= 19 {
-		if err := componentcrd.InstallCRDs(ctx, r.Client); err != nil {
+		if err := componentcrd.InstallCRDs(cpContext, r.Client); err != nil {
 			return fmt.Errorf("failed to install controlplanecomponent CRDs: %w", err)
 		}
 	}
@@ -2577,19 +2451,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 		FeatureSet:                  r.FeatureSet,
 	})
 
-	imageProvider := imageprovider.New(releaseImage)
-	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
-	err = cpo.Reconcile(controlplanecomponent.ControlPlaneContext{
-		Context:                   ctx,
-		Client:                    r.Client,
-		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
-		HCP:                       hostedControlPlane,
-		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
-		EnableCIDebugOutput:       r.EnableCIDebugOutput,
-		MetricsSet:                r.MetricsSet,
-		ReleaseImageProvider:      imageProvider,
-	})
-	if err != nil {
+	if err := cpo.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator component: %w", err)
 	}
 
@@ -2828,219 +2690,6 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hcp *hyperv1.HostedC
 	return nil
 }
 
-func reconcileCAPIProviderDeployment(deployment *appsv1.Deployment, capiProviderDeploymentSpec *appsv1.DeploymentSpec, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, setDefaultSecurityContext bool) error {
-	selectorLabels := map[string]string{
-		"control-plane":                    "capi-provider-controller-manager",
-		"app":                              "capi-provider-controller-manager",
-		hyperv1.ControlPlaneComponentLabel: "capi-provider-controller-manager",
-	}
-	// Before this change we did
-	// 		Selector: &metav1.LabelSelector{
-	//			MatchLabels: labels,
-	//		},
-	//		Template: corev1.PodTemplateSpec{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Labels: labels,
-	//			}
-	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
-	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
-	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
-	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
-		selectorLabels = deployment.Spec.Selector.MatchLabels
-	}
-
-	// Enforce provider specifics.
-	deployment.Spec = *capiProviderDeploymentSpec
-
-	// Enforce pull policy.
-	for i := range deployment.Spec.Template.Spec.Containers {
-		deployment.Spec.Template.Spec.Containers[i].ImagePullPolicy = corev1.PullIfNotPresent
-		deployment.Spec.Template.Spec.Containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
-	}
-
-	// Enforce labels.
-	deployment.Spec.Selector = &metav1.LabelSelector{
-		MatchLabels: selectorLabels,
-	}
-	// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
-	// Then when additionalLabels are applied it silently modifies .MatchLabels.
-	// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
-	// TODO (alberto): Refactor support.config package and gate all components definition on the library.
-	deployment.Spec.Template.Labels = config.CopyStringMap(selectorLabels)
-
-	// Enforce ServiceAccount.
-	deployment.Spec.Template.Spec.ServiceAccountName = sa.Name
-
-	deploymentConfig := config.DeploymentConfig{
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
-		SetDefaultSecurityContext: setDefaultSecurityContext,
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-	}
-	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
-	}
-	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
-	deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
-	deploymentConfig.ApplyTo(deployment)
-
-	return nil
-}
-
-func reconcileCAPIManagerDeployment(deployment *appsv1.Deployment, hc *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, sa *corev1.ServiceAccount, capiManagerImage string, setDefaultSecurityContext bool, hcVersion *semver.Version) error {
-	defaultMode := int32(0o640)
-	selectorLabels := map[string]string{
-		"name":                             "cluster-api",
-		"app":                              "cluster-api",
-		hyperv1.ControlPlaneComponentLabel: "cluster-api",
-	}
-
-	// Before this change we did
-	// 		Selector: &metav1.LabelSelector{
-	//			MatchLabels: labels,
-	//		},
-	//		Template: corev1.PodTemplateSpec{
-	//			ObjectMeta: metav1.ObjectMeta{
-	//				Labels: labels,
-	//			}
-	// As a consequence of using the same memory address for both MatchLabels and Labels, when setColocation set the colocationLabelKey in additionalLabels
-	// it got also silently included in MatchLabels. This made any additional additionalLabel to break reconciliation because MatchLabels is an immutable field.
-	// So now we leave Selector.MatchLabels if it has something already and use a different var from .Labels so the former is not impacted by additionalLabels changes.
-	if deployment.Spec.Selector != nil && deployment.Spec.Selector.MatchLabels != nil {
-		selectorLabels = deployment.Spec.Selector.MatchLabels
-	}
-
-	deployment.Spec = appsv1.DeploymentSpec{
-		Selector: &metav1.LabelSelector{
-			MatchLabels: selectorLabels,
-		},
-		Template: corev1.PodTemplateSpec{
-			ObjectMeta: metav1.ObjectMeta{
-				// We copy the map here, otherwise this .Labels would point to the same address that .MatchLabels
-				// Then when additionalLabels are applied it silently modifies .MatchLabels.
-				// We could also change additionalLabels.ApplyTo but that might have a bigger impact.
-				// TODO (alberto): Refactor support.config package and gate all components definition on the library.
-				Labels: config.CopyStringMap(selectorLabels),
-			},
-			Spec: corev1.PodSpec{
-				ServiceAccountName: sa.Name,
-				Volumes: []corev1.Volume{
-					{
-						Name: "capi-webhooks-tls",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								DefaultMode: &defaultMode,
-								SecretName:  "capi-webhooks-tls",
-							},
-						},
-					},
-				},
-				Containers: []corev1.Container{
-					{
-						Name:            "manager",
-						Image:           capiManagerImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						Env: []corev1.EnvVar{
-							{
-								Name: "MY_NAMESPACE",
-								ValueFrom: &corev1.EnvVarSource{
-									FieldRef: &corev1.ObjectFieldSelector{
-										FieldPath: "metadata.namespace",
-									},
-								},
-							},
-						},
-						Args: []string{
-							"--namespace", "$(MY_NAMESPACE)",
-							"--v=4",
-							"--leader-elect=true",
-							fmt.Sprintf("--leader-elect-lease-duration=%s", config.RecommendedLeaseDuration),
-							fmt.Sprintf("--leader-elect-retry-period=%s", config.RecommendedRetryPeriod),
-							fmt.Sprintf("--leader-elect-renew-deadline=%s", config.RecommendedRenewDeadline),
-						},
-						LivenessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/healthz",
-									Port:   intstr.FromInt(9440),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							InitialDelaySeconds: 60,
-							PeriodSeconds:       60,
-							SuccessThreshold:    1,
-							FailureThreshold:    5,
-							TimeoutSeconds:      5,
-						},
-						ReadinessProbe: &corev1.Probe{
-							ProbeHandler: corev1.ProbeHandler{
-								HTTPGet: &corev1.HTTPGetAction{
-									Path:   "/readyz",
-									Port:   intstr.FromInt(9440),
-									Scheme: corev1.URISchemeHTTP,
-								},
-							},
-							PeriodSeconds:    10,
-							SuccessThreshold: 1,
-							FailureThreshold: 3,
-							TimeoutSeconds:   5,
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("40Mi"),
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-							},
-						},
-						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "capi-webhooks-tls",
-								ReadOnly:  true,
-								MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	if hcVersion.GE(config.Version419) {
-		deployment.Spec.Template.Spec.Containers[0].Args = append(
-			deployment.Spec.Template.Spec.Containers[0].Args,
-			"--feature-gates=MachineSetPreflightChecks=false",
-		)
-	}
-
-	// set security context
-	if setDefaultSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
-		}
-	}
-
-	deploymentConfig := config.DeploymentConfig{
-		Scheduling: config.Scheduling{
-			PriorityClass: config.DefaultPriorityClass,
-		},
-		SetDefaultSecurityContext: setDefaultSecurityContext,
-		AdditionalLabels: map[string]string{
-			config.NeedManagementKASAccessLabel: "true",
-		},
-	}
-	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
-		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
-	}
-	deploymentConfig.SetDefaults(hcp, nil, ptr.To(1))
-	deploymentConfig.SetRestartAnnotation(hc.ObjectMeta)
-	deploymentConfig.ApplyTo(deployment)
-
-	return nil
-}
-
 func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
@@ -3056,139 +2705,6 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 	binding.RoleRef = rbacv1.RoleRef{
 		APIGroup: "rbac.authorization.k8s.io",
 		Kind:     "ClusterRole",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
-	return nil
-}
-
-func reconcileCAPIManagerRole(role *rbacv1.Role) error {
-	role.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{
-				"bootstrap.cluster.x-k8s.io",
-				"controlplane.cluster.x-k8s.io",
-				"infrastructure.cluster.x-k8s.io",
-				"machines.cluster.x-k8s.io",
-				"exp.infrastructure.cluster.x-k8s.io",
-				"addons.cluster.x-k8s.io",
-				"exp.cluster.x-k8s.io",
-				"cluster.x-k8s.io",
-			},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"hypershift.openshift.io"},
-			Resources: []string{
-				"hostedcontrolplanes",
-				"hostedcontrolplanes/status",
-			},
-			Verbs: []string{"get", "list", "watch", "delete", "patch", "update"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"configmaps",
-				"secrets",
-			},
-			Verbs: []string{"get", "list", "watch"},
-		},
-		{
-			APIGroups: []string{""},
-			Resources: []string{"events"},
-			Verbs:     []string{"create", "update", "patch"},
-		},
-		{
-			APIGroups: []string{"coordination.k8s.io"},
-			Resources: []string{
-				"leases",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{"capi-provider.agent-install.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-	}
-	return nil
-}
-
-func reconcileCAPIManagerRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
-		Name:     role.Name,
-	}
-
-	binding.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      sa.Name,
-			Namespace: sa.Namespace,
-		},
-	}
-
-	return nil
-}
-
-func reconcileCAPIProviderRole(role *rbacv1.Role, p platform.Platform) error {
-	rules := []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"events",
-				"secrets",
-				"configmaps",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{
-				"bootstrap.cluster.x-k8s.io",
-				"controlplane.cluster.x-k8s.io",
-				"infrastructure.cluster.x-k8s.io",
-				"machines.cluster.x-k8s.io",
-				"exp.infrastructure.cluster.x-k8s.io",
-				"addons.cluster.x-k8s.io",
-				"exp.cluster.x-k8s.io",
-				"cluster.x-k8s.io",
-			},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"hypershift.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"coordination.k8s.io"},
-			Resources: []string{
-				"leases",
-			},
-			Verbs: []string{"*"},
-		},
-	}
-	if platformRules := p.CAPIProviderPolicyRules(); platformRules != nil {
-		rules = append(rules, platformRules...)
-	}
-	role.Rules = rules
-	return nil
-}
-
-func reconcileCAPIProviderRoleBinding(binding *rbacv1.RoleBinding, role *rbacv1.Role, sa *corev1.ServiceAccount) error {
-	binding.RoleRef = rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "Role",
 		Name:     role.Name,
 	}
 

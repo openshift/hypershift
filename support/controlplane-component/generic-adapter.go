@@ -44,7 +44,6 @@ func ReconcileExisting() option {
 func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName string, manifestName string) error {
 	workloadContext := cpContext.workloadContext()
 	hcp := cpContext.HCP
-	ownerRef := config.OwnerRefFrom(hcp)
 
 	obj, _, err := assets.LoadManifest(componentName, manifestName)
 	if err != nil {
@@ -64,7 +63,11 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName
 		}
 	}
 
-	ownerRef.ApplyTo(obj)
+	if !cpContext.OmitOwnerReference {
+		ownerRef := config.OwnerRefFrom(hcp)
+		ownerRef.ApplyTo(obj)
+	}
+
 	if ga.adapt != nil {
 		if err := ga.adapt(workloadContext, obj); err != nil {
 			return err

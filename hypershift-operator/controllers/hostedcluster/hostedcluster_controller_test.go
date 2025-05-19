@@ -16,12 +16,13 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
+	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -42,7 +43,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1196,58 +1196,6 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestReconcileCAPIProviderRole(t *testing.T) {
-	p := kubevirt.Kubevirt{}
-	role := &rbacv1.Role{}
-	if err := reconcileCAPIProviderRole(role, p); err != nil {
-		t.Fatalf("reconcileCAPIProviderRole failed: %v", err)
-	}
-	if diff := cmp.Diff(expectedRules(p.CAPIProviderPolicyRules()), role.Rules); diff != "" {
-		t.Errorf("expected rules differs from actual: %s", diff)
-	}
-}
-
-func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
-	baseRules := []rbacv1.PolicyRule{
-		{
-			APIGroups: []string{""},
-			Resources: []string{
-				"events",
-				"secrets",
-				"configmaps",
-			},
-			Verbs: []string{"*"},
-		},
-		{
-			APIGroups: []string{
-				"bootstrap.cluster.x-k8s.io",
-				"controlplane.cluster.x-k8s.io",
-				"infrastructure.cluster.x-k8s.io",
-				"machines.cluster.x-k8s.io",
-				"exp.infrastructure.cluster.x-k8s.io",
-				"addons.cluster.x-k8s.io",
-				"exp.cluster.x-k8s.io",
-				"cluster.x-k8s.io",
-			},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"hypershift.openshift.io"},
-			Resources: []string{"*"},
-			Verbs:     []string{"*"},
-		},
-		{
-			APIGroups: []string{"coordination.k8s.io"},
-			Resources: []string{
-				"leases",
-			},
-			Verbs: []string{"*"},
-		},
-	}
-	return append(baseRules, addRules...)
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
@@ -3740,81 +3688,6 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 	}
 }
 
-func TestReconcileCAPIProviderDeployment(t *testing.T) {
-	testCases := []struct {
-		name       string
-		deployment *appsv1.Deployment
-		expected   *metav1.LabelSelector
-	}{
-		{
-			name: "When has selector it should keep it",
-			deployment: &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterapi.CAPIProviderDeployment("test").Name,
-					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
-					Annotations: map[string]string{
-						hcmetrics.HasBeenAvailableAnnotation: "true",
-					},
-				},
-				Spec: appsv1.DeploymentSpec{
-					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"keep": "it",
-						},
-					},
-				},
-			},
-			expected: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"keep": "it",
-				},
-			},
-		},
-		{
-			name: "When it doesn't have selector it should add a new one",
-			deployment: &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      clusterapi.CAPIProviderDeployment("test").Name,
-					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
-					Annotations: map[string]string{
-						hcmetrics.HasBeenAvailableAnnotation: "true",
-					},
-				},
-				Spec: appsv1.DeploymentSpec{},
-			},
-			expected: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"control-plane": "capi-provider-controller-manager",
-					"app":           "capi-provider-controller-manager",
-					"hypershift.openshift.io/control-plane-component": "capi-provider-controller-manager",
-				},
-			},
-		},
-	}
-
-	g := NewGomegaWithT(t)
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.deployment).Build()
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "test",
-					Name:      "test",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{},
-			}
-			createOrUpdate := upsert.New(false)
-			deployment := clusterapi.CAPIProviderDeployment("test")
-			capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount("test")
-			_, err := createOrUpdate.CreateOrUpdate(context.Background(), client, deployment, func() error {
-				return reconcileCAPIProviderDeployment(deployment, &deployment.Spec, hcp, capiProviderServiceAccount, false)
-			})
-			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(deployment.Spec.Selector).To(BeEquivalentTo(tc.expected))
-		})
-	}
-}
-
 func TestKubevirtETCDEncKey(t *testing.T) {
 	for _, testCase := range []struct {
 		name           string
@@ -4259,91 +4132,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	}
 }
 
-func TestReconcileCAPIManagerDeployment(t *testing.T) {
-	testCases := []struct {
-		name              string
-		version           string
-		expectFeatureGate bool
-	}{
-		{
-			name:              "version >= 4.19 should have --feature-gates=MachineSetPreflightChecks=true",
-			version:           "4.19.0",
-			expectFeatureGate: true,
-		},
-		{
-			name:              "version <= 4.19 should not have --feature-gates=MachineSetPreflightChecks=true",
-			version:           "4.18.0",
-			expectFeatureGate: false,
-		},
-	}
-
-	hcNamespace := "namespace"
-	cpNamespace := "cp-namespace"
-	image := "image"
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			hc := &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: hcNamespace,
-				},
-			}
-
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: cpNamespace,
-				},
-			}
-
-			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "capi-manager",
-					Namespace: cpNamespace,
-				},
-			}
-
-			deployment := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "capi-manager",
-					Namespace: cpNamespace,
-				},
-				Spec: appsv1.DeploymentSpec{
-					Selector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{},
-					},
-				},
-			}
-
-			semVersion, err := semver.Parse(tc.version)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			err = reconcileCAPIManagerDeployment(deployment, hc, hcp, sa, image, true, &semVersion)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
-			// Check for feature gate argument
-			gotFeatureGate := false
-			for _, arg := range deployment.Spec.Template.Spec.Containers[0].Args {
-				if arg == "--feature-gates=MachineSetPreflightChecks=false" {
-					gotFeatureGate = true
-					break
-				}
-			}
-
-			g.Expect(gotFeatureGate).To(Equal(tc.expectFeatureGate), "Feature gate presence doesn't match expectation")
-
-			// Verify other expected configurations
-			g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(sa.Name))
-			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(image))
-		})
-	}
-}
-
-func TestReconcileControlPlaneOperator(t *testing.T) {
+func TestReconcileComponents(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
@@ -4380,6 +4169,7 @@ func TestReconcileControlPlaneOperator(t *testing.T) {
 		ReleaseImageProvider:   testutil.FakeImageProvider(),
 		HCP:                    hcp,
 		ApplyProvider:          upsert.NewApplyProvider(true),
+		OmitOwnerReference:     true,
 		SkipPredicate:          true,
 		SkipCertificateSigning: true,
 	}
@@ -4388,61 +4178,76 @@ func TestReconcileControlPlaneOperator(t *testing.T) {
 		Build()
 	cpContext.Client = fakeClient
 
-	component := cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
-		HostedCluster:     hcluster,
-		Image:             "cpo-image",
-		UtilitiesImage:    "utilitiesImage",
-		HasUtilities:      true,
-		CertRotationScale: 2 * time.Minute,
-		FeatureSet:        configv1.CustomNoUpgrade,
-	})
+	version := semver.MustParse("4.16.0")
+	awsPlatform := aws.New("test-image", "capi-provider-image", &version)
 
-	// Reconcile multiple times to make sure multiple runs don't produce different results,
-	// and to check if resources are making a no-op update calls.
-	for range 2 {
-		if err := component.Reconcile(cpContext); err != nil {
-			t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+	capiDeploymentSpec, err := awsPlatform.CAPIProviderDeploymentSpec(hcluster, hcp)
+	if err != nil {
+		t.Fatalf("failed to get CAPI provider deployment spec: %v", err)
+	}
+
+	components := []controlplanecomponent.ControlPlaneComponent{
+		cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
+			HostedCluster:     hcluster,
+			Image:             "cpo-image",
+			UtilitiesImage:    "utilitiesImage",
+			HasUtilities:      true,
+			CertRotationScale: 2 * time.Minute,
+			FeatureSet:        configv1.CustomNoUpgrade,
+		}),
+		capiproviderv2.NewComponent(capiDeploymentSpec, nil),
+		capimanagerv2.NewComponent(""),
+	}
+
+	for _, component := range components {
+		// Reconcile multiple times to make sure multiple runs don't produce different results,
+		// and to check if resources are making a no-op update calls.
+		for range 2 {
+			if err := component.Reconcile(cpContext); err != nil {
+				t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
+			}
 		}
-	}
 
-	var deployments appsv1.DeploymentList
-	if err := fakeClient.List(context.Background(), &deployments); err != nil {
-		t.Fatalf("failed to list deployments: %v", err)
-	}
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      component.Name(),
+				Namespace: hcp.Namespace,
+			},
+		}
+		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+			t.Fatalf("failed to get deployment: %v", err)
+		}
 
-	if len(deployments.Items) == 0 {
-		t.Fatalf("expected a deployment to exist for component %s", component.Name())
-	}
+		yaml, err := hyperutil.SerializeResource(deployment, api.Scheme)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	workload := &deployments.Items[0]
-	yaml, err := hyperutil.SerializeResource(workload, api.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
 
-	testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+		controlPaneComponent := &hyperv1.ControlPlaneComponent{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      component.Name(),
+				Namespace: hcp.Namespace,
+			},
+		}
+		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
+		}
 
-	controlPaneComponent := &hyperv1.ControlPlaneComponent{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      component.Name(),
-			Namespace: hcp.Namespace,
-		},
-	}
-	if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
-		t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
-	}
+		// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+		for i := range controlPaneComponent.Status.Conditions {
+			controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+		}
 
-	// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-	for i := range controlPaneComponent.Status.Conditions {
-		controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-	}
+		yaml, err = hyperutil.SerializeResource(controlPaneComponent, api.Scheme)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 
-	yaml, err = hyperutil.SerializeResource(controlPaneComponent, api.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
 
-	testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
+	}
 
 	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 		t.Fatalf("update loop detected: %v", err)

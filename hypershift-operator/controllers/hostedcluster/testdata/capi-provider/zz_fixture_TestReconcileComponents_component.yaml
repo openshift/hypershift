@@ -1,0 +1,32 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: capi-provider
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: capi-provider Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment capi-provider rollout to finish: 0 out of 2 new
+      replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: capi-provider
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: capi-provider
+  - group: ""
+    kind: ServiceAccount
+    name: capi-provider
+  version: 4.18.0
