@@ -56,7 +56,6 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
-	componentcrd "github.com/openshift/hypershift/support/controlplane-component/crds"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/metrics"
@@ -2428,13 +2427,6 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 		})
 		if err != nil {
 			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
-		}
-	}
-
-	// TODO: move CRD installation to the CLI.
-	if releaseVersion.Major == 4 && releaseVersion.Minor >= 19 {
-		if err := componentcrd.InstallCRDs(cpContext, r.Client); err != nil {
-			return fmt.Errorf("failed to install controlplanecomponent CRDs: %w", err)
 		}
 	}
 
