@@ -181,10 +181,6 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/certificates/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
-	# TODO: Create a feature gate and install controlplanecomponents in TechPreviewNoUpgrde featureSet.
-	# TODO: remove when we complete the switch to the new CPO approach.
-	mv ./cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/controlplanecomponents-CustomNoUpgrade.crd.yaml support/controlplane-component/crds/hypershift.openshift.io_controlplanecomponents.yaml
-
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)
 	rm -rf cmd/install/assets/cluster-api/*.yaml
