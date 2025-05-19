@@ -33,6 +33,11 @@ func ValidateOCPAPIServerSANs(ctx context.Context, hc *hyperv1.HostedCluster, cl
 		kasIPs            = make([]string, 0)
 	)
 
+	// Only validate if PKI is being reconciled by Hypershift
+	if _, exists := hc.Annotations[hyperv1.DisablePKIReconciliationAnnotation]; exists {
+		return errs
+	}
+
 	// At this point, maybe the HCP is not there yet
 	if hc.Spec.Configuration != nil && hc.Spec.Configuration.APIServer != nil && hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates != nil {
 		for _, cert := range hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates {
