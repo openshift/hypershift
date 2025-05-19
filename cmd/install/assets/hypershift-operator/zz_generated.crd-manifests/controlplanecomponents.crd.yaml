@@ -2,7 +2,9 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/ControlPlaneV2: "true"
+    api.openshift.io/merged-by-featuregates: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
   name: controlplanecomponents.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io

@@ -84,7 +84,6 @@ type ControlPlaneComponentStatus struct {
 // +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 // +kubebuilder:printcolumn:name="ProgressingMessage",type="string",priority=1,JSONPath=".status.conditions[?(@.type==\"Progressing\")].message",description="ProgressingMessage"
 // ControlPlaneComponent specifies the state of a ControlPlane Component
-// +openshift:enable:FeatureGate=ControlPlaneV2
 type ControlPlaneComponent struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the metadata for the ControlPlaneComponent.
