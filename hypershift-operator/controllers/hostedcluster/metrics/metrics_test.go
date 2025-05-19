@@ -8,6 +8,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -1131,6 +1132,99 @@ func TestReportClusterSizeOverride(t *testing.T) {
 				tc.expected)
 		})
 	}
+}
+
+func TestHostedClusterManagedAzureInfo(t *testing.T) {
+	var managedServiceEnvVarPreSetValue *string = nil
+	value, found := os.LookupEnv("MANAGED_SERVICE")
+	if found {
+		managedServiceEnvVarPreSetValue = &value
+	}
+
+	os.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+
+	if !found {
+		defer func() {
+			os.Unsetenv("MANAGED_SERVICE")
+		}()
+	} else {
+		defer func() {
+			os.Setenv("MANAGED_SERVICE", *managedServiceEnvVarPreSetValue)
+		}()
+	}
+
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: ptr.To(string(HostedClusterManagedAzureInfoMetricName)),
+			Help: ptr.To(string(HostedClusterManagedAzureInfoMetricHelp)),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+					{Name: ptr.To("location"), Value: ptr.To("eastus")},
+					{Name: ptr.To("microsoft_resource_group_name"), Value: ptr.To("myResourceGroup777")},
+					{Name: ptr.To("microsoft_resource_id"), Value: ptr.To("/subscriptions/mySubscription888/resourceGroups/myResourceGroup777/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/hc-name")},
+					{Name: ptr.To("microsoft_resource_type"), Value: ptr.To("hcpOpenShiftClusters")},
+					{Name: ptr.To("microsoft_subscription_id"), Value: ptr.To("mySubscription888")},
+					{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+					{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+				},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
+			}},
+		}
+	}
+	testCases := []struct {
+		name         string
+		timestamp    time.Time
+		platformType hyperv1.PlatformType
+		azureSpec    *hyperv1.AzurePlatformSpec
+		expected     *dto.MetricFamily
+	}{
+		/*{
+			name:         "no Azure Platform, no metric",
+			timestamp:    now,
+			platformType: hyperv1.IBMCloudPlatform,
+		},
+		{
+			name:         "Azure platform but no data, no metric",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec:    nil,
+		},*/
+		{
+			name:         "Azure, simple",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myResourceGroup777",
+				SubscriptionID:    "mySubscription888",
+			},
+			expected: wrapExpectedValueAsMetric(1),
+		},
+	}
+	for _, tc := range testCases {
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hc-name",
+				Namespace: "hc-ns",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "this-is-the-clusterID",
+				Platform: hyperv1.PlatformSpec{
+					Type:  tc.platformType,
+					Azure: tc.azureSpec,
+				},
+			},
+		}
+		checkMetric(t,
+			fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster).Build(),
+			clocktesting.NewFakeClock(tc.timestamp),
+			HostedClusterManagedAzureInfoMetricName,
+			tc.expected)
+	}
+
 }
 
 func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
