@@ -1,0 +1,16 @@
+FROM registry.redhat.io/ubi10-beta/ubi:10.0-beta-1741674993
+
+RUN dnf install -y haproxy-3.0.5-4.el10 \
+  && dnf clean all
+
+ENTRYPOINT [ "/usr/sbin/haproxy" ]
+CMD ["-W", "-db", "-f", "/config/haproxy.cfg"]
+
+LABEL name="multicluster-engine/hypershift-shared-ingress"
+LABEL description="HyperShift's HAProxy 3 based Shared Ingress container"
+LABEL summary="HyperShift Shared Ingress"
+LABEL url="https://quay.io/repository/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress"
+LABEL version="3.0.5-4"
+LABEL com.redhat.component="multicluster-engine-hypershift-shared-ingress"
+LABEL io.openshift.tags="data,images"
+LABEL io.k8s.display-name="multicluster-engine-hypershift-shared-ingress"

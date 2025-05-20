@@ -1,0 +1,11 @@
+contentOrigin:
+  repos:
+    - repoid: ubi-10-appstream-rpms
+      baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/${basearch}/appstream/os/
+packages:
+  - haproxy
+context:
+  containerfile: Containerfile
+arches:
+  - aarch64
+  - x86_64

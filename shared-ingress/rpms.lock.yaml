@@ -1,0 +1,26 @@
+---
+lockfileVersion: 1
+lockfileVendor: redhat
+arches:
+- arch: aarch64
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/aarch64/appstream/os/Packages/h/haproxy-3.0.5-4.el10.aarch64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 2699949
+    checksum: sha256:e19b22e2a2b576ccda7a517e648593555150f5d0c09a3e1e3e41521ecbeb3f1f
+    name: haproxy
+    evr: 3.0.5-4.el10
+    sourcerpm: haproxy-3.0.5-4.el10.src.rpm
+  source: []
+  module_metadata: []
+- arch: x86_64
+  packages:
+  - url: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/x86_64/appstream/os/Packages/h/haproxy-3.0.5-4.el10.x86_64.rpm
+    repoid: ubi-10-appstream-rpms
+    size: 2704478
+    checksum: sha256:4edc13a962fe3833b0ac2f6e240ff7e6a4453124391bbb9c4e2fe7fa20f6df60
+    name: haproxy
+    evr: 3.0.5-4.el10
+    sourcerpm: haproxy-3.0.5-4.el10.src.rpm
+  source: []
+  module_metadata: []
