@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
-	k8sadmissionv1beta1 "k8s.io/api/admissionregistration/v1beta1"
+	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -22,8 +22,8 @@ import (
 
 type AdmissionPolicy struct {
 	Name             string
-	MatchConstraints *k8sadmissionv1beta1.MatchResources
-	Validations      []k8sadmissionv1beta1.Validation
+	MatchConstraints *k8sadmissionv1.MatchResources
+	Validations      []k8sadmissionv1.Validation
 }
 
 const (
@@ -44,10 +44,10 @@ var (
 	userWhiteList = []string{
 		fmt.Sprintf("system:%s", config.HCCOUser),
 	}
-	allAdmissionPoliciesOperations = []k8sadmissionv1beta1.OperationType{"*"}
-	defaultMatchResourcesScope     = k8sadmissionv1beta1.ScopeType("*")
-	defaultMatchPolicyType         = k8sadmissionv1beta1.Equivalent
-	HCCOUserValidation             = k8sadmissionv1beta1.Validation{
+	allAdmissionPoliciesOperations = []k8sadmissionv1.OperationType{"*"}
+	defaultMatchResourcesScope     = k8sadmissionv1.ScopeType("*")
+	defaultMatchPolicyType         = k8sadmissionv1.Equivalent
+	HCCOUserValidation             = k8sadmissionv1.Validation{
 		Message: "This resource cannot be created, updated, or deleted. Please ask your administrator to modify the resource in the HostedCluster object.",
 		Reason:  ptr.To(metav1.StatusReasonInvalid),
 	}
@@ -101,8 +101,8 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	}
 
 	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
-	configAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
-	configAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(configResources, configAPIVersion, configAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
+	configAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
+	configAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(configResources, configAPIVersion, configAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	if err := configAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling Config Validating Admission Policy: %v", err)
 	}
@@ -120,8 +120,8 @@ func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.H
 	infraResources := []string{"infrastructures"}
 
 	HCCOUserValidation.Expression = generateCelExpression(append(userWhiteList, cnoSAUser))
-	infraAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
-	infraAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(infraResources, infraAPIVersion, infraAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
+	infraAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
+	infraAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(infraResources, infraAPIVersion, infraAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	if err := infraAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling Infrastructure Validating Admission Policy: %v", err)
 	}
@@ -144,7 +144,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	}
 
 	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
-	mirrorAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
+	mirrorAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	mirrorAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirrorResources, mirrorAPIVersion, mirrorAPIGroup, allAdmissionPoliciesOperations)
 	if err := mirrorAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling Mirror Validating Admission Policy: %v", err)
@@ -156,7 +156,7 @@ func reconcileMirrorValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	icspAPIGroup := []string{operatorv1alpha1.GroupVersion.Group}
 	icspResources := []string{"imagecontentsourcepolicies"}
 
-	icspAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
+	icspAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
 	icspAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(icspResources, icspAPIVersion, icspAPIGroup, allAdmissionPoliciesOperations)
 	if err := icspAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
 		return fmt.Errorf("error reconciling ICSP Validating Admission Policy: %v", err)
@@ -172,8 +172,8 @@ func reconcileConfigMapsValidatingAdmissionPolicy(ctx context.Context, client cl
 	mirroredConfigsResources := []string{"configmaps"}
 
 	HCCOUserValidation.Expression = generateCelExpression(userWhiteList)
-	mirroredConfigsAdmissionPolicy.Validations = []k8sadmissionv1beta1.Validation{HCCOUserValidation}
-	mirroredConfigsAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirroredConfigsResources, mirroredConfigsAPIVersion, mirroredConfigsAPIGroup, []k8sadmissionv1beta1.OperationType{"UPDATE", "DELETE"})
+	mirroredConfigsAdmissionPolicy.Validations = []k8sadmissionv1.Validation{HCCOUserValidation}
+	mirroredConfigsAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(mirroredConfigsResources, mirroredConfigsAPIVersion, mirroredConfigsAPIGroup, []k8sadmissionv1.OperationType{"UPDATE", "DELETE"})
 	// we want to block changes only for configmaps with "hypershift.openshift.io/mirrored-config" label
 	mirroredConfigsAdmissionPolicy.MatchConstraints.ObjectSelector = &metav1.LabelSelector{MatchLabels: map[string]string{nodepool.NTOMirroredConfigLabel: "true"}}
 	if err := mirroredConfigsAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
@@ -201,7 +201,7 @@ func (ap *AdmissionPolicy) reconcileAdmissionPolicy(ctx context.Context, client 
 	policyBinding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", ap.Name))
 	if _, err := createOrUpdate(ctx, client, policyBinding, func() error {
 		policyBinding.Spec.PolicyName = ap.Name
-		policyBinding.Spec.ValidationActions = []k8sadmissionv1beta1.ValidationAction{k8sadmissionv1beta1.Deny}
+		policyBinding.Spec.ValidationActions = []k8sadmissionv1.ValidationAction{k8sadmissionv1.Deny}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to create/update Validating Admission Policy Binding with name %s: %v", ap.Name, err)
@@ -210,13 +210,13 @@ func (ap *AdmissionPolicy) reconcileAdmissionPolicy(ctx context.Context, client 
 	return nil
 }
 
-func constructPolicyMatchConstraints(resources, apiVersion, apiGroup []string, operations []k8sadmissionv1beta1.OperationType) *k8sadmissionv1beta1.MatchResources {
-	return &k8sadmissionv1beta1.MatchResources{
-		ResourceRules: []k8sadmissionv1beta1.NamedRuleWithOperations{
+func constructPolicyMatchConstraints(resources, apiVersion, apiGroup []string, operations []k8sadmissionv1.OperationType) *k8sadmissionv1.MatchResources {
+	return &k8sadmissionv1.MatchResources{
+		ResourceRules: []k8sadmissionv1.NamedRuleWithOperations{
 			{
-				RuleWithOperations: k8sadmissionv1beta1.RuleWithOperations{
+				RuleWithOperations: k8sadmissionv1.RuleWithOperations{
 					Operations: operations,
-					Rule: k8sadmissionv1beta1.Rule{
+					Rule: k8sadmissionv1.Rule{
 						APIGroups:   apiGroup,
 						APIVersions: apiVersion,
 						Resources:   resources,
