@@ -2384,7 +2384,7 @@ spec:
                   required:
                   - source
                   type: object
-                maxItems: 25
+                maxItems: 255
                 type: array
               infraID:
                 description: |-
