@@ -59,6 +59,10 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetOpenShiftImage
 	return p.OpenShiftImageRegistryOverrides
 }
 
+func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) UpdateOpenShiftImageRegistryOverrides(overrides map[string][]string) {
+	p.OpenShiftImageRegistryOverrides = overrides
+}
+
 func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) GetMirroredReleaseImage() string {
 	return p.mirroredReleaseImage
 }

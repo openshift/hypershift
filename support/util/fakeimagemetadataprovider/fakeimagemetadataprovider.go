@@ -67,6 +67,9 @@ func (f *FakeRegistryClientImageMetadataProvider) GetOverride(ctx context.Contex
 	return f.Ref, nil
 }
 
+func (f *FakeRegistryClientImageMetadataProvider) UpdateOpenShiftImageRegistryOverrides(map[string][]string) {
+}
+
 type FakeRegistryClientImageMetadataProviderHCCO struct {
 }
 
@@ -100,4 +103,7 @@ func (f *FakeRegistryClientImageMetadataProviderHCCO) GetMetadata(ctx context.Co
 
 func (f *FakeRegistryClientImageMetadataProviderHCCO) GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error) {
 	return &reference.DockerImageReference{}, nil
+}
+
+func (f *FakeRegistryClientImageMetadataProviderHCCO) UpdateOpenShiftImageRegistryOverrides(map[string][]string) {
 }

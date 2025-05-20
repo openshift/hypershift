@@ -31,6 +31,7 @@ type ProviderWithRegistryOverrides interface {
 type ProviderWithOpenShiftImageRegistryOverrides interface {
 	ProviderWithRegistryOverrides
 	GetOpenShiftImageRegistryOverrides() map[string][]string
+	UpdateOpenShiftImageRegistryOverrides(map[string][]string)
 	GetMirroredReleaseImage() string
 }
 

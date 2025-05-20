@@ -36,6 +36,7 @@ type ImageMetadataProvider interface {
 	GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error)
 	GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error)
 	GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error)
+	UpdateOpenShiftImageRegistryOverrides(overrides map[string][]string)
 }
 
 type RegistryClientImageMetadataProvider struct {
@@ -131,6 +132,10 @@ func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, i
 	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
 
 	return ref, nil
+}
+
+func (r *RegistryClientImageMetadataProvider) UpdateOpenShiftImageRegistryOverrides(overrides map[string][]string) {
+	r.OpenShiftImageRegistryOverrides = overrides
 }
 
 func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {

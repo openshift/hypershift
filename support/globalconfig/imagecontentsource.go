@@ -2,12 +2,8 @@ package globalconfig
 
 import (
 	"context"
-	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/capabilities"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -16,7 +12,6 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ImageContentSourcePolicy() *operatorv1alpha1.ImageContentSourcePolicy {
@@ -170,35 +165,4 @@ func getImageContentSourcePolicies(ctx context.Context, client client.Client) (m
 	}
 
 	return icspRegistryOverrides, nil
-}
-
-func RenconcileMgmtImageRegistryOverrides(ctx context.Context, capChecker capabilities.CapabiltyChecker, client crclient.Client, registryOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-	var (
-		imageRegistryMirrors map[string][]string
-		err                  error
-	)
-
-	if capChecker.Has(capabilities.CapabilityICSP) || capChecker.Has(capabilities.CapabilityIDMS) {
-		imageRegistryMirrors, err = GetAllImageRegistryMirrors(ctx, client, capChecker.Has(capabilities.CapabilityIDMS), capChecker.Has(capabilities.CapabilityICSP))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to reconcile over image registry mirrors: %w", err)
-		}
-	}
-
-	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: registryOverrides,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
-	}
-
-	imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryMirrors,
-	}
-
-	return releaseProvider, imageMetadataProvider, nil
 }

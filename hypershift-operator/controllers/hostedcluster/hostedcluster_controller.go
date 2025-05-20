@@ -185,6 +185,8 @@ type HostedClusterReconciler struct {
 	OperatorNamespace string
 
 	ReconcileMetadataProviders func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error)
+	ReleaseProvider            releaseinfo.ProviderWithOpenShiftImageRegistryOverrides
+	ImageMetadataProvider      hyperutil.ImageMetadataProvider
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
@@ -378,9 +380,13 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *HostedClusterReconciler) ReconcileMetadataProvidersImpl(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-	releaseProvider, imageMetadataProvider, err := globalconfig.RenconcileMgmtImageRegistryOverrides(ctx, r.ManagementClusterCapabilities, r.Client, imgOverrides)
-
-	return releaseProvider, imageMetadataProvider, err
+	imageRegistryMirrors, err := globalconfig.GetAllImageRegistryMirrors(ctx, r.Client, r.ManagementClusterCapabilities.Has(capabilities.CapabilityIDMS), r.ManagementClusterCapabilities.Has(capabilities.CapabilityICSP))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to populate image registry mirrors: %w", err)
+	}
+	r.ReleaseProvider.UpdateOpenShiftImageRegistryOverrides(imageRegistryMirrors)
+	r.ImageMetadataProvider.UpdateOpenShiftImageRegistryOverrides(imageRegistryMirrors)
+	return r.ReleaseProvider, r.ImageMetadataProvider, nil
 }
 
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
