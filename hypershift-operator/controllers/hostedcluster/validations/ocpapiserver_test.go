@@ -41,6 +41,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 
 	tests := []struct {
 		name              string
+		annotation        string
 		customCertSecret  *corev1.Secret
 		secrets           []client.Object
 		namedCertificates []configv1.APIServerNamedServingCert
@@ -80,6 +81,27 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 			},
 			dnsNames: []string{"test.example.com"},
 			secrets:  []client.Object{},
+			namedCertificates: []configv1.APIServerNamedServingCert{
+				{
+					Names:              []string{"test.example.com"},
+					ServingCertificate: configv1.SecretNameReference{Name: customServingCertSecretName},
+				},
+			},
+			expectedErrors: nil,
+		},
+		{
+			name:       "invalid certificate format, PKI reconciliation disabled",
+			annotation: hyperv1.DisablePKIReconciliationAnnotation,
+			customCertSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      customServingCertSecretName,
+					Namespace: "clusters",
+				},
+				Data: map[string][]byte{
+					"tls.crt": []byte("invalid certificate"),
+				},
+			},
+			secrets: []client.Object{},
 			namedCertificates: []configv1.APIServerNamedServingCert{
 				{
 					Names:              []string{"test.example.com"},
@@ -192,6 +214,12 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 				pemCert, pemKey, err = util.GenerateTestCertificate(context.Background(), tt.dnsNames, tt.ipAddresses, 24*time.Hour)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(pemCert).NotTo(BeNil())
+			}
+
+			// Set the annotation if there is one
+			hc.Annotations = make(map[string]string)
+			if tt.annotation != "" {
+				hc.Annotations[tt.annotation] = ""
 			}
 
 			// Initialize secrets with proper data
