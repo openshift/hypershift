@@ -31,7 +31,12 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		if crossZoneLoadBalancingEnabled {
 			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
 		}
-		util.ApplyAWSLoadBalancerSubnetsAnnotation(svc, hcp)
+		if internal {
+			// Only the internal nlb should get private subnets assigned.
+			// The external nlb should use the default public subnets.
+			util.ApplyAWSLoadBalancerSubnetsAnnotation(svc, hcp)
+		}
+		util.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
 	}
 
 	if svc.Labels == nil {
