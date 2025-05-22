@@ -1,0 +1,35 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: karpenter-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: karpenter-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment karpenter-operator rollout to finish: 0 out of
+      1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: Secret
+    name: karpenter-credentials
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: karpenter-operator
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: karpenter-operator
+  - group: ""
+    kind: ServiceAccount
+    name: karpenter-operator
+  version: 4.18.0

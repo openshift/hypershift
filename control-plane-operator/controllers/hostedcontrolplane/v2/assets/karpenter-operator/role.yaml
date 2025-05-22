@@ -1,0 +1,70 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: karpenter-operator
+  namespace: HCP_NAMESPACE
+rules:
+  - apiGroups:
+      - "coordination.k8s.io"
+    resources:
+      - "leases"
+    verbs:
+      - "get"
+      - "watch"
+      - "create"
+  - apiGroups:
+      - "coordination.k8s.io"
+    resources:
+      - "leases"
+    verbs:
+      - "patch"
+      - "update"
+    resourceNames:
+      - "karpenter-leader-election"
+  - apiGroups:
+      - "apps"
+    resources:
+      - "deployments"
+    verbs:
+      - "create"
+      - "update"
+      - "patch"
+      - "delete"
+      - "get"
+      - "list"
+      - "watch"
+  - apiGroups:
+      - ""
+    resources:
+      - "secrets"
+      - "serviceaccounts"
+    verbs:
+      - "*"
+  - apiGroups:
+      - "hypershift.openshift.io"
+    resources:
+      - "hostedcontrolplanes"
+      - "hostedcontrolplanes/finalizers"
+    verbs:
+      - "*"
+  - apiGroups:
+      - "rbac.authorization.k8s.io"
+    resources:
+      - "roles"
+      - "rolebindings"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+      - "create"
+      - "update"
+      - "patch"
+      - "delete"
+      - "deletecollection"
+  - apiGroups:
+      - "hypershift.openshift.io"
+    resources:
+      - "controlplanecomponents"
+      - "controlplanecomponents/status"
+    verbs:
+      - "*"
