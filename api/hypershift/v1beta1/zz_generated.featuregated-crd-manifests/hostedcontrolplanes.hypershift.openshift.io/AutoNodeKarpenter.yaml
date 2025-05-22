@@ -184,6 +184,8 @@ spec:
                     items:
                       enum:
                       - ImageRegistry
+                      - Console
+                      - openshift-samples
                       type: string
                     maxItems: 25
                     type: array

@@ -1240,7 +1240,8 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
-		if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		// if we have at least one disabled capability, configure the ClusterVersion CR
+		if len(hcp.Spec.Capabilities.Disabled) > 0 {
 			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
 				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
