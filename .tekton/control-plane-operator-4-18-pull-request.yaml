@@ -597,7 +597,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-control-plane-operator-4-18
   workspaces:
   - name: git-auth
     secret:
