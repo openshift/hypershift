@@ -51,7 +51,6 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			)
 			c.Args = append(c.Args,
 				"--control-plane-operator-image="+karp.ControlPlaneOperatorImage,
-				"--karpenter-provider-aws-image="+karp.KarpenterProviderAWSImage,
 			)
 		})
 	}

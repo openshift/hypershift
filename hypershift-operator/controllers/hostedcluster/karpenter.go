@@ -20,7 +20,6 @@ import (
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
-	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -108,16 +107,9 @@ spec:
 
 	// Run karpenter Operator to manage CRs management and guest side.
 
-	// TODO(jkyros): Grab the karpenter image in the proper place at the beginning with args, not here?
-	karpenterProviderAWSImage, hasImage := releaseImage.ComponentImages()["aws-karpenter-provider-aws"]
-	if !hasImage {
-		karpenterProviderAWSImage = assets.DefaultKarpenterProviderAWSImage
-	}
-
 	karpenteroperator := karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
 		HyperShiftOperatorImage:   hypershiftOperatorImage,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		KarpenterProviderAWSImage: karpenterProviderAWSImage,
 	})
 
 	if err := karpenteroperator.Reconcile(cpContext); err != nil {

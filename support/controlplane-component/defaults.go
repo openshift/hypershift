@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
+	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
@@ -570,6 +571,9 @@ func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageP
 			// fallback to hcp releaseImage if "cluster-version-operator" image is not available.
 			// This could happen for example in local dev environments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
 			containers[i].Image = util.HCPControlPlaneReleaseImage(hcp)
+		} else if key == "aws-karpenter-provider-aws" {
+			// fallback to hardcoded aws image if karpenter image is not available in payload yet.
+			containers[i].Image = karpenterassets.DefaultKarpenterProviderAWSImage
 		}
 	}
 
