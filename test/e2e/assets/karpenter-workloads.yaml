@@ -32,6 +32,7 @@ spec:
             cpu: "250m"
             memory: 256M
         securityContext:
+          readOnlyRootFilesystem: true
           allowPrivilegeEscalation: false
       nodeSelector:
         node.kubernetes.io/instance-type: "t3.large"
