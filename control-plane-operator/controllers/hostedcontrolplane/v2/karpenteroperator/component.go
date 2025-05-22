@@ -5,6 +5,7 @@ import (
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -18,8 +19,6 @@ var _ component.ComponentOptions = &KarpenterOperatorOptions{}
 type KarpenterOperatorOptions struct {
 	HyperShiftOperatorImage   string
 	ControlPlaneOperatorImage string
-	KarpenterProviderAWSImage string
-	ControlPlaneContext       component.ControlPlaneContext
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -45,6 +44,7 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 			component.ReconcileExisting(),
 		).
 		WithPredicate(predicate).
+		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }
 

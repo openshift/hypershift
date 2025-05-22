@@ -47,7 +47,6 @@ type Reconciler struct {
 	GuestClient               client.Client
 	Namespace                 string
 	ControlPlaneOperatorImage string
-	KarpenterProviderAWSImage string
 	upsert.CreateOrUpdateProvider
 }
 
@@ -192,10 +191,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
 			return ctrl.Result{}, err
 		}
-	}
-
-	if err := r.reconcileKarpenter(ctx, hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter deployment: %w", err)
 	}
 
 	if err := r.reconcileCRDs(ctx, false); err != nil {

@@ -6,7 +6,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
@@ -69,7 +68,6 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			)
 			c.Args = append(c.Args,
 				"--control-plane-operator-image="+karp.ControlPlaneOperatorImage,
-				"--karpenter-provider-aws-image="+karp.KarpenterProviderAWSImage,
 			)
 		})
 	}
@@ -101,8 +99,6 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			},
 		},
 	)
-
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), karp.ControlPlaneOperatorImage, &deployment.Spec.Template.Spec)
 
 	return nil
 }
