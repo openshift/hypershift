@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"reflect"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,6 +54,7 @@ func DefaultOptions() *RawCreateOptions {
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
 		NetworkType:                    string(hyperv1.OVNKubernetes),
 		FeatureSet:                     string(configv1.Default),
+		DisableClusterCapabilities:     []string{string(hyperv1.BaremetalCapability)},
 	}
 }
 
@@ -106,7 +107,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
-	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported value is ImageRegistry.")
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported values are ImageRegistry and baremetal.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 }
 
@@ -693,9 +694,11 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
-		acceptedValues := []string{"ImageRegistry"}
-		if !reflect.DeepEqual(opts.DisableClusterCapabilities, acceptedValues) {
-			return nil, fmt.Errorf("unknown capability, accepted values are: %v", acceptedValues)
+		acceptedValues := []string{"ImageRegistry", "baremetal"}
+		for _, cap := range opts.DisableClusterCapabilities {
+			if !slices.Contains(acceptedValues, cap) {
+				return nil, fmt.Errorf("unknown capability, accepted values are: %v", acceptedValues)
+			}
 		}
 	}
 

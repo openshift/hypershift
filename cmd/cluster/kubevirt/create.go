@@ -22,8 +22,9 @@ import (
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		ServicePublishingStrategy: IngressServicePublishingStrategy,
-		NodePoolOpts:              kubevirtnodepool.DefaultOptions(),
+		ServicePublishingStrategy:  IngressServicePublishingStrategy,
+		NodePoolOpts:               kubevirtnodepool.DefaultOptions(),
+		DisableClusterCapabilities: []string{string(hyperv1.BaremetalCapability)},
 	}
 }
 
@@ -55,6 +56,7 @@ type RawCreateOptions struct {
 	InfraNamespace                   string
 	InfraStorageClassMappings        []string
 	InfraVolumeSnapshotClassMappings []string
+	DisableClusterCapabilities       []string
 
 	NodePoolOpts *kubevirtnodepool.RawKubevirtPlatformCreateOptions
 }

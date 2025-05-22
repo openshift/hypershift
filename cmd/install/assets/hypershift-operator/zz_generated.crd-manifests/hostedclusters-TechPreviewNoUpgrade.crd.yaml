@@ -207,6 +207,8 @@ spec:
                   This field is optional and once set cannot be changed.
                 properties:
                   disabled:
+                    default:
+                    - baremetal
                     description: |-
                       disabled when specified, sets the cluster version baselineCapabilitySet to None
                       and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
@@ -219,6 +221,7 @@ spec:
                     items:
                       enum:
                       - ImageRegistry
+                      - baremetal
                       type: string
                     maxItems: 25
                     type: array
