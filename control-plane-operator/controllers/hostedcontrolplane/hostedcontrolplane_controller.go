@@ -45,6 +45,7 @@ import (
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	ingressoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator"
+	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	kcmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kcm"
 	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
@@ -233,6 +234,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		konnectivityv2.NewComponent(),
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		karpenterv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
