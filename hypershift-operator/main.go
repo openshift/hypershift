@@ -465,7 +465,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if sharedingress.UseSharedIngress() {
 		sharedIngress := sharedingress.SharedIngressReconciler{
-			Namespace: opts.Namespace,
+			Namespace:                     opts.Namespace,
+			ManagementClusterCapabilities: mgmtClusterCaps,
 		}
 		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)
