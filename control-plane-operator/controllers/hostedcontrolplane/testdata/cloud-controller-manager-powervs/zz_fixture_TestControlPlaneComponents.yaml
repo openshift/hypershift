@@ -102,6 +102,7 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: service-network-admin-kubeconfig

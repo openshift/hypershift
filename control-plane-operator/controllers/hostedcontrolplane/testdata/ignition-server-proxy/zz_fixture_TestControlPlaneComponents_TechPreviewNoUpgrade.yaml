@@ -118,6 +118,7 @@ spec:
           capabilities:
             add:
             - NET_BIND_SERVICE
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/ssl/serving-cert
           name: serving-cert

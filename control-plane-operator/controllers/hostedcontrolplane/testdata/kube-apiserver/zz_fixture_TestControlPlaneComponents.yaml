@@ -96,6 +96,7 @@ spec:
           requests:
             cpu: 10m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
@@ -143,6 +144,7 @@ spec:
           requests:
             cpu: 350m
             memory: 2Gi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-ca
           name: aggregator-ca
@@ -247,6 +249,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/cluster
           name: cluster-certs
@@ -279,6 +282,7 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/kube-apiserver
           name: logs
@@ -300,6 +304,7 @@ spec:
           requests:
             cpu: 10m
             memory: 25Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/app/certs
           name: aws-pod-identity-webhook-serving-certs
@@ -363,6 +368,7 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
@@ -383,6 +389,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: wait-for-etcd
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       priorityClassName: hypershift-api-critical
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 135

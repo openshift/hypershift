@@ -80,6 +80,9 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 			util.WithOptions(c.availabilityProberOpts))
 	}
 
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
+	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
+
 	deploymentConfig := &config.DeploymentConfig{
 		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
@@ -229,6 +232,12 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 	}
 	return nil
+}
+
+func enforceTerminationMessagePolicy(containers []corev1.Container) {
+	for i := range containers {
+		containers[i].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
+	}
 }
 
 func replaceContainersImageFromPayload(imageProvider imageprovider.ReleaseImageProvider, hcp *hyperv1.HostedControlPlane, containers []corev1.Container) error {
