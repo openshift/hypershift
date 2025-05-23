@@ -3701,7 +3701,6 @@ spec:
                             - controlPlaneOperator
                             - disk
                             - file
-                            - imageRegistry
                             - ingress
                             - managedIdentitiesKeyVault
                             - network
