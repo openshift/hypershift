@@ -86,6 +86,13 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	return DeleteIfNeededWithOptions(ctx, c, o)
 }
 
+func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return hcluster.Spec.ControlPlaneRelease.Image
+	}
+	return hcluster.Spec.Release.Image
+}
+
 func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {
 	if hcp.Spec.ControlPlaneReleaseImage != nil {
 		return *hcp.Spec.ControlPlaneReleaseImage
