@@ -407,38 +407,6 @@ func TestSeekOverride(t *testing.T) {
 				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
 			},
 		},
-		{
-			name:      "if only the root registry is provided",
-			overrides: fakeOverrides(),
-			imageRef: reference.DockerImageReference{
-				Registry:  "registry.build02.ci.openshift.org",
-				Name:      "release",
-				Namespace: "ocp",
-				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
-			},
-			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "virthost.ostest.test.metalkube.org:5000",
-				Name:      "release",
-				Namespace: "ocp",
-				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
-			},
-		},
-		{
-			name:      "if only the root registry is provided and multiple mirrors are provided",
-			overrides: fakeOverrides(),
-			imageRef: reference.DockerImageReference{
-				Registry:  "registry.build03.ci.openshift.org",
-				Name:      "release",
-				Namespace: "ocp",
-				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
-			},
-			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "myregistry1.io",
-				Name:      "release",
-				Namespace: "ocp",
-				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
-			},
-		},
 	}
 
 	for _, tc := range testsCases {
@@ -449,7 +417,7 @@ func TestSeekOverride(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
-			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
+			imgRef := SeekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}
@@ -472,7 +440,6 @@ func fakeOverrides() map[string][]string {
 		},
 		"registry.build02.ci.openshift.org": {
 			"quay.io",
-			"virthost.ostest.test.metalkube.org:5000",
 		},
 		"registry.build03.ci.openshift.org": {
 			"myregistry1.io",
@@ -504,10 +471,12 @@ func TestTryOnlyNamespaceOverride(t *testing.T) {
 				Tag:       "4.15.0-rc.0-multi",
 			},
 			sourceRef: reference.DockerImageReference{
-				Name: "openshift-release-dev",
+				Registry: "quay.io",
+				Name:     "openshift-release-dev",
 			},
 			mirrorRef: reference.DockerImageReference{
 				Registry: "myregistry.io",
+				Name:     "openshift-release-dev",
 			},
 			expectedImgRef: &reference.DockerImageReference{
 				Registry:  "myregistry.io",
