@@ -201,6 +201,14 @@ func TestGetDigest(t *testing.T) {
 			validateCache:  true,
 			expectedDigest: "sha256:e96047c50caf0aaffeaf7ed0fe50bd3f574ad347cd0f588a56b876f79cc29d3e",
 		},
+		{
+			name:           "Image not present in overriden registry, falling back to original imageRef",
+			imageRef:       "quay.io/prometheus/busybox:latest",
+			pullSecret:     pullSecret,
+			expectedErr:    false,
+			validateCache:  true,
+			expectedDigest: "sha256:dfa54ef35e438b9e71ac5549159074576b6382f95ce1a434088e05fd6b730bc4",
+		},
 	}
 
 	for _, tc := range testsCases {
@@ -412,6 +420,9 @@ func fakeOverrides() map[string][]string {
 		"registry.build03.ci.openshift.org": {
 			"myregistry1.io",
 			"myregistry2.io",
+		},
+		"quay.io/prometheus": {
+			"brew.registry.redhat.io/prometheus",
 		},
 	}
 }
