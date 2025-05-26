@@ -482,9 +482,6 @@ func fakeOverrides() map[string][]string {
 		"quay.io/prometheus": {
 			"brew.registry.redhat.io/prometheus",
 		},
-		"quay.io/prometheus": {
-			"brew.registry.redhat.io/prometheus",
-		},
 	}
 }
 
