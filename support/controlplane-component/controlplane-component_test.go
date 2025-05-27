@@ -58,6 +58,10 @@ func NewComponent() ControlPlaneComponent {
 				MountPath: "/test",
 			},
 		).
+		WithManifestAdapter(
+			"serviceaccount.yaml",
+			SetHostedClusterAnnotation(),
+		).
 		Build()
 }
 
@@ -94,6 +98,9 @@ func TestReconcile(t *testing.T) {
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testComponentNamespace,
+						Annotations: map[string]string{
+							"hypershift.openshift.io/cluster": "test-cluster",
+						},
 					},
 					Spec: hyperv1.HostedControlPlaneSpec{
 						Labels: map[string]string{
@@ -248,6 +255,20 @@ func TestReconcile(t *testing.T) {
 			}
 			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret)
 			g.Expect(err).NotTo(HaveOccurred(), "kubeconfig secret does not exist")
+
+			// validate service account was created and has the expected annotations and pull secret.
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testComponentName,
+					Namespace: testComponentNamespace,
+				},
+			}
+			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(sa), sa)
+			g.Expect(err).NotTo(HaveOccurred(), "sa does not exist")
+
+			g.Expect(sa.ImagePullSecrets).To(HaveLen(1))
+			g.Expect(sa.ImagePullSecrets[0].Name).To(Equal("pull-secret"))
+			g.Expect(sa.Annotations).To(HaveKeyWithValue("hypershift.openshift.io/cluster", "test-cluster"))
 		})
 	}
 }
