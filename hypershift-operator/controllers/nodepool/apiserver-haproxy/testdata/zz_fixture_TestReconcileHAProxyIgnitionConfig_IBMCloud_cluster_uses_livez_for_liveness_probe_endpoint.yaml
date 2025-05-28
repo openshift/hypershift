@@ -14,7 +14,7 @@ defaults
   retries 3
 
 frontend local_apiserver
-  bind {{ .InternalAPIAddress }}:{{ .InternalAPIPort }}
+  bind 172.20.0.1:443
   log global
   mode tcp
   option tcplog
@@ -23,7 +23,7 @@ frontend local_apiserver
 backend remote_apiserver
   mode tcp
   log global
-  option httpchk GET {{ .LivenessProbeEndpoint }}
+  option httpchk GET /livez?exclude=etcd&amp;exclude=log
   option log-health-checks
   default-server inter 10s fall 3 rise 3
-  server controlplane {{ .ExternalAPIAddress }}:{{ .ExternalAPIPort }}{{ if .UseProxyProtocol }} send-proxy-v2 set-proxy-v2-tlv-fmt(0x20) %[str("{{ .ClusterID }}")]{{ end }}
+  server controlplane kubeconfig-host:443
