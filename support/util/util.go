@@ -24,6 +24,7 @@ import (
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -603,7 +604,11 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
 		return val, nil
 	}
+	logger := ctrl.LoggerFrom(ctx)
+	logger.Info("测试: GetControlPlaneOperatorImage()", "hc", hc, "image", HCControlPlaneReleaseImage(hc))
 	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
+	logger.Info("测试: GetControlPlaneOperatorImage()", "hc", hc, "releaseInfo", releaseInfo)
+	//releaseInfo.GetMirroredReleaseImage
 	if err != nil {
 		return "", err
 	}
@@ -636,6 +641,9 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 //     HostedCluster resource itself
 //  2. The image labels in the medata of the image as resolved by GetControlPlaneOperatorImage
 func GetControlPlaneOperatorImageLabels(ctx context.Context, hc *hyperv1.HostedCluster, controlPlaneOperatorImage string, pullSecret []byte, imageMetadataProvider ImageMetadataProvider) (map[string]string, error) {
+	logger := ctrl.LoggerFrom(ctx)
+	logger.Info("测试2 GetControlPlaneOperatorImageLabels()", "controlPlaneOperatorImage", controlPlaneOperatorImage)
+
 	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageLabelsAnnotation]; ok {
 		annotatedLabels := map[string]string{}
 		rawLabels := strings.Split(val, ",")

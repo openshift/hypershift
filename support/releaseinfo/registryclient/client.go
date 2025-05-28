@@ -262,6 +262,7 @@ func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dock
 }
 
 // GetRepoSetup connects to a repo and pulls the imageRef's docker image information from the repo. Returns the repo and the docker image.
+// xxxxx
 func GetRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
 	var dockerImageRef *reference.DockerImageReference
 	rt, err := rest.TransportFor(&rest.Config{})
