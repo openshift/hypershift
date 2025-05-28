@@ -162,7 +162,6 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
 	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef)
-
 	composedRef := ref.String()
 
 	// If the overridden image name is in the cache, return early
@@ -183,7 +182,10 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 	case len(composedParsedRef.Tag) > 0:
 		desc, err := repo.Tags(ctx).Get(ctx, composedParsedRef.Tag)
 		if err != nil {
-			return "", nil, err
+			fmt.Printf("failed to get repository tags for %s composedParsedRef: %+v: %v. Falling back to the original imageRef %s.\n", composedParsedRef.Tag, composedParsedRef, err, imageRef)
+			if desc, err = fallbackToOriginalImageRef(ctx, imageRef, pullSecret); err != nil {
+				return "", nil, fmt.Errorf("failed to fallback to original imageRef %s: %w", imageRef, err)
+			}
 		}
 		srcDigest = desc.Digest
 		composedParsedRef.ID = string(srcDigest)
@@ -507,4 +509,19 @@ func seekOverride(ctx context.Context, openshiftImageRegistryOverrides map[strin
 // separate components
 func buildComposedRef(registry, namespace, name string) string {
 	return fmt.Sprintf("%s/%s/%s", registry, namespace, name)
+}
+
+// fallbackToOriginalImageRef tries to get the repository tags for the original imageRef not having in mind the overrides.
+func fallbackToOriginalImageRef(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Descriptor, error) {
+	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
+	if err != nil {
+		return distribution.Descriptor{}, fmt.Errorf("failed on fallback getting the repo setup for %s: %w", imageRef, err)
+	}
+
+	desc, err := repo.Tags(ctx).Get(ctx, ref.Tag)
+	if err != nil {
+		return distribution.Descriptor{}, fmt.Errorf("failed on fallback getting the repository tags for %s: %w", ref.Tag, err)
+	}
+
+	return desc, nil
 }
