@@ -1161,7 +1161,7 @@ func TestHostedClusterInfo(t *testing.T) {
 		azureSpec    *hyperv1.AzurePlatformSpec
 		expected     *dto.MetricFamily
 	}{
-		/*{
+		{
 			name:         "no Azure Platform, no metric",
 			timestamp:    now,
 			platformType: hyperv1.IBMCloudPlatform,
@@ -1171,7 +1171,7 @@ func TestHostedClusterInfo(t *testing.T) {
 			timestamp:    now,
 			platformType: hyperv1.AzurePlatform,
 			azureSpec:    nil,
-		},*/
+		},
 		{
 			name:         "Azure, simple",
 			timestamp:    now,
