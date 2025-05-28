@@ -64,6 +64,17 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
+						name: "when capabilities.disabled is set to openshift-samples it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OpenShiftSamplesCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
 						name: "when capabilities.disabled is set to an unsupported capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
@@ -1288,6 +1299,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
 				Disabled: []hyperv1.OptionalCapability{
 					hyperv1.ImageRegistryCapability,
+					hyperv1.OpenShiftSamplesCapability,
 				},
 			}
 		}
@@ -1311,8 +1323,13 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
 
+		clients := e2eutil.InitGuestClients(ctx, t, g, mgtClient, hostedCluster)
+
 		// ensure image registry component is disabled
-		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, mgtClient, hostedCluster)
+		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure openshift-samples component is disabled
+		e2eutil.EnsureOpenshiftSamplesCapabilityDisabled(ctx, t, g, clients)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
