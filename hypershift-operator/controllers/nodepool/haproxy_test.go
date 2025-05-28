@@ -31,43 +31,57 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 		name             string
 		proxy            string
 		noProxy          string
+		platform         hyperv1.PlatformType
 		useSharedIngress bool
 	}{
 		{
-			name:    "when empty proxy it should create an haproxy",
-			proxy:   "",
-			noProxy: "localhost,127.0.0.1",
+			name:     "when empty proxy it should create an haproxy",
+			proxy:    "",
+			platform: "fakePlatform",
+			noProxy:  "localhost,127.0.0.1",
 		},
 		{
-			name:    "when noproxy matches internalAddress it should create an haproxy",
-			proxy:   "proxy",
-			noProxy: "localhost,127.0.0.1," + internalAddress,
+			name:     "when noproxy matches internalAddress it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost,127.0.0.1," + internalAddress,
 		},
 		{
-			name:    "when noproxy matches serviceNetwork it should create an haproxy",
-			proxy:   "proxy",
-			noProxy: "localhost," + serviceNetwork + ",127.0.0.1,",
+			name:     "when noproxy matches serviceNetwork it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost," + serviceNetwork + ",127.0.0.1,",
 		},
 		{
-			name:    "when noproxy matches clusterNetwork it should create an haproxy",
-			proxy:   "proxy",
-			noProxy: "localhost," + clusterNetwork + ",127.0.0.1,",
+			name:     "when noproxy matches clusterNetwork it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost," + clusterNetwork + ",127.0.0.1,",
 		},
 		{
-			name:    "when noproxy matches kubernetes it should create an haproxy",
-			proxy:   "proxy",
-			noProxy: "localhost,kubernetes.svc,127.0.0.1,",
+			name:     "when noproxy matches kubernetes it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost,kubernetes.svc,127.0.0.1,",
 		},
 		{
-			name:    "when noproxy matches the external kas adress it should create an haproxy",
-			proxy:   "proxy",
-			noProxy: "localhost,127.0.0.1," + externalAddress,
+			name:     "when noproxy matches the external kas address it should create an haproxy",
+			proxy:    "proxy",
+			platform: "fakePlatform",
+			noProxy:  "localhost,127.0.0.1," + externalAddress,
 		},
 		{
 			name:             "when use shared router it should use proxy protocol",
 			proxy:            "",
 			noProxy:          "",
+			platform:         "fakePlatform",
 			useSharedIngress: true,
+		},
+		{
+			name:     "when IBM cloud platform it should use livez as liveness probe endpoint",
+			proxy:    "",
+			platform: hyperv1.IBMCloudPlatform,
+			noProxy:  "localhost,127.0.0.1",
 		},
 	}
 
@@ -77,7 +91,7 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
 			config, err := apiServerProxyConfig(image, tc.proxy, "fakeClusterID", externalAddress, internalAddress, 443, 8443,
-				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork)
+				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, tc.platform)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -235,6 +249,23 @@ kind: Config`
 			}},
 
 			expectedHAProxyConfigContent: []string{"kubeconfig-host:443"},
+		},
+		{
+			name: "IBMCloud cluster uses livez for liveness probe endpoint",
+			hc: hc(func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.Type = hyperv1.IBMCloudPlatform
+				hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{Port: ptr.To[int32](443)}
+				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+			}),
+			other: []crclient.Object{&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
+				Data: map[string][]byte{
+					"kubeconfig": []byte(kubeconfig(443)),
+				},
+			}},
+
+			expectedHAProxyConfigContent: []string{"/livez?exclude=etcd&amp;exclude=log"},
 		},
 	}
 
