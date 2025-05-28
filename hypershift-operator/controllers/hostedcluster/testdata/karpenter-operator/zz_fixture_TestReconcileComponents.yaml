@@ -74,6 +74,10 @@ spec:
         image: test-image
         imagePullPolicy: IfNotPresent
         name: karpenter-operator
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
         resources:
           requests:
             cpu: 10m
