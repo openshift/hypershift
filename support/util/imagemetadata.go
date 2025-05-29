@@ -142,6 +142,7 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 		err            error
 		srcDigest      digest.Digest
 	)
+	log := ctrl.LoggerFrom(ctx)
 
 	parsedImageRef, err = reference.Parse(imageRef)
 	if err != nil {
@@ -182,8 +183,8 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 	case len(composedParsedRef.Tag) > 0:
 		desc, err := repo.Tags(ctx).Get(ctx, composedParsedRef.Tag)
 		if err != nil {
-			fmt.Printf("failed to get repository tags for %s composedParsedRef: %+v: %v. Falling back to the original imageRef %s.\n", composedParsedRef.Tag, composedParsedRef, err, imageRef)
-			if desc, err = fallbackToOriginalImageRef(ctx, imageRef, pullSecret); err != nil {
+			log.Info("failed to get repository tags for %s composedParsedRef: %+v: %v. Falling back to the original imageRef %s.", composedParsedRef.Tag, composedParsedRef, err, imageRef)
+			if desc, err = getOriginalImageTagDescriptor(ctx, imageRef, pullSecret); err != nil {
 				return "", nil, fmt.Errorf("failed to fallback to original imageRef %s: %w", imageRef, err)
 			}
 		}
@@ -511,8 +512,8 @@ func buildComposedRef(registry, namespace, name string) string {
 	return fmt.Sprintf("%s/%s/%s", registry, namespace, name)
 }
 
-// fallbackToOriginalImageRef tries to get the repository tags for the original imageRef not having in mind the overrides.
-func fallbackToOriginalImageRef(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Descriptor, error) {
+// getOriginalImageTagDescriptor retrieves the tag descriptor for the original image reference without considering any registry overrides.
+func getOriginalImageTagDescriptor(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Descriptor, error) {
 	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
 		return distribution.Descriptor{}, fmt.Errorf("failed on fallback getting the repo setup for %s: %w", imageRef, err)
