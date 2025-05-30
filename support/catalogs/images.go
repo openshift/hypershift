@@ -13,7 +13,11 @@ import (
 	"github.com/blang/semver"
 )
 
-const cacheExpiration = 5 * time.Minute
+const (
+	cacheExpiration          = 5 * time.Minute
+	defaultRegistryURL       = "registry.redhat.io"
+	defaultRegistryNamespace = "redhat"
+)
 
 type imagesCache struct {
 	timeStamp time.Time
@@ -124,8 +128,6 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 		return nil, err
 	}
 
-	defaultRegistryURL := "registry.redhat.io"
-	defaultRegistryNamespace := "redhat"
 	defaultRegistry := fmt.Sprintf("%s/%s", defaultRegistryURL, defaultRegistryNamespace)
 
 	if len(registryOverrides) > 0 {
