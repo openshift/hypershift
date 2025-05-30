@@ -1124,11 +1124,7 @@ func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
 	if sharedingress.UseSharedIngress() {
 		return false
 	}
-	return labelHCPRoutes(hostedControlPlane)
-}
-
-func labelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
-	return util.IsPrivateHCP(hcp) || util.IsPublicKASWithDNS(hcp)
+	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {
@@ -1282,7 +1278,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
+			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForKonnectivity(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
 		}
@@ -1320,7 +1316,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
+			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForOAuth(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth external public route: %w", err)
 		}
@@ -1334,7 +1330,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 		// Reconcile the external private route if a hostname is specified
 		if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 			if _, err := createOrUpdate(ctx, r.Client, oauthExternalPrivateRoute, func() error {
-				return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, serviceStrategy.Route.Hostname, r.DefaultIngressDomain, labelHCPRoutes(hcp))
+				return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, serviceStrategy.Route.Hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForOAuth(hcp))
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 			}
@@ -1395,7 +1391,6 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
-	exposeKASThroughRouter := util.IsRouteKAS(hcp)
 	// Create the Service type LB internal for private endpoints.
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
@@ -1420,8 +1415,8 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 		}
 	}
 
-	// When Public access endpoint we need to create a Service type LB external for the KAS.
-	if util.IsPublicHCP(hcp) && exposeKASThroughRouter {
+	// When Public access endpoint we need to create a Service type LB external.
+	if util.IsPublicWithDNS(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
 			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp)
 		}); err != nil {
@@ -1532,7 +1527,7 @@ func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if !util.IsPublicWithDNS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
