@@ -200,7 +200,7 @@ func (s *SubnetSpec) setClusterSubnetDefaults(clusterName string) {
 		s.SecurityGroup.Name = generateClusterSecurityGroupName(clusterName)
 	}
 	if s.RouteTable.Name == "" {
-		s.RouteTable.Name = generateClustereRouteTableName(clusterName)
+		s.RouteTable.Name = generateClusterRouteTableName(clusterName)
 	}
 	if s.NatGateway.Name == "" {
 		s.NatGateway.Name = generateClusterNatGatewayName(clusterName)
@@ -456,25 +456,6 @@ func (lb *LoadBalancerClassSpec) setOutboundLBDefaults() {
 	}
 }
 
-func setControlPlaneOutboundLBDefaults(lb *LoadBalancerClassSpec, apiserverLBType LBType) {
-	// public clusters don't need control plane outbound lb
-	if apiserverLBType == Public {
-		return
-	}
-
-	// private clusters can disable control plane outbound lb by setting it to nil.
-	if lb == nil {
-		return
-	}
-
-	lb.Type = Public
-	lb.SKU = SKUStandard
-
-	if lb.IdleTimeoutInMinutes == nil {
-		lb.IdleTimeoutInMinutes = ptr.To[int32](DefaultOutboundRuleIdleTimeoutInMinutes)
-	}
-}
-
 // generateVnetName generates a virtual network name, based on the cluster name.
 func generateVnetName(clusterName string) string {
 	return fmt.Sprintf("%s-%s", clusterName, "vnet")
@@ -520,8 +501,8 @@ func generateNodeSecurityGroupName(clusterName string) string {
 	return fmt.Sprintf("%s-%s", clusterName, "node-nsg")
 }
 
-// generateClustereRouteTableName generates a route table name, based on the cluster name.
-func generateClustereRouteTableName(clusterName string) string {
+// generateClusterRouteTableName generates a route table name, based on the cluster name.
+func generateClusterRouteTableName(clusterName string) string {
 	return fmt.Sprintf("%s-%s", clusterName, "routetable")
 }
 
@@ -555,7 +536,7 @@ func generateFrontendIPConfigName(lbName string) string {
 	return fmt.Sprintf("%s-%s", lbName, "frontEnd")
 }
 
-// generateFrontendIPConfigName generates a load balancer frontend IP config name.
+// generatePrivateIPConfigName generates a load balancer frontend private IP config name.
 func generatePrivateIPConfigName(lbName string) string {
 	return fmt.Sprintf("%s-%s", lbName, "frontEnd-internal-ip")
 }
