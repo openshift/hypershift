@@ -237,6 +237,240 @@ func TestBuildOAuthVolumeTemplates(t *testing.T) {
 	}
 }
 
+func TestReconcileOAuthService(t *testing.T) {
+	targetNamespace := "test"
+	apiPort := int32(config.KASSVCPort)
+	hostname := "test.example.com"
+	allowCIDR := []hyperv1.CIDRBlock{"1.2.3.4/24"}
+	ipFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+
+	ownerRef := metav1.OwnerReference{
+		APIVersion:         "hypershift.openshift.io/v1beta1",
+		Kind:               "HostedControlPlane",
+		Name:               "test",
+		Controller:         ptr.To(true),
+		BlockOwnerDeletion: ptr.To(true),
+	}
+	oauthPublicService := func(m ...func(*corev1.Service)) corev1.Service {
+		svc := corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace:       targetNamespace,
+				Name:            manifests.OauthServerService(targetNamespace).Name,
+				OwnerReferences: []metav1.OwnerReference{ownerRef},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:           corev1.ServiceTypeClusterIP,
+				IPFamilyPolicy: &ipFamilyPolicy,
+				Ports: []corev1.ServicePort{
+					{
+						Protocol:   corev1.ProtocolTCP,
+						Port:       apiPort,
+						TargetPort: intstr.FromInt32(apiPort),
+					},
+				},
+				Selector: map[string]string{
+					"app": "oauth-openshift",
+					"hypershift.openshift.io/control-plane-component": "oauth-openshift",
+				},
+			},
+		}
+		for _, m := range m {
+			m(&svc)
+		}
+		return svc
+	}
+	oauthExternalPublicRoute := func(m ...func(*routev1.Route)) routev1.Route {
+		route := routev1.Route{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: targetNamespace,
+				Name:      "oauth",
+				Labels: map[string]string{
+					"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+				},
+				OwnerReferences: []metav1.OwnerReference{ownerRef},
+			},
+			Spec: routev1.RouteSpec{
+				Host: hostname,
+				To: routev1.RouteTargetReference{
+					Kind: "Service",
+					Name: manifests.OauthServerService("").Name,
+				},
+				TLS: &routev1.TLSConfig{
+					Termination:                   routev1.TLSTerminationPassthrough,
+					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+				},
+			},
+		}
+		for _, m := range m {
+			m(&route)
+		}
+		return route
+	}
+	oauthInternalRoute := routev1.Route{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: targetNamespace,
+			Name:      "oauth-internal",
+			Labels: map[string]string{
+				"hypershift.openshift.io/hosted-control-plane": targetNamespace,
+				"hypershift.openshift.io/internal-route":       "true",
+			},
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		Spec: routev1.RouteSpec{
+			Host: "oauth.apps.test.hypershift.local",
+			To: routev1.RouteTargetReference{
+				Kind: "Service",
+				Name: manifests.OauthServerService("").Name,
+			},
+			TLS: &routev1.TLSConfig{
+				Termination:                   routev1.TLSTerminationPassthrough,
+				InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyNone,
+			},
+		},
+	}
+	testsCases := []struct {
+		name                    string
+		endpointAccess          hyperv1.AWSEndpointAccessType
+		oauthPublishingStrategy hyperv1.ServicePublishingStrategy
+
+		expectedServices []corev1.Service
+		expectedRoutes   []routev1.Route
+	}{
+		{
+			name:           "Route strategy, Public",
+			endpointAccess: hyperv1.Public,
+			oauthPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+			expectedServices: []corev1.Service{
+				oauthPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				oauthExternalPublicRoute(),
+			},
+		},
+		{
+			name:           "Route strategy, PublicPrivate",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			oauthPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: hostname,
+				},
+			},
+
+			expectedServices: []corev1.Service{
+				oauthPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				oauthExternalPublicRoute(),
+				oauthInternalRoute,
+			},
+		},
+		{
+			name:           "Route strategy, PublicPrivate, no hostname",
+			endpointAccess: hyperv1.PublicAndPrivate,
+			oauthPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+
+			expectedServices: []corev1.Service{
+				oauthPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				oauthExternalPublicRoute(func(s *routev1.Route) {
+					s.Spec.Host = ""
+					// The route should not be admitted by the private router.
+					delete(s.Labels, "hypershift.openshift.io/hosted-control-plane")
+				}),
+				oauthInternalRoute,
+			},
+		},
+		{
+			name:           "Route strategy, Private",
+			endpointAccess: hyperv1.Private,
+			oauthPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type:  hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{},
+			},
+			expectedServices: []corev1.Service{
+				oauthPublicService(func(s *corev1.Service) {
+					s.Spec.Type = corev1.ServiceTypeClusterIP
+				}),
+			},
+			expectedRoutes: []routev1.Route{
+				oauthInternalRoute,
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: targetNamespace,
+					Name:      "test",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Networking: hyperv1.ClusterNetworking{
+						APIServer: &hyperv1.APIServerNetworking{
+							Port:              &apiPort,
+							AllowedCIDRBlocks: allowCIDR,
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: tc.endpointAccess,
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{{
+						Service:                   hyperv1.OAuthServer,
+						ServicePublishingStrategy: tc.oauthPublishingStrategy,
+					}},
+				},
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			if err := r.reconcileOAuthServerService(ctx, hcp, controllerutil.CreateOrUpdate); err != nil {
+				t.Fatalf("reconcileOAuthServerService failed: %v", err)
+			}
+
+			var actualServices corev1.ServiceList
+			if err := fakeClient.List(ctx, &actualServices); err != nil {
+				t.Fatalf("failed to list services: %v", err)
+			}
+
+			if diff := testutil.MarshalYamlAndDiff(&actualServices, &corev1.ServiceList{Items: tc.expectedServices}, t); diff != "" {
+				t.Errorf("actual services differ from expected: %s", diff)
+			}
+
+			var actualRoutes routev1.RouteList
+			if err := fakeClient.List(ctx, &actualRoutes); err != nil {
+				t.Fatalf("failed to list routes: %v", err)
+			}
+			if diff := testutil.MarshalYamlAndDiff(&actualRoutes, &routev1.RouteList{Items: tc.expectedRoutes}, t); diff != "" {
+				t.Errorf("actual routes differ from expected: %s", diff)
+			}
+		})
+	}
+}
+
 func TestReconcileAPIServerService(t *testing.T) {
 	targetNamespace := "test"
 	apiPort := int32(config.KASSVCPort)
