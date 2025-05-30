@@ -36,8 +36,8 @@ const (
 	// Generic control plane workload weight for soft affinity rule to node.
 	controlPlaneNodeSchedulingAffinityWeight = clusterNodeSchedulingAffinityWeight / 2
 
-	// managedByLabel can be used to filter deployments.
-	managedByLabel = "hypershift.openshift.io/managed-by"
+	// ManagedByLabel can be used to filter deployments.
+	ManagedByLabel = "hypershift.openshift.io/managed-by"
 	// podSafeToEvictLocalVolumesAnnotation is an annotation denoting the local volumes of a pod that can be safely evicted.
 	// This is needed for the CA operator to make sure it can properly drain the nodes with those volumes.
 	podSafeToEvictLocalVolumesAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
@@ -65,11 +65,11 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	if labels == nil {
 		labels = map[string]string{}
 	}
-	labels[managedByLabel] = "control-plane-operator"
+	labels[ManagedByLabel] = "control-plane-operator"
 	workloadObj.SetLabels(labels)
 
 	desiredReplicas := c.workloadProvider.Replicas(workloadObj)
-	replicas := c.defaultReplicas(cpContext.HCP)
+	replicas := DefaultReplicas(cpContext.HCP, c.ComponentOptions, c.Name())
 	if desiredReplicas != nil {
 		replicas = *desiredReplicas
 	}
@@ -599,16 +599,16 @@ func priorityClass(componentName string, hcp *hyperv1.HostedControlPlane) string
 	return priorityClass
 }
 
-func (c *controlPlaneWorkload[T]) defaultReplicas(hcp *hyperv1.HostedControlPlane) int32 {
+func DefaultReplicas(hcp *hyperv1.HostedControlPlane, options ComponentOptions, name string) int32 {
 	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
 		return 1
 	}
 
 	// HighlyAvailable
-	if c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
+	if options.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
 		return 2
 	}
-	if c.name == etcdComponentName || apiCriticalComponents.Has(c.name) {
+	if name == etcdComponentName || apiCriticalComponents.Has(name) {
 		return 3
 	}
 	return 2

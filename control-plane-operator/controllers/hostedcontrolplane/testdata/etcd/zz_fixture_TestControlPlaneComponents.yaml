@@ -135,7 +135,7 @@ spec:
         - name: ETCD_ENABLE_PPROF
           value: "true"
         - name: ETCD_INITIAL_CLUSTER
-          value: etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380
+          value: etcd-0=https://etcd-0.etcd-discovery.hcp-namespace.svc:2380,etcd-1=https://etcd-1.etcd-discovery.hcp-namespace.svc:2380,etcd-2=https://etcd-2.etcd-discovery.hcp-namespace.svc:2380
         image: etcd
         imagePullPolicy: IfNotPresent
         livenessProbe:
