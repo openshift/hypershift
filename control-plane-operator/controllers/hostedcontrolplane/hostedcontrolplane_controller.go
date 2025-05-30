@@ -555,7 +555,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		cpoManagedDeploymentList := &appsv1.DeploymentList{}
 		if err := r.List(ctx, cpoManagedDeploymentList, client.MatchingLabels{
-			config.ManagedByLabel: "control-plane-operator",
+			component.ManagedByLabel: "control-plane-operator",
 		}, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to list managed deployments in namespace %s: %w", hostedControlPlane.Namespace, err)

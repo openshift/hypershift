@@ -36,10 +36,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
 	util.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		serverCount := config.DefaultReplicas(hcp, true)
+		serverCount := component.DefaultReplicas(hcp, &KubeAPIServer{}, ComponentName)
 		c.Args = append(c.Args,
 			"--server-count",
-			strconv.Itoa(serverCount),
+			strconv.Itoa(int(serverCount)),
 		)
 
 		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
