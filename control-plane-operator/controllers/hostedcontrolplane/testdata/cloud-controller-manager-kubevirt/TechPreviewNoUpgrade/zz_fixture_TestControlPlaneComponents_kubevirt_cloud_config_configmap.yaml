@@ -1,0 +1,27 @@
+apiVersion: v1
+data:
+  cloud-config: |
+    kubeconfig: ""
+    loadBalancer:
+      enabled: true
+      creationPollInterval: 0
+      selectorless: true
+    instancesV2:
+      enabled: true
+      zoneAndRegionEnabled: false
+    namespace: hcp-namespace
+    infraLabels:
+      hypershift.openshift.io/infra-id: ""
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: kubevirt-cloud-config
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
