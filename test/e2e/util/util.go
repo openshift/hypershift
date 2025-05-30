@@ -1175,7 +1175,7 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 
 		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+				Disabled: []configv1.ClusterVersionCapability{configv1.ClusterVersionCapabilityImageRegistry},
 			}
 		})
 		g.Expect(err).To(HaveOccurred())

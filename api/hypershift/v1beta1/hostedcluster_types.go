@@ -369,21 +369,24 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry
-type OptionalCapability string
-
-const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
-
-// capabilities allows disabling optional components at install time.
+// capabilities allows enabling or disabling optional components at install time.
+// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+// OpenShift version, minus the baremetal capability.
 // Once set, it cannot be changed.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.enabled) && has(self.disabled) ? self.enabled.all(e, !(e in self.disabled)) : true", message="Capabilities can not be both enabled and disabled at once."
 type Capabilities struct {
-	// disabled when specified, sets the cluster version baselineCapabilitySet to None
-	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-	// This effectively disables that capability on the hosted cluster.
+	// enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
+	// Once set, this field cannot be changed.
 	//
-	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-	// OpenShift version.
-	//
+	// +listType=atomic
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Enabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Enabled []configv1.ClusterVersionCapability `json:"enabled,omitempty"`
+
+	// disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
 	// Once set, this field cannot be changed.
 	//
 	// +listType=atomic
@@ -391,7 +394,7 @@ type Capabilities struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
-	Disabled []OptionalCapability `json:"disabled,omitempty"`
+	Disabled []configv1.ClusterVersionCapability `json:"disabled,omitempty"`
 }
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.

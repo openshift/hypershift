@@ -369,14 +369,23 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry
-type OptionalCapability string
-
-const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
-
-// capabilities allows disabling optional components at install time.
+// capabilities allows enabing or disabling optional components at install time.
 // Once set, it cannot be changed.
+//
+// +kubebuilder:validation:XValidation:rule="self.enabled.all(e, !(e in self.disabled))", message="Capabilities are wrong"
 type Capabilities struct {
+	// enabled when specified, explicitly enables a capability on a hosted cluster. These capabilities are added after the disabled capabilities have been
+	// removed from the default set of capabilities: so the overall result is Default - Disabled + Enabled.
+	//
+	// Once set, this field cannot be changed.
+	//
+	// +listType=atomic
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Enabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Enabled []configv1.ClusterVersionCapability `json:"enabled,omitempty"`
+
 	// disabled when specified, sets the cluster version baselineCapabilitySet to None
 	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
 	// This effectively disables that capability on the hosted cluster.
@@ -391,7 +400,7 @@ type Capabilities struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
-	Disabled []OptionalCapability `json:"disabled,omitempty"`
+	Disabled []configv1.ClusterVersionCapability `json:"disabled,omitempty"`
 }
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
