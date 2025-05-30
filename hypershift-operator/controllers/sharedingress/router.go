@@ -7,15 +7,18 @@ import (
 	"sort"
 	"text/template"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -302,4 +305,115 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, owner
 	}
 	ownerRef.ApplyTo(pdb)
 	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(1))
+}
+
+func ReconcileRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) {
+	httpPort := intstr.FromInt(8080)
+	httpsPort := intstr.FromInt(8443)
+	protocol := corev1.ProtocolTCP
+
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: hcpRouterLabels(),
+	}
+
+	// Allow ingress to the router ports
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &httpPort,
+					Protocol: &protocol,
+				},
+				{
+					Port:     &httpsPort,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+
+	clusterNetworks := make([]string, 0)
+	// In vanilla kube management cluster this would be nil.
+	if managementClusterNetwork != nil {
+		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+			clusterNetworks = append(clusterNetworks, network.CIDR)
+		}
+	}
+
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			// Allow traffic to the internet (excluding cluster internal IPs).
+			// This is needed for the router to be able to resolve external DNS names.
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   "0.0.0.0/0",
+						Except: clusterNetworks,
+					},
+				},
+			},
+		},
+		{
+			// Allow traffic to the HostedControlPlane kube-apiserver in all namespaces.
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app":                              "kube-apiserver",
+							hyperv1.ControlPlaneComponentLabel: "kube-apiserver",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if isOpenShiftDNS {
+		// Allow traffic to openshift-dns namespace
+		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	} else {
+		// All traffic to any destination on port 53 for both TCP and UDP
+		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
 }
