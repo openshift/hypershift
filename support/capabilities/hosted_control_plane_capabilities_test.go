@@ -43,6 +43,40 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 	}
 }
 
+func TestHasDisabledCapabilities(t *testing.T) {
+	tests := []struct {
+		name                 string
+		disabledCapabilities []hyperv1.OptionalCapability
+		expectResult         bool
+	}{
+		{
+			name:                 "returns false when none capabilities are disabled",
+			disabledCapabilities: nil,
+			expectResult:         false,
+		},
+		{
+			name:                 "returns true if any capabilities are disabled",
+			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.ConsoleCapability},
+			expectResult:         true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			caps := &hyperv1.Capabilities{
+				Disabled: test.disabledCapabilities,
+			}
+			hasDisabledCapabilities := HasDisabledCapabilities(caps)
+			if test.expectResult && !hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be true, but it wasn't")
+			}
+			if !test.expectResult && hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be false, but it wasn't")
+			}
+		})
+	}
+}
+
 func TestCalculateEnabledCapabilities(t *testing.T) {
 	tests := []struct {
 		name                 string
@@ -83,6 +117,29 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityConsole,
 				configv1.ClusterVersionCapabilityDeploymentConfig,
 				// configv1.ClusterVersionCapabilityImageRegistry,
+				configv1.ClusterVersionCapabilityIngress,
+				configv1.ClusterVersionCapabilityInsights,
+				configv1.ClusterVersionCapabilityMachineAPI,
+				configv1.ClusterVersionCapabilityNodeTuning,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+				configv1.ClusterVersionCapabilityStorage,
+				configv1.ClusterVersionCapabilityBaremetal,
+				configv1.ClusterVersionCapabilityMarketplace,
+				configv1.ClusterVersionCapabilityOpenShiftSamples,
+			},
+		},
+		{
+			name:                 "returns default set minus console capability when Console capability is Disabled",
+			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.ConsoleCapability},
+			expectedCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityCSISnapshot,
+				configv1.ClusterVersionCapabilityCloudControllerManager,
+				configv1.ClusterVersionCapabilityCloudCredential,
+				//configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityDeploymentConfig,
+				configv1.ClusterVersionCapabilityImageRegistry,
 				configv1.ClusterVersionCapabilityIngress,
 				configv1.ClusterVersionCapabilityInsights,
 				configv1.ClusterVersionCapabilityMachineAPI,

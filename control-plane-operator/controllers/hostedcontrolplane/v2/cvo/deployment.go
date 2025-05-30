@@ -49,7 +49,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 	util.UpdateContainer("prepare-payload", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Args = []string{
 			"-c",
-			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet),
+			preparePayloadScript(cpContext.HCP.Spec.Platform.Type, util.HCPOAuthEnabled(cpContext.HCP), featureSet, cpContext.HCP.Spec.Capabilities),
 		}
 		c.Image = controlPlaneReleaseImage
 	})
@@ -69,7 +69,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
 		},
 	}
-	if !capabilities.IsImageRegistryCapabilityEnabled(cpContext.HCP.Spec.Capabilities) {
+	if capabilities.HasDisabledCapabilities(cpContext.HCP.Spec.Capabilities) {
 		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
 			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
@@ -164,7 +164,7 @@ var (
 	}
 )
 
-func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet) string {
+func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) string {
 	payloadDir := "/var/payload"
 	var stmts []string
 
@@ -213,7 +213,7 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 		}
 		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", manifest)))
 	}
-	if !oauthEnabled {
+	if !oauthEnabled || !capabilities.IsSpecificCapabilityEnabled(hyperv1.ConsoleCapability, caps) {
 		stmts = append(stmts, fmt.Sprintf("rm -f %s", path.Join(payloadDir, "release-manifests", "0000_50_console-operator_01-oauth.yaml")))
 	}
 	toRemove := resourcesToRemove(platformType)

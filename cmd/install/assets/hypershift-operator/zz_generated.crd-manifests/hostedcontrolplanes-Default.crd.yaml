@@ -140,6 +140,7 @@ spec:
                     items:
                       enum:
                       - ImageRegistry
+                      - Console
                       type: string
                     maxItems: 25
                     type: array
