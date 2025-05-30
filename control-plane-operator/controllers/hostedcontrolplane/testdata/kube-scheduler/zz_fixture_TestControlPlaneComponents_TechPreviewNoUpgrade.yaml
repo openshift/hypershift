@@ -110,7 +110,6 @@ spec:
         - --feature-gates=NetworkLiveMigration=true
         - --feature-gates=NetworkSegmentation=true
         - --feature-gates=NodeDisruptionPolicy=true
-        - --feature-gates=OpenShiftPodSecurityAdmission=true
         - --feature-gates=PersistentIPsForVirtualization=true
         - --feature-gates=PrivateHostedZoneAWS=true
         - --feature-gates=SetEIPForNLBIngressController=true
