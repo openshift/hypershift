@@ -37,6 +37,9 @@ func IsPublicHC(hc *hyperv1.HostedCluster) bool {
 	return access == hyperv1.PublicAndPrivate || access == hyperv1.Public
 }
 
-func IsPublicKASWithDNS(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	return IsPublicHCP(hostedControlPlane) && UseDedicatedDNSforKAS(hostedControlPlane)
+func IsPublicWithDNS(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	return IsPublicHCP(hostedControlPlane) && (UseDedicatedDNSforKAS(hostedControlPlane) ||
+		UseDedicatedDNSForOAuth(hostedControlPlane) ||
+		UseDedicatedDNSForKonnectivity(hostedControlPlane) ||
+		UseDedicatedDNSForIgnition(hostedControlPlane))
 }
