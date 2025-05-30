@@ -28,6 +28,7 @@ data:
             - mountPath: /scrub
               name: vol
           securityContext:
+            readOnlyRootFilesystem: true
             runAsUser: 0
           priorityClassName: openshift-user-critical
           resources:
