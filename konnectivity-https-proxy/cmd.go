@@ -2,6 +2,7 @@ package konnectivityhttpsproxy
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -167,7 +168,16 @@ func NewStartCommand() *cobra.Command {
 }
 
 func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyURL string, connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(req *http.Request, network, addr string) (net.Conn, error) {
-	defaultDial := httpProxy.NewConnectDialToProxy(proxyURL)
+	parsedProxyURL, err := url.Parse(proxyURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: failed to parse HTTPS proxy URL: %v", err)
+		os.Exit(1)
+	}
+	defaultDial := httpProxy.NewConnectDialToProxyWithHandler(proxyURL, func(req *http.Request) {
+		if parsedProxyURL.User != nil {
+			req.Header.Set("Proxy-Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(parsedProxyURL.User.String()))))
+		}
+	})
 	return func(req *http.Request, network, addr string) (net.Conn, error) {
 		log.V(4).Info("Connect dial called", "network", network, "address", addr, "URL", req.URL)
 		requestURL := *req.URL
