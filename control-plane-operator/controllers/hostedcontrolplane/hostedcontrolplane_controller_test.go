@@ -1438,7 +1438,7 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
-			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace, featureSet)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
 			}
@@ -1501,6 +1501,29 @@ func TestControlPlaneComponents(t *testing.T) {
 			}
 			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 
+			if component.Name() == kasv2.ComponentName {
+				kasConfig := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kas-config",
+						Namespace: hcp.Namespace,
+					},
+				}
+				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(kasConfig), kasConfig)
+				if err != nil {
+					t.Fatalf("failed to get kas config: %v", err)
+				}
+
+				yaml, err = util.SerializeResource(kasConfig, api.Scheme)
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				suffix = "_kasconfig"
+				if featureSet != configv1.Default {
+					suffix = fmt.Sprintf("_kasconfig_%s", featureSet)
+				}
+				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
+			}
+
 			controlPaneComponent := &hyperv1.ControlPlaneComponent{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      component.Name(),
@@ -1537,7 +1560,10 @@ func TestControlPlaneComponents(t *testing.T) {
 //go:embed testdata/featuregate-generator/feature-gate.yaml
 var testFeatureGateYAML string
 
-func componentsFakeObjects(namespace string) ([]client.Object, error) {
+//go:embed testdata/featuregate-generator/feature-gate-tech-preview-no-upgrade.yaml
+var testFeatureGateTechPreviewNoUpgradeYAML string
+
+func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]client.Object, error) {
 	rootCA := manifests.RootCASecret(namespace)
 	rootCA.Data = map[string][]byte{
 		certs.CASignerCertMapKey: []byte("fake"),
@@ -1585,7 +1611,11 @@ func componentsFakeObjects(namespace string) ([]client.Object, error) {
 	fgConfigMap := &corev1.ConfigMap{}
 	fgConfigMap.Name = "feature-gate"
 	fgConfigMap.Namespace = namespace
-	fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
+	if featureSet == configv1.TechPreviewNoUpgrade {
+		fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateTechPreviewNoUpgradeYAML}
+	} else {
+		fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
+	}
 
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,

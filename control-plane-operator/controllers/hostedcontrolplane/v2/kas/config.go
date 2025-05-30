@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -153,6 +154,12 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(serviceAccountKeyVolumeName, pki.ServiceSignerPublicKey)},
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
+	}
+
+	if !slices.Contains(p.FeatureGates, "OpenShiftPodSecurityAdmission=true") {
+		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1beta1.PodSecurityConfiguration).Defaults.Enforce = "privileged"
+	} else {
+		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1beta1.PodSecurityConfiguration).Defaults.Enforce = "restricted"
 	}
 
 	if p.Authentication == nil || p.Authentication.Type == configv1.AuthenticationTypeIntegratedOAuth {
