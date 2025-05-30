@@ -204,7 +204,7 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"UnsupportedCapability"},
 			},
-			expectedErr: "unknown capability, accepted values are:",
+			expectedErr: "unknown capability: UnsupportedCapability, accepted values are:",
 		},
 		{
 			name: "passes with ImageRegistry capability",
@@ -214,6 +214,17 @@ func TestValidate(t *testing.T) {
 				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with openshift-samples capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"openshift-samples"},
 			},
 			expectedErr: "",
 		},

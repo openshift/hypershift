@@ -11,6 +11,14 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
+func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return false
+	}
+	return len(capabilities.Disabled) > 0
+}
+
 // IsImageRegistryCapabilityEnabled returns true if the Image Registry
 // capability is enabled, or false if disabled.
 //

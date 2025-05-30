@@ -69,7 +69,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			ClusterID: configv1.ClusterID(cpContext.HCP.Spec.ClusterID),
 		},
 	}
-	if !capabilities.IsImageRegistryCapabilityEnabled(cpContext.HCP.Spec.Capabilities) {
+	if capabilities.HasDisabledCapabilities(cpContext.HCP.Spec.Capabilities) {
 		cv.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
 			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(cpContext.HCP.Spec.Capabilities),
