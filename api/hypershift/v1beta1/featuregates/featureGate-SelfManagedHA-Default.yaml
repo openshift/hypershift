@@ -44,6 +44,9 @@
                         "name": "ExternalOIDC"
                     },
                     {
+                        "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
+                    },
+                    {
                         "name": "DynamicResourceAllocation"
                     },
                     {
