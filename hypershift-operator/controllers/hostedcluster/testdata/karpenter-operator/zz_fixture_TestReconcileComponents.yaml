@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: karpenter-operator
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: karpenter-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: karpenter-operator
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        component.hypershift.openshift.io/config-hash: 295d966a
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: karpenter-operator
+        hypershift.openshift.io/control-plane-component: karpenter-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --target-kubeconfig=/mnt/kubeconfig/target-kubeconfig
+        - --namespace=$(MY_NAMESPACE)
+        - --control-plane-operator-image=cpo-image
+        command:
+        - /usr/bin/karpenter-operator
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /etc/provider/credentials
+        - name: AWS_REGION
+        - name: AWS_SDK_LOAD_CONFIG
+          value: "true"
+        image: test-image
+        imagePullPolicy: IfNotPresent
+        name: karpenter-operator
+        resources:
+          requests:
+            cpu: 10m
+            memory: 60Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /mnt/kubeconfig
+          name: target-kubeconfig
+        - mountPath: /etc/provider
+          name: provider-creds
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=karpenter
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig-secret-namespace=hcp-namespace
+        - --kubeconfig-secret-name=service-network-admin-kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:6443/readyz
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+      priorityClassName: hypershift-control-plane
+      serviceAccountName: karpenter-operator
+      terminationGracePeriodSeconds: 10
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: target-kubeconfig
+        secret:
+          defaultMode: 416
+          items:
+          - key: kubeconfig
+            path: target-kubeconfig
+          secretName: hcco-kubeconfig
+      - name: provider-creds
+        secret:
+          defaultMode: 416
+          secretName: karpenter-credentials
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
+status: {}

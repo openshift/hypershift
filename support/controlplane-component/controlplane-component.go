@@ -222,11 +222,6 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
 	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
-		adapter, exist := c.manifestsAdapters[manifestName]
-		if exist {
-			return adapter.reconcile(cpContext, c.Name(), manifestName)
-		}
-
 		obj, _, err := assets.LoadManifest(c.name, manifestName)
 		if err != nil {
 			return err
@@ -245,6 +240,11 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 			}
 		case *corev1.ServiceAccount:
 			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
+		}
+
+		adapter, exist := c.manifestsAdapters[manifestName]
+		if exist {
+			return adapter.reconcile(cpContext, obj)
 		}
 
 		if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {

@@ -17,10 +17,10 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
-	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
-	karpenteroperatormanifest "github.com/openshift/hypershift/karpenter-operator/manifests"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -30,7 +30,7 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func (r *HostedClusterReconciler) reconcileKarpenterOperator(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
+func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
 	if hcluster.Spec.AutoNode == nil || hcluster.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
 		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hcluster.Status.KubeConfig == nil {
 		return nil
@@ -56,7 +56,7 @@ spec:
         value: "true"
         effect: "NoExecute"`
 
-	_, err := createOrUpdate(ctx, r.Client, configMap, func() error {
+	_, err := createOrUpdate(cpContext, r.Client, configMap, func() error {
 		configMap.Data = map[string]string{
 			"config": kubeletConfig,
 		}
@@ -84,22 +84,22 @@ spec:
 		},
 	}
 
-	err = r.RegistryProvider.Reconcile(ctx, r.Client)
+	err = r.RegistryProvider.Reconcile(cpContext, r.Client)
 	if err != nil {
 		return err
 	}
 
-	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
+	pullSecretBytes, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
 	if err != nil {
 		return err
 	}
 
-	releaseImage, err := r.RegistryProvider.GetReleaseProvider().Lookup(ctx, nodePool.Spec.Release.Image, pullSecretBytes)
+	releaseImage, err := r.RegistryProvider.GetReleaseProvider().Lookup(cpContext, nodePool.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
 		return err
 	}
 
-	if err := r.reconcileKarpenterUserDataSecret(ctx, hcluster, releaseImage, nodePool, r.RegistryProvider.GetReleaseProvider(), r.RegistryProvider.GetMetadataProvider()); err != nil {
+	if err := r.reconcileKarpenterUserDataSecret(cpContext, hcluster, releaseImage, nodePool, r.RegistryProvider.GetReleaseProvider(), r.RegistryProvider.GetMetadataProvider()); err != nil {
 		return err
 	}
 
@@ -107,19 +107,19 @@ spec:
 
 	// Run karpenter Operator to manage CRs management and guest side.
 
-	// TODO(jkyros): Grab the karpenter image in the proper place at the beginning with args, not here?
-	karpenterProviderAWSImage, hasImage := releaseImage.ComponentImages()["aws-karpenter-provider-aws"]
-	if !hasImage {
-		karpenterProviderAWSImage = assets.DefaultKarpenterProviderAWSImage
+	karpenteroperator := karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
+		HyperShiftOperatorImage:   hypershiftOperatorImage,
+		ControlPlaneOperatorImage: controlPlaneOperatorImage,
+	})
+
+	if err := karpenteroperator.Reconcile(cpContext); err != nil {
+		return fmt.Errorf("failed to reconcile controlplane operator component: %w", err)
 	}
 
-	if err := karpenteroperatormanifest.ReconcileKarpenterOperator(ctx, createOrUpdate, r.Client, hypershiftOperatorImage, controlPlaneOperatorImage, karpenterProviderAWSImage, hcp); err != nil {
-		return err
-	}
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(ctx context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool, releaseProvider releaseinfo.Provider, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
+func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(cpContext context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool, releaseProvider releaseinfo.Provider, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
 	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
 	if !ok {
 		return fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
@@ -132,24 +132,24 @@ func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(ctx context.C
 		ReleaseProvider:         releaseProvider,
 		ImageMetadataProvider:   imageMetadataProvider,
 	}
-	haproxyRawConfig, err := haproxy.GenerateHAProxyRawConfig(ctx, hcluster)
+	haproxyRawConfig, err := haproxy.GenerateHAProxyRawConfig(cpContext, hcluster)
 	if err != nil {
 		return err
 	}
 
-	configGenerator, err := nodepool.NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := nodepool.NewConfigGenerator(cpContext, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
 
-	token, err := nodepool.NewToken(ctx, configGenerator, &nodepool.CPOCapabilities{
+	token, err := nodepool.NewToken(cpContext, configGenerator, &nodepool.CPOCapabilities{
 		DecompressAndDecodeConfig: true,
 	})
 	if err != nil {
 		return err
 	}
 
-	if err := token.Reconcile(ctx); err != nil {
+	if err := token.Reconcile(cpContext); err != nil {
 		return err
 	}
 

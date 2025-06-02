@@ -1875,6 +1875,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	imageProvider := imageprovider.New(releaseImage)
 	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
+	imageProvider.ComponentImages()[hyperutil.AvailabilityProberImageName] = utilitiesImage
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1983,7 +1984,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if err := r.reconcileKarpenterOperator(ctx, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
 

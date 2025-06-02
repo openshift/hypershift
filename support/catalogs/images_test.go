@@ -2,6 +2,7 @@ package catalogs
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -10,11 +11,25 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	imgref "github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	"github.com/blang/semver"
+	"github.com/opencontainers/go-digest"
 )
+
+type testImageMetadataProvider struct {
+	*fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider
+	err error
+}
+
+func (p *testImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *imgref.DockerImageReference, error) {
+	if p.err != nil {
+		return "", nil, p.err
+	}
+	return p.FakeRegistryClientImageMetadataProvider.GetDigest(ctx, imageRef, pullSecret)
+}
 
 func TestComputeCatalogImages(t *testing.T) {
 	tests := []struct {
@@ -99,6 +114,54 @@ func TestComputeCatalogImages(t *testing.T) {
 				"community-operators": "example.org/test/community-operator-index:v4.18",
 				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
 				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.17",
+			},
+		},
+		{
+			name:           "overrides with root registry and root registry with namespace mixed",
+			releaseVersion: semver.MustParse("4.19.0"),
+			existingImages: []string{
+				"example.org/test/certified-operator-index:v4.19",
+				"example.org/test/community-operator-index:v4.19",
+				"example.org/test/community-operator-index:v4.18",
+				"another.example.org/redhat/redhat-marketplace-index:v4.19",
+				"another.example.org/redhat/redhat-operator-index:v4.19",
+			},
+			registryOverrides: map[string][]string{
+				"registry.redhat.io": {
+					"example.org/test",
+					"another.example.org",
+				},
+			},
+			expected: map[string]string{
+				"certified-operators": "example.org/test/certified-operator-index:v4.19",
+				"community-operators": "example.org/test/community-operator-index:v4.19",
+				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
+				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
+			},
+		},
+		{
+			name:           "overrides with root registry only",
+			releaseVersion: semver.MustParse("4.19.0"),
+			existingImages: []string{
+				"example.org/test/certified-operator-index:v4.19",
+				"example.org/test/community-operator-index:v4.19",
+				"example.org/test/community-operator-index:v4.18",
+				"example.org/redhat/certified-operator-index:v4.19",
+				"example.org/redhat/community-operator-index:v4.19",
+				"another.example.org/redhat/redhat-marketplace-index:v4.19",
+				"another.example.org/redhat/redhat-operator-index:v4.19",
+			},
+			registryOverrides: map[string][]string{
+				"registry.redhat.io": {
+					"example.org",
+					"another.example.org",
+				},
+			},
+			expected: map[string]string{
+				"certified-operators": "example.org/redhat/certified-operator-index:v4.19",
+				"community-operators": "example.org/redhat/community-operator-index:v4.19",
+				"redhat-marketplace":  "another.example.org/redhat/redhat-marketplace-index:v4.19",
+				"redhat-operators":    "another.example.org/redhat/redhat-operator-index:v4.19",
 			},
 		},
 	}
@@ -288,24 +351,81 @@ func TestImageLookupCacheKeyFn(t *testing.T) {
 }
 
 func TestImageExistsFnGuestCluster(t *testing.T) {
-	g := NewGomegaWithT(t)
-
 	ctx := context.Background()
-	pullSecret := []byte("12345")
-	fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-		Result:   &dockerv1client.DockerImageConfig{},
-		Manifest: fakeimagemetadataprovider.FakeManifest{},
+
+	tests := []struct {
+		name               string
+		olmcatalog         hyperv1.OLMCatalogPlacement
+		expectedExists     bool
+		expectedError      bool
+		imageMetadataError error
+		pullSecret         []byte
+	}{
+		{
+			name:           "Guest cluster should return true without checking image",
+			olmcatalog:     hyperv1.GuestOLMCatalogPlacement,
+			expectedExists: true,
+			expectedError:  false,
+			pullSecret:     []byte("12345"),
+		},
+		{
+			name:           "Management cluster should fail when image not found",
+			olmcatalog:     hyperv1.ManagementOLMCatalogPlacement,
+			expectedExists: false,
+			expectedError:  true,
+			pullSecret:     []byte("12345"),
+		},
+		{
+			name:               "Management cluster with manifest unknown error should return false",
+			olmcatalog:         hyperv1.ManagementOLMCatalogPlacement,
+			expectedExists:     false,
+			expectedError:      false,
+			imageMetadataError: errors.New("manifest unknown"),
+			pullSecret:         []byte("12345"),
+		},
+		{
+			name:               "Management cluster with unauthorized error should return false",
+			olmcatalog:         hyperv1.ManagementOLMCatalogPlacement,
+			expectedExists:     false,
+			expectedError:      false,
+			imageMetadataError: errors.New("access to the requested resource is not authorized"),
+			pullSecret:         []byte("12345"),
+		},
+		{
+			name:           "Management cluster with successful image check should return true",
+			olmcatalog:     hyperv1.ManagementOLMCatalogPlacement,
+			expectedExists: true,
+			expectedError:  false,
+			pullSecret:     []byte("{\"auths\":{}}"),
+		},
 	}
 
-	// Test to ignore that images don't need to exist for "guest" clusters.
-	fn1 := imageExistsFn(ctx, &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "guest"}}, pullSecret, fakeMetadataProvider)
-	exists, err := fn1("something")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(exists).To(Equal(true))
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OLMCatalogPlacement: tc.olmcatalog,
+				},
+			}
 
-	// Test to ensure we fail if not a guest cluster and can't find image.
-	fn2 := imageExistsFn(ctx, &hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "management"}}, pullSecret, fakeMetadataProvider)
-	exists, err = fn2("something")
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(exists).To(Equal(false))
+			fakeMetadataProvider := &testImageMetadataProvider{
+				FakeRegistryClientImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result:   &dockerv1client.DockerImageConfig{},
+					Manifest: fakeimagemetadataprovider.FakeManifest{},
+				},
+				err: tc.imageMetadataError,
+			}
+
+			fn := imageExistsFn(ctx, hcp, tc.pullSecret, fakeMetadataProvider)
+			exists, err := fn("test-image")
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(exists).To(Equal(tc.expectedExists))
+			}
+		})
+	}
 }
