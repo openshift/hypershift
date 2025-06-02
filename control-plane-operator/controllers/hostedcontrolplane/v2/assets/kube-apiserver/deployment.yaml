@@ -286,8 +286,8 @@ spec:
           if [ ! -f /tmp/manifests/99_feature-gate.yaml ]; then
             touch /tmp/manifests/99_feature-gate.yaml
             cat <<EOF >/tmp/manifests/99_feature-gate.yaml
-            $(FEATURE_GATE_YAML)
-            EOF
+          $(FEATURE_GATE_YAML)
+          EOF
           fi
 
           /usr/bin/authentication-operator render \
