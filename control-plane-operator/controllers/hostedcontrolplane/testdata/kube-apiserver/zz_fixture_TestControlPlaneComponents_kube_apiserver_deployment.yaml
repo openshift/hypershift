@@ -427,6 +427,7 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
