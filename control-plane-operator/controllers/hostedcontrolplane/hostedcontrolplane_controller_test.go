@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,7 +45,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -58,6 +58,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -1442,9 +1443,17 @@ func TestControlPlaneComponents(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
 			}
+
+			createdObjects := []client.Object{}
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
 				WithObjects(fakeObjects...).
 				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
+				WithInterceptorFuncs(interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						createdObjects = append(createdObjects, obj)
+						return client.Create(ctx, obj, opts...)
+					},
+				}).
 				Build()
 			cpContext.Client = fakeClient
 
@@ -1456,98 +1465,37 @@ func TestControlPlaneComponents(t *testing.T) {
 				}
 			}
 
-			var deployments appsv1.DeploymentList
-			if err := fakeClient.List(context.Background(), &deployments); err != nil {
-				t.Fatalf("failed to list deployments: %v", err)
-			}
-
-			var statfulsets appsv1.StatefulSetList
-			if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
-				t.Fatalf("failed to list statfulsets: %v", err)
-			}
-
-			var cronJobs batchv1.CronJobList
-			if err := fakeClient.List(context.Background(), &cronJobs); err != nil {
-				t.Fatalf("failed to list cronJobs: %v", err)
-			}
-
-			var jobs batchv1.JobList
-			if err := fakeClient.List(context.Background(), &jobs); err != nil {
-				t.Fatalf("failed to list jobs: %v", err)
-			}
-
-			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 && len(jobs.Items) == 0 {
-				t.Fatalf("expected one of deployment, statefulSet, cronJob or job to exist for component %s", component.Name())
-			}
-
-			var workload client.Object
-			if len(deployments.Items) > 0 {
-				workload = &deployments.Items[0]
-			} else if len(statfulsets.Items) > 0 {
-				workload = &statfulsets.Items[0]
-			} else if len(cronJobs.Items) > 0 {
-				workload = &cronJobs.Items[0]
-			} else {
-				workload = &jobs.Items[0]
-			}
-
-			yaml, err := util.SerializeResource(workload, api.Scheme)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			var suffix = ""
-			if featureSet != configv1.Default {
-				suffix = fmt.Sprintf("_%s", featureSet)
-			}
-			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
-
-			if component.Name() == kasv2.ComponentName {
-				kasConfig := &corev1.ConfigMap{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "kas-config",
-						Namespace: hcp.Namespace,
-					},
-				}
-				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(kasConfig), kasConfig)
-				if err != nil {
-					t.Fatalf("failed to get kas config: %v", err)
+			for _, obj := range createdObjects {
+				if obj.GetNamespace() != hcp.Namespace {
+					t.Fatalf("expected object %s to be in namespace %s, got %s", obj.GetName(), hcp.Namespace, obj.GetNamespace())
 				}
 
-				yaml, err = util.SerializeResource(kasConfig, api.Scheme)
+				switch typedObj := obj.(type) {
+				case *hyperv1.ControlPlaneComponent:
+					// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+					for i := range typedObj.Status.Conditions {
+						typedObj.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+					}
+				}
+
+				yaml, err := util.SerializeResource(obj, api.Scheme)
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				suffix = "_kasconfig"
-				if featureSet != configv1.Default {
-					suffix = fmt.Sprintf("_kasconfig_%s", featureSet)
+
+				kind := obj.GetObjectKind().GroupVersionKind().Kind
+				if kind == "" {
+					t.Fatalf("object %s has no kind set", obj.GetName())
 				}
-				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
+
+				suffix := fmt.Sprintf("_%s_%s", obj.GetName(), strings.ToLower(kind))
+				subDir := component.Name()
+				if featureSet != configv1.Default {
+					subDir = fmt.Sprintf("%s/%s", component.Name(), featureSet)
+				}
+				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(subDir), testutil.WithSuffix(suffix))
 			}
 
-			controlPaneComponent := &hyperv1.ControlPlaneComponent{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      component.Name(),
-					Namespace: hcp.Namespace,
-				},
-			}
-			if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
-				t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
-			}
-
-			// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-			for i := range controlPaneComponent.Status.Conditions {
-				controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-			}
-
-			yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			suffix = "_component"
-			if featureSet != configv1.Default {
-				suffix = fmt.Sprintf("_component_%s", featureSet)
-			}
-			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 		}
 
 		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {

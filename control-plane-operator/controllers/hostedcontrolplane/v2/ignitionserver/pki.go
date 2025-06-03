@@ -22,6 +22,10 @@ import (
 // Reconcile a root CA for ignition serving certificates.
 // We only create this and don't update it for now.
 func adaptCACertSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	if cpContext.SkipCertificateSigning {
+		return nil
+	}
+
 	secret.Type = corev1.SecretTypeTLS
 	return certs.ReconcileSelfSignedCA(secret, "ignition-root-ca", "openshift", func(o *certs.CAOpts) {
 		o.CASignerCertMapKey = corev1.TLSCertKey
@@ -32,6 +36,10 @@ func adaptCACertSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 // Reconcile an ignition serving certificate issued by the generated root CA.
 // We only create this and don't update it for now.
 func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	if cpContext.SkipCertificateSigning {
+		return nil
+	}
+
 	caCertSecret := ignitionserver.IgnitionCACertSecret(cpContext.HCP.Namespace)
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(caCertSecret), caCertSecret); err != nil {
 		if apierrors.IsNotFound(err) {
