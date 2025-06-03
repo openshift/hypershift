@@ -2,9 +2,7 @@ package oapi
 
 import (
 	"fmt"
-	"net/url"
 	"path"
-	"strings"
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/v1beta1"
@@ -82,7 +80,25 @@ func openShiftAPIServerLabels() map[string]string {
 	}
 }
 
-func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.LocalObjectReference, ownerRef config.OwnerRef, config *corev1.ConfigMap, auditConfig *corev1.ConfigMap, serviceServingCA *corev1.ConfigMap, deploymentConfig config.DeploymentConfig, image string, konnectivityHTTPSProxyImage string, etcdURL string, availabilityProberImage string, platformType hyperv1.PlatformType, hcpAdditionalTrustBundle *corev1.LocalObjectReference, imageRegistryAdditionalTrustedCAs *corev1.ConfigMap, clusterConf *hyperv1.ClusterConfiguration, proxyConfig *configv1.ProxySpec, noProxy string) error {
+func ReconcileDeployment(
+	deployment *appsv1.Deployment,
+	auditWebhookRef *corev1.LocalObjectReference,
+	ownerRef config.OwnerRef,
+	config *corev1.ConfigMap,
+	auditConfig *corev1.ConfigMap,
+	serviceServingCA *corev1.ConfigMap,
+	deploymentConfig config.DeploymentConfig,
+	image string,
+	konnectivityHTTPSProxyImage string,
+	etcdURL string,
+	availabilityProberImage string,
+	platformType hyperv1.PlatformType,
+	hcpAdditionalTrustBundle *corev1.LocalObjectReference,
+	imageRegistryAdditionalTrustedCAs *corev1.ConfigMap,
+	clusterConf *hyperv1.ClusterConfiguration,
+	proxyConfig *configv1.ProxySpec,
+	noProxy string,
+) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main OAS container
@@ -113,9 +129,9 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		}
 	}
 	deployment.Spec.Template.ObjectMeta.Labels = openShiftAPIServerLabels()
-	etcdUrlData, err := url.Parse(etcdURL)
+	etcdHost, err := util.HostFromURL(etcdURL)
 	if err != nil {
-		return fmt.Errorf("failed to parse etcd url: %w", err)
+		return err
 	}
 	if deployment.Spec.Template.Annotations == nil {
 		deployment.Spec.Template.Annotations = map[string]string{}
@@ -126,7 +142,6 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 		AutomountServiceAccountToken: pointer.Bool(false),
 		InitContainers:               []corev1.Container{util.BuildContainer(oasTrustAnchorGenerator(), buildOASTrustAnchorGenerator(image))},
 		Containers: []corev1.Container{
-			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, strings.Split(etcdUrlData.Host, ":")[0], defaultOAPIPort)),
 			{
 				Name:            "audit-logs",
 				Image:           image,
@@ -147,6 +162,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, auditWebhookRef *corev1.
 					MountPath: volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name),
 				}},
 			},
+			util.BuildContainer(oasContainerMain(), buildOASContainerMain(image, etcdHost, defaultOAPIPort)),
 			util.BuildContainer(oasKonnectivityProxyContainer(), buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage, proxyConfig, noProxy)),
 		},
 		Volumes: []corev1.Volume{
