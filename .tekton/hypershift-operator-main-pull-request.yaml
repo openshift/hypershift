@@ -32,8 +32,6 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
-    - linux/arm64
-    - linux/ppc64le
   - name: dockerfile
     value: Containerfile.operator
   - name: path-context
