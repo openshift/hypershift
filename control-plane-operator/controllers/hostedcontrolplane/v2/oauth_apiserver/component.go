@@ -39,6 +39,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithPredicate(predicate).
 		WithManifestAdapter(
 			"audit-config.yaml",
+			component.WithPredicate(kasv2.AuditEnabledWorkloadContext),
 			component.WithAdaptFunction(kasv2.AdaptAuditConfig),
 		).
 		WithManifestAdapter(

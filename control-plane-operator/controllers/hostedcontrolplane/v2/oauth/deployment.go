@@ -3,11 +3,13 @@ package oauth
 import (
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -45,6 +47,21 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				MountPath: "/etc/kubernetes/auditwebhook",
 			})
 
+			// Remove audit arguments if auditing is not enabled
+			if !kasv2.AuditEnabledWorkloadContext(cpContext) {
+				for _, argToRemove := range []string{
+					"--audit-log-path=",
+					"--audit-log-format=",
+					"--audit-log-maxsize=",
+					"--audit-log-maxbackup=",
+					"--audit-policy-file=",
+				} {
+					c.Args = slices.DeleteFunc(c.Args, func(s string) bool {
+						return strings.Contains(s, argToRemove)
+					})
+				}
+			}
+
 			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
 				Name: auditWebhookConfigFileVolumeName,
 				VolumeSource: corev1.VolumeSource{
@@ -66,8 +83,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	configuration := cpContext.HCP.Spec.Configuration
-	if configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+	if !kasv2.AuditEnabledWorkloadContext(cpContext) {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount("audit-config", util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume("audit-config", &deployment.Spec.Template.Spec)
 	}
 
 	if namedCertificates := configuration.GetNamedCertificates(); len(namedCertificates) > 0 {

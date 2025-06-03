@@ -13,3 +13,12 @@ func OAuthServerConfig(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func OAuthAuditConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "oauth-openshift-audit",
+			Namespace: ns,
+		},
+	}
+}

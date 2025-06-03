@@ -43,6 +43,12 @@ func RemoveInitContainer(name string, podSpec *corev1.PodSpec) {
 	})
 }
 
+func RemoveContainerVolumeMount(name string, container *corev1.Container) {
+	container.VolumeMounts = slices.DeleteFunc(container.VolumeMounts, func(v corev1.VolumeMount) bool {
+		return v.Name == name
+	})
+}
+
 func UpsertEnvVar(c *corev1.Container, envVar corev1.EnvVar) {
 	for idx, env := range c.Env {
 		if env.Name == envVar.Name {

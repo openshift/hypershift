@@ -1111,6 +1111,28 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		}
 	}
 
+	if !kasv2.AuditEnabled(*cpContext.HCP) {
+		kubeAPIServerAuditConfig := manifests.KASAuditConfig(hcp.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, kubeAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove kas-audit-config configmap: %w", err)
+		}
+
+		openshiftAPIServerAuditConfig := manifests.OpenShiftAPIServerAuditConfig(hcp.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-apiserver-audit configmap: %w", err)
+		}
+
+		openshiftOAuthAPIServerAuditConfig := manifests.OpenShiftOAuthAPIServerAuditConfig(hcp.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, openshiftOAuthAPIServerAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove openshift-oauth-apiserver-audit configmap: %w", err)
+		}
+
+		oAuthAuditConfig := manifests.OAuthAuditConfig(hcp.Namespace)
+		if _, err := util.DeleteIfNeeded(ctx, r, oAuthAuditConfig); err != nil {
+			return fmt.Errorf("failed to remove oauth-openshift-audit configmap: %w", err)
+		}
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 

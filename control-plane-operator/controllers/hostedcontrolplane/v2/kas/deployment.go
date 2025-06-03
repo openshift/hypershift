@@ -64,8 +64,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return fmt.Errorf("updating bootstrap containers: %v", err)
 	}
 
-	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+	// If auditing is none/disabled, remove the audit-logs container and remove volume and volume mount
+	if !AuditEnabledWorkloadContext(cpContext) {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount(auditConfigVolumeName, util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume(auditConfigVolumeName, &deployment.Spec.Template.Spec)
 	}
 
 	// With managed etcd, we should wait for the known etcd client service name to

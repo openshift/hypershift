@@ -5,6 +5,7 @@ import (
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -56,6 +57,14 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 		cfg.APIServerArguments["audit-webhook-config-file"] = []string{path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)}
 		cfg.APIServerArguments["audit-webhook-mode"] = []string{"batch"}
 		cfg.APIServerArguments["audit-webhook-initial-backoff"] = []string{"5s"}
+	}
+
+	if !kasv2.AuditEnabled(*hcp) {
+		delete(cfg.APIServerArguments, "audit-log-format")
+		delete(cfg.APIServerArguments, "audit-log-maxsize")
+		delete(cfg.APIServerArguments, "audit-log-maxbackup")
+		delete(cfg.APIServerArguments, "audit-policy-file")
+		delete(cfg.APIServerArguments, "audit-log-path")
 	}
 
 	configuration := hcp.Spec.Configuration

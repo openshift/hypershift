@@ -113,3 +113,12 @@ func KASContainerAWSKMSProviderServiceAccount() *corev1.ServiceAccount {
 		},
 	}
 }
+
+func KASAuditConfig(ns string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kas-audit-config",
+			Namespace: ns,
+		},
+	}
+}
