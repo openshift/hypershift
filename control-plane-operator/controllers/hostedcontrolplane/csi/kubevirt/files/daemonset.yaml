@@ -33,6 +33,7 @@ spec:
       containers:
         - name: csi-driver
           securityContext:
+            readOnlyRootFilesystem: true
             privileged: true
             allowPrivilegeEscalation: true
           imagePullPolicy: Always
@@ -79,6 +80,7 @@ spec:
           terminationMessagePolicy: File
         - name: csi-node-driver-registrar
           securityContext:
+            readOnlyRootFilesystem: true
             privileged: true
           image: quay.io/openshift/origin-csi-node-driver-registrar:latest
           args:
