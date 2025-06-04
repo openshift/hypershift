@@ -62,7 +62,6 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
-		util.ApplyAWSLoadBalancerSubnetsAnnotation(svc, hcp)
 	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
@@ -280,7 +279,6 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 			}
 			svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 		}
-		util.ApplyAWSLoadBalancerSubnetsAnnotation(svc, hcp)
 	case hyperv1.NodePort:
 		svc.Spec.Type = corev1.ServiceTypeNodePort
 		if portSpec.NodePort == 0 && strategy.NodePort != nil {
