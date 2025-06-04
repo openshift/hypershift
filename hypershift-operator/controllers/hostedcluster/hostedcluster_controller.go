@@ -1850,6 +1850,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
+	}
+
 	// Reconcile the Ignition server
 	if !controlplaneOperatorManagesIgnitionServer {
 		releaseInfo, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
@@ -2634,6 +2639,65 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role binding: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
+	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(hcpns)
+
+	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-kubevirt-csi-cluster", hcpns),
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err := createOrUpdate(ctx, r.Client, kubevirtCSIClusterRole, func() error {
+		kubevirtCSIClusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"persistentvolumes"},
+				Verbs:     []string{"get"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role: %w", err)
+	}
+
+	kubevirtCSIClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: kubevirtCSIClusterRole.Name,
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err = createOrUpdate(ctx, r.Client, kubevirtCSIClusterRoleBinding, func() error {
+		kubevirtCSIClusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     kubevirtCSIClusterRole.Name,
+		}
+		kubevirtCSIClusterRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role binding: %w", err)
 	}
 
 	return nil
