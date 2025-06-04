@@ -291,7 +291,7 @@ spec:
           fi
 
           /usr/bin/authentication-operator render \
-            --asset-output-dir /tmp/output \
+            --asset-output-dir /tmp/output/manifests \
             --rendered-manifest-dir=/tmp/manifests \
             --cluster-profile=ibm-cloud-managed \
             --payload-version=%[2]s
