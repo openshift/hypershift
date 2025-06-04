@@ -830,6 +830,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ValidHostedControlPlaneConfiguration,
 			hyperv1.ValidReleaseInfo,
 			hyperv1.ValidIDPConfiguration,
+			hyperv1.HostedClusterRestoredFromBackup,
 		}
 
 		for _, conditionType := range hcpConditions {
@@ -1346,6 +1347,53 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+			}
+		}
+	}
+
+	// Set the HostedCluster restored from backup condition
+	{
+		if _, exists := hcluster.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterRestoredFromBackup),
+				Reason:             hyperv1.RecoveryFinishedReason,
+				Status:             metav1.ConditionUnknown,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			if hcp != nil {
+				hostedClusterRestoredFromBackupCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+				if hostedClusterRestoredFromBackupCondition != nil {
+					freshCondition = hostedClusterRestoredFromBackupCondition
+				}
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+
+			// Preserve previous status if we can no longer determine the status
+			if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
+				freshCondition.Status = oldCondition.Status
+			}
+
+			// If the condition is not set, or the status is different, set the condition
+			if oldCondition == nil || oldCondition.Status != freshCondition.Status {
+				freshCondition.ObservedGeneration = hcluster.Generation
+			}
+
+			// If the condition is true, delete the hc annotation. It will be eventually bubbled down to the hcp.
+			if freshCondition.Status == metav1.ConditionTrue {
+				hclusterAnnotations := hcluster.GetAnnotations()
+				delete(hclusterAnnotations, hyperv1.HostedClusterRestoredFromBackupAnnotation)
+				hcluster.SetAnnotations(hclusterAnnotations)
+				if err := r.Update(ctx, hcluster); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to remove annotations %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
+				}
+			}
+
+			// Persist status updates
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
 	}
@@ -2170,6 +2218,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
 		hyperv1.KubeAPIServerGoAwayChance,
+		hyperv1.HostedClusterRestoredFromBackupAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
