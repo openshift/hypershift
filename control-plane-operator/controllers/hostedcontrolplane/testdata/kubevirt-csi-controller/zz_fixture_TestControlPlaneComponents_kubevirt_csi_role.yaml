@@ -52,3 +52,4 @@ rules:
   - persistentvolumeclaims
   verbs:
   - get
+  - patch
