@@ -2,6 +2,7 @@ package konnectivityhttpsproxy
 
 import (
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
+	"github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
@@ -20,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/elazarl/goproxy"
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/net/http/httpproxy"
@@ -77,6 +78,7 @@ func NewStartCommand() *cobra.Command {
 
 		var proxyTLS *tls.Config
 		var proxyURLHostPort *string
+		var proxyURLUser *url.Userinfo
 		proxyHostNames := sets.New[string]()
 
 		if len(httpsProxyURL) > 0 {
@@ -85,6 +87,7 @@ func NewStartCommand() *cobra.Command {
 				fmt.Fprintf(os.Stderr, "Error: failed to parse HTTPS proxy URL: %v", err)
 				os.Exit(1)
 			}
+			proxyURLUser = u.User
 			hostName, _, err := net.SplitHostPort(u.Host)
 			if err == nil {
 				proxyHostNames.Insert(hostName)
@@ -148,10 +151,15 @@ func NewStartCommand() *cobra.Command {
 				l.V(4).Info("Should proxy", "url", u)
 				return u, nil
 			},
-			Dial: konnectivityDialer.Dial,
+			Dial:        konnectivityDialer.Dial,
+			DialContext: konnectivityDialer.DialContext,
 		}
 		if httpsProxyURL != "" {
-			httpProxy.ConnectDialWithReq = connectDialFunc(l, httpProxy, httpsProxyURL, opts.ConnectDirectlyToCloudAPIs, konnectivityDialer.IsCloudAPI, userProxyFunc)
+			httpProxy.ConnectDialWithReq = connectDialFunc(
+				shouldDialDirectFunc(opts.ConnectDirectlyToCloudAPIs, konnectivityDialer.IsCloudAPI, userProxyFunc),
+				dialDirectFunc(httpProxy),
+				dialThroughProxyFunc(httpProxy, httpsProxyURL, proxyURLUser),
+			)
 		} else {
 			httpProxy.ConnectDial = nil
 			httpProxy.ConnectDialWithReq = nil
@@ -166,30 +174,56 @@ func NewStartCommand() *cobra.Command {
 	return cmd
 }
 
-func connectDialFunc(log logr.Logger, httpProxy *goproxy.ProxyHttpServer, proxyURL string, connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(req *http.Request, network, addr string) (net.Conn, error) {
-	defaultDial := httpProxy.NewConnectDialToProxy(proxyURL)
+type dialFunc func(network, addr string) (net.Conn, error)
+type dialRequestFunc func(req *http.Request, network, addr string) (net.Conn, error)
+
+func dialDirectFunc(httpProxy *goproxy.ProxyHttpServer) dialFunc {
+	// NOTE: the function signature is determined by the goproxy library, it requires the deprecated version
+	// nolint:staticcheck
+	return httpProxy.Tr.Dial
+}
+
+func dialThroughProxyFunc(httpProxy *goproxy.ProxyHttpServer, proxyURL string, proxyURLUser *url.Userinfo) dialFunc {
+	return httpProxy.NewConnectDialToProxyWithHandler(proxyURL, addBasicAuthHeader(proxyURLUser))
+}
+
+func shouldDialDirectFunc(connectDirectlyToCloudAPIs bool, isCloudAPI func(string) bool, userProxyFunc func(*url.URL) (*url.URL, error)) func(*url.URL) (bool, error) {
+	return func(u *url.URL) (bool, error) {
+		if connectDirectlyToCloudAPIs {
+			hostName, err := util.HostFromURL(u.String())
+			if err != nil {
+				return false, err
+			}
+			if isCloudAPI(hostName) {
+				return true, nil
+			}
+		}
+
+		proxyURL, err := userProxyFunc(u)
+		if err != nil {
+			return false, err
+		}
+		return proxyURL == nil, nil
+	}
+}
+
+func addBasicAuthHeader(proxyUser *url.Userinfo) func(req *http.Request) {
+	return func(req *http.Request) {
+		if proxyUser != nil {
+			req.Header.Set("Proxy-Authorization", fmt.Sprintf("Basic %s", base64.StdEncoding.EncodeToString([]byte(proxyUser.String()))))
+		}
+	}
+}
+
+func connectDialFunc(shouldDialDirect func(*url.URL) (bool, error), dialDirectly dialFunc, dialThroughProxy dialFunc) dialRequestFunc {
 	return func(req *http.Request, network, addr string) (net.Conn, error) {
-		log.V(4).Info("Connect dial called", "network", network, "address", addr, "URL", req.URL)
-		requestURL := *req.URL
-		// Ensure the request URL scheme is set. This function is only called
-		// for requests to https endpoints.
-		requestURL.Scheme = "https"
-		proxyURL, err := userProxyFunc(&requestURL)
+		shouldDialDirectly, err := shouldDialDirect(req.URL)
 		if err != nil {
 			return nil, err
 		}
-		log.V(4).Info("Determined proxy URL", "url", proxyURL)
-		host, _, err := net.SplitHostPort(requestURL.Host)
-		if err != nil {
-			return nil, err
+		if shouldDialDirectly {
+			return dialDirectly(network, addr)
 		}
-		// If the URL is a cloud API or it should not be proxied, then
-		// send it through the dialer directly.
-		if (connectDirectlyToCloudAPIs && isCloudAPI(host)) || proxyURL == nil {
-			log.V(4).Info("Host is cloud API or should not use a proxy with it, dialing directly through konnectivity")
-			return httpProxy.Tr.Dial(network, addr) //nolint:staticcheck
-		}
-		log.V(4).Info("Using proxy to dial", "proxy", proxyURL)
-		return defaultDial(network, addr)
+		return dialThroughProxy(network, addr)
 	}
 }
