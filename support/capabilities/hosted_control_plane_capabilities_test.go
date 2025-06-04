@@ -111,3 +111,37 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 		})
 	}
 }
+
+func TestHasDisabledCapabilities(t *testing.T) {
+	tests := []struct {
+		name                 string
+		disabledCapabilities []hyperv1.OptionalCapability
+		expectResult         bool
+	}{
+		{
+			name:                 "returns false when none capabilities are disabled",
+			disabledCapabilities: nil,
+			expectResult:         false,
+		},
+		{
+			name:                 "returns true if any capabilities are disabled",
+			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.OpenShiftSamplesCapability},
+			expectResult:         true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			caps := &hyperv1.Capabilities{
+				Disabled: test.disabledCapabilities,
+			}
+			hasDisabledCapabilities := HasDisabledCapabilities(caps)
+			if test.expectResult && !hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be true, but it wasn't")
+			}
+			if !test.expectResult && hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be false, but it wasn't")
+			}
+		})
+	}
+}
