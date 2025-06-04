@@ -20,9 +20,6 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
-  - group: route.openshift.io
-    kind: Route
-    name: ignition-server
   - group: ""
     kind: Service
     name: ignition-server-proxy

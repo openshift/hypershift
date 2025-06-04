@@ -32,6 +32,9 @@ status:
   - group: rbac.authorization.k8s.io
     kind: RoleBinding
     name: ignition-server
+  - group: route.openshift.io
+    kind: Route
+    name: ignition-server
   - group: ""
     kind: Service
     name: ignition-server
