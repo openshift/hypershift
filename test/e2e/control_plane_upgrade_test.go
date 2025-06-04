@@ -30,9 +30,15 @@ func TestUpgradeControlPlane(t *testing.T) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
+		// Set the semantic version to the latest release image for version gating tests
+		err := e2eutil.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+		if err != nil {
+			g.Expect(err).NotTo(HaveOccurred(), "failed to set latest release image version")
+		}
+
 		// Update the cluster image
 		t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
-		err := e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.Release.Image = globalOpts.LatestReleaseImage
 			if obj.Annotations == nil {
 				obj.Annotations = make(map[string]string)
