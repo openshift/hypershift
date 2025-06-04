@@ -158,6 +158,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -217,6 +221,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -273,6 +281,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -359,6 +371,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -415,6 +431,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -471,6 +491,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To("groups-prefix"),
 								Claim:  "groups",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
@@ -569,9 +593,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty expression provided, no error, successful mapping",
@@ -635,9 +656,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, non-empty claim and expression provided, error",
@@ -669,9 +687,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, uid claim mapping specified, empty claim, non-empty but invalid expression provided, error",
@@ -702,9 +717,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and valueExpression provided, no error, successful mapping",
@@ -776,9 +788,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: false,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key, invalid valueExpression, error",
@@ -812,9 +821,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, empty key provided, error",
@@ -847,9 +853,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, extra claim mapping specified, non-empty key and empty valueExpression provided, error",
@@ -882,9 +885,6 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
-			featureGates: []featuregate.Feature{
-				featuregates.ExternalOIDCWithUIDAndExtraClaimMappings,
-			},
 		},
 		{
 			name:   "authn spec provided, claim validation rules specified, type set to RequiredClaim, requiredClaim is set, no error, successful mapping",
@@ -913,6 +913,10 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Prefix: ptr.To(""),
 								Claim:  "groups",
 							},
+							UID: ClaimOrExpression{
+								Claim: "sub",
+							},
+							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{
 							{
