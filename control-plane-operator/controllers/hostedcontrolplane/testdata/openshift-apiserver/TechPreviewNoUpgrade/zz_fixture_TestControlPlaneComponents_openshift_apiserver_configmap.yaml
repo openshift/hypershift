@@ -1,0 +1,201 @@
+apiVersion: v1
+data:
+  config.yaml: |
+    admission: {}
+    aggregatorConfig:
+      allowedNames: null
+      clientCA: ""
+      extraHeaderPrefixes: null
+      groupHeaders: null
+      usernameHeaders: null
+    apiServerArguments:
+      audit-log-format:
+      - json
+      audit-log-maxbackup:
+      - "1"
+      audit-log-maxsize:
+      - "10"
+      audit-log-path:
+      - /var/log/openshift-apiserver/audit.log
+      audit-policy-file:
+      - /etc/kubernetes/audit-config/policy.yaml
+      feature-gates:
+      - AWSEFSDriverVolumeMetrics=true
+      - AdditionalRoutingCapabilities=true
+      - AdminNetworkPolicy=true
+      - AlibabaPlatform=true
+      - AzureWorkloadIdentity=true
+      - BareMetalLoadBalancer=true
+      - BuildCSIVolumes=true
+      - ChunkSizeMiB=true
+      - CloudDualStackNodeIPs=true
+      - DisableKubeletCloudCredentialProviders=true
+      - ExternalOIDC=true
+      - GCPLabelsTags=true
+      - HardwareSpeed=true
+      - IngressControllerLBSubnetsAWS=true
+      - KMSv1=true
+      - ManagedBootImages=true
+      - ManagedBootImagesAWS=true
+      - MultiArchInstallAWS=true
+      - MultiArchInstallGCP=true
+      - NetworkDiagnosticsConfig=true
+      - NetworkLiveMigration=true
+      - NetworkSegmentation=true
+      - NodeDisruptionPolicy=true
+      - PersistentIPsForVirtualization=true
+      - PrivateHostedZoneAWS=true
+      - SetEIPForNLBIngressController=true
+      - VSphereControlPlaneMachineSet=true
+      - VSphereDriverConfiguration=true
+      - VSphereMultiVCenters=true
+      - VSphereStaticIPs=true
+      - ValidatingAdmissionPolicy=true
+      - AWSClusterHostedDNS=false
+      - AutomatedEtcdBackup=false
+      - BootcNodeManagement=false
+      - CPMSMachineNamePrefix=false
+      - ClusterAPIInstall=false
+      - ClusterAPIInstallIBMCloud=false
+      - ClusterMonitoringConfig=false
+      - ClusterVersionOperatorConfiguration=false
+      - ConsolePluginContentSecurityPolicy=false
+      - DNSNameResolver=false
+      - DualReplica=false
+      - DyanmicServiceEndpointIBMCloud=false
+      - DynamicResourceAllocation=false
+      - EtcdBackendQuota=false
+      - EventedPLEG=false
+      - Example=false
+      - Example2=false
+      - GCPClusterHostedDNS=false
+      - GCPCustomAPIEndpoints=false
+      - GatewayAPI=false
+      - GatewayAPIController=false
+      - HighlyAvailableArbiter=false
+      - ImageStreamImportMode=false
+      - IngressControllerDynamicConfigurationManager=false
+      - InsightsConfig=false
+      - InsightsConfigAPI=false
+      - InsightsOnDemandDataGather=false
+      - InsightsRuntimeExtractor=false
+      - KMSEncryptionProvider=false
+      - MachineAPIMigration=false
+      - MachineAPIOperatorDisableMachineHealthCheckController=false
+      - MachineAPIProviderOpenStack=false
+      - MachineConfigNodes=false
+      - MaxUnavailableStatefulSet=false
+      - MetricsCollectionProfiles=false
+      - MinimumKubeletVersion=false
+      - MixedCPUsAllocation=false
+      - MultiArchInstallAzure=false
+      - NewOLM=false
+      - NewOLMCatalogdAPIV1Metas=false
+      - NodeSwap=false
+      - NutanixMultiSubnets=false
+      - OVNObservability=false
+      - OnClusterBuild=false
+      - PinnedImages=false
+      - PlatformOperators=false
+      - ProcMountType=false
+      - RouteAdvertisements=false
+      - RouteExternalCertificate=false
+      - SELinuxChangePolicy=false
+      - SELinuxMount=false
+      - ServiceAccountTokenNodeBinding=false
+      - ShortCertRotation=false
+      - SignatureStores=false
+      - SigstoreImageVerification=false
+      - SigstoreImageVerificationPKI=false
+      - TranslateStreamCloseWebsocketRequests=false
+      - UpgradeStatus=false
+      - UserNamespacesPodSecurityStandards=false
+      - UserNamespacesSupport=false
+      - VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
+      - VSphereHostVMGroupZonal=false
+      - VSphereMultiDisk=false
+      - VSphereMultiNetworks=false
+      - VolumeAttributesClass=false
+      - VolumeGroupSnapshot=false
+      shutdown-delay-duration:
+      - 15s
+    apiServers:
+      perGroupOptions: null
+    apiVersion: openshiftcontrolplane.config.openshift.io/v1
+    auditConfig:
+      auditFilePath: ""
+      enabled: false
+      logFormat: ""
+      maximumFileRetentionDays: 0
+      maximumFileSizeMegabytes: 0
+      maximumRetainedFiles: 0
+      policyConfiguration: null
+      policyFile: ""
+      webHookKubeConfig: ""
+      webHookMode: ""
+    cloudProviderFile: ""
+    corsAllowedOrigins: null
+    imagePolicyConfig:
+      additionalTrustedCA: ""
+      allowedRegistriesForImport: null
+      externalRegistryHostnames: null
+      imageStreamImportMode: ""
+      internalRegistryHostname: image-registry.openshift-image-registry.svc:5000
+      maxImagesBulkImportedPerRepository: 0
+    jenkinsPipelineConfig:
+      autoProvisionEnabled: null
+      parameters: null
+      serviceName: ""
+      templateName: ""
+      templateNamespace: ""
+    kind: OpenShiftAPIServerConfig
+    kubeClientConfig:
+      connectionOverrides:
+        acceptContentTypes: ""
+        burst: 0
+        contentType: ""
+        qps: 0
+      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+    projectConfig:
+      defaultNodeSelector: ""
+      projectRequestMessage: ""
+      projectRequestTemplate: ""
+    routingConfig:
+      subdomain: apps.hcp.
+    serviceAccountOAuthGrantMethod: ""
+    servingInfo:
+      bindAddress: ""
+      bindNetwork: ""
+      certFile: /etc/kubernetes/certs/serving/tls.crt
+      cipherSuites:
+      - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+      - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+      - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+      - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+      clientCA: /etc/kubernetes/certs/client-ca/ca.crt
+      keyFile: /etc/kubernetes/certs/serving/tls.key
+      maxRequestsInFlight: 0
+      minTLSVersion: VersionTLS12
+      requestTimeoutSeconds: 0
+    storageConfig:
+      ca: /etc/kubernetes/certs/etcd-client-ca/ca.crt
+      certFile: /etc/kubernetes/certs/etcd-client/etcd-client.crt
+      keyFile: /etc/kubernetes/certs/etcd-client/etcd-client.key
+      storagePrefix: ""
+      urls:
+      - https://etcd-client:2379
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: openshift-apiserver
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
