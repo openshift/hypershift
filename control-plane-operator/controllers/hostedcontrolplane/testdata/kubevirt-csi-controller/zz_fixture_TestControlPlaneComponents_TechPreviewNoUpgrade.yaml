@@ -184,6 +184,26 @@ spec:
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+      - args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --timeout=3m
+        - --handle-volume-inuse-error=false
+        image: csi-external-resizer
+        imagePullPolicy: IfNotPresent
+        name: csi-resizer
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
       priorityClassName: hypershift-control-plane
       serviceAccount: kubevirt-csi
       tolerations:
