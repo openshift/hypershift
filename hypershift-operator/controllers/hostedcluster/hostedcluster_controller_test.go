@@ -84,6 +84,23 @@ const (
 	ArchitecturePPC64LE   = "ppc64le"
 )
 
+type fakeReleaseProvider struct {
+	releaseProvider  *releaseinfo.MockProviderWithOpenShiftImageRegistryOverrides
+	metadataProvider fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider
+}
+
+func (rp fakeReleaseProvider) Reconcile(_ context.Context, _ crclient.Client) error {
+	return nil
+}
+
+func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides {
+	return rp.releaseProvider
+}
+
+func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
+	return &rp.metadataProvider
+}
+
 func TestHasBeenAvailable(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	now := time.Now().Truncate(time.Second)
@@ -196,11 +213,11 @@ func TestHasBeenAvailable(t *testing.T) {
 				CertRotationScale:             24 * time.Hour,
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
-				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return mockedProviderWithOpenShiftImageRegistryOverrides, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result:   &dockerv1client.DockerImageConfig{},
-						Manifest: fakeimagemetadataprovider.FakeManifest{},
-					}, nil
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
 				},
 				now: func() metav1.Time { return reconcilerNow },
 			}
@@ -1564,13 +1581,13 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					capabilities.CapabilityProxy,
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return mockedProviderWithOpenShiftImageRegistryOverrides,
-						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-							MediaType: ManifestListMediaType,
-							Result:    &dockerv1client.DockerImageConfig{},
-							Manifest:  fakeimagemetadataprovider.FakeManifest{},
-						}, nil
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result:    &dockerv1client.DockerImageConfig{},
+						Manifest:  fakeimagemetadataprovider.FakeManifest{},
+						MediaType: ManifestListMediaType,
+					},
 				},
 				EnableEtcdRecovery:         true,
 				now:                        metav1.Now,
@@ -2438,20 +2455,18 @@ func TestValidateReleaseImage(t *testing.T) {
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
 				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
-					hyperutil.ImageMetadataProvider, error) {
-					return mockedProviderWithOpenShiftImageRegistryOverrides,
-						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-							Result: &dockerv1client.DockerImageConfig{},
-						},
-						nil
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
 				},
 			}
 
 			ctx := context.Background()
-			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			actual := r.validateReleaseImage(ctx, tc.hostedCluster, releaseProvider)
+			actual := r.validateReleaseImage(ctx, tc.hostedCluster, r.RegistryProvider.GetReleaseProvider())
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
@@ -2800,21 +2815,20 @@ func TestIsUpgradeable(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-				return mockedProviderWithOpenShiftImageRegistryOverrides,
-					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result: &dockerv1client.DockerImageConfig{},
-					},
-					nil
+			RegistryProvider: fakeReleaseProvider{
+				releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+				metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{},
+				},
 			},
 		}
 
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			g := NewGomegaWithT(t)
-			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, releaseProvider)
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
@@ -3204,21 +3218,20 @@ func TestIsProgressing(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-				return mockedProviderWithOpenShiftImageRegistryOverrides,
-					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result: &dockerv1client.DockerImageConfig{},
-					},
-					nil
+			RegistryProvider: fakeReleaseProvider{
+				releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+				metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{},
+				},
 			},
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			g := NewGomegaWithT(t)
-			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
+			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, releaseProvider)
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
@@ -4067,6 +4080,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
 				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+
 			r := &HostedClusterReconciler{
 				Client:            client,
 				Clock:             clock.RealClock{},
@@ -4077,9 +4091,11 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					capabilities.CapabilityProxy,
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-					return mockedProviderWithOpenShiftImageRegistryOverrides,
-						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
+				RegistryProvider: fakeReleaseProvider{
+					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
+					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
 				},
 				now: metav1.Now,
 			}
