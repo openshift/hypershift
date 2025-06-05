@@ -37,9 +37,5 @@ func (ign *ignitionServer) adaptRoute(cpContext component.WorkloadContext, route
 	if strategy.Route != nil {
 		hostname = strategy.Route.Hostname
 	}
-	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, ComponentName, labelHCPRoutes(hcp))
-}
-
-func labelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
-	return util.IsPrivateHCP(hcp) || util.IsPublicKASWithDNS(hcp)
+	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, ComponentName, util.UseDedicatedDNSForIgnition(hcp))
 }
