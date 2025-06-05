@@ -108,12 +108,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	// set revision history limit
 	deployment.Spec.RevisionHistoryLimit = ptr.To(int32(c.RevisionHistoryLimit))
 
-	// set default security context for pod
-	if c.SetDefaultSecurityContext {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
-		}
-	}
+	c.setDefaultSecurityContextForPod(&deployment.Spec.Template.Spec)
 
 	// set managed-by label
 	if deployment.Labels == nil {
@@ -151,6 +146,8 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 }
 
 func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
+	c.setDefaultSecurityContextForPod(&daemonset.Spec.Template.Spec)
+
 	// replicas is not used for DaemonSets
 	c.Scheduling.ApplyTo(&daemonset.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&daemonset.Spec.Template.ObjectMeta)
@@ -164,6 +161,8 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
+	c.setDefaultSecurityContextForPod(&sts.Spec.Template.Spec)
+
 	sts.Spec.Replicas = ptr.To(int32(c.Replicas))
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&sts.Spec.Template.ObjectMeta)
@@ -177,6 +176,8 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 }
 
 func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
+	c.setDefaultSecurityContextForPod(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+
 	c.Scheduling.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
 	c.SecurityContexts.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
@@ -189,6 +190,8 @@ func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
 }
 
 func (c *DeploymentConfig) ApplyToJob(job *batchv1.Job) {
+	c.setDefaultSecurityContextForPod(&job.Spec.Template.Spec)
+
 	c.Scheduling.ApplyTo(&job.Spec.Template.Spec)
 	c.SecurityContexts.ApplyTo(&job.Spec.Template.Spec)
 	c.LivenessProbes.ApplyTo(&job.Spec.Template.Spec)
@@ -198,6 +201,14 @@ func (c *DeploymentConfig) ApplyToJob(job *batchv1.Job) {
 	c.ResourceRequestOverrides.ApplyRequestsTo(job.Name, &job.Spec.Template.Spec)
 	c.AdditionalLabels.ApplyTo(&job.Spec.Template.ObjectMeta)
 	c.AdditionalAnnotations.ApplyTo(&job.Spec.Template.ObjectMeta)
+}
+
+func (c *DeploymentConfig) setDefaultSecurityContextForPod(spec *corev1.PodSpec) {
+	if c.SetDefaultSecurityContext {
+		spec.SecurityContext = &corev1.PodSecurityContext{
+			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
+		}
+	}
 }
 
 func clusterKey(hcp *hyperv1.HostedControlPlane) string {
