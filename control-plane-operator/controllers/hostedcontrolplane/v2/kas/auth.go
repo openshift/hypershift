@@ -222,10 +222,6 @@ func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (Claim
 	case uid.Claim != "" && uid.Expression == "":
 		out.Claim = uid.Claim
 	case uid.Expression != "" && uid.Claim == "":
-		err := validateClaimMappingExpression(uid.Expression)
-		if err != nil {
-			return out, fmt.Errorf("validating CEL expression: %v", err)
-		}
 		out.Expression = uid.Expression
 	case uid.Claim != "" && uid.Expression != "":
 		return out, fmt.Errorf("uid mapping must set either claim or expression, not both: %v", uid)
@@ -260,11 +256,6 @@ func generateExtraMapping(extra configv1.ExtraMapping) (ExtraMapping, error) {
 
 	if extra.ValueExpression == "" {
 		return out, errors.New("extra mapping must specify a valueExpression, but none was provided")
-	}
-
-	err := validateExtraMappingExpression(extra.ValueExpression)
-	if err != nil {
-		return out, fmt.Errorf("validating valueExpression: %v", err)
 	}
 
 	out.Key = extra.Key
@@ -307,16 +298,6 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 	}
 
 	return out, nil
-}
-
-func validateClaimMappingExpression(expression string) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ClaimMappingExpression{Expression: expression})
-	return err
-}
-
-func validateExtraMappingExpression(expression string) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(&authenticationcel.ExtraMappingExpression{Expression: expression})
-	return err
 }
 
 func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers []string) error {
