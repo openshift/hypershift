@@ -297,7 +297,6 @@ spec:
             --payload-version=$(PAYLOAD_VERSION)
 
           cp /tmp/output/* /work
-          cp /tmp/manifests/* /work
         command:
         - /bin/bash
         image: cluster-authentication-operator
