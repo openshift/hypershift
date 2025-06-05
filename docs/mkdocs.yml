@@ -270,6 +270,7 @@ nav:
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
     - "Agent": reference/infrastructure/agent.md
+    - "Central Infrastructure Management": reference/infrastructure/central-infrastructure-management.md
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
