@@ -379,6 +379,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
 			log.Info("skipping registry config to let CIRO bootstrap")
 		} else {
+			log.Info("reconciling image registry validating admission policy")
+			if r.platformType == hyperv1.AzurePlatform {
+				if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
+				}
+			}
 			log.Info("reconciling registry config")
 			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
 				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
@@ -389,8 +395,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 			}
-			// TODO(fmissi): remove this when Hypershift Capabilities becomes GA
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
+
+			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
+			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
 				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
 				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
