@@ -15,11 +15,13 @@ import (
 func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T) {
 	tests := []struct {
 		name                           string
+		platformType                   hyperv1.PlatformType
 		inputIgnitionServerService     *corev1.Service
 		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
 	}{
 		{
 			name:                       "fresh service initialization",
+			platformType:               hyperv1.AWSPlatform,
 			inputIgnitionServerService: ignitionserver.Service("default"),
 			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.NodePort,
@@ -27,6 +29,7 @@ func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T)
 		},
 		{
 			name:                       "fresh service with node port specified",
+			platformType:               hyperv1.AWSPlatform,
 			inputIgnitionServerService: ignitionserver.Service("default"),
 			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.NodePort,
@@ -38,7 +41,7 @@ func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T)
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy, test.platformType)
 			g := NewGomegaWithT(t)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
@@ -57,11 +60,13 @@ func TestReconcileIgnitionServerServiceNodePortFreshInitialization(t *testing.T)
 func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
 	tests := []struct {
 		name                           string
+		platformType                   hyperv1.PlatformType
 		inputIgnitionServerService     *corev1.Service
 		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
 	}{
 		{
-			name: "existing service keeps nodeport",
+			name:         "existing service keeps nodeport",
+			platformType: hyperv1.AWSPlatform,
 			inputIgnitionServerService: &corev1.Service{
 				ObjectMeta: ignitionserver.Service("default").ObjectMeta,
 				Spec: corev1.ServiceSpec{
@@ -85,7 +90,7 @@ func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			initialNodePort := test.inputIgnitionServerService.Spec.Ports[0].NodePort
-			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy, test.platformType)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
 			g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
@@ -101,18 +106,21 @@ func TestReconcileIgnitionServerServiceNodePortExistingService(t *testing.T) {
 func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
 	tests := []struct {
 		name                           string
+		platformType                   hyperv1.PlatformType
 		inputIgnitionServerService     *corev1.Service
 		inputServicePublishingStrategy *hyperv1.ServicePublishingStrategy
 	}{
 		{
 			name:                       "fresh service initialization",
+			platformType:               hyperv1.AWSPlatform,
 			inputIgnitionServerService: ignitionserver.Service("default"),
 			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
 				Type: hyperv1.Route,
 			},
 		},
 		{
-			name: "existing service",
+			name:         "existing service",
+			platformType: hyperv1.AWSPlatform,
 			inputIgnitionServerService: &corev1.Service{
 				ObjectMeta: ignitionserver.Service("default").ObjectMeta,
 				Spec: corev1.ServiceSpec{
@@ -130,10 +138,32 @@ func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
 				Type: hyperv1.Route,
 			},
 		},
+		{
+			name:         "existing service, IBM Cloud",
+			platformType: hyperv1.AWSPlatform,
+			inputIgnitionServerService: &corev1.Service{
+				ObjectMeta: ignitionserver.Service("default").ObjectMeta,
+				Spec: corev1.ServiceSpec{
+					Type: corev1.ServiceTypeNodePort,
+					Ports: []corev1.ServicePort{
+						{
+							Name:       "https",
+							Port:       9090,
+							TargetPort: intstr.FromInt(9090),
+							Protocol:   corev1.ProtocolTCP,
+							NodePort:   30000,
+						},
+					},
+				},
+			},
+			inputServicePublishingStrategy: &hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+			},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy)
+			err := reconcileIgnitionServerService(test.inputIgnitionServerService, test.inputServicePublishingStrategy, test.platformType)
 			g := NewGomegaWithT(t)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(len(test.inputIgnitionServerService.Spec.Ports)).To(Equal(1))
@@ -142,6 +172,9 @@ func TestReconcileIgnitionServerServiceRoute(t *testing.T) {
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Port).To(Equal(int32(443)))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Name).To(Equal("https"))
 			g.Expect(test.inputIgnitionServerService.Spec.Ports[0].Protocol).To(Equal(corev1.ProtocolTCP))
+			if test.platformType == hyperv1.IBMCloudPlatform {
+				g.Expect(test.inputIgnitionServerService.Spec.Type).To(Equal(corev1.ServiceTypeNodePort))
+			}
 		})
 	}
 }
