@@ -1216,8 +1216,6 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
-
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
@@ -1263,8 +1261,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 
 	testCases := []struct {
-		platform      string
-		hostedCluster *hyperv1.HostedCluster
+		platform         string
+		hostedCluster    *hyperv1.HostedCluster
+		isManagedService bool
 	}{
 		{
 			platform: "agent",
@@ -1469,6 +1468,42 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					},
 				},
 			},
+			isManagedService: true,
+		},
+		{
+			platform: "azure",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "self-managed-azure",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud:             "AzurePublicCloud",
+							Location:          "eastus",
+							ResourceGroupName: "test-resource-group",
+							VnetID:            "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet",
+							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
+							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+							WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+								CIROClientID:    "test",
+								CIOClientID:     "test",
+								CAPZClientID:    "test",
+								AzureCPClientID: "test",
+								CSOFileClientID: "test",
+								CSODiskClientID: "test",
+							},
+							TenantID: "12345678-1234-1234-1234-123456789abc",
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage.PullSpec,
+					},
+				},
+			},
 		},
 		{
 			platform: "openstack",
@@ -1575,6 +1610,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
+			if testCase.isManagedService {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
+			}
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 			r := &HostedClusterReconciler{
 				Client:            client,
