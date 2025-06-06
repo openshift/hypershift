@@ -2004,34 +2004,37 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
-		// Reconcile CPO SecretProviderClass CR
-		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
-		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator)
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
-		}
+		if azureutil.IsAroHCP() {
+			// Reconcile CPO SecretProviderClass CR
+			cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
+			if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
+				secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator)
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
+			}
 
-		// Reconcile CAPZ SecretProviderClass CR
-		nodepoolMgmtSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, hcp.Namespace)
-		if _, err = createOrUpdate(ctx, r, nodepoolMgmtSecretProviderClass, func() error {
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement)
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
+			// Reconcile CAPZ SecretProviderClass CR
+			nodepoolMgmtSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, hcp.Namespace)
+			if _, err = createOrUpdate(ctx, r, nodepoolMgmtSecretProviderClass, func() error {
+				secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement)
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
+			}
 		}
 
 		if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil {
-			// Reconcile KMS SecretProviderClass CR
-			kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
-			if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
-				secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
-				return nil
-			}); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+			if azureutil.IsAroHCP() {
+				// Reconcile KMS SecretProviderClass CR
+				kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
+					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
+					return nil
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+				}
 			}
-
 		}
 	}
 
