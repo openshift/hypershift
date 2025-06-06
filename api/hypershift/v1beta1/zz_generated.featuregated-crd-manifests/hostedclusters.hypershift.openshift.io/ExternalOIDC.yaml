@@ -3634,6 +3634,8 @@ spec:
                         description: |-
                           managedIdentities contains the managed identities needed for HCP control plane and data plane components that
                           authenticate with Azure's API.
+
+                          These are required for managed Azure, also known as ARO HCP.
                         properties:
                           controlPlane:
                             description: |-
@@ -4255,7 +4257,6 @@ spec:
                           rule: self == oldSelf
                     required:
                     - location
-                    - managedIdentities
                     - resourceGroup
                     - securityGroupID
                     - subnetID

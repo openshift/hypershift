@@ -424,9 +424,11 @@ type AzurePlatformSpec struct {
 
 	// managedIdentities contains the managed identities needed for HCP control plane and data plane components that
 	// authenticate with Azure's API.
+	// 
+	// These are required for managed Azure, also known as ARO HCP.
 	//
-	// +required
-	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities"`
+	// +optional
+	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
 
 	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
 	//
