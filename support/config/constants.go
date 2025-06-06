@@ -101,6 +101,10 @@ const (
 	ImageRegistryRoleDefinitionID = "8b32b316-c2f5-4ddf-b05b-83dacd2d08b5"
 	CAPZCustomRoleDefinitionID    = "Azure Red Hat OpenShift NodePool Management Role"
 
+	// Azure KMS Seed Information
+	AzureKMSSeedSecretName = "azure-kms-provider-seed-active"
+	AzureKMSSeedMountPath = "/mnt/kms-seed"
+
 	// Azure Components with Control Plane Managed Identities
 	AzureDisk     = "azure-disk"
 	AzureFile     = "azure-file"
