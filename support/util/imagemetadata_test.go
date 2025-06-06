@@ -112,44 +112,46 @@ func TestGetManifest(t *testing.T) {
 	pullSecret := []byte("{}")
 
 	testsCases := []struct {
-		name          string
-		imageRef      string
-		pullSecret    []byte
-		expectedErr   bool
-		validateCache bool
+		name             string
+		imageRef         string
+		pullSecret       []byte
+		expectedErr      bool
+		expectedCacheHit bool
 	}{
 		{
-			name:        "if failed to parse image reference",
-			imageRef:    "invalid-image-ref",
-			pullSecret:  pullSecret,
-			expectedErr: true,
+			name:             "if failed to parse image reference",
+			imageRef:         "invalid-image-ref",
+			pullSecret:       pullSecret,
+			expectedErr:      true,
+			expectedCacheHit: false,
 		},
 		{
-			name:        "Pull x86 manifest",
-			imageRef:    "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
-			pullSecret:  pullSecret,
-			expectedErr: false,
+			name:             "Pull x86 manifest",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 		{
-			name:          "Pull x86 manifest from cache",
-			imageRef:      "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
-			pullSecret:    pullSecret,
-			expectedErr:   false,
-			validateCache: true,
+			name:             "Pull x86 manifest from cache",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 		{
-			name:          "Pull Multiarch manifest",
-			imageRef:      "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
-			pullSecret:    pullSecret,
-			expectedErr:   false,
-			validateCache: true,
+			name:             "Pull Multiarch manifest",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 		{
-			name:          "Pull Multiarch manifest with Shah",
-			imageRef:      "quay.io/openshift-release-dev/ocp-release@sha256:be8bcea2ab176321a4e1e54caab4709f9024bc437e52ca5bc088e729367cd0cf",
-			pullSecret:    pullSecret,
-			expectedErr:   false,
-			validateCache: true,
+			name:             "Pull Multiarch manifest with Shah",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:be8bcea2ab176321a4e1e54caab4709f9024bc437e52ca5bc088e729367cd0cf",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 	}
 
@@ -169,12 +171,10 @@ func TestGetManifest(t *testing.T) {
 				g.Expect(manifest).NotTo(BeNil())
 			}
 
-			if tc.validateCache {
-				parsedImageRef, err := reference.Parse(tc.imageRef)
-				g.Expect(err).NotTo(HaveOccurred())
-				_, exists := manifestsCache.Get(parsedImageRef.String())
-				g.Expect(exists).To(BeTrue())
-			}
+			parsedImageRef, err := reference.Parse(tc.imageRef)
+			g.Expect(err).NotTo(HaveOccurred())
+			_, exists := manifestsCache.Get(parsedImageRef.String())
+			g.Expect(exists).To(Equal(tc.expectedCacheHit))
 		})
 	}
 }
