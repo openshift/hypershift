@@ -92,11 +92,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		image = override
 	}
 	defaultMode := int32(0640)
-	managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
-	if !ok {
-		return nil, fmt.Errorf("environment variable %s is not set", config.AROHCPKeyVaultManagedIdentityClientID)
-	}
-	return &appsv1.DeploymentSpec{
+	deploymentSpec := &appsv1.DeploymentSpec{
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: ptr.To[int64](10),
@@ -124,10 +120,6 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 								},
 							},
 						},
-						{
-							Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-							Value: managedAzureKeyVaultManagedIdentityClientID,
-						},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{
@@ -138,11 +130,6 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						{
 							Name:      "svc-kubeconfig",
 							MountPath: "/etc/kubernetes",
-						},
-						{
-							Name:      config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
-							MountPath: config.ManagedAzureCertificateMountPath,
-							ReadOnly:  true,
 						},
 					},
 				}},
@@ -164,20 +151,47 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							},
 						},
 					},
-					{
-						Name: config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
-						VolumeSource: corev1.VolumeSource{
-							CSI: &corev1.CSIVolumeSource{
-								Driver:   config.ManagedAzureSecretsStoreCSIDriver,
-								ReadOnly: ptr.To(true),
-								VolumeAttributes: map[string]string{
-									config.ManagedAzureSecretProviderClass: config.ManagedAzureNodePoolMgmtSecretProviderClassName,
-								},
-							},
+				},
+			}}}
+
+	if azureutil.IsAroHCP() {
+		managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+		if !ok {
+			return nil, fmt.Errorf("environment variable %s is not set", config.AROHCPKeyVaultManagedIdentityClientID)
+		}
+
+		deploymentSpec.Template.Spec.Containers[0].Env = append(deploymentSpec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+				Value: managedAzureKeyVaultManagedIdentityClientID,
+			},
+		)
+
+		deploymentSpec.Template.Spec.Containers[0].VolumeMounts = append(deploymentSpec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			},
+		)
+
+		deploymentSpec.Template.Spec.Volumes = append(deploymentSpec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							config.ManagedAzureSecretProviderClass: config.ManagedAzureNodePoolMgmtSecretProviderClassName,
 						},
 					},
 				},
-			}}}, nil
+			},
+		)
+	}
+
+	return deploymentSpec, nil
 }
 
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
@@ -253,40 +267,61 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 }
 
 // reconcileAzureClusterIdentity creates a CAPZ AzureClusterIdentity custom resource using UserAssignedIdentityCredentials
-// as the Azure authentication method. More information on this custom resource type can be found here: https://capz.sigs.k8s.io/topics/identities
+// for managed Azure deployments, aka ARO HCP, as the Azure authentication method. More information on this custom
+// resource type can be found here: https://capz.sigs.k8s.io/topics/identities.
+//
+// For non-managed Azure deployments, the AzureClusterIdentity is created using WorkloadIdentity.
 func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
-	if payloadVersion.GE(config.Version419) {
-		// Translate the HyperShift cloud value to a valid CAPZ cloud value
-		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
-		if err != nil {
-			return err
-		}
+	if azureutil.IsAroHCP() {
+		// TODO - MIv3 - this release version check, and the else from this if statement, can be removed once 4.19 is supported by cluster service
+		if payloadVersion.GE(config.Version419) {
+			// Translate the HyperShift cloud value to a valid CAPZ cloud value
+			azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
+			if err != nil {
+				return err
+			}
 
-		// Create a AzureClusterIdentity with the Azure authentication type UserAssignedIdentityCredentials
-		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-			TenantID:                                 hc.Spec.Platform.Azure.TenantID,
-			UserAssignedIdentityCredentialsCloudType: azureCloudType,
-			UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
-			Type:                                     capiazure.UserAssignedIdentityCredential,
-			AllowedNamespaces: &capiazure.AllowedNamespaces{
-				NamespaceList: []string{
-					controlPlaneNamespace,
+			// Create a AzureClusterIdentity with the Azure authentication type UserAssignedIdentityCredentials
+			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+				TenantID:                                 hc.Spec.Platform.Azure.TenantID,
+				UserAssignedIdentityCredentialsCloudType: azureCloudType,
+				UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
+				Type:                                     capiazure.UserAssignedIdentityCredential,
+				AllowedNamespaces: &capiazure.AllowedNamespaces{
+					NamespaceList: []string{
+						controlPlaneNamespace,
+					},
 				},
-			},
+			}
+		} else {
+			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+				// TODO - this client ID will need to be updated to the correct value once the API is fully updated to support workload identity
+				ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
+				TenantID: hc.Spec.Platform.Azure.TenantID,
+				CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
+				Type:     capiazure.ServicePrincipalCertificate,
+				AllowedNamespaces: &capiazure.AllowedNamespaces{
+					NamespaceList: []string{
+						controlPlaneNamespace,
+					},
+				},
+			}
 		}
 	} else {
-		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-			ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
-			TenantID: hc.Spec.Platform.Azure.TenantID,
-			CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
-			Type:     capiazure.ServicePrincipalCertificate,
-			AllowedNamespaces: &capiazure.AllowedNamespaces{
-				NamespaceList: []string{
-					controlPlaneNamespace,
+		if hc.Spec.Platform.Azure.WorkloadIdentities != nil {
+			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+				ClientID: hc.Spec.Platform.Azure.WorkloadIdentities.CAPZClientID,
+				TenantID: hc.Spec.Platform.Azure.TenantID,
+				Type:     capiazure.WorkloadIdentity,
+				AllowedNamespaces: &capiazure.AllowedNamespaces{
+					NamespaceList: []string{
+						controlPlaneNamespace,
+					},
 				},
-			},
+			}
+			return nil
 		}
+		return fmt.Errorf("WorkloadIdentities must be set in the Azure platform spec for non-managed Azure deployments")
 	}
 	return nil
 }
