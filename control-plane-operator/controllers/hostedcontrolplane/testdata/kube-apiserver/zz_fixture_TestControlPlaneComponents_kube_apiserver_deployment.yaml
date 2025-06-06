@@ -401,10 +401,9 @@ spec:
             --asset-output-dir /tmp/output \
             --rendered-manifest-dir=/tmp/manifests \
             --cluster-profile=ibm-cloud-managed \
-            --payload-version=%[2]s
+            --payload-version=$(PAYLOAD_VERSION)
 
-          cp /tmp/output/* %[1]s
-          cp /tmp/manifests/* %[1]s
+          cp /tmp/output/* /work
         command:
         - /bin/bash
         env:
