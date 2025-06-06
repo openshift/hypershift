@@ -87,6 +87,7 @@ import (
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/catalogs"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
@@ -3944,7 +3945,7 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 			}
 
-			catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
+			catalogImages, err = catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
 			if err != nil {
 				return fmt.Errorf("failed to get catalog images: %w", err)
 			}
