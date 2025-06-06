@@ -478,6 +478,64 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
+						name: "when servicePublishingStrategy is loadBalancer for kas and the hostname clashes with one of configuration.apiServer.servingCerts.namedCertificates it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.LoadBalancer,
+										LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+											Hostname: "kas.duplicated.hostname.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "127.0.0.1",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956::14",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014",
+										},
+									},
+								},
+							}
+							hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+								APIServer: &configv1.APIServerSpec{
+									ServingCerts: configv1.APIServerServingCerts{
+										NamedCertificates: []configv1.APIServerNamedServingCert{
+											{
+												Names: []string{
+													"anything",
+													"kas.duplicated.hostname.com",
+												},
+											},
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates",
+					},
+					{
 						name: "when servicePublishingStrategy is nodePort and addresses valid hostname, IPv4 and IPv6 it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
