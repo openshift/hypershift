@@ -4,20 +4,15 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"os"
 	"path"
-	"strings"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 //go:embed */*.yaml
@@ -83,15 +78,7 @@ func LoadManifestInto(componentName string, fileName string, into client.Object)
 		return nil, nil, err
 	}
 
-	content := string(bytes)
-	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && strings.Contains(content, prometheusoperatorv1.SchemeGroupVersion.Group) {
-		// Replace the API group for monitoring manifests if RHOBS is enabled.
-		// We need to do this before decoding the manifest
-		// because monitoring.coreos.com group is not registered in the scheme when RHOBS is enabled.
-		bytes = []byte(strings.ReplaceAll(content, prometheusoperatorv1.SchemeGroupVersion.Group, rhobsmonitoring.SchemeGroupVersion.Group))
-	}
-
-	obj, gvk, err := hyperapi.YamlSerializer.Decode(bytes, nil, into)
+	obj, gvk, err := hyperapi.AllMonitoringYamlSerializer.Decode(bytes, nil, into)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load %s manifest: %v", filePath, err)
 	}
