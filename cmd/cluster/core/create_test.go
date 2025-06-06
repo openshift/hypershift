@@ -12,7 +12,11 @@ import (
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	"github.com/openshift/api/image/docker10"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
@@ -261,6 +265,81 @@ func TestValidate(t *testing.T) {
 			} else {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
+
+func TestValidateVersion(t *testing.T) {
+	tests := []struct {
+		name             string
+		versionCLI       string
+		operatorVersion  string
+		wantError        bool
+		errMessage       string
+		mutateDeployment func(*appsv1.Deployment)
+	}{
+		{
+			name:            "Commit SHAS match",
+			versionCLI:      "abc123",
+			operatorVersion: "abc123",
+			wantError:       false,
+		},
+		{
+			name:            "Mismatching SHAs",
+			versionCLI:      "abc123",
+			operatorVersion: "def456",
+			wantError:       true,
+			errMessage:      "version mismatch detected, CLI: abc123, Operator: def456",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+			imageRef := "quay.io/example/hypershift-operator:" + tc.operatorVersion
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "operator",
+					Namespace: "hypershift",
+				},
+				Spec: appsv1.DeploymentSpec{
+					Template: corev1.PodTemplateSpec{
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{Name: "operator", Image: imageRef},
+							},
+						},
+					},
+				},
+			}
+			if tc.mutateDeployment != nil {
+				tc.mutateDeployment(deployment)
+			}
+			fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+				Result: &dockerv1client.DockerImageConfig{
+					Config: &docker10.DockerConfig{
+						Labels: map[string]string{
+							"io.openshift.build.commit.id": tc.operatorVersion,
+						},
+					},
+				},
+			}
+
+			tempDir := t.TempDir()
+			pullSecretPath := filepath.Join(tempDir, "pull-secret.json")
+			err := os.WriteFile(pullSecretPath, []byte(`{"auths":{"quay.io":{"auth":"ZmFrZQ=="}}}`), 0600)
+			g.Expect(err).To(BeNil())
+			opts := &RawCreateOptions{
+				PullSecretFile: pullSecretPath,
+			}
+			kubeClient := fakekubeclient.NewSimpleClientset(deployment)
+			err = validateVersion(ctx, opts, tc.versionCLI, kubeClient, fakeMetadataProvider)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tc.name)
+			} else {
+				g.Expect(err).To(BeNil(), "Did not expect error for test case: %s", tc.name)
 			}
 		})
 	}
