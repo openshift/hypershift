@@ -3338,8 +3338,10 @@ AzureResourceManagedIdentities
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
 authenticate with Azure&rsquo;s API.</p>
+<p>These are required for managed Azure, also known as ARO HCP.</p>
 </td>
 </tr>
 <tr>
