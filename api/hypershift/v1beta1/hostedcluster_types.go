@@ -1248,9 +1248,58 @@ const (
 // +kubebuilder:validation:Enum=Karpenter
 type Provisioner string
 
+// Configures when and how to scale down cluster nodes.
+type ScaleDownConfig struct {
+	// Should CA scale down the cluster
+	Enabled bool `json:"enabled"`
+
+	// How long after scale up that scale down evaluation resumes
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterAdd *string `json:"delayAfterAdd,omitempty"`
+
+	// How long after node deletion that scale down evaluation resumes, defaults to scan-interval
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterDelete *string `json:"delayAfterDelete,omitempty"`
+
+	// How long after scale down failure that scale down evaluation resumes
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	DelayAfterFailure *string `json:"delayAfterFailure,omitempty"`
+
+	// How long a node should be unneeded before it is eligible for scale down
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	UnneededTime *string `json:"unneededTime,omitempty"`
+
+	// Node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down
+	// +kubebuilder:validation:Pattern=(0.[0-9]+)
+	UtilizationThreshold *string `json:"utilizationThreshold,omitempty"`
+}
+
+// ExpanderString contains the name of an expander to be used by the cluster autoscaler.
+// +kubebuilder:validation:Enum=LeastWaste;Priority;Random
+type ExpanderString string
+
+// These constants define the valid values for an ExpanderString
+const (
+	LeastWasteExpander ExpanderString = "LeastWaste" // Selects the node group with the least idle resources.
+	PriorityExpander   ExpanderString = "Priority"   // Selects the node group with the highest priority.
+	RandomExpander     ExpanderString = "Random"     // Selects a node group randomly.
+)
+
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
 type ClusterAutoscaling struct {
+	// Configuration of scale down operation
+	ScaleDown *ScaleDownConfig `json:"scaleDown,omitempty"`
+
+	// BalancingIgnoredLabels sets "--balancing-ignore-label <label name>" flag on cluster-autoscaler for each listed label.
+	// This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+	// For example, if you have nodes with "topology.ebs.csi.aws.com/zone" label, you can add name of this label here
+	// to prevent cluster autoscaler from spliting nodes into different node groups based on its value.
+	//
+	//
+	// +optional
+	BalancingIgnoredLabels []string `json:"balancingIgnoredLabels,omitempty"`
+
 	// maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
 	// The autoscaler will not grow the cluster beyond this number.
 	// If omitted, the autoscaler will not have a maximum limit.
@@ -1285,6 +1334,18 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
+
+	// Sets the order of expanders for scaling out node groups.
+	// Expanders guide the autoscaler in choosing node groups during scale-out.
+	// Options include:
+	// * LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+	// * Priority - selects the group with the highest user-defined priority.
+	// * Random - selects a group randomly.
+	// If not specified, `Random` is the default.
+	// Maximum of 3 expanders can be specified.
+	//
+	// +optional
+	Expanders []ExpanderString `json:"expanders"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
