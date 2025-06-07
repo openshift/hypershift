@@ -671,12 +671,12 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		}
 	}
 
-	// Validate arch is only hyperv1.ArchitectureAMD64 or hyperv1.ArchitectureARM64 or hyperv1.ArchitecturePPC64LE
 	arch := strings.ToLower(opts.Arch)
 	switch arch {
 	case hyperv1.ArchitectureAMD64:
 	case hyperv1.ArchitectureARM64:
 	case hyperv1.ArchitecturePPC64LE:
+	case hyperv1.ArchitectureS390X:
 	default:
 		return nil, fmt.Errorf("specified arch %q is not supported", opts.Arch)
 	}

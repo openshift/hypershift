@@ -1336,6 +1336,18 @@ func TestIsArchAndPlatformSupported(t *testing.T) {
 			expect: true,
 		},
 		{
+			name: "supported arch and platform used - s390x",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					Arch: hyperv1.ArchitectureS390X,
+				},
+			},
+			expect: true,
+		},
+		{
 			name: "supported platform with multiple arch baremetal - arm64",
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
