@@ -403,6 +403,63 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("failed to download binaries: %w", err)
 	}
 
+	// As of OpenShift 4.20, the cluster-authentication-operator is responsible for managing
+	// the RoleBindingRestriction CRD and has been removed from the cluster-config-api
+	// payload image.
+	// Because this CRD is required for bootstrapping, ensure we use the cluster-authentication-operator
+	// payload image to get the RoleBindingRestriction CRD in the set of bootstrap manifests.
+	if payloadVersion.Major == 4 && payloadVersion.Minor >= 20 {
+		// set the component to the correct binary name and file path based on the payload version
+		clusterAuthenticationOperatorComponent := "cluster-authentication-operator"
+		clusterAuthenticationOperatorManifestRendererFile := "usr/bin/authentication-operator"
+		err = func() error {
+			start := time.Now()
+			clusterAuthenticationOperatorImage, ok := imageProvider.ImageExist(clusterAuthenticationOperatorComponent)
+			if !ok {
+				return fmt.Errorf("release image does not contain $%s (images: %v)", clusterAuthenticationOperatorComponent, imageProvider.ComponentImages())
+			}
+
+			clusterAuthenticationOperatorImage, err = registryclient.GetCorrectArchImage(ctx, clusterAuthenticationOperatorComponent, clusterAuthenticationOperatorImage, pullSecret, p.ImageMetadataProvider)
+			if err != nil {
+				return err
+			}
+
+			log.Info(fmt.Sprintf("discovered image %s image %v", clusterAuthenticationOperatorComponent, clusterAuthenticationOperatorImage))
+
+			// Making sure image uses the registry override for disconnected environments
+			checkedClusterAuthenticationOperatorImage, err := p.ImageMetadataProvider.GetOverride(ctx, clusterAuthenticationOperatorImage, pullSecret)
+			if err != nil {
+				return err
+			}
+
+			caoComposedImage := checkedClusterAuthenticationOperatorImage.String()
+			if caoComposedImage != clusterAuthenticationOperatorImage {
+				clusterAuthenticationOperatorImage = caoComposedImage
+				log.Info(fmt.Sprintf("using mirrored %s image %v", clusterAuthenticationOperatorComponent, caoComposedImage))
+			}
+
+			file, err := os.Create(filepath.Join(binDir, clusterAuthenticationOperatorComponent))
+			if err != nil {
+				return fmt.Errorf("failed to create file: %w", err)
+			}
+			if err := file.Chmod(0777); err != nil {
+				return fmt.Errorf("failed to chmod file: %w", err)
+			}
+			if err := p.ImageFileCache.extractImageFile(ctx, clusterAuthenticationOperatorImage, pullSecret, clusterAuthenticationOperatorManifestRendererFile, file); err != nil {
+				return fmt.Errorf("failed to extract image file: %w", err)
+			}
+			if err := file.Close(); err != nil {
+				return fmt.Errorf("failed to close file: %w", err)
+			}
+
+			log.Info("downloaded binaries", "time", time.Since(start).Round(time.Second).String())
+			return nil
+		}()
+		if err != nil {
+			return nil, fmt.Errorf("failed to download binaries: %w", err)
+		}
+	}
+
 	featureGateBytes, err := os.ReadFile(p.FeatureGateManifest)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read feature gate: %w", err)
@@ -759,7 +816,7 @@ func copyFile(src, dst string) error {
 }
 
 func invokeFeatureGateRenderScript(binary, workDir, outputDir string, payloadVersion semver.Version, featureGateYAML string) string {
-	var script = `#!/bin/bash
+	script := `#!/bin/bash
 set -e
 mkdir -p %[2]s
 
