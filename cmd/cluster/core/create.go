@@ -693,10 +693,13 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
-		acceptedValues := sets.NewString("ImageRegistry", "openshift-samples")
-		for _, cap := range opts.DisableClusterCapabilities {
-			if !acceptedValues.Has(cap) {
-				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", cap, acceptedValues.List())
+		acceptedValues := sets.NewString(
+			string(hyperv1.ImageRegistryCapability),
+			string(hyperv1.OpenShiftSamplesCapability),
+		)
+		for _, capablity := range opts.DisableClusterCapabilities {
+			if !acceptedValues.Has(capablity) {
+				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", capablity, acceptedValues.List())
 			}
 		}
 	}
