@@ -53,11 +53,11 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						name: "when capabilities.disabled is set to a valid capability it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.ImageRegistryCapability,
+								Disabled: []configv1.ClusterVersionCapability{
+									configv1.ClusterVersionCapabilityImageRegistry,
 								},
 							}
 						},
@@ -67,8 +67,8 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when capabilities.disabled is set to openshift-samples it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OpenShiftSamplesCapability,
+								Disabled: []configv1.ClusterVersionCapability{
+									configv1.ClusterVersionCapabilityOpenShiftSamples,
 								},
 							}
 						},
@@ -78,12 +78,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when capabilities.disabled is set to an unsupported capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("AnInvalidCapability"),
+								Disabled: []configv1.ClusterVersionCapability{
+									configv1.ClusterVersionCapability("AnInvalidCapability"),
 								},
 							}
 						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"openshift-samples\", " +
+							"\"baremetal\", \"marketplace\", \"Console\", \"Insights\", \"Storage\", \"CSISnapshot\", \"NodeTuning\", " +
+							"\"MachineAPI\", \"Build\", \"DeploymentConfig\", \"ImageRegistry\", \"OperatorLifecycleManager\", " +
+							"\"CloudCredential\", \"Ingress\", \"CloudControllerManager\", \"OperatorLifecycleManagerV1\"",
 					},
 					{
 						name: "when baseDomain has invalid chars it should fail",
@@ -1297,9 +1300,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				},
 			}
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
-					hyperv1.OpenShiftSamplesCapability,
+				Disabled: []configv1.ClusterVersionCapability{
+					configv1.ClusterVersionCapabilityImageRegistry,
+					configv1.ClusterVersionCapabilityOpenShiftSamples,
 				},
 			}
 		}

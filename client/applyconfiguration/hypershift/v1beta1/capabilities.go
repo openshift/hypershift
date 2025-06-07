@@ -18,13 +18,14 @@ limitations under the License.
 package v1beta1
 
 import (
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	v1 "github.com/openshift/api/config/v1"
 )
 
 // CapabilitiesApplyConfiguration represents a declarative configuration of the Capabilities type for use
 // with apply.
 type CapabilitiesApplyConfiguration struct {
-	Disabled []hypershiftv1beta1.OptionalCapability `json:"disabled,omitempty"`
+	Enabled  []v1.ClusterVersionCapability `json:"enabled,omitempty"`
+	Disabled []v1.ClusterVersionCapability `json:"disabled,omitempty"`
 }
 
 // CapabilitiesApplyConfiguration constructs a declarative configuration of the Capabilities type for use with
@@ -33,10 +34,20 @@ func Capabilities() *CapabilitiesApplyConfiguration {
 	return &CapabilitiesApplyConfiguration{}
 }
 
+// WithEnabled adds the given value to the Enabled field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Enabled field.
+func (b *CapabilitiesApplyConfiguration) WithEnabled(values ...v1.ClusterVersionCapability) *CapabilitiesApplyConfiguration {
+	for i := range values {
+		b.Enabled = append(b.Enabled, values[i])
+	}
+	return b
+}
+
 // WithDisabled adds the given value to the Disabled field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the Disabled field.
-func (b *CapabilitiesApplyConfiguration) WithDisabled(values ...hypershiftv1beta1.OptionalCapability) *CapabilitiesApplyConfiguration {
+func (b *CapabilitiesApplyConfiguration) WithDisabled(values ...v1.ClusterVersionCapability) *CapabilitiesApplyConfiguration {
 	for i := range values {
 		b.Disabled = append(b.Disabled, values[i])
 	}

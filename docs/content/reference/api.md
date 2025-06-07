@@ -3497,7 +3497,9 @@ Valid values are ImageID and AzureMarketplace.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>capabilities allows disabling optional components at install time.
+<p>capabilities allows enabling or disabling optional components at install time.
+When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version, minus the baremetal capability.
 Once set, it cannot be changed.</p>
 </p>
 <table>
@@ -3510,21 +3512,32 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
-<code>disabled</code></br>
+<code>enabled</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
-[]OptionalCapability
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+[]github.com/openshift/api/config/v1.ClusterVersionCapability
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
-and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-This effectively disables that capability on the hosted cluster.</p>
-<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-OpenShift version.</p>
-<p>Once set, this field cannot be changed.</p>
+<p>enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disabled</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+[]github.com/openshift/api/config/v1.ClusterVersionCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
 </td>
 </tr>
 </tbody>
@@ -9722,26 +9735,6 @@ ClusterVersionOperatorSpec
 </td>
 </tr>
 </tbody>
-</table>
-###OptionalCapability { #hypershift.openshift.io/v1beta1.OptionalCapability }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.Capabilities">Capabilities</a>)
-</p>
-<p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Value</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
-<td></td>
-</tr><tr><td><p>&#34;openshift-samples&#34;</p></td>
-<td></td>
-</tr></tbody>
 </table>
 ###PayloadArchType { #hypershift.openshift.io/v1beta1.PayloadArchType }
 <p>
