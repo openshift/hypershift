@@ -2635,9 +2635,25 @@ func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T,
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"openshift-samples\" not found"))
 
-		// ensure console resources are not present
+		// ensure openshift-samples resources are not present
 		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-cluster-samples-operator", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-cluster-samples-operator\" not found"))
+	})
+}
+
+// EnsureInsightsCapabilityDisabled validates the expectations for when InsightsCapability is Disabled
+func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+	t.Run("EnsureInsightsCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "insights", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"insights\" not found"))
+
+		// ensure insights resources are not present
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-insights", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-insights\" not found"))
 	})
 }

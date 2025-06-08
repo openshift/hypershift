@@ -379,12 +379,14 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
 
 const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityOpenShiftSamples)
+
+const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
 
 // capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
@@ -397,6 +399,8 @@ type Capabilities struct {
 	// OpenShift version.
 	//
 	// Once set, this field cannot be changed.
+	//
+	// Note: Disabling 'openshift-samples','Insights' are only supported in OpenShift versions 4.20 and above.
 	//
 	// +listType=atomic
 	// +immutable

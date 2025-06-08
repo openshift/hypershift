@@ -3525,6 +3525,7 @@ This effectively disables that capability on the hosted cluster.</p>
 <p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
 OpenShift version.</p>
 <p>Once set, this field cannot be changed.</p>
+<p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
 </td>
 </tr>
 </tbody>
@@ -9739,6 +9740,8 @@ ClusterVersionOperatorSpec
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Insights&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;openshift-samples&#34;</p></td>
 <td></td>
