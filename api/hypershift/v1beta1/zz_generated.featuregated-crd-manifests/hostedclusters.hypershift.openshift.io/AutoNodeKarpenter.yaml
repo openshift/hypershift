@@ -414,6 +414,7 @@ spec:
                                     Exact names trump over wildcard names. Explicit names defined here trump over extracted implicit names.
                                   items:
                                     type: string
+                                  maxItems: 64
                                   type: array
                                   x-kubernetes-list-type: atomic
                                 servingCertificate:
@@ -431,6 +432,7 @@ spec:
                                   - name
                                   type: object
                               type: object
+                            maxItems: 32
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
