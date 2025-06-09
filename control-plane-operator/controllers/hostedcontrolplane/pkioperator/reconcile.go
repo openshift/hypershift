@@ -53,9 +53,10 @@ func ReconcileDeployment(
 				ServiceAccountName: sa.Name,
 				Containers: []corev1.Container{
 					{
-						Name:            "control-plane-pki-operator",
-						Image:           cpoPKIImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     "control-plane-pki-operator",
+						Image:                    cpoPKIImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						Env: []corev1.EnvVar{
 							{
 								Name: "POD_NAME",

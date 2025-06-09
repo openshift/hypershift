@@ -106,6 +106,7 @@ func reconcileCatalogDeployment(deployment *appsv1.Deployment, ownerRef config.O
 	}
 	deployment.Spec = sourceDeployment.DeepCopy().Spec
 	deployment.Spec.Template.Spec.Containers[0].Image = image
+	deployment.Spec.Template.Spec.Containers[0].TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 	addVolumesAndInitContainers(deployment, image, olmManagerImage)
 	dc.ApplyTo(deployment)
 	return nil

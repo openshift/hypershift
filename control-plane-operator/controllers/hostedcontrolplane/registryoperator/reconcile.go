@@ -256,6 +256,7 @@ func operatorStartScript(startScriptTemplate *template.Template) (string, error)
 func buildMainContainer(image, registryImage, prunerImage, releaseVersion string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/bin/bash",
 		}
@@ -317,6 +318,7 @@ func containerClientTokenMinter() *corev1.Container {
 func buildClientTokenMinter(image, issuerURL string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"token-minter",
@@ -346,6 +348,7 @@ func containerWebIdentityTokenMinter() *corev1.Container {
 func buildWebIdentityTokenMinter(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"token-minter",

@@ -225,6 +225,7 @@ func cvoContainerMain() *corev1.Container {
 func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformType, oauthEnabled bool, featureSet configv1.FeatureSet) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
@@ -237,6 +238,7 @@ func buildCVOContainerPrepPayload(image string, platformType hyperv1.PlatformTyp
 func buildCVOContainerBootstrap(image string, clusterVersionJSON []byte) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{
 			"-c",
@@ -398,6 +400,7 @@ func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, name
 	}
 	return func(c *corev1.Container) {
 		c.Image = controlPlaneReleaseImage
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
 			"start",

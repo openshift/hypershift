@@ -164,9 +164,10 @@ func ReconcileMachineApproverDeployment(deployment *appsv1.Deployment, hcp *hype
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            machineApproverName,
-						Image:           machineApproverImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     machineApproverName,
+						Image:                    machineApproverImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "kubeconfig",

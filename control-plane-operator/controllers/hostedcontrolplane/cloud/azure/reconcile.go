@@ -85,6 +85,7 @@ func buildCCMContainer(p *AzureParams, controllerManagerImage, namespace string)
 	return func(c *corev1.Container) {
 		c.Image = controllerManagerImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/azure-cloud-controller-manager"}
 		c.Args = []string{
 			"--cloud-config=/etc/cloud/" + CloudConfigKey,

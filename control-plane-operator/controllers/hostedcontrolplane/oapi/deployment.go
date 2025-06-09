@@ -179,10 +179,11 @@ func ReconcileDeployment(deployment *appsv1.Deployment,
 
 	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "audit-logs",
-			Image:           image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/bash"},
+			Name:                     "audit-logs",
+			Image:                    image,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Command:                  []string{"/bin/bash"},
 			Args: []string{
 				"-c",
 				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", volumeMounts.Path(oasContainerMain().Name, oasVolumeWorkLogs().Name), "audit.log")),
@@ -354,6 +355,7 @@ func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 func buildOASKonnectivityProxyContainer(konnectivityHTTPSProxyImage string, proxyConfig *configv1.ProxySpec, noProxy string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = konnectivityHTTPSProxyImage
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
 		c.Args = []string{"run"}
 		if proxyConfig != nil {
@@ -390,6 +392,7 @@ func buildOASContainerMain(image string, etcdHostname string, port int32, intern
 			return path.Join(volumeMounts.Path(c.Name, volume), file)
 		}
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Args = []string{
 			"start",
 			fmt.Sprintf("--config=%s", cpath(oasVolumeConfig().Name, openshiftAPIServerConfigKey)),
