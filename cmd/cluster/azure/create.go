@@ -127,10 +127,6 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
-	if o.ManagedIdentitiesFile == "" {
-		return nil, fmt.Errorf("flag --managed-identities-file is required")
-	}
-
 	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
 		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 	}
