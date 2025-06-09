@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -69,6 +70,7 @@ type CreateInfraOptions struct {
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
 	AssignCustomHCPRoles        bool
+	DisableClusterCapabilities  []string
 }
 
 type CreateInfraOutput struct {
@@ -237,13 +239,16 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 		components := map[string]string{
 			config.CPO:           result.ControlPlaneMIs.ControlPlane.ControlPlaneOperator.ClientID,
-			config.CIRO:          result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID,
 			config.NodePoolMgmt:  result.ControlPlaneMIs.ControlPlane.NodePoolManagement.ClientID,
 			config.CloudProvider: result.ControlPlaneMIs.ControlPlane.CloudProvider.ClientID,
 			config.AzureFile:     result.ControlPlaneMIs.ControlPlane.File.ClientID,
 			config.AzureDisk:     result.ControlPlaneMIs.ControlPlane.Disk.ClientID,
 			config.Ingress:       result.ControlPlaneMIs.ControlPlane.Ingress.ClientID,
 			config.CNCC:          result.ControlPlaneMIs.ControlPlane.Network.ClientID,
+		}
+
+		if !slices.Contains(o.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
+			components[config.CIRO] = result.ControlPlaneMIs.ControlPlane.ImageRegistry.ClientID
 		}
 
 		// Perform role assignments over each component's service principal

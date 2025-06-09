@@ -4641,6 +4641,7 @@ ManagedIdentity
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
 </td>
 </tr>

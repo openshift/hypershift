@@ -552,7 +552,7 @@ type ControlPlaneManagedIdentities struct {
 
 	// imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.
 	//
-	// +required
+	// +optional
 	ImageRegistry ManagedIdentity `json:"imageRegistry"`
 
 	// ingress is a pre-existing managed identity associated with the cluster-ingress-operator.

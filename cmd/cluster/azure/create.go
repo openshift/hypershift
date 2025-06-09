@@ -554,6 +554,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
+		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
 	}, nil
 }
 
