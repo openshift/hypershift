@@ -32,6 +32,7 @@ spec:
         app: kubevirt-csi-driver
         hypershift.openshift.io/control-plane-component: kubevirt-csi-controller
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
     spec:
       affinity:
         nodeAffinity:
@@ -58,7 +59,7 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       containers:
       - args:
         - --endpoint=$(CSI_ENDPOINT)
