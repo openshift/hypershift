@@ -60,6 +60,7 @@ spec:
         image: oauthImage
         name: oauth-server
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/audit-config
           name: audit-config
@@ -97,6 +98,7 @@ spec:
         image: test-socks-5-proxy-image
         name: socks5-proxy
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
@@ -117,6 +119,7 @@ spec:
         image: test-socks-5-proxy-image
         name: http-proxy
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
@@ -141,6 +144,7 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: logs
@@ -154,6 +158,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
       volumes:
       - configMap:
           name: oauth-openshift

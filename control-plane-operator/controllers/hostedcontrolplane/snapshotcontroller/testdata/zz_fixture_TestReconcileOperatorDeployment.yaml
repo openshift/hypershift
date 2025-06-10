@@ -101,6 +101,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: guest-kubeconfig

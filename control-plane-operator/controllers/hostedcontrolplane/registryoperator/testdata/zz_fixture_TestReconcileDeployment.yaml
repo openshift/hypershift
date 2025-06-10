@@ -109,6 +109,7 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/certificate/ca
           name: ca-bundle
@@ -138,6 +139,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
           name: client-token
@@ -161,6 +163,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig

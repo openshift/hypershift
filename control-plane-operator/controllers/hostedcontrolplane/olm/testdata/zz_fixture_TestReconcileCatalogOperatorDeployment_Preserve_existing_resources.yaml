@@ -101,6 +101,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/konnectivity/proxy-client
           name: oas-konnectivity-proxy-cert
@@ -122,6 +123,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: kubeconfig
