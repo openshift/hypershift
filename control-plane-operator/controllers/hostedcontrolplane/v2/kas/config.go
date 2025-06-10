@@ -214,6 +214,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("event-ttl", "3h")
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
+	// TODO: What should happen here if these are already specified in the provided feature gates?
 	featureGates = append(featureGates, "StructuredAuthenticationConfiguration=true")
 	featureGates = append(featureGates, "ValidatingAdmissionPolicy=true")
 	args.Set("feature-gates", featureGates...)
@@ -236,6 +237,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")
 	runtimeConfig := []string{}
+	// TODO: Should this be a range against the local featureGates variable since ValidatingAdmissionPolicy is hardcoded to true?
 	for _, gate := range p.FeatureGates {
 		if gate == "ValidatingAdmissionPolicy=true" {
 			runtimeConfig = append(runtimeConfig, "admissionregistration.k8s.io/v1beta1=true")
