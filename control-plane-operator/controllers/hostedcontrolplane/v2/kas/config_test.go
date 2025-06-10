@@ -3,15 +3,17 @@ package kas
 import (
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	configv1 "github.com/openshift/api/config/v1"
 	kcpv1 "github.com/openshift/api/kubecontrolplane/v1"
-	"github.com/stretchr/testify/require"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGenerateConfig(t *testing.T) {
@@ -508,24 +510,40 @@ func TestGenerateConfig(t *testing.T) {
 			},
 			expected: modifyKasConfig(defaultKASConfig(),
 				func(kasc *kcpv1.KubeAPIServerConfig) {
-					kasc.APIServerArguments["runtime-config"] = kcpv1.Arguments{"resource.k8s.io/v1beta1=true"}
+					kasc.APIServerArguments["runtime-config"] = append(kcpv1.Arguments{"resource.k8s.io/v1beta1=true"}, kasc.APIServerArguments["runtime-config"]...)
 					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"DynamicResourceAllocation=true"}, kasc.APIServerArguments["feature-gates"]...)
 				},
 			),
 		},
 		{
-			name: "with ValidatingAdmissionPolicy feature gate enabled",
+			name: "with ValidatingAdmissionPolicy feature gate explicitly enabled",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
 					"ValidatingAdmissionPolicy=true",
 				},
 			},
-			expected: modifyKasConfig(defaultKASConfig(),
-				func(kasc *kcpv1.KubeAPIServerConfig) {
-					kasc.APIServerArguments["runtime-config"] = kcpv1.Arguments{"admissionregistration.k8s.io/v1beta1=true"}
-					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"ValidatingAdmissionPolicy=true"}, kasc.APIServerArguments["feature-gates"]...)
+			// shouldn't be any different than the default configuration because this feature gate is enabled by default
+			expected: defaultKASConfig(),
+		},
+		{
+			name: "with ValidatingAdmissionPolicy feature gate explicitly disabled",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"ValidatingAdmissionPolicy=false",
 				},
-			),
+			},
+			// shouldn't be any different than the default configuration because this feature gate is forced to be enabled
+			expected: defaultKASConfig(),
+		},
+		{
+			name: "with StructuredAuthenticationConfiguration feature gate explicitly disabled",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"StructuredAuthenticationConfiguration=false",
+				},
+			},
+			// shouldn't be any different than the default configuration because this feature gate is forced to be enabled
+			expected: defaultKASConfig(),
 		},
 		{
 			name: "with strict transport security directive",
@@ -751,7 +769,7 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 			"requestheader-extra-headers-prefix":      {"X-Remote-Extra-"},
 			"requestheader-group-headers":             {"X-Remote-Group"},
 			"requestheader-username-headers":          {"X-Remote-User"},
-			"runtime-config":                          {},
+			"runtime-config":                          {"admissionregistration.k8s.io/v1beta1=true"},
 			"service-account-issuer":                  {""},
 			"service-account-jwks-uri":                {"/openid/v1/jwks"},
 			"service-account-lookup":                  {"true"},
