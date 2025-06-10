@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -30,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 
@@ -1303,6 +1306,75 @@ region = us-east-1
 			}
 		})
 	}
+}
+
+// TestReconcileOcmConfigChange checks if the OCM(Openshift Controller Manager)'s configuration has changed
+// for the platforms Azure and AWS when the ImageRegistry Operator's managementState is set to Removed
+func TestReconcileOcmConfigChange(t *testing.T) {
+	registryConfig := &imageregistryv1.Config{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: imageregistryv1.ImageRegistrySpec{
+			OperatorSpec: operatorv1.OperatorSpec{
+				ManagementState: "Removed",
+			},
+		},
+	}
+	initialOcmConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "openshift-controller-manager-config",
+			Namespace: "bar",
+		},
+		Data: map[string]string{
+			"config": "original-data",
+		},
+	}
+
+	testCases := []struct {
+		name                     string
+		platformType             hyperv1.PlatformType
+		expectConfigMapUnchanged bool
+	}{
+		{
+			name:                     "OCM configuration remains unchanged for Azure platform",
+			platformType:             hyperv1.AzurePlatform,
+			expectConfigMapUnchanged: true,
+		},
+		{
+			// OCM configuration should remain unchanged for AWS platform also after transitioning from
+			// using managementState: Removed to disable the Image Registry in ROSA HCP
+			name:                     "OCM configuration changes for AWS platform",
+			platformType:             hyperv1.AWSPlatform,
+			expectConfigMapUnchanged: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			r := &reconciler{
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				client:                 fakeClient,
+				cpClient:               cpClient,
+				hcpName:                "foo",
+				hcpNamespace:           "bar",
+				releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
+				platformType:           tc.platformType,
+			}
+			_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Check if the OCM configuration has changed or not
+			updatedOcmConfigMap := &corev1.ConfigMap{}
+			err = cpClient.Get(context.Background(), types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(Equal(tc.expectConfigMapUnchanged))
+		})
+	}
+
 }
 
 func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
