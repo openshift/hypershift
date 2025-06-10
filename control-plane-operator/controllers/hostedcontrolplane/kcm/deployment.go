@@ -140,6 +140,7 @@ func kcmContainerMain() *corev1.Container {
 func buildKCMContainerMain(image string, args []string, port int32) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"hyperkube",
 			"kube-controller-manager",

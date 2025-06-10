@@ -158,6 +158,7 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 	return func(c *corev1.Container) {
 		c.Image = p.kmsImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Ports = []corev1.ContainerPort{
 			{
 				Name:          "http",

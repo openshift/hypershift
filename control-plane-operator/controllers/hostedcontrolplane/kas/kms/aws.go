@@ -194,6 +194,7 @@ func buildKASContainerAWSKMS(image string, arn string, region string, unixSocket
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Ports = []corev1.ContainerPort{
 			{
 				Name:          "http",
@@ -261,6 +262,7 @@ func buildKASContainerAWSKMSTokenMinter(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/control-plane-operator", "token-minter"}
 		c.Args = []string{
 			"--token-audience=openshift",

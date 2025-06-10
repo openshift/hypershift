@@ -172,6 +172,7 @@ func buildCCMContainer(clusterName string, releaseImageProvider imageprovider.Re
 	return func(c *corev1.Container) {
 		c.Image = releaseImageProvider.GetImage("kubevirt-cloud-controller-manager")
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/kubevirt-cloud-controller-manager"}
 		c.Args = []string{
 			"--cloud-provider=kubevirt",

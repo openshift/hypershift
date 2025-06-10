@@ -573,10 +573,11 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 		{
 			// Konnectivity proxy container
 			// CNO uses konnectivity-proxy to perform proxy readiness checks through the hosted cluster's network
-			Name:    konnectivityProxyName,
-			Image:   params.Images.Socks5Proxy,
-			Command: []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--disable-resolver"},
-			Args:    []string{"run"},
+			Name:                     konnectivityProxyName,
+			Image:                    params.Images.Socks5Proxy,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Command:                  []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy", "--disable-resolver"},
+			Args:                     []string{"run"},
 			Env: []corev1.EnvVar{{
 				Name:  "KUBECONFIG",
 				Value: "/etc/kubernetes/kubeconfig",

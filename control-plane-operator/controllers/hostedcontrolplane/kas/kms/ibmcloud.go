@@ -180,6 +180,7 @@ func buildKASContainerIBMCloudKMS(image string, region string, kmsInfo string, c
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "LOG_LEVEL",

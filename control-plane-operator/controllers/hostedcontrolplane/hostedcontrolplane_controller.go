@@ -1510,9 +1510,10 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 					Spec: corev1.PodSpec{
 						InitContainers: []corev1.Container{
 							{
-								Name:            "copy-cpo-binary",
-								Image:           cpoImage,
-								ImagePullPolicy: corev1.PullIfNotPresent,
+								Name:                     "copy-cpo-binary",
+								Image:                    cpoImage,
+								ImagePullPolicy:          corev1.PullIfNotPresent,
+								TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 								Command: []string{
 									"/bin/bash",
 									"-c",
@@ -1533,9 +1534,10 @@ func (r *HostedControlPlaneReconciler) reconcileEtcdBackupCronJob(cronJob *batch
 						},
 						Containers: []corev1.Container{
 							{
-								Name:            "etcd-backup",
-								Image:           etcdImage,
-								ImagePullPolicy: corev1.PullIfNotPresent,
+								Name:                     "etcd-backup",
+								Image:                    etcdImage,
+								ImagePullPolicy:          corev1.PullIfNotPresent,
+								TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 								Command: []string{
 									"/etc/backup/control-plane-operator",
 								},

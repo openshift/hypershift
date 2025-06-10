@@ -48,6 +48,7 @@ func ReconcileFeatureGateGenerationJob(ctx context.Context, job *batchv1.Job, hc
 
 	util.UpdateContainer("render-feature-gates", job.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Image = configAPIImage
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",
@@ -62,6 +63,7 @@ func ReconcileFeatureGateGenerationJob(ctx context.Context, job *batchv1.Job, hc
 
 	util.UpdateContainer("apply", job.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = cpoImage
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",

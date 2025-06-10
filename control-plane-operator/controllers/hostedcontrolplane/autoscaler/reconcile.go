@@ -137,9 +137,10 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            autoscalerName,
-						Image:           clusterAutoscalerImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     autoscalerName,
+						Image:                    clusterAutoscalerImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						VolumeMounts: []corev1.VolumeMount{
 							{
 								Name:      "target-kubeconfig",

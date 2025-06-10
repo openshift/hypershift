@@ -159,10 +159,11 @@ func ReconcileDeployment(ctx context.Context, client crclient.Client, deployment
 
 	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "audit-logs",
-			Image:           image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/bash"},
+			Name:                     "audit-logs",
+			Image:                    image,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Command:                  []string{"/bin/bash"},
 			Args: []string{
 				"-c",
 				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", volumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log")),
@@ -208,6 +209,7 @@ func oauthContainerMain() *corev1.Container {
 func buildOAuthContainerMain(image string, auditWebhookRef *corev1.LocalObjectReference, noProxy []string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Args = []string{
 			"osinserver",
 			fmt.Sprintf("--config=%s", path.Join(volumeMounts.Path(c.Name, oauthVolumeConfig().Name), OAuthServerConfigKey)),
@@ -263,6 +265,7 @@ func oauthContainerHTTPProxy() *corev1.Container {
 func buildOAuthContainerHTTPProxy(image string, proxyConfig *configv1.ProxySpec, noProxy string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"}
 		c.Args = []string{"run", fmt.Sprintf("--serving-port=%d", httpKonnectivityProxyPort), "--connect-directly-to-cloud-apis"}
 		if proxyConfig != nil {
@@ -293,6 +296,7 @@ func oauthContainerSocks5Proxy() *corev1.Container {
 func buildOAuthContainerSocks5Proxy(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
 		c.Args = []string{"run", "--resolve-from-guest-cluster-dns=true", "--resolve-from-management-cluster-dns=true"}
 		c.Env = []corev1.EnvVar{{

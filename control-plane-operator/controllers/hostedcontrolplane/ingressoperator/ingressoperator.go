@@ -201,7 +201,8 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 					corev1.ResourceMemory: resource.MustParse("30Mi"),
 				},
 			},
-			Image: params.TokenMinterImage,
+			Image:                    params.TokenMinterImage,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			VolumeMounts: []corev1.VolumeMount{
 				{Name: "serviceaccount-token", MountPath: "/var/run/secrets/openshift/serviceaccount"},
 				{Name: "admin-kubeconfig", MountPath: "/etc/kubernetes"},
@@ -257,9 +258,10 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 
 func ingressOperatorKonnectivityProxyContainer(proxyImage string, proxyConfig *configv1.ProxySpec, noProxy string) corev1.Container {
 	c := corev1.Container{
-		Name:    konnectivityProxyContainerName,
-		Image:   proxyImage,
-		Command: []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"},
+		Name:                     konnectivityProxyContainerName,
+		Image:                    proxyImage,
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+		Command:                  []string{"/usr/bin/control-plane-operator", "konnectivity-https-proxy"},
 		Args: []string{
 			"run",
 			"--connect-directly-to-cloud-apis",

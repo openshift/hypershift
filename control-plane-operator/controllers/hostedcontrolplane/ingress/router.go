@@ -190,6 +190,7 @@ func buildHCPRouterContainerMain(image string) func(*corev1.Container) {
 			"haproxy",
 		}
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
 		}

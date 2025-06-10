@@ -109,6 +109,7 @@ func buildSchedulerContainerMain(image, namespace string, featureGates []string,
 		configPath := path.Join(volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeConfig().Name), KubeSchedulerConfigKey)
 		certWorkDir := volumeMounts.Path(schedulerContainerMain().Name, schedulerVolumeCertWorkDir().Name)
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"hyperkube",
 			"kube-scheduler",

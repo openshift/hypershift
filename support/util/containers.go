@@ -78,9 +78,10 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 		opt(&opts)
 	}
 	availabilityProberContainer := corev1.Container{
-		Name:            "availability-prober",
-		Image:           image,
-		ImagePullPolicy: corev1.PullIfNotPresent,
+		Name:                     "availability-prober",
+		Image:                    image,
+		ImagePullPolicy:          corev1.PullIfNotPresent,
+		TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 		Command: []string{
 			"/usr/bin/control-plane-operator",
 			"availability-prober",

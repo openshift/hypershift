@@ -196,6 +196,7 @@ func buildEtcdInitContainer(p *EtcdParams) func(c *corev1.Container) {
 		}
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/sh", "-ce", etcdInitScript}
 		c.VolumeMounts = []corev1.VolumeMount{
 			{
@@ -216,6 +217,7 @@ func buildEnsureDNSContainer(p *EtcdParams, ns string) func(c *corev1.Container)
 		}
 		c.Image = p.CPOImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{"-c", "exec control-plane-operator resolve-dns ${HOSTNAME}.etcd-discovery.${NAMESPACE}.svc"}
 	}
@@ -270,6 +272,7 @@ func buildResetMemberContainer(p *EtcdParams, ns string) func(c *corev1.Containe
 		c.Name = "reset-member"
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/bash"}
 		c.Args = []string{"-c", resetMemberScript}
 		c.VolumeMounts = []corev1.VolumeMount{
@@ -356,6 +359,7 @@ fi
 
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/sh", "-c", script}
 		c.VolumeMounts = []corev1.VolumeMount{
 			{
@@ -467,6 +471,7 @@ func buildEtcdHealthzContainer(p *EtcdParams, namespace string) func(c *corev1.C
 	return func(c *corev1.Container) {
 		c.Image = p.EtcdOperatorImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"cluster-etcd-operator"}
 		c.Args = []string{"readyz",
 			"--target=https://localhost:2379",
@@ -511,6 +516,7 @@ func buildEtcdDefragControllerContainer(p *EtcdParams, namespace string) func(c 
 	return func(c *corev1.Container) {
 		c.Image = p.CPOImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"control-plane-operator"}
 		c.Args = []string{
 			"etcd-defrag-controller",
@@ -566,6 +572,7 @@ etcd grpc-proxy start \
 
 		c.Image = p.EtcdImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/bin/sh", "-c", script}
 		c.VolumeMounts = []corev1.VolumeMount{
 			{

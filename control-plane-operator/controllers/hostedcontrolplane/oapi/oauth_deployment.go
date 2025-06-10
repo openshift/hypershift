@@ -129,10 +129,11 @@ func ReconcileOAuthAPIServerDeployment(deployment *appsv1.Deployment,
 
 	if auditConfig.Data[auditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "audit-logs",
-			Image:           p.Image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/bash"},
+			Name:                     "audit-logs",
+			Image:                    p.Image,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Command:                  []string{"/bin/bash"},
 			Args: []string{
 				"-c",
 				kas.RenderAuditLogScript(fmt.Sprintf("%s/%s", oauthVolumeMounts.Path(oauthContainerMain().Name, oauthVolumeWorkLogs().Name), "audit.log")),
@@ -177,6 +178,7 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams, etcdHost string) func(c *
 			return path.Join(oauthVolumeMounts.Path(c.Name, volume), file)
 		}
 		c.Image = p.Image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/oauth-apiserver"}
 		c.Args = []string{
 			"start",
@@ -248,6 +250,7 @@ func buildOAuthContainerMain(p *OAuthDeploymentParams, etcdHost string) func(c *
 func buildOAuthKonnectivityProxyContainer(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"/usr/bin/control-plane-operator", "konnectivity-socks5-proxy"}
 		c.Args = []string{"run", "--resolve-from-guest-cluster-dns=true"}
 		c.Env = []corev1.EnvVar{{

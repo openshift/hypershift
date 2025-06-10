@@ -387,6 +387,7 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			hostedClusterConfigOperatorName,

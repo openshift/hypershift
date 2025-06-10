@@ -117,6 +117,7 @@ func buildKonnectivityAgentContainer(image string, ips []string) func(c *corev1.
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/proxy-agent",
 		}
