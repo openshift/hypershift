@@ -1,8 +1,10 @@
 package ingressoperator
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 
@@ -40,6 +42,7 @@ func (r *ingressOperator) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &ingressOperator{}).
 		WithAdaptFunction(adaptDeployment).
+		WithPredicate(isIngressCapabilityEnabled).
 		WithManifestAdapter(
 			"podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
@@ -76,6 +79,12 @@ func NewComponent() component.ControlPlaneComponent {
 			KubeconfingVolumeName:   "admin-kubeconfig",
 		}).
 		Build()
+}
+
+func isIngressCapabilityEnabled(cpContext component.WorkloadContext) (bool, error) {
+	return capabilities.IsCapabilityEnabled(
+		cpContext.HCP.Spec.Capabilities, hyperv1.IngressCapability,
+	), nil
 }
 
 func isAroHCP(cpContext component.WorkloadContext) bool {

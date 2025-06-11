@@ -1362,7 +1362,6 @@ func TestControlPlaneComponents(t *testing.T) {
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 	}
-	reconciler.registerComponents()
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1414,6 +1413,8 @@ func TestControlPlaneComponents(t *testing.T) {
 			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 		},
 	}
+
+	reconciler.registerComponents(hcp)
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                  context.Background(),

@@ -11,6 +11,19 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+func IsCapabilityEnabled(capabilities *hyperv1.Capabilities, capability hyperv1.OptionalCapability) bool {
+	if capabilities == nil {
+		return true
+	}
+	enabled := true
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == capability {
+			enabled = false
+		}
+	}
+	return enabled
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {
