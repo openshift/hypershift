@@ -33,13 +33,13 @@ issues:
       text: "const `tuningConfigKey` is unused"
 linters:
   enable:
-    - gci
-    - unused
-    - ineffassign
-    - gosimple
     - errcheck
+    - gci
+    - gosimple
     - govet
+    - ineffassign
     - staticcheck
+    - unused
 linters-settings:
   gci:
     sections:
