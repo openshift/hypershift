@@ -1,9 +1,19 @@
 package manifests
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
+var RbacCapabilityMap = map[string]hyperv1.OptionalCapability{
+	"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRole":        hyperv1.IngressCapability,
+	"openshift-route-controller-manager/openshift-route-controllers/Role":                          hyperv1.IngressCapability,
+	"system:openshift:openshift-controller-manager:ingress-to-route-controller/ClusterRoleBinding": hyperv1.IngressCapability,
+	"openshift-route-controller-manager/openshift-route-controllers/RoleBinding":                   hyperv1.IngressCapability,
+	// add others as needed
+}
 
 func CSRApproverClusterRole() *rbacv1.ClusterRole {
 	return &rbacv1.ClusterRole{

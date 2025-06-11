@@ -170,7 +170,7 @@ type HostedControlPlaneReconciler struct {
 	azureCredentialsLoaded                  sync.Map
 }
 
-func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
@@ -193,11 +193,12 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = GetEC2Client()
 
-	r.registerComponents()
+	r.registerComponents(hcp)
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) registerComponents() {
+func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedControlPlane) {
+
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
@@ -214,7 +215,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		clusterpolicyv2.NewComponent(),
-		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), hcp.Spec.Capabilities),
 		awsccmv2.NewComponent(),
 		azureccmv2.NewComponent(),
 		kubevirtccmv2.NewComponent(),
@@ -1727,14 +1728,16 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 
-	observedDefaultIngressCert := manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get observed default ingress cert: %w", err)
+	var observedDefaultIngressCert *corev1.ConfigMap
+	if !capabilities.IsIngressCapabilityDisabled(hcp.Spec.Capabilities) {
+		observedDefaultIngressCert = manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get observed default ingress cert: %w", err)
+			}
+			observedDefaultIngressCert = nil
 		}
-		observedDefaultIngressCert = nil
 	}
-
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
 		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
@@ -1926,12 +1929,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
 
-	// Ingress Cert
-	ingressCert := manifests.IngressCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+	// Reconcile ingress serving certificate only if Ingress capability is enabled.
+	if !capabilities.IsIngressCapabilityDisabled(hcp.Spec.Capabilities) {
+		// Ingress Cert
+		ingressCert := manifests.IngressCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
+			return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+		}
 	}
 
 	var userCABundles []client.ObjectKey
