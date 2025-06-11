@@ -66,6 +66,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        - name: MY_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: /etc/provider/credentials
         - name: AWS_REGION
