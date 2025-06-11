@@ -1754,15 +1754,15 @@ func TestGlobalConfigString(t *testing.T) {
 		globalConfig   *hyperv1.ClusterConfiguration
 		expectedOutput string
 	}{
-		// Expected behaviour for backward compatibility for empty values is:
+		// Expected behavior for backward compatibility for empty values is:
 		// return serialized string with empty values for AdditionalTrustedCA and RegistrySources and drop everything else even if it doesn't have a omitempty tag in the API.
 		{
-			name:           "When Empty GlobalConfig it should return serialized string honouring backward compatibility expectation (see code comment)",
+			name:           "When Empty GlobalConfig it should return serialized string honoring backward compatibility expectation (see code comment)",
 			globalConfig:   &hyperv1.ClusterConfiguration{},
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
-			name: "When GlobalConfig is set with empty structs it should return serialized string honouring backward compatibility expectation (see code comment)",
+			name: "When GlobalConfig is set with empty structs it should return serialized string honoring backward compatibility expectation (see code comment)",
 			globalConfig: &hyperv1.ClusterConfiguration{
 				APIServer:      &configv1.APIServerSpec{},
 				Authentication: &configv1.AuthenticationSpec{},
@@ -1773,7 +1773,7 @@ func TestGlobalConfigString(t *testing.T) {
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
-			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honour backward compatibility expectation (see code comment)",
+			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honor backward compatibility expectation (see code comment)",
 			globalConfig: &hyperv1.ClusterConfiguration{
 				APIServer:      &configv1.APIServerSpec{},
 				Authentication: &configv1.AuthenticationSpec{},

@@ -224,7 +224,7 @@ func TestGetDigest(t *testing.T) {
 			expectedDigest: "sha256:e96047c50caf0aaffeaf7ed0fe50bd3f574ad347cd0f588a56b876f79cc29d3e",
 		},
 		{
-			name:           "Image not present in overriden registry, falling back to original imageRef",
+			name:           "Image not present in overridden registry, falling back to original imageRef",
 			imageRef:       "quay.io/prometheus/busybox:latest",
 			pullSecret:     pullSecret,
 			expectedErr:    false,

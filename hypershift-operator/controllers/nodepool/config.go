@@ -34,7 +34,7 @@ import (
 
 // ConfigGenerator knows how to:
 // - Generate a unique hash id for any NodePool API input that requires a NodePool rollout.
-// - Generate a compressed and encoded artefact of the mco RawConfig that can be stored in a Secret
+// - Generate a compressed and encoded artifact of the mco RawConfig that can be stored in a Secret
 // and consumed by mco/local-ignition-provider to generate the final ignition config served to Nodes.
 type ConfigGenerator struct {
 	client.Client
@@ -108,7 +108,7 @@ func (cg *ConfigGenerator) Compressed() (*bytes.Buffer, error) {
 	return supportutil.Compress([]byte(cg.mcoRawConfig))
 }
 
-// CompressedAndEncoded returns a gzipped and base-64 encodesd artefact of the raw config.
+// CompressedAndEncoded returns a gzipped and base-64 encodesd artifact of the raw config.
 func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 	return supportutil.CompressAndEncode([]byte(cg.mcoRawConfig))
 }
@@ -132,7 +132,7 @@ func (cg *ConfigGenerator) Version() string {
 	return cg.releaseImage.Version()
 }
 
-// generateMCORawConfig generates a mco consumable artefact of the mco Config.
+// generateMCORawConfig generates a mco consumable artifact of the mco Config.
 func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context) (configsRaw string, err error) {
 	var configs []corev1.ConfigMap
 

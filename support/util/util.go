@@ -243,13 +243,13 @@ func HashSimple(o interface{}) string {
 }
 
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
-// The struct is first marshalled to JSON before hashing
+// The struct is first marshaled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
 	return HashStructWithJSONMapper(data, nil)
 }
 
 // HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
-// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// The struct is first marshaled to JSON before hashing. You can provide a JSONMapper that transforms the marshaled
 // JSON before computing the hash or nil if no transformation is needed.
 func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)

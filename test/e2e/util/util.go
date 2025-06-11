@@ -1081,7 +1081,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	// Get the component name for each labelled pod and ensure it exists in the components slice
+	// Get the component name for each labeled pod and ensure it exists in the components slice
 	for _, pod := range podList.Items {
 		if pod.Labels[suppconfig.NeedManagementKASAccessLabel] == "" {
 			continue

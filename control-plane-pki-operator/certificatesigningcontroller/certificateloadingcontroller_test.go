@@ -90,7 +90,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 	rawCert, rawKey, err := cas[0].Config.GetPEMBytes()
 	if err != nil {
-		t.Fatalf("unexpected error marshalling pem: %v", err)
+		t.Fatalf("unexpected error marshaling pem: %v", err)
 	}
 	if diff := cmp.Diff(rawCert, crt); diff != "" {
 		t.Fatalf("got incorrect cert: %v", diff)
@@ -108,7 +108,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 	rawCert, rawKey, err = ca.Config.GetPEMBytes()
 	if err != nil {
-		t.Fatalf("unexpected error marshalling pem: %v", err)
+		t.Fatalf("unexpected error marshaling pem: %v", err)
 	}
 	if diff := cmp.Diff(rawCert, crt); diff != "" {
 		t.Fatalf("got incorrect cert: %v", diff)
