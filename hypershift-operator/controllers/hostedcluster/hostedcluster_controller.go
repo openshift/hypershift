@@ -83,6 +83,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -3813,6 +3814,10 @@ func (r *HostedClusterReconciler) validateConfigAndClusterCapabilities(ctx conte
 		errs = append(errs, err...)
 	}
 
+	if err := r.validateOCPConfigurations(ctx, hc, r.Client); err != nil {
+		errs = append(errs, err)
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -4143,6 +4148,20 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	errs = append(errs, validateNetworkStackAddresses(hc)...)
 	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
 	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
+
+	return errs.ToAggregate()
+}
+
+// validateOCPConfigurations validates OpenShift-specific configurations for a HostedCluster.
+// It's worth to abstract this validation to a separate funtion per API to have them organized.
+// Currently validates:
+// - API Server configuration
+//
+// TODO: Add validation for other OpenShift components (e.g. OAuth, Ingress, etc.)
+// Jira: https://issues.redhat.com/browse/CNTRLPLANE-382
+func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context, hc *hyperv1.HostedCluster, client client.Client) error {
+	var errs field.ErrorList
+	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
 	return errs.ToAggregate()
 }
