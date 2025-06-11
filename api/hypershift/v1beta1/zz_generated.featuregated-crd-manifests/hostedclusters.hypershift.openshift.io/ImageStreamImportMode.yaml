@@ -367,6 +367,7 @@ spec:
                                     Exact names trump over wildcard names. Explicit names defined here trump over extracted implicit names.
                                   items:
                                     type: string
+                                  maxItems: 64
                                   type: array
                                   x-kubernetes-list-type: atomic
                                 servingCertificate:
@@ -384,6 +385,7 @@ spec:
                                   - name
                                   type: object
                               type: object
+                            maxItems: 32
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
@@ -4749,6 +4751,11 @@ spec:
                 != "") : true'
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
+            - message: APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]
+              rule: '!self.services.exists(s, s.service == ''APIServer'' && has(s.servicePublishingStrategy.loadBalancer)
+                && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration)
+                && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
+                cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

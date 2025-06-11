@@ -59,7 +59,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
 .PHONY: update
-update: workspace-sync api-deps api api-docs deps clients
+update: api-deps workspace-sync deps api api-docs clients
 
 $(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 	# Hack to install kuibe api linter plugin until https://github.com/kubernetes-sigs/kube-api-linter/pull/78 is merged

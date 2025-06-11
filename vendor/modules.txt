@@ -740,7 +740,7 @@ github.com/opencontainers/runc/libcontainer/user
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20250423170806-6bababe9164e
+# github.com/openshift/api v0.0.0-20250609083529-2b129d95495e
 ## explicit; go 1.23.0
 github.com/openshift/api
 github.com/openshift/api/annotations
