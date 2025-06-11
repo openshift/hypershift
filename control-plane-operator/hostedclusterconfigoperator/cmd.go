@@ -219,7 +219,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 	cfg := operator.CfgFromFile(o.TargetKubeconfig)
 	cpConfig := ctrl.GetConfigOrDie()
-	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
+	mgr := operator.Mgr(ctx, cfg, cpConfig, o.Namespace, o.HostedControlPlaneName)
 	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{

@@ -63,6 +63,11 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 					GenerateID: "foobar",
 				},
 			},
+			Capabilities: &hyperv1.Capabilities{
+				Enabled: []hyperv1.OptionalCapability{
+					hyperv1.IngressCapability,
+				},
+			},
 		},
 	}
 

@@ -129,7 +129,7 @@ spec:
                       disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
                       Once set, this field cannot be changed.
 
-                      Note: Disabling 'openshift-samples','Insights', 'Console', 'NodeTuning' are only supported in OpenShift versions 4.20 and above.
+                      Note: Disabling 'openshift-samples','Insights', 'Console', 'NodeTuning', 'Ingress' are only supported in OpenShift versions 4.20 and above.
                     items:
                       enum:
                       - ImageRegistry
@@ -138,6 +138,7 @@ spec:
                       - baremetal
                       - Console
                       - NodeTuning
+                      - Ingress
                       type: string
                     maxItems: 25
                     type: array
@@ -146,6 +147,10 @@ spec:
                     - message: Disabled is immutable. Changes might result in unpredictable
                         and disruptive behavior.
                       rule: self == oldSelf
+                    - message: Ingress capability can only be disabled if Console
+                        capability is also disabled
+                      rule: '!self.exists(cap, cap == ''Ingress'') || self.exists(cap,
+                        cap == ''Console'')'
                   enabled:
                     description: |-
                       enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
@@ -158,6 +163,7 @@ spec:
                       - baremetal
                       - Console
                       - NodeTuning
+                      - Ingress
                       type: string
                     maxItems: 25
                     type: array
