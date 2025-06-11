@@ -3,14 +3,9 @@ package nodepool
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -224,20 +219,6 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 
 func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, oldCondition *hyperv1.NodePoolCondition) error {
 	if nodePool.Spec.Platform.AWS.Placement != nil && nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
-		id := nodePool.Spec.Platform.AWS.Placement.CapacityReservation.ID
-
-		// short circuit the validation early if CapacityReservation is expired/cancled to reduce AWS API calls.
-		if oldCondition != nil && oldCondition.Status == corev1.ConditionFalse {
-			if strings.Contains(oldCondition.Message, "expired") || strings.Contains(oldCondition.Message, "cancelled") {
-				var expiredID, state string
-				_, _ = fmt.Sscanf(oldCondition.Message, "capacityReservation %s is %s", &expiredID, &state)
-				// only return early, if the expired capacityReservation is the same as the current one.
-				if expiredID == id {
-					return fmt.Errorf("%s", oldCondition.Message)
-				}
-			}
-		}
-
 		pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
 		if err != nil {
 			return err
@@ -249,55 +230,6 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 
 		if hostedClusterVersion.Major == 4 && hostedClusterVersion.Minor < 19 {
 			return fmt.Errorf("capacityReservation is only supported on 4.19+ clusters")
-		}
-
-		if r.EC2Client == nil {
-			return fmt.Errorf("ec2Client is not configured")
-		}
-
-		output, err := r.EC2Client.DescribeCapacityReservationsWithContext(ctx, &ec2.DescribeCapacityReservationsInput{
-			CapacityReservationIds: []*string{&id},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to describe capacityReservation %s, code %s", id, supportawsutil.AWSErrorCode(err))
-		}
-		capacityReservation := output.CapacityReservations[0]
-
-		if state := *capacityReservation.State; state == "expired" || state == "cancelled" {
-			return fmt.Errorf("capacityReservation %s is %s", id, state)
-		}
-
-		instanceCount := int32(*capacityReservation.TotalInstanceCount)
-		if isAutoscalingEnabled(nodePool) {
-			if nodePool.Spec.AutoScaling.Max > instanceCount {
-				return fmt.Errorf("nodePool.Spec.AutoScaling.Max '%d' is greater than the capacityReservation total instance count '%d'", nodePool.Spec.AutoScaling.Max, instanceCount)
-			}
-		} else if *nodePool.Spec.Replicas > instanceCount {
-			return fmt.Errorf("nodePool.Spec.Replicas '%d' is greater than the capacityReservation total instance count '%d'", *nodePool.Spec.Replicas, instanceCount)
-		}
-
-		if instanceType := nodePool.Spec.Platform.AWS.InstanceType; instanceType != *capacityReservation.InstanceType {
-			return fmt.Errorf("nodePool.Spec.Platform.AWS.InstanceType '%s' doesn't match the capacityReservation instance type '%s'", instanceType, *capacityReservation.InstanceType)
-		}
-
-		var filters []*ec2.Filter
-		for _, filter := range nodePool.Spec.Platform.AWS.Subnet.Filters {
-			filters = append(filters, &ec2.Filter{
-				Name:   aws.String(filter.Name),
-				Values: aws.StringSlice(filter.Values),
-			})
-		}
-		subnetOutput, err := r.EC2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
-			SubnetIds: []*string{nodePool.Spec.Platform.AWS.Subnet.ID},
-			Filters:   filters,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to describe subnet, code %s", supportawsutil.AWSErrorCode(err))
-		}
-
-		availabilityZone := *subnetOutput.Subnets[0].AvailabilityZone
-		if availabilityZone != *capacityReservation.AvailabilityZone {
-			return fmt.Errorf("nodePool availabilityZone '%s' doesn't match the capacityReservation availabilityZone '%s'", availabilityZone, *capacityReservation.AvailabilityZone)
 		}
 	}
 
