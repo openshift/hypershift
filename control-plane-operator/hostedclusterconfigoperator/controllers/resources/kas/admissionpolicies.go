@@ -3,6 +3,7 @@ package kas
 import (
 	"context"
 	"fmt"
+	"github.com/openshift/hypershift/support/capabilities"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -92,11 +93,15 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 		"featuregates",
 		"images",
 		"imagecontentpolicies",
-		"ingresses",
 		"proxies",
 		"schedulers",
 		"networks",
 		"oauths",
+	}
+
+	//Only include "ingresses" in the policy if the ingress capability is enabled.
+	if capabilities.IsCapabilityEnabled(hcp.Spec.Capabilities, hyperv1.IngressCapability) {
+		configResources = append(configResources, "ingresses")
 	}
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {

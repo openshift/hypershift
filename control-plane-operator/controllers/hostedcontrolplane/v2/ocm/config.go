@@ -96,9 +96,11 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configurat
 		cfg.Build.BuildOverrides.Tolerations = buildConfig.Spec.BuildOverrides.Tolerations
 	}
 
-	// network config
-	if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
-		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]
+	if capabilities.IsCapabilityEnabled(caps, hyperv1.IngressCapability) {
+		// network config
+		if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
+			cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]
+		}
 	}
 
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
