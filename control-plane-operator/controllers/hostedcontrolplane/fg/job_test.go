@@ -15,20 +15,36 @@ import (
 )
 
 func TestReconcileFeatureGateGenerationJob(t *testing.T) {
-	job := &batchv1.Job{}
-	job.Name = "featuregate-generator"
-	job.Namespace = "test-namespace"
+	for _, tc := range []struct {
+		name                      string
+		setDefaultSecurityContext bool
+	}{
+		{
+			name:                      "no default security context",
+			setDefaultSecurityContext: false,
+		},
+		{
+			name:                      "with default security context",
+			setDefaultSecurityContext: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			job := &batchv1.Job{}
+			job.Name = "featuregate-generator"
+			job.Namespace = "test-namespace"
 
-	hcp := &hyperv1.HostedControlPlane{}
+			hcp := &hyperv1.HostedControlPlane{}
 
-	err := ReconcileFeatureGateGenerationJob(context.Background(), job, hcp, "4.19.0", "example.org/config-image", "example.org/cpo-image", false)
-	g := NewGomegaWithT(t)
-	g.Expect(err).ToNot(HaveOccurred())
+			err := ReconcileFeatureGateGenerationJob(context.Background(), job, hcp, "4.19.0", "example.org/config-image", "example.org/cpo-image", tc.setDefaultSecurityContext)
+			g := NewGomegaWithT(t)
+			g.Expect(err).ToNot(HaveOccurred())
 
-	jobYAML, err := util.SerializeResource(job, hyperapi.Scheme)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+			jobYAML, err := util.SerializeResource(job, hyperapi.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			testutil.CompareWithFixture(t, jobYAML)
+		})
 	}
-
-	testutil.CompareWithFixture(t, jobYAML)
 }
