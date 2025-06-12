@@ -18,4 +18,4 @@ rules:
   verbs: ["get", "create", "delete"]
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
-  verbs: ["get"]
+  verbs: ["get", "patch"]
