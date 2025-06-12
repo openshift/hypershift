@@ -39,6 +39,9 @@ func (c *karpenterOptions) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &karpenterOptions{}).
 		WithAdaptFunction(adaptDeployment).
+		WithManifestAdapter("podmonitor.yaml",
+			component.WithAdaptFunction(adaptPodMonitor),
+		).
 		WithPredicate(predicate).
 		WithDependencies(karpenteroperatorv2.ComponentName).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
