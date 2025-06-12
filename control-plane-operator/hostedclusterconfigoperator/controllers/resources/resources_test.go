@@ -172,6 +172,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		r := &reconciler{
 			client:                 fakeClient,
+			uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
@@ -1455,6 +1456,7 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 			r := &reconciler{
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				client:                 fakeClient,
+				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 				cpClient:               cpClient,
 				hcpName:                "foo",
 				hcpNamespace:           "bar",
