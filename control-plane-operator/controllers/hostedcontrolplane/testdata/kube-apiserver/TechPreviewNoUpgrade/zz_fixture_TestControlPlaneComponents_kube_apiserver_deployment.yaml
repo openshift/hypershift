@@ -29,7 +29,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs
-        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e22533d011360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b5c825c12fe7e69167
+        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec753cb0a94752ebd36a741638a5741638a5741638a5741638a58a2366b5c825c12fe7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -376,6 +376,47 @@ spec:
         image: cluster-config-api
         imagePullPolicy: IfNotPresent
         name: init-bootstrap-render
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          cd /tmp
+          mkdir input output manifests
+
+          /usr/bin/authentication-operator render \
+            --asset-output-dir /tmp/output \
+            --rendered-manifest-dir=/tmp/manifests \
+            --cluster-profile=ibm-cloud-managed \
+            --payload-version=$(PAYLOAD_VERSION)
+
+          cp /tmp/output/* /work
+        command:
+        - /bin/bash
+        env:
+        - name: PAYLOAD_VERSION
+          value: 4.18.0
+        - name: FEATURE_GATE_YAML
+          value: |
+            apiVersion: config.openshift.io/v1
+            kind: FeatureGate
+            metadata:
+              creationTimestamp: null
+              name: cluster
+            spec:
+              featureSet: TechPreviewNoUpgrade
+            status:
+              featureGates: null
+        image: cluster-authentication-operator
+        imagePullPolicy: IfNotPresent
+        name: init-auth-bootstrap-render
         resources:
           requests:
             cpu: 30m
