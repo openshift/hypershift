@@ -145,7 +145,7 @@ func TestReconcile(t *testing.T) {
 				g.Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 			}
 
-			// honour replicas in the yaml.
+			// honor replicas in the yaml.
 			g.Expect(*got.Spec.Replicas).To(Equal(int32(1)))
 
 			// enforce volume permissions.

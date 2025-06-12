@@ -81,7 +81,7 @@ type ManagementClusterCapabilities struct {
 func (m *ManagementClusterCapabilities) Has(capabilities ...CapabilityType) bool {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
-	// clearly define the behaviour if no capabilities are passed in
+	// clearly define the behavior if no capabilities are passed in
 	if len(capabilities) == 0 {
 		return false
 	}

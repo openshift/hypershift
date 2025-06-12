@@ -31,7 +31,7 @@ const (
 
 // These are copies pf metav1.Condition to accept hyperv1.NodePoolCondition
 // We use different conditions struct to relax metav1 input validation.
-// We want to relax validation to ease bubbling up from CAPI which uses their own type not honouring metav1 validations, particularly "Reason" accepts pretty much free string.
+// We want to relax validation to ease bubbling up from CAPI which uses their own type not honoring metav1 validations, particularly "Reason" accepts pretty much free string.
 // TODO (alberto): work upstream towards consolidation and programmatic Reasons.
 
 // SetStatusCondition sets the corresponding condition in conditions to newCondition.
@@ -141,7 +141,7 @@ func generateReconciliationActiveCondition(pausedUntilField *string, objectGener
 }
 
 // setPlatformConditions is a hook for platforms to implement custom logic/conditions freely
-// TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a seperate function.
+// TODO: refactor signature to be inline with the rest of condition setters, and move common conditions like NodePoolValidPlatformImageType to a separate function.
 func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:

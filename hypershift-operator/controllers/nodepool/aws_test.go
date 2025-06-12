@@ -284,7 +284,6 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 		oldCondition         *hyperv1.NodePoolCondition
 		expectedError        string
 	}{
-
 		{
 			name:                 "If hostedCluster < 4.19 it should fail",
 			hostedClusterVersion: "4.18.0",

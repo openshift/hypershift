@@ -587,7 +587,7 @@ func checkForExistingDNSRecord(ctx context.Context, options *CreateInfraOptions,
 }
 
 // setupBaseDomain get domain id and crn of given base domain
-// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilising a common resource group in future for CIS service too and use it while filtering the list
+// TODO(dharaneeshvrd): Currently, resource group provided will be considered only for VPC and PowerVS. Need to look at utilizing a common resource group in future for CIS service too and use it while filtering the list
 func (infra *Infra) setupBaseDomain(ctx context.Context, logger logr.Logger, options *CreateInfraOptions) error {
 	var err error
 	infra.CISCRN, infra.CISDomainID, err = getCISDomainDetails(ctx, options.BaseDomain)

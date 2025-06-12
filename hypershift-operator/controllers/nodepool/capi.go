@@ -565,7 +565,7 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	// Bubble up AvailableReplicas and Ready condition from MachineDeployment.
 	nodePool.Status.Replicas = machineDeployment.Status.AvailableReplicas
 	for _, c := range machineDeployment.Status.Conditions {
-		// This condition should aggregate and summarise readiness from underlying MachineSets and Machines
+		// This condition should aggregate and summarize readiness from underlying MachineSets and Machines
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
 		if c.Type == capiv1.ReadyCondition {
 			// this is so api server does not complain
@@ -972,7 +972,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	// Propagate labels.
 	for k, v := range nodePool.Spec.NodeLabels {
 		// Propagated managed labels down to Machines with a known hardcoded prefix
-		// so the CPO HCCO Node controller can recognise them and apply them to Nodes.
+		// so the CPO HCCO Node controller can recognize them and apply them to Nodes.
 		labelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, k)
 		machineSet.Spec.Template.Labels[labelKey] = v
 	}
@@ -1061,7 +1061,7 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	// Bubble up AvailableReplicas and Ready condition from MachineSet.
 	nodePool.Status.Replicas = machineSet.Status.AvailableReplicas
 	for _, c := range machineSet.Status.Conditions {
-		// This condition should aggregate and summarise readiness from underlying MachineSets and Machines
+		// This condition should aggregate and summarize readiness from underlying MachineSets and Machines
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
 		if c.Type == capiv1.ReadyCondition {
 			// this is so api server does not complain
