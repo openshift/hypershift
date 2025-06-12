@@ -1961,11 +1961,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
-	}
-
 	// Reconcile the network policies
 	if err = r.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
@@ -1973,6 +1968,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile platform specific items
 	switch hcluster.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
+		}
 	case hyperv1.AWSPlatform:
 		// Reconcile the AWS OIDC discovery
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
