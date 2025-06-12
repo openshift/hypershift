@@ -16,7 +16,7 @@ import (
 
 func TestReconcileFeatureGateGenerationJob(t *testing.T) {
 	job := &batchv1.Job{}
-	job.Name = "feature-gate"
+	job.Name = "featuregate-generator"
 	job.Namespace = "test-namespace"
 
 	hcp := &hyperv1.HostedControlPlane{}
@@ -25,7 +25,7 @@ func TestReconcileFeatureGateGenerationJob(t *testing.T) {
 	g := NewGomegaWithT(t)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	jobYAML, err := util.SerializeResource(jobTemplate, hyperapi.Scheme)
+	jobYAML, err := util.SerializeResource(job, hyperapi.Scheme)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
