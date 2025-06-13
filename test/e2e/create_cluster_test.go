@@ -1358,6 +1358,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				Disabled: []hyperv1.OptionalCapability{
 					hyperv1.ImageRegistryCapability,
 					hyperv1.OpenShiftSamplesCapability,
+					hyperv1.InsightsCapability,
 				},
 			}
 		}
@@ -1388,6 +1389,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure openshift-samples component is disabled
 		e2eutil.EnsureOpenshiftSamplesCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure insights component is disabled
+		e2eutil.EnsureInsightsCapabilityDisabled(ctx, t, g, clients)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)

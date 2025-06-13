@@ -229,6 +229,17 @@ func TestValidate(t *testing.T) {
 			expectedErr: "",
 		},
 		{
+			name: "passes with Insights capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Insights"},
+			},
+			expectedErr: "",
+		},
+		{
 			name: "fails with an invalid DNS name as KubeAPIServerDNSName",
 			rawOpts: &RawCreateOptions{
 				Name:                 "test-hc",

@@ -137,10 +137,13 @@ spec:
                       OpenShift version.
 
                       Once set, this field cannot be changed.
+
+                      Note: Disabling 'openshift-samples','Insights' are only supported in OpenShift versions 4.20 and above.
                     items:
                       enum:
                       - ImageRegistry
                       - openshift-samples
+                      - Insights
                       type: string
                     maxItems: 25
                     type: array
