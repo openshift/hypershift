@@ -415,7 +415,7 @@ func auditWebhookConfigFile() string {
 // If the existing set of feature gate strings does not contain a
 // desired feature gate string it is added.
 // If the existing set of feature gate strings does contain a desired feature gate,
-// but sets the state to a different value, it will be overrided to match
+// but sets the state to a different value, it will be overridden to match
 // the desired state.
 func enforceFeatureGates(featureGates []string, enforced ...string) []string {
 	existingSet := featureGatesStringToMap(featureGates...)
