@@ -195,6 +195,10 @@ const (
 	// This condition is used to track the status of the recovery process and to determine if the HostedCluster
 	// is ready to be used after restoration.
 	HostedClusterRestoredFromBackup ConditionType = "HostedClusterRestoredFromBackup"
+
+	// OIDCProvider indicates that the readiness of the OIDCProvider. 
+	// FIXME: Add proper documentation 
+	OIDCProviderReady ConditionType = "OIDCProviderReady"
 )
 
 // Reasons.
@@ -249,6 +253,9 @@ const (
 	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
 
 	RecoveryFinishedReason = "RecoveryFinished"
+
+	OIDCClientSecretNotFoundReason = "OIDCClientSecretNotFound"
+	OIDCProviderReconciliationErrorReason = "OIDCProviderReconciliationError"
 )
 
 // Messages.

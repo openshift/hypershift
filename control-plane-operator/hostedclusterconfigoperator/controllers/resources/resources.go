@@ -450,9 +450,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
 	}
 
-	log.Info("reconciling oauth client secrets")
+	log.Info("reconciling OIDC providers")
 	if err := r.reconcileAuthOIDC(ctx, hcp, log); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile oauth client secrets: %w", err))
+		errs = append(errs, fmt.Errorf("failed to reconcile OIDC providers: %w", err))
 	}
 
 	log.Info("reconciling kube control plane signer secret")
@@ -879,10 +879,9 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile cloud credential config: %w", err))
 	}
 
-	authenticationConfig := globalconfig.AuthenticationConfiguration()
-	if _, err := r.CreateOrUpdate(ctx, r.client, authenticationConfig, func() error {
-		return globalconfig.ReconcileAuthenticationConfiguration(authenticationConfig, hcp.Spec.Configuration, hcp.Spec.IssuerURL)
-	}); err != nil {
+	err = r.reconcileAuthConfig(ctx, hcp)
+
+	if err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
 	}
 
@@ -1210,6 +1209,69 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 			}
 		}
 	}
+	return errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileAuthConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	var errs []error
+	providerReadyStatus := metav1.ConditionTrue
+	providerReadyReason := hyperv1.AsExpectedReason
+	providerReadyMessage := "OIDC providers reconciled."
+	log := ctrl.LoggerFrom(ctx)
+
+	authenticationConfig := globalconfig.AuthenticationConfiguration()
+	_, err := r.CreateOrUpdate(ctx, r.client, authenticationConfig, func() error {
+		return globalconfig.ReconcileAuthenticationConfiguration(authenticationConfig, hcp.Spec.Configuration, hcp.Spec.IssuerURL)
+	})
+	if err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
+		providerReadyStatus = metav1.ConditionFalse
+		providerReadyReason = hyperv1.OIDCProviderReconciliationErrorReason
+		providerReadyMessage = fmt.Sprintf("Error: failed to reconcile authentication config: %v", err)
+	} else {
+		if len(authenticationConfig.Spec.OIDCProviders) != 0 {
+
+			provider := authenticationConfig.Spec.OIDCProviders[0]
+			for _, oidcClient := range provider.OIDCClients {
+				var src corev1.Secret
+				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+				if err != nil {
+					if apierrors.IsNotFound(err) {
+						log.Info("Client secret %s not found on hosted control plane namespace %s. Looking in %s namespace on hosted cluster", oidcClient.ClientSecret.Name, hcp.Namespace, ConfigNamespace)
+						// Can't find the client secret in the control plane namespace. Check the hosted cluster's openshift-config.
+						err2 := r.client.Get(ctx, client.ObjectKey{Namespace: ConfigNamespace, Name: oidcClient.ClientSecret.Name}, &src)
+						if apierrors.IsNotFound(err2) {
+							log.Info("Client secret %s not found on hosted cluster in namespace %s", oidcClient.ClientSecret.Name, ConfigNamespace, "err", err2)
+							providerReadyStatus = metav1.ConditionFalse
+							providerReadyReason = hyperv1.OIDCClientSecretNotFoundReason
+							providerReadyMessage = fmt.Sprintf("OIDC client secret %s does not exist.", oidcClient.ClientSecret.Name)
+						}
+					} else {
+						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+					}
+				}
+			}
+			if len(errs) > 0 {
+				providerReadyStatus = metav1.ConditionFalse
+				providerReadyReason = hyperv1.OIDCProviderReconciliationErrorReason
+				providerReadyMessage = fmt.Sprintf("Error: %v", errors.NewAggregate(errs))
+			}
+		}
+	}
+
+	oidcProviderReadyCond := metav1.Condition{
+		Type:    string(hyperv1.OIDCProviderReady),
+		Status:  providerReadyStatus,
+		Reason:  providerReadyReason,
+		Message: providerReadyMessage,
+	}
+
+	if meta.SetStatusCondition(&hcp.Status.Conditions, oidcProviderReadyCond){
+		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to set OIDC provider ready condition: %w", err))
+		}
+	}
+
 	return errors.NewAggregate(errs)
 }
 
