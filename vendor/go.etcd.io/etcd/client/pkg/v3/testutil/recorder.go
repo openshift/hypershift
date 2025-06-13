@@ -23,7 +23,7 @@ import (
 
 type Action struct {
 	Name   string
-	Params []interface{}
+	Params []any
 }
 
 type Recorder interface {
@@ -87,7 +87,7 @@ type recorderStream struct {
 }
 
 func NewRecorderStream() Recorder {
-	return NewRecorderStreamWithWaitTimout(time.Duration(5 * time.Second))
+	return NewRecorderStreamWithWaitTimout(5 * time.Second)
 }
 
 func NewRecorderStreamWithWaitTimout(waitTimeout time.Duration) Recorder {
@@ -115,7 +115,10 @@ func (r *recorderStream) Chan() <-chan Action {
 
 func (r *recorderStream) Wait(n int) ([]Action, error) {
 	acts := make([]Action, n)
-	timeoutC := time.After(r.waitTimeout)
+	var timeoutC <-chan time.Time
+	if r.waitTimeout != 0 {
+		timeoutC = time.After(r.waitTimeout)
+	}
 	for i := 0; i < n; i++ {
 		select {
 		case acts[i] = <-r.ch:
