@@ -307,7 +307,7 @@ func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers
 	}
 
 	// TODO: implement logic for getting the current/desired version for the control plane and get the corresponding kube version based on that.
-	// For now, always use the minimum supported OCP version to ensure we are never getting false positives when validating CEL expression compiliation.
+	// For now, always use the minimum supported OCP version to ensure we are never getting false positives when validating CEL expression compilation.
 	// Older versions of Kubernetes are not guaranteed to have the same CEL libraries available as newer ones.
 	// Always using the minimum supported OCP version will likely result in false negatives and the workaround is for users to adapt their CEL expressions
 	// accordingly.

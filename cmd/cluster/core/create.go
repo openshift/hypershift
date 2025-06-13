@@ -697,9 +697,9 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 			string(hyperv1.ImageRegistryCapability),
 			string(hyperv1.OpenShiftSamplesCapability),
 		)
-		for _, capablity := range opts.DisableClusterCapabilities {
-			if !acceptedValues.Has(capablity) {
-				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", capablity, acceptedValues.List())
+		for _, capability := range opts.DisableClusterCapabilities {
+			if !acceptedValues.Has(capability) {
+				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", capability, acceptedValues.List())
 			}
 		}
 	}

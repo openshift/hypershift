@@ -3570,7 +3570,7 @@ MarketType
 <em>(Optional)</em>
 <p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
 &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
 When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default value is CapacityBlocks.</p>
 </td>

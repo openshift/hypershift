@@ -359,7 +359,7 @@ const (
 
 	// HostedClusterRestoredFromBackupAnnotation is set to true when the HostedCluster is restored from a backup using Hypershift
 	// OADP plugin. This annotation is set by the Hypershift OADP plugin during the Backup/Restore process. The annotation will trigger
-	// a process to check if the differents components in the DataPlane are working as expected. Checks:
+	// a process to check if the different components in the DataPlane are working as expected. Checks:
 	// - Validates the monitoring stack is properly working after restoration, if not HCCO will restart the prometheus-k8s pods.
 	HostedClusterRestoredFromBackupAnnotation = "hypershift.openshift.io/restored-from-backup"
 )
