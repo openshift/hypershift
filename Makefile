@@ -20,7 +20,7 @@ STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 
-CODESPELL_VER := 2.3.0
+CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
 CODESPELL_DIST_DIR := codespell_dist
 CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
