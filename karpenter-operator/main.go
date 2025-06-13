@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/releaseinfo"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
@@ -35,6 +34,7 @@ var (
 	targetKubeconfig          string
 	namespace                 string
 	controlPlaneOperatorImage string
+	karpenterProviderAWSImage string
 )
 
 func main() {
@@ -59,6 +59,7 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&targetKubeconfig, "target-kubeconfig", "", "Path to guest side kubeconfig file. Where the karpenter CRs (nodeClaim, nodePool, nodeClass) live")
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "The namespace to infer input for reconciliation, e.g the userData secret")
 	rootCmd.PersistentFlags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "The image to run the tokenMinter and the availability prober")
+	rootCmd.PersistentFlags().StringVar(&karpenterProviderAWSImage, "karpenter-provider-aws-image", "", "The image to run the actual platform-specific karpenter provider")
 
 	_ = rootCmd.MarkPersistentFlagRequired("target-kubeconfig")
 	_ = rootCmd.MarkPersistentFlagRequired("namespace")
@@ -123,7 +124,7 @@ func run(ctx context.Context) error {
 	r := karpenter.Reconciler{
 		Namespace:                 namespace,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
+		KarpenterProviderAWSImage: karpenterProviderAWSImage,
 	}
 	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
@@ -139,10 +140,6 @@ func run(ctx context.Context) error {
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
-	}
-
-	if err := setupOperatorInfoMetric(managementCluster); err != nil {
-		return fmt.Errorf("failed to setup operator info metric: %w", err)
 	}
 
 	if err := mgr.Start(ctx); err != nil {

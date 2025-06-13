@@ -3,7 +3,6 @@ package util
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -72,25 +71,6 @@ func TestGetRegistryOverrides(t *testing.T) {
 				Name:      "ocp-release",
 				Namespace: "openshift-release-dev",
 				Tag:       "4.15.0-rc.0-multi",
-			},
-			expectAnErr:   false,
-			overrideFound: true,
-		},
-		{
-			name: "if registry override partial coincidence is found",
-			ref: reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "busybox",
-				Namespace: "mce",
-				Tag:       "multiarch",
-			},
-			source: "quay.io/mce",
-			mirror: "quay.io/openshifttest",
-			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "busybox",
-				Namespace: "openshifttest",
-				Tag:       "multiarch",
 			},
 			expectAnErr:   false,
 			overrideFound: true,
@@ -223,14 +203,6 @@ func TestGetDigest(t *testing.T) {
 			validateCache:  true,
 			expectedDigest: "sha256:e96047c50caf0aaffeaf7ed0fe50bd3f574ad347cd0f588a56b876f79cc29d3e",
 		},
-		{
-			name:           "Image not present in overridden registry, falling back to original imageRef",
-			imageRef:       "quay.io/prometheus/busybox:latest",
-			pullSecret:     pullSecret,
-			expectedErr:    false,
-			validateCache:  true,
-			expectedDigest: "sha256:dfa54ef35e438b9e71ac5549159074576b6382f95ce1a434088e05fd6b730bc4",
-		},
 	}
 
 	for _, tc := range testsCases {
@@ -266,7 +238,7 @@ func TestSeekOverride(t *testing.T) {
 		expectedImgRef *reference.DockerImageReference
 	}{
 		{
-			name:      "if no overrides are provided, and multi mirrors",
+			name:      "if no overrides are provided",
 			overrides: map[string][]string{},
 			imageRef: reference.DockerImageReference{
 				Registry:  "quay.io",
@@ -291,9 +263,9 @@ func TestSeekOverride(t *testing.T) {
 				Tag:       "4.15.0-rc.0-multi",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
+				Registry:  "myregistry1.io",
 				Name:      "ocp-release",
-				Namespace: "openshifttest",
+				Namespace: "openshift-release-dev",
 				Tag:       "4.15.0-rc.0-multi",
 			},
 		},
@@ -302,15 +274,15 @@ func TestSeekOverride(t *testing.T) {
 			overrides: fakeOverrides(),
 			imageRef: reference.DockerImageReference{
 				Registry:  "quay.io",
-				Name:      "busybox",
+				Name:      "mce-image",
 				Namespace: "mce",
-				Tag:       "multiarch",
+				Tag:       "latest",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "busybox",
-				Namespace: "openshifttest",
-				Tag:       "multiarch",
+				Registry:  "myregistry.io",
+				Name:      "mce-image",
+				Namespace: "mce",
+				Tag:       "latest",
 			},
 		},
 		{
@@ -352,30 +324,29 @@ func TestSeekOverride(t *testing.T) {
 				Registry:  "registry.build01.ci.openshift.org",
 				Name:      "release",
 				Namespace: "ci-op-p2mqdwjp",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "ocp-release",
-				Namespace: "openshifttest",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				Registry:  "virthost.ostest.test.metalkube.org:5000",
+				Name:      "local-release-image",
+				Namespace: "localimages",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
 			},
 		},
 		{
-			//busybox@sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f
 			name:      "if registry override partial coincidence is found, and using ID",
 			overrides: fakeOverrides(),
 			imageRef: reference.DockerImageReference{
 				Registry:  "quay.io",
-				Name:      "busybox",
+				Name:      "mce-image",
 				Namespace: "mce",
-				ID:        "sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "busybox",
-				Namespace: "openshifttest",
-				ID:        "sha256:c5439d7db88ab5423999530349d327b04279ad3161d7596d2126dfb5b02bfd1f",
+				Registry:  "myregistry.io",
+				Name:      "mce-image",
+				Namespace: "mce",
+				ID:        "sha256:ba93b7791accfb38e76634edbc815d596ebf39c3d4683a001f8286b3e122ae69",
 			},
 		},
 		{
@@ -383,15 +354,15 @@ func TestSeekOverride(t *testing.T) {
 			overrides: fakeOverrides(),
 			imageRef: reference.DockerImageReference{
 				Registry:  "registry.build02.ci.openshift.org",
-				Name:      "ocp-release",
-				Namespace: "openshifttest",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				Name:      "release",
+				Namespace: "ocp",
+				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "ocp-release",
-				Namespace: "openshifttest",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				Registry:  "virthost.ostest.test.metalkube.org:5000",
+				Name:      "release",
+				Namespace: "ocp",
+				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
 			},
 		},
 		{
@@ -399,15 +370,15 @@ func TestSeekOverride(t *testing.T) {
 			overrides: fakeOverrides(),
 			imageRef: reference.DockerImageReference{
 				Registry:  "registry.build03.ci.openshift.org",
-				Name:      "ocp-release",
-				Namespace: "openshifttest",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				Name:      "release",
+				Namespace: "ocp",
+				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
 			},
 			expectedImgRef: &reference.DockerImageReference{
-				Registry:  "quay.io",
-				Name:      "ocp-release",
-				Namespace: "openshifttest",
-				ID:        "sha256:b272d47dded73ec8d9eb01a8e39cd62a453d2799c1785ecd538aa8cd15693bf0",
+				Registry:  "myregistry1.io",
+				Name:      "release",
+				Namespace: "ocp",
+				ID:        "sha256:f225d0f0fd7d4509ed00e82f11c871731ee04aecff7d924f820ac6dba7c7b346",
 			},
 		},
 	}
@@ -416,11 +387,7 @@ func TestSeekOverride(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.TODO()
 			g := NewGomegaWithT(t)
-			pullSecret, err := os.ReadFile("../../hack/dev/fakePullSecret.json")
-			if err != nil {
-				t.Fatalf("failed to read manifests file: %v", err)
-			}
-			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
+			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}
@@ -430,27 +397,23 @@ func fakeOverrides() map[string][]string {
 	return map[string][]string{
 		"quay.io/openshift-release-dev/ocp-release": {
 			"myregistry1.io/openshift-release-dev/ocp-release",
-			"quay.io/openshifttest/ocp-release",
+			"myregistry2.io/openshift-release-dev/ocp-release",
 		},
 		"quay.io/mce": {
-			"quay.io/openshifttest",
+			"myregistry.io/mce",
 		},
 		"registry.build01.ci.openshift.org/ci-op-p2mqdwjp/release": {
-			"quay.io/openshifttest/ocp-release",
+			"virthost.ostest.test.metalkube.org:5000/localimages/local-release-image",
 		},
 		"registry.ci.openshift.org/ocp/4.18-2025-01-04-031500": {
 			"virthost.ostest.test.metalkube.org:5000/localimages/local-release-image",
 		},
 		"registry.build02.ci.openshift.org": {
-			"quay.io",
+			"virthost.ostest.test.metalkube.org:5000",
 		},
 		"registry.build03.ci.openshift.org": {
 			"myregistry1.io",
 			"myregistry2.io",
-			"quay.io",
-		},
-		"quay.io/prometheus": {
-			"brew.registry.redhat.io/prometheus",
 		},
 	}
 }
@@ -474,12 +437,10 @@ func TestTryOnlyNamespaceOverride(t *testing.T) {
 				Tag:       "4.15.0-rc.0-multi",
 			},
 			sourceRef: reference.DockerImageReference{
-				Registry: "quay.io",
-				Name:     "openshift-release-dev",
+				Name: "openshift-release-dev",
 			},
 			mirrorRef: reference.DockerImageReference{
 				Registry: "myregistry.io",
-				Name:     "openshift-release-dev",
 			},
 			expectedImgRef: &reference.DockerImageReference{
 				Registry:  "myregistry.io",

@@ -81,7 +81,7 @@ func emitDebugRef(f *Function, e ast.Expr, v Value, isAddr bool) {
 		panic("nil")
 	}
 	var obj types.Object
-	e = ast.Unparen(e)
+	e = unparen(e)
 	if id, ok := e.(*ast.Ident); ok {
 		if isBlankIdent(id) {
 			return
@@ -496,7 +496,7 @@ func emitTailCall(f *Function, call *Call) {
 	case 1:
 		ret.Results = []Value{tuple}
 	default:
-		for i := range nr {
+		for i := 0; i < nr; i++ {
 			v := emitExtract(f, tuple, i)
 			// TODO(adonovan): in principle, this is required:
 			//   v = emitConv(f, o.Type, f.Signature.Results[i].Type)

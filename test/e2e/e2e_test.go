@@ -213,13 +213,8 @@ func main(m *testing.M) int {
 		defer cleanupSharedOIDCProvider()
 	}
 
-	// Set the semantic version of the previous release image for version gating tests.
-	// If the previous release image is not set, use the latest release image.
-	releaseImage := globalOpts.PreviousReleaseImage
-	if releaseImage == "" {
-		releaseImage = globalOpts.LatestReleaseImage
-	}
-	err := util.SetReleaseImageVersion(testContext, releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+	// set the semantic version of the latest release image for version gating tests
+	err := util.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 	if err != nil {
 		log.Error(err, "failed to set release image version")
 		return -1

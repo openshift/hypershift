@@ -34,7 +34,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
-	dr "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/recovery"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -380,12 +379,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
 			log.Info("skipping registry config to let CIRO bootstrap")
 		} else {
-			log.Info("reconciling image registry validating admission policy")
-			if r.platformType == hyperv1.AzurePlatform {
-				if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
-				}
-			}
 			log.Info("reconciling registry config")
 			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
 				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
@@ -396,9 +389,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
 			}
-
-			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
+			// TODO(fmissi): remove this when Hypershift Capabilities becomes GA
+			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform {
 				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
 				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
 				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
@@ -451,7 +443,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth client secrets")
-	if err := r.reconcileAuthOIDC(ctx, hcp, log); err != nil {
+	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth client secrets: %w", err))
 	}
 
@@ -721,36 +713,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 	}
-
-	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
-	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
-		originalHCP := hcp.DeepCopy()
-		condition := &metav1.Condition{
-			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
-			Reason: hyperv1.RecoveryFinishedReason,
-		}
-
-		if err := r.reconcileRestoredCluster(ctx, hcp); err != nil {
-			log.Info("hosted cluster recovery not finished yet")
-			condition.Status = metav1.ConditionFalse
-			condition.Message = fmt.Sprintf("Hosted cluster recovery not finished: %v", err)
-
-			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-			if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
-			}
-			return ctrl.Result{RequeueAfter: 120 * time.Second}, errors.NewAggregate(errs)
-		}
-
-		log.Info("hosted cluster recovery finished")
-		condition.Status = metav1.ConditionTrue
-		condition.Message = "Hosted cluster recovery finished"
-		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
-		}
-	}
-
 	return ctrl.Result{}, errors.NewAggregate(errs)
 }
 
@@ -1146,7 +1108,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
 	if !util.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
@@ -1180,33 +1142,30 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		}
 
 		// Copy OIDCClient Secrets into openshift-config namespace
-		for _, oidcClient := range provider.OIDCClients {
-			// If the secret name is empty, we assume the guest cluster admin is going to create this secret manually
-			if oidcClient.ClientSecret.Name == "" {
-				log.Info("OIDC client secret is empty, skipping reconciliation", "component", oidcClient.ComponentName)
-				continue
-			}
-			var src corev1.Secret
-			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
-				continue
-			}
-			dest := corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      oidcClient.ClientSecret.Name,
-					Namespace: ConfigNamespace,
-				},
-			}
-			_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
-				if dest.Data == nil {
-					dest.Data = map[string][]byte{}
+		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
+			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
+				var src corev1.Secret
+				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+					continue
 				}
-				dest.Data["clientSecret"] = src.Data["clientSecret"]
-				return nil
-			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				dest := corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      oidcClient.ClientSecret.Name,
+						Namespace: ConfigNamespace,
+					},
+				}
+				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+					if dest.Data == nil {
+						dest.Data = map[string][]byte{}
+					}
+					dest.Data["clientSecret"] = src.Data["clientSecret"]
+					return nil
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+				}
 			}
 		}
 	}
@@ -1267,7 +1226,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
-		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p, hcp.Spec.Platform, proxy.Status)
+		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p.DeploymentConfig, p.Image, p.ExternalAddress, p.ExternalPort, hcp.Spec.Platform, proxy.Status)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err))
@@ -1281,7 +1240,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
 		clusterVersion.Spec.Capabilities = nil
-		if capabilities.HasDisabledCapabilities(hcp.Spec.Capabilities) {
+		if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
 				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
 				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
@@ -2147,18 +2106,6 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 
 	return remaining, errors.NewAggregate(errs)
-}
-
-func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	var errs []error
-
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Ensuring monitoring stack is properly working after hosted cluster restoration")
-	if err := dr.RecoverMonitoringStack(ctx, hcp, r.uncachedClient); err != nil {
-		errs = append(errs, err)
-	}
-
-	return errors.NewAggregate(errs)
 }
 
 func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {

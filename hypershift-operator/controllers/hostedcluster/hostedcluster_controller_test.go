@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -16,25 +16,20 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
-	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
-	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
-	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
-	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	hcpmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
-	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
-	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -44,6 +39,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,23 +79,6 @@ const (
 	ArchitectureAMD64     = "amd64"
 	ArchitecturePPC64LE   = "ppc64le"
 )
-
-type fakeReleaseProvider struct {
-	releaseProvider  *releaseinfo.MockProviderWithOpenShiftImageRegistryOverrides
-	metadataProvider fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider
-}
-
-func (rp fakeReleaseProvider) Reconcile(_ context.Context, _ crclient.Client) error {
-	return nil
-}
-
-func (rp fakeReleaseProvider) GetReleaseProvider() releaseinfo.ProviderWithOpenShiftImageRegistryOverrides {
-	return rp.releaseProvider
-}
-
-func (rp fakeReleaseProvider) GetMetadataProvider() hyperutil.ImageMetadataProvider {
-	return &rp.metadataProvider
-}
 
 func TestHasBeenAvailable(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
@@ -213,11 +192,11 @@ func TestHasBeenAvailable(t *testing.T) {
 				CertRotationScale:             24 * time.Hour,
 				createOrUpdate:                func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
 				ManagementClusterCapabilities: &fakecapabilities.FakeSupportNoCapabilities{},
-				RegistryProvider: fakeReleaseProvider{
-					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result: &dockerv1client.DockerImageConfig{},
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides, &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result:   &dockerv1client.DockerImageConfig{},
+						Manifest: fakeimagemetadataprovider.FakeManifest{},
+					}, nil
 				},
 				now: func() metav1.Time { return reconcilerNow },
 			}
@@ -1216,6 +1195,58 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 	}
 }
 
+func TestReconcileCAPIProviderRole(t *testing.T) {
+	p := kubevirt.Kubevirt{}
+	role := &rbacv1.Role{}
+	if err := reconcileCAPIProviderRole(role, p); err != nil {
+		t.Fatalf("reconcileCAPIProviderRole failed: %v", err)
+	}
+	if diff := cmp.Diff(expectedRules(p.CAPIProviderPolicyRules()), role.Rules); diff != "" {
+		t.Errorf("expected rules differs from actual: %s", diff)
+	}
+}
+
+func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
+	baseRules := []rbacv1.PolicyRule{
+		{
+			APIGroups: []string{""},
+			Resources: []string{
+				"events",
+				"secrets",
+				"configmaps",
+			},
+			Verbs: []string{"*"},
+		},
+		{
+			APIGroups: []string{
+				"bootstrap.cluster.x-k8s.io",
+				"controlplane.cluster.x-k8s.io",
+				"infrastructure.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+				"exp.infrastructure.cluster.x-k8s.io",
+				"addons.cluster.x-k8s.io",
+				"exp.cluster.x-k8s.io",
+				"cluster.x-k8s.io",
+			},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"hypershift.openshift.io"},
+			Resources: []string{"*"},
+			Verbs:     []string{"*"},
+		},
+		{
+			APIGroups: []string{"coordination.k8s.io"},
+			Resources: []string{
+				"leases",
+			},
+			Verbs: []string{"*"},
+		},
+	}
+	return append(baseRules, addRules...)
+}
+
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
 
@@ -1561,13 +1592,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		objects = append(objects, testCase.hostedCluster)
 	}
 
-	// create a temp file so that openshift-config-managed-trusted-ca-bundle configmap can be created
-	tmpCABundleFile, err := os.CreateTemp("/tmp", "tls-ca-bundle.pem")
-	if err != nil {
-		t.Fatalf("failed to create temp file: %v", err)
-	}
-	defer os.Remove(tmpCABundleFile.Name())
-
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
@@ -1581,18 +1605,16 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					capabilities.CapabilityProxy,
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-				RegistryProvider: fakeReleaseProvider{
-					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result:    &dockerv1client.DockerImageConfig{},
-						Manifest:  fakeimagemetadataprovider.FakeManifest{},
-						MediaType: ManifestListMediaType,
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+							MediaType: ManifestListMediaType,
+							Result:    &dockerv1client.DockerImageConfig{},
+							Manifest:  fakeimagemetadataprovider.FakeManifest{},
+						}, nil
 				},
-				EnableEtcdRecovery:         true,
-				now:                        metav1.Now,
-				OpenShiftTrustedCAFilePath: tmpCABundleFile.Name(),
-				HypershiftOperatorImage:    "test-image",
+				EnableEtcdRecovery: true,
+				now:                metav1.Now,
 			}
 
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(&createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()},
@@ -1619,7 +1641,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			for _, resource := range r.managedResources() {
 				resourceType := fmt.Sprintf("%T", resource)
 				switch resourceType {
-				case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService", "*v1.Service", "*v1.Route":
+				case "*v1.Endpoints", "*v1.Job", "*v1.StatefulSet", "*v1beta1.NodePool", "*v1beta1.AWSEndpointService":
 					// We watch Endpoints for changes to the kubernetes Endpoint in the default namespace
 					// but never create an Endpoints resource
 
@@ -1630,17 +1652,18 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					// We watch NodePools but don't create them
 
 					// We watch AWSEndpointServices to propagate conditions to the HostedCluster
-
-					// "*v1.Service", "*v1.Route" are not in the main controller path after this PR:
-					// https://github.com/openshift/hypershift/pull/6133
 					continue
 				}
 				watchedResources.Insert(resourceType)
 			}
-			// We create a ControlPlaneComponent resource for the ControlPlaneOperator, but we don't watch it.
-			watchedResources.Insert("*v1beta1.ControlPlaneComponent")
 
-			if diff := cmp.Diff(sets.List(client.createdTypes), sets.List(watchedResources)); diff != "" {
+			sortedCreatedTypes := client.createdTypes.UnsortedList()
+			sort.Strings(sortedCreatedTypes)
+
+			sortedWatchedTypes := watchedResources.UnsortedList()
+			sort.Strings(sortedWatchedTypes)
+
+			if diff := cmp.Diff(sortedCreatedTypes, sortedWatchedTypes); diff != "" {
 				t.Errorf("the set of resources that are being created differs from the one that is being watched: %s", diff)
 			}
 		})
@@ -2455,18 +2478,20 @@ func TestValidateReleaseImage(t *testing.T) {
 			r := &HostedClusterReconciler{
 				CertRotationScale: 24 * time.Hour,
 				Client:            fake.NewClientBuilder().WithObjects(tc.other...).Build(),
-				RegistryProvider: fakeReleaseProvider{
-					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result: &dockerv1client.DockerImageConfig{},
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides,
+					hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+							Result: &dockerv1client.DockerImageConfig{},
+						},
+						nil
 				},
 			}
 
 			ctx := context.Background()
-			err := r.RegistryProvider.Reconcile(ctx, r.Client)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
 			g.Expect(err).ToNot(HaveOccurred())
-			actual := r.validateReleaseImage(ctx, tc.hostedCluster, r.RegistryProvider.GetReleaseProvider())
+			actual := r.validateReleaseImage(ctx, tc.hostedCluster, releaseProvider)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
@@ -2815,20 +2840,21 @@ func TestIsUpgradeable(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			RegistryProvider: fakeReleaseProvider{
-				releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-				metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					Result: &dockerv1client.DockerImageConfig{},
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return mockedProviderWithOpenShiftImageRegistryOverrides,
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(test.name, func(t *testing.T) {
 			ctx := context.Background()
 			g := NewGomegaWithT(t)
-			err := r.RegistryProvider.Reconcile(ctx, r.Client)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
@@ -3218,20 +3244,21 @@ func TestIsProgressing(t *testing.T) {
 		r := &HostedClusterReconciler{
 			CertRotationScale: 24 * time.Hour,
 			Client:            fake.NewClientBuilder().WithObjects(objs...).Build(),
-			RegistryProvider: fakeReleaseProvider{
-				releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-				metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-					Result: &dockerv1client.DockerImageConfig{},
-				},
+			ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+				return mockedProviderWithOpenShiftImageRegistryOverrides,
+					&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+						Result: &dockerv1client.DockerImageConfig{},
+					},
+					nil
 			},
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			g := NewGomegaWithT(t)
-			err := r.RegistryProvider.Reconcile(ctx, r.Client)
+			releaseProvider, _, err := r.ReconcileMetadataProviders(ctx, nil)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, releaseProvider)
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
@@ -3702,6 +3729,81 @@ func TestValidateNetworkStackAddresses(t *testing.T) {
 	}
 }
 
+func TestReconcileCAPIProviderDeployment(t *testing.T) {
+	testCases := []struct {
+		name       string
+		deployment *appsv1.Deployment
+		expected   *metav1.LabelSelector
+	}{
+		{
+			name: "When has selector it should keep it",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterapi.CAPIProviderDeployment("test").Name,
+					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
+					Annotations: map[string]string{
+						hcmetrics.HasBeenAvailableAnnotation: "true",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"keep": "it",
+						},
+					},
+				},
+			},
+			expected: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"keep": "it",
+				},
+			},
+		},
+		{
+			name: "When it doesn't have selector it should add a new one",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      clusterapi.CAPIProviderDeployment("test").Name,
+					Namespace: clusterapi.CAPIProviderDeployment("test").Namespace,
+					Annotations: map[string]string{
+						hcmetrics.HasBeenAvailableAnnotation: "true",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{},
+			},
+			expected: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"control-plane": "capi-provider-controller-manager",
+					"app":           "capi-provider-controller-manager",
+					"hypershift.openshift.io/control-plane-component": "capi-provider-controller-manager",
+				},
+			},
+		},
+	}
+
+	g := NewGomegaWithT(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.deployment).Build()
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+					Name:      "test",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			}
+			createOrUpdate := upsert.New(false)
+			deployment := clusterapi.CAPIProviderDeployment("test")
+			capiProviderServiceAccount := clusterapi.CAPIProviderServiceAccount("test")
+			_, err := createOrUpdate.CreateOrUpdate(context.Background(), client, deployment, func() error {
+				return reconcileCAPIProviderDeployment(deployment, &deployment.Spec, hcp, capiProviderServiceAccount, false)
+			})
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(deployment.Spec.Selector).To(BeEquivalentTo(tc.expected))
+		})
+	}
+}
+
 func TestKubevirtETCDEncKey(t *testing.T) {
 	for _, testCase := range []struct {
 		name           string
@@ -4080,7 +4182,6 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
 				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
-
 			r := &HostedClusterReconciler{
 				Client:            client,
 				Clock:             clock.RealClock{},
@@ -4091,11 +4192,9 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 					capabilities.CapabilityProxy,
 				),
 				createOrUpdate: func(reconcile.Request) upsert.CreateOrUpdateFN { return ctrl.CreateOrUpdate },
-				RegistryProvider: fakeReleaseProvider{
-					releaseProvider: mockedProviderWithOpenShiftImageRegistryOverrides,
-					metadataProvider: fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-						Result: &dockerv1client.DockerImageConfig{},
-					},
+				ReconcileMetadataProviders: func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
+					return mockedProviderWithOpenShiftImageRegistryOverrides,
+						&fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{Result: &dockerv1client.DockerImageConfig{}}, nil
 				},
 				now: metav1.Now,
 			}
@@ -4149,139 +4248,86 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 	}
 }
 
-func TestReconcileComponents(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetRegistryOverrides().Return(nil).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
-	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
-
-	hcp := &hyperv1.HostedControlPlane{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hcp",
-			Namespace: "hcp-namespace",
+func TestReconcileCAPIManagerDeployment(t *testing.T) {
+	testCases := []struct {
+		name              string
+		version           string
+		expectFeatureGate bool
+	}{
+		{
+			name:              "version >= 4.19 should have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.19.0",
+			expectFeatureGate: true,
 		},
-		Spec: hyperv1.HostedControlPlaneSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.AWSPlatform,
-				AWS:  &hyperv1.AWSPlatformSpec{},
-			},
-			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
-			AutoNode: &hyperv1.AutoNode{
-				Provisioner: &hyperv1.ProvisionerConfig{
-					Name: "test-provisioner",
-					Karpenter: &hyperv1.KarpenterConfig{
-						Platform: hyperv1.AWSPlatform,
-						AWS: &hyperv1.KarpenterAWSConfig{
-							RoleARN: "some-fake-arn",
-						},
+		{
+			name:              "version <= 4.19 should not have --feature-gates=MachineSetPreflightChecks=true",
+			version:           "4.18.0",
+			expectFeatureGate: false,
+		},
+	}
+
+	hcNamespace := "namespace"
+	cpNamespace := "cp-namespace"
+	image := "image"
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: hcNamespace,
+				},
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: cpNamespace,
+				},
+			}
+
+			sa := &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+			}
+
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "capi-manager",
+					Namespace: cpNamespace,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{},
 					},
 				},
-			},
-		},
-	}
-
-	hcluster := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "hcluster",
-		},
-		Spec: hyperv1.HostedClusterSpec{},
-	}
-
-	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:                context.Background(),
-		ReleaseImageProvider:   testutil.FakeImageProvider(),
-		HCP:                    hcp,
-		ApplyProvider:          upsert.NewApplyProvider(true),
-		OmitOwnerReference:     true,
-		SkipPredicate:          true,
-		SkipCertificateSigning: true,
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
-		Build()
-	cpContext.Client = fakeClient
-
-	version := semver.MustParse("4.16.0")
-	awsPlatform := aws.New("test-image", "capi-provider-image", &version)
-
-	capiDeploymentSpec, err := awsPlatform.CAPIProviderDeploymentSpec(hcluster, hcp)
-	if err != nil {
-		t.Fatalf("failed to get CAPI provider deployment spec: %v", err)
-	}
-
-	components := []controlplanecomponent.ControlPlaneComponent{
-		cpov2.NewComponent(&cpov2.ControlPlaneOperatorOptions{
-			HostedCluster:     hcluster,
-			Image:             "cpo-image",
-			UtilitiesImage:    "utilitiesImage",
-			HasUtilities:      true,
-			CertRotationScale: 2 * time.Minute,
-			FeatureSet:        configv1.CustomNoUpgrade,
-		}),
-		capiproviderv2.NewComponent(capiDeploymentSpec, nil),
-		capimanagerv2.NewComponent(""),
-		karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
-			HyperShiftOperatorImage:   "test-image",
-			ControlPlaneOperatorImage: "cpo-image",
-		}),
-	}
-
-	for _, component := range components {
-		// Reconcile multiple times to make sure multiple runs don't produce different results,
-		// and to check if resources are making a no-op update calls.
-		for range 2 {
-			if err := component.Reconcile(cpContext); err != nil {
-				t.Fatalf("failed to reconcile component %s: %v", component.Name(), err)
 			}
-		}
 
-		deployment := &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      component.Name(),
-				Namespace: hcp.Namespace,
-			},
-		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
-			t.Fatalf("failed to get deployment: %v", err)
-		}
+			semVersion, err := semver.Parse(tc.version)
+			g.Expect(err).ToNot(HaveOccurred())
 
-		yaml, err := hyperutil.SerializeResource(deployment, api.Scheme)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
+			err = reconcileCAPIManagerDeployment(deployment, hc, hcp, sa, image, true, &semVersion)
+			g.Expect(err).ToNot(HaveOccurred())
 
-		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()))
+			g.Expect(deployment.Spec.Template.Spec.Containers).To(HaveLen(1))
+			// Check for feature gate argument
+			gotFeatureGate := false
+			for _, arg := range deployment.Spec.Template.Spec.Containers[0].Args {
+				if arg == "--feature-gates=MachineSetPreflightChecks=false" {
+					gotFeatureGate = true
+					break
+				}
+			}
 
-		controlPaneComponent := &hyperv1.ControlPlaneComponent{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      component.Name(),
-				Namespace: hcp.Namespace,
-			},
-		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
-			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
-		}
+			g.Expect(gotFeatureGate).To(Equal(tc.expectFeatureGate), "Feature gate presence doesn't match expectation")
 
-		// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-		for i := range controlPaneComponent.Status.Conditions {
-			controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-		}
-
-		yaml, err = hyperutil.SerializeResource(controlPaneComponent, api.Scheme)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix("_component"))
-
-	}
-
-	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
-		t.Fatalf("update loop detected: %v", err)
+			// Verify other expected configurations
+			g.Expect(deployment.Spec.Template.Spec.ServiceAccountName).To(Equal(sa.Name))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal(image))
+		})
 	}
 }

@@ -155,7 +155,7 @@ As an example, the following steps can be followed to create a NodePool with hug
     hypershift create nodepool aws \
       --cluster-name $CLUSTER_NAME \
       --name $NODEPOOL_NAME \
-      --replicas $NODEPOOL_REPLICAS \
+      --node-count $NODEPOOL_REPLICAS \
       --instance-type $INSTANCE_TYPE \
       --render > hugepages-nodepool.yaml
     ```

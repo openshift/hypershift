@@ -5,7 +5,7 @@
 package httpcommon
 
 import (
-	"net/textproto"
+	"net/http"
 	"sync"
 )
 
@@ -82,7 +82,7 @@ func buildCommonHeaderMaps() {
 	commonLowerHeader = make(map[string]string, len(common))
 	commonCanonHeader = make(map[string]string, len(common))
 	for _, v := range common {
-		chk := textproto.CanonicalMIMEHeaderKey(v)
+		chk := http.CanonicalHeaderKey(v)
 		commonLowerHeader[chk] = v
 		commonCanonHeader[v] = chk
 	}
@@ -104,7 +104,7 @@ func CanonicalHeader(v string) string {
 	if s, ok := commonCanonHeader[v]; ok {
 		return s
 	}
-	return textproto.CanonicalMIMEHeaderKey(v)
+	return http.CanonicalHeaderKey(v)
 }
 
 // CachedCanonicalHeader returns the canonical form of a well-known header name.

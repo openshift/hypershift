@@ -47,7 +47,7 @@ var contextPackage = "context"
 // containing the assignment, we assume that other uses exist.
 //
 // checkLostCancel analyzes a single named or literal function.
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	// Fast path: bypass check if file doesn't use context.WithCancel.
 	if !analysisinternal.Imports(pass.Pkg, contextPackage) {
 		return nil, nil

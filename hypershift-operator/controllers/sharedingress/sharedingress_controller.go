@@ -9,12 +9,10 @@ import (
 	assets "github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/support/capabilities"
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
-	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,9 +32,6 @@ type SharedIngressReconciler struct {
 	Client         client.Client
 	Namespace      string
 	createOrUpdate upsert.CreateOrUpdateFN
-
-	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
-	ManagementClusterCapabilities capabilities.CapabiltyChecker
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
@@ -247,24 +242,7 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		log.Log.Info("reconciled etcd pdb", "result", result)
 	}
 
-	// Reconcile KAS Network Policy
-	var managementClusterNetwork *configv1.Network
-	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
-		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
-			return fmt.Errorf("failed to get management cluster network config: %w", err)
-		}
-	}
-
-	networkPolicy := RouterNetworkPolicy()
-	if result, err := r.createOrUpdate(ctx, r.Client, networkPolicy, func() error {
-		ReconcileRouterNetworkPolicy(networkPolicy, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router network policy: %w", err)
-	} else {
-		log.Log.Info("reconciled router network policy", "result", result)
-	}
+	// TODO(alberto): set Network policies.
 
 	return nil
 }

@@ -14,18 +14,19 @@ type QoSClass string
 
 // KubevirtCompute contains values associated with the virtual compute hardware requested for the VM.
 type KubevirtCompute struct {
-	// memory represents how much guest memory the VM should have
+	// Memory represents how much guest memory the VM should have
 	//
 	// +optional
 	// +kubebuilder:default="8Gi"
-	Memory *resource.Quantity `json:"memory,omitempty"`
+	Memory *resource.Quantity `json:"memory"`
 
-	// cores is the number of CPU cores for the KubeVirt VM.
-	// +kubebuilder:validation:Minimum=1
+	// Cores represents how many cores the guest VM should have
+	//
 	// +optional
-	Cores *uint32 `json:"cores,omitempty"`
+	// +kubebuilder:default=2
+	Cores *uint32 `json:"cores"`
 
-	// qosClass if set to "Guaranteed", requests the scheduler to place the VirtualMachineInstance on a node with
+	// QosClass If set to "Guaranteed", requests the scheduler to place the VirtualMachineInstance on a node with
 	// limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
 	// See here for more details:
 	// https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances
@@ -41,23 +42,21 @@ type PersistentVolumeAccessMode corev1.PersistentVolumeAccessMode
 
 // KubevirtPersistentVolume contains the values involved with provisioning persistent storage for a KubeVirt VM.
 type KubevirtPersistentVolume struct {
-	// size is the size of the persistent storage volume
+	// Size is the size of the persistent storage volume
 	//
 	// +optional
 	// +kubebuilder:default="32Gi"
-	Size *resource.Quantity `json:"size,omitempty"`
-	// storageClass is the storageClass used for the underlying PVC that hosts the volume
+	Size *resource.Quantity `json:"size"`
+	// StorageClass is the storageClass used for the underlying PVC that hosts the volume
 	//
 	// +optional
-	// +kubebuilder:validation:MaxLength=255
 	StorageClass *string `json:"storageClass,omitempty"`
-	// accessModes is an array that contains the desired Access Modes the root volume should have.
+	// AccessModes is an array that contains the desired Access Modes the root volume should have.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
 	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
-	// volumeMode defines what type of volume is required by the claim.
+	// VolumeMode defines what type of volume is required by the claim.
 	// Value of Filesystem is implied when not included in claim spec.
 	// +optional
 	// +kubebuilder:validation:Enum=Filesystem;Block
@@ -78,24 +77,23 @@ const (
 
 // KubevirtCachingStrategy defines the boot image caching strategy
 type KubevirtCachingStrategy struct {
-	// type is the type of the caching strategy
+	// Type is the type of the caching strategy
 	// +kubebuilder:default=None
 	// +kubebuilder:validation:Enum=None;PVC
-	// +required
 	Type KubevirtCachingStrategyType `json:"type"`
 }
 
 // KubevirtRootVolume represents the volume that the rhcos disk will be stored and run from.
 type KubevirtRootVolume struct {
-	// diskImage represents what rhcos image to use for the node pool
+	// Image represents what rhcos image to use for the node pool
 	//
 	// +optional
 	Image *KubevirtDiskImage `json:"diskImage,omitempty"`
 
-	// kubevirtVolume represents of type of storage to run the image on
+	// KubevirtVolume represents of type of storage to run the image on
 	KubevirtVolume `json:",inline"`
 
-	// cacheStrategy defines the boot image caching strategy. Default - no caching
+	// CacheStrategy defines the boot image caching strategy. Default - no caching
 	// +optional
 	CacheStrategy *KubevirtCachingStrategy `json:"cacheStrategy,omitempty"`
 }
@@ -112,14 +110,14 @@ const (
 
 // KubevirtVolume represents what kind of storage to use for a KubeVirt VM volume
 type KubevirtVolume struct {
-	// type represents the type of storage to associate with the kubevirt VMs.
+	// Type represents the type of storage to associate with the kubevirt VMs.
 	//
 	// +optional
 	// +unionDiscriminator
 	// +kubebuilder:default=Persistent
-	Type KubevirtVolumeType `json:"type,omitempty"`
+	Type KubevirtVolumeType `json:"type"`
 
-	// persistent volume type means the VM's storage is backed by a PVC
+	// Persistent volume type means the VM's storage is backed by a PVC
 	// VMs that use persistent volumes can survive disruption events like restart and eviction
 	// This is the default type used when no storage type is defined.
 	//
@@ -129,10 +127,9 @@ type KubevirtVolume struct {
 
 // KubevirtDiskImage contains values representing where the rhcos image is located
 type KubevirtDiskImage struct {
-	// containerDiskImage is a string representing the container image that holds the root disk
+	// ContainerDiskImage is a string representing the container image that holds the root disk
 	//
 	// +optional
-	// +kubebuilder:validation:MaxLength=2048
 	ContainerDiskImage *string `json:"containerDiskImage,omitempty"`
 }
 
@@ -146,18 +143,17 @@ const (
 // KubevirtNodePoolPlatform specifies the configuration of a NodePool when operating
 // on KubeVirt platform.
 type KubevirtNodePoolPlatform struct {
-	// rootVolume represents values associated with the VM volume that will host rhcos
+	// RootVolume represents values associated with the VM volume that will host rhcos
 	// +kubebuilder:default={persistent: {size: "32Gi"}, type: "Persistent"}
-	// +required
 	RootVolume *KubevirtRootVolume `json:"rootVolume"`
 
-	// compute contains values representing the virtual hardware requested for the VM
+	// Compute contains values representing the virtual hardware requested for the VM
 	//
 	// +optional
 	// +kubebuilder:default={memory: "8Gi", cores: 2}
-	Compute *KubevirtCompute `json:"compute,omitempty"`
+	Compute *KubevirtCompute `json:"compute"`
 
-	// networkInterfaceMultiqueue if set to "Enable", virtual network interfaces configured with a virtio bus will also
+	// NetworkInterfaceMultiQueue If set to "Enable", virtual network interfaces configured with a virtio bus will also
 	// enable the vhost multiqueue feature for network devices. The number of queues created depends on additional
 	// factors of the VirtualMachineInstance, like the number of guest CPUs.
 	//
@@ -166,69 +162,60 @@ type KubevirtNodePoolPlatform struct {
 	// +kubebuilder:default=Enable
 	NetworkInterfaceMultiQueue *MultiQueueSetting `json:"networkInterfaceMultiqueue,omitempty"`
 
-	// additionalNetworks specify the extra networks attached to the nodes
+	// AdditionalNetworks specify the extra networks attached to the nodes
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=20
 	AdditionalNetworks []KubevirtNetwork `json:"additionalNetworks,omitempty"`
 
-	// attachDefaultNetwork specify if the default pod network should be attached to the nodes
+	// AttachDefaultNetwork specify if the default pod network should be attached to the nodes
 	// this can only be set to false if AdditionalNetworks are configured
 	//
 	// +optional
 	// +kubebuilder:default=true
 	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"`
 
-	// nodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
+	// NodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
 	// Selector which must match a node's labels for the VM to be scheduled on that node. More info:
 	// https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
 	//
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
-	// hostDevices specifies the host devices (e.g. GPU devices) to be passed
+	// KubevirtHostDevices specifies the host devices (e.g. GPU devices) to be passed
 	// from the management cluster, to the nodepool nodes
-	// +optional
-	// +kubebuilder:validation:MaxItems=10
 	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine
 // network interface
 type KubevirtNetwork struct {
-	// name specify the network attached to the nodes
+	// Name specify the network attached to the nodes
 	// it is a value with the format "[namespace]/[name]" to reference the
 	// multus network attachment definition
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	Name string `json:"name"`
 }
 
 type KubevirtHostDevice struct {
-	// deviceName is the name of the host device that is desired to be utilized in the HostedCluster's NodePool
+	// DeviceName is the name of the host device that is desired to be utilized in the HostedCluster's NodePool
 	// The device can be any supported PCI device, including GPU, either as a passthrough or a vGPU slice.
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	DeviceName string `json:"deviceName"`
 
-	// count is the number of instances the specified host device will be attached to each of the
+	// Count is the number of instances the specified host device will be attached to each of the
 	// NodePool's nodes. Default is 1.
 	//
 	// +optional
 	// +kubebuilder:default=1
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=2147483647
 	Count int `json:"count,omitempty"`
 }
 
 // KubeVirtNodePoolStatus contains the KubeVirt platform statuses
 type KubeVirtNodePoolStatus struct {
-	// cacheName holds the name of the cache DataVolume, if exists
+	// CacheName holds the name of the cache DataVolume, if exists
 	// +optional
-	// +kubebuilder:validation:MaxLength=255
 	CacheName string `json:"cacheName,omitempty"`
 
-	// credentials shows the client credentials used when creating KubeVirt virtual machines.
+	// Credentials shows the client credentials used when creating KubeVirt virtual machines.
 	// This filed is only exists when the KubeVirt virtual machines are being placed
 	// on a cluster separate from the one hosting the Hosted Control Plane components.
 	//
@@ -238,24 +225,31 @@ type KubeVirtNodePoolStatus struct {
 	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 }
 type KubevirtPlatformCredentials struct {
-	// infraKubeConfigSecret is a reference to the secret containing the kubeconfig
-	// of an external infrastructure cluster for kubevirt provider
-	// +optional
+	// InfraKubeConfigSecret is a reference to a secret that contains the kubeconfig for the external infra cluster
+	// that will be used to host the KubeVirt virtual machines for this cluster.
+	//
+	// +immutable
+	// +kubebuilder:validation:Required
+	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraKubeConfigSecret is immutable"
 	InfraKubeConfigSecret *KubeconfigSecretRef `json:"infraKubeConfigSecret,omitempty"`
 
-	// infraNamespace is the namespace in the external infrastructure cluster
-	// where kubevirt resources will be created
+	// InfraNamespace defines the namespace on the external infra cluster that is used to host the KubeVirt
+	// virtual machines. This namespace must already exist before creating the HostedCluster and the kubeconfig
+	// referenced in the InfraKubeConfigSecret must have access to manage the required resources within this
+	// namespace.
+	//
+	// +immutable
+	// +kubebuilder:validation:Required
 	// +required
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="infraNamespace is immutable"
-	// +kubebuilder:validation:MaxLength=255
 	InfraNamespace string `json:"infraNamespace"`
 }
 
 // KubevirtPlatformSpec specifies configuration for kubevirt guest cluster installations
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.generateID) || has(self.generateID)", message="Kubevirt GenerateID is required once set"
 type KubevirtPlatformSpec struct {
-	// baseDomainPassthrough toggles whether or not an automatically
+	// BaseDomainPassthrough toggles whether or not an automatically
 	// generated base domain for the guest cluster should be used that
 	// is a subdomain of the management cluster's *.apps DNS.
 	//
@@ -281,13 +275,14 @@ type KubevirtPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPassthrough is immutable"
 	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
 
-	// generateID is used to uniquely apply a name suffix to resources associated with
+	// GenerateID is used to uniquely apply a name suffix to resources associated with
 	// kubevirt infrastructure resources
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Kubevirt GenerateID is immutable once set"
 	// +kubebuilder:validation:MaxLength=11
 	// +optional
 	GenerateID string `json:"generateID,omitempty"`
-	// credentials defines the client credentials used when creating KubeVirt virtual machines.
+	// Credentials defines the client credentials used when creating KubeVirt virtual machines.
 	// Defining credentials is only necessary when the KubeVirt virtual machines are being placed
 	// on a cluster separate from the one hosting the Hosted Control Plane components.
 	//
@@ -296,9 +291,10 @@ type KubevirtPlatformSpec struct {
 	// +optional
 	Credentials *KubevirtPlatformCredentials `json:"credentials,omitempty"`
 
-	// storageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
+	// StorageDriver defines how the KubeVirt CSI driver exposes StorageClasses on
 	// the infra cluster (hosting the VMs) to the guest cluster.
 	//
+	// +kubebuilder:validation:Optional
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver is immutable"
@@ -324,7 +320,7 @@ const (
 )
 
 type KubevirtStorageDriverSpec struct {
-	// type represents the type of kubevirt csi driver configuration to use
+	// Type represents the type of kubevirt csi driver configuration to use
 	//
 	// +unionDiscriminator
 	// +immutable
@@ -333,7 +329,7 @@ type KubevirtStorageDriverSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageDriver.Type is immutable"
 	Type KubevirtStorageDriverConfigType `json:"type,omitempty"`
 
-	// manual is used to explicitly define how the infra storageclasses are
+	// Manual is used to explicitly define how the infra storageclasses are
 	// mapped to guest storageclasses
 	//
 	// +immutable
@@ -343,7 +339,7 @@ type KubevirtStorageDriverSpec struct {
 }
 
 type KubevirtManualStorageDriverConfig struct {
-	// storageClassMapping maps StorageClasses on the infra cluster hosting
+	// StorageClassMapping maps StorageClasses on the infra cluster hosting
 	// the KubeVirt VMs to StorageClasses that are made available within the
 	// Guest Cluster.
 	//
@@ -352,52 +348,35 @@ type KubevirtManualStorageDriverConfig struct {
 	//
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
-	// +kubebuilder:validation:MaxItems=50
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
 
-	// volumeSnapshotClassMapping maps VolumeSnapshotClasses on the infra cluster hosting
-	// the KubeVirt VMs to VolumeSnapshotClasses that are made available within the
-	// Guest Cluster.
 	// +optional
 	// +immutable
+	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
-	// +kubebuilder:validation:MaxItems=50
 	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 
 type KubevirtStorageClassMapping struct {
-	// group contains which group this mapping belongs to.
-	// +kubebuilder:validation:MaxLength=255
-	// +optional
+	// Group contains which group this mapping belongs to.
 	Group string `json:"group,omitempty"`
-	// infraStorageClassName is the name of the infra cluster storage class that
+	// InfraStorageClassName is the name of the infra cluster storage class that
 	// will be exposed to the guest.
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	InfraStorageClassName string `json:"infraStorageClassName"`
-	// guestStorageClassName is the name that the corresponding storageclass will
+	// GuestStorageClassName is the name that the corresponding storageclass will
 	// be called within the guest cluster
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	GuestStorageClassName string `json:"guestStorageClassName"`
 }
 
 type KubevirtVolumeSnapshotClassMapping struct {
-	// group contains which group this mapping belongs to.
-	// +kubebuilder:validation:MaxLength=255
-	// +optional
+	// Group contains which group this mapping belongs to.
 	Group string `json:"group,omitempty"`
-	// infraVolumeSnapshotClassName is the name of the infra cluster volume snapshot class that
+	// InfraStorageClassName is the name of the infra cluster volume snapshot class that
 	// will be exposed to the guest.
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	InfraVolumeSnapshotClassName string `json:"infraVolumeSnapshotClassName"`
-	// guestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
+	// GuestVolumeSnapshotClassName is the name that the corresponding volumeSnapshotClass will
 	// be called within the guest cluster
-	// +kubebuilder:validation:MaxLength=255
-	// +required
 	GuestVolumeSnapshotClassName string `json:"guestVolumeSnapshotClassName"`
 }
-
-type InstanceType string

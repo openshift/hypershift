@@ -85,7 +85,7 @@ func init() {
 		"comma-separated list of names of methods of type func() string whose results must be used")
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 
 	// Split functions into (pkg, name) pairs to save allocation later.
@@ -130,7 +130,9 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 // func() string
-var sigNoArgsStringResult = types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Typ[types.String])), false)
+var sigNoArgsStringResult = types.NewSignature(nil, nil,
+	types.NewTuple(types.NewParam(token.NoPos, nil, "", types.Typ[types.String])),
+	false)
 
 type stringSetFlag map[string]bool
 

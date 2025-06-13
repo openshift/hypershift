@@ -2,7 +2,6 @@ package kas
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -37,10 +36,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
 	util.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		serverCount := component.DefaultReplicas(hcp, &KubeAPIServer{}, ComponentName)
+		serverCount := config.DefaultReplicas(hcp, true)
 		c.Args = append(c.Args,
 			"--server-count",
-			strconv.Itoa(int(serverCount)),
+			strconv.Itoa(serverCount),
 		)
 
 		cipherSuites := config.CipherSuites(hcp.Spec.Configuration.GetTLSSecurityProfile())
@@ -50,18 +49,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	payloadVersion := cpContext.UserReleaseImageProvider.Version()
-	bootstrapContainers := []string{
-		"init-bootstrap-render",
-		"init-auth-bootstrap-render",
-	}
-	bootstrapUpdateErrors := []error{}
-	for _, bootstrapContainer := range bootstrapContainers {
-		if err := updateBootstrapInitContainer(deployment, hcp, payloadVersion, bootstrapContainer); err != nil {
-			bootstrapUpdateErrors = append(bootstrapUpdateErrors, fmt.Errorf("updating bootstrap container %q: %v", bootstrapContainer, err))
-		}
-	}
-	if err := errors.Join(bootstrapUpdateErrors...); err != nil {
-		return fmt.Errorf("updating bootstrap containers: %v", err)
+	if err := updateBootstrapInitContainer(deployment, hcp, payloadVersion); err != nil {
+		return err
 	}
 
 	if hcp.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
@@ -73,12 +62,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// pod crashing. For unmanaged, make no assumptions.
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
-	}
-
-	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
-	// bootstrapping step.
-	if hcp.Spec.Configuration != nil && !util.ConfigOAuthEnabled(hcp.Spec.Configuration.Authentication) {
-		util.RemoveInitContainer("init-auth-bootstrap-render", &deployment.Spec.Template.Spec)
 	}
 
 	if portieris, ok := hcp.Annotations[hyperv1.PortierisImageAnnotation]; ok {
@@ -206,7 +189,7 @@ func applyGenericSecretEncryptionConfig(podSpec *corev1.PodSpec) {
 	})
 }
 
-func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, payloadVersion, name string) error {
+func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, payloadVersion string) error {
 	clusterFeatureGate := configv1.FeatureGate{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: configv1.SchemeGroupVersion.String(),
@@ -225,7 +208,7 @@ func updateBootstrapInitContainer(deployment *appsv1.Deployment, hcp *hyperv1.Ho
 	}
 	featureGateYaml := featureGateBuffer.String()
 
-	util.UpdateContainer(name, deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+	util.UpdateContainer("init-bootstrap-render", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Env = append(c.Env,
 			corev1.EnvVar{
 				Name:  "PAYLOAD_VERSION",
@@ -275,14 +258,12 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 			Name: awsPodIdentityWebhookServingCertVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookServingCert("").Name},
-			},
-		},
+			}},
 		corev1.Volume{
 			Name: awsPodIdentityWebhookKubeconfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookKubeconfig("").Name},
-			},
-		},
+			}},
 	)
 }
 

@@ -86,36 +86,7 @@ func RegisterFlags() {
 // It provides most of the logic for the main functions of both the
 // singlechecker and the multi-analysis commands.
 // It returns the appropriate exit code.
-//
-// TODO(adonovan): tests should not call this function directly;
-// fiddling with global variables (flags) is error-prone and hostile
-// to parallelism. Instead, use unit tests of the actual units (e.g.
-// checker.Analyze) and integration tests (e.g. TestScript) of whole
-// executables.
-func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
-	// Instead of returning a code directly,
-	// call this function to monotonically increase the exit code.
-	// This allows us to keep going in the face of some errors
-	// without having to remember what code to return.
-	//
-	// TODO(adonovan): interpreting exit codes is like reading tea-leaves.
-	// Insted of wasting effort trying to encode a multidimensional result
-	// into 7 bits we should just emit structured JSON output, and
-	// an exit code of 0 or 1 for success or failure.
-	exitAtLeast := func(code int) {
-		exitcode = max(code, exitcode)
-	}
-
-	// When analysisflags is linked in (for {single,multi}checker),
-	// then the -v flag is registered for complex legacy reasons
-	// related to cmd/vet CLI.
-	// Treat it as an undocumented alias for -debug=v.
-	if v := flag.CommandLine.Lookup("v"); v != nil &&
-		v.Value.(flag.Getter).Get() == true &&
-		!strings.Contains(Debug, "v") {
-		Debug += "v"
-	}
-
+func Run(args []string, analyzers []*analysis.Analyzer) int {
 	if CPUProfile != "" {
 		f, err := os.Create(CPUProfile)
 		if err != nil {
@@ -171,14 +142,17 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 	initial, err := load(args, allSyntax)
 	if err != nil {
 		log.Print(err)
-		exitAtLeast(1)
-		return
+		return 1
 	}
 
+	// TODO(adonovan): simplify exit code logic by using a single
+	// exit code variable and applying "code = max(code, X)" each
+	// time an error of code X occurs.
+	pkgsExitCode := 0
 	// Print package and module errors regardless of RunDespiteErrors.
 	// Do not exit if there are errors, yet.
 	if n := packages.PrintErrors(initial); n > 0 {
-		exitAtLeast(1)
+		pkgsExitCode = 1
 	}
 
 	var factLog io.Writer
@@ -198,8 +172,7 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 	graph, err := checker.Analyze(analyzers, initial, opts)
 	if err != nil {
 		log.Print(err)
-		exitAtLeast(1)
-		return
+		return 1
 	}
 
 	// Don't print the diagnostics,
@@ -208,22 +181,22 @@ func Run(args []string, analyzers []*analysis.Analyzer) (exitcode int) {
 		if err := applyFixes(graph.Roots, Diff); err != nil {
 			// Fail when applying fixes failed.
 			log.Print(err)
-			exitAtLeast(1)
-			return
+			return 1
 		}
-		// Don't proceed to print text/JSON,
-		// and don't report an error
-		// just because there were diagnostics.
-		return
+		// TODO(adonovan): don't proceed to print the text or JSON output
+		// if we applied fixes; stop here.
+		//
+		// return pkgsExitCode
 	}
 
 	// Print the results. If !RunDespiteErrors and there
 	// are errors in the packages, this will have 0 exit
 	// code. Otherwise, we prefer to return exit code
 	// indicating diagnostics.
-	exitAtLeast(printDiagnostics(graph))
-
-	return
+	if diagExitCode := printDiagnostics(graph); diagExitCode != 0 {
+		return diagExitCode // there were diagnostics
+	}
+	return pkgsExitCode // package errors but no diagnostics
 }
 
 // printDiagnostics prints diagnostics in text or JSON form
@@ -242,14 +215,15 @@ func printDiagnostics(graph *checker.Graph) (exitcode int) {
 
 		// Compute the exit code.
 		var numErrors, rootDiags int
-		for act := range graph.All() {
+		// TODO(adonovan): use "for act := range graph.All() { ... }" in go1.23.
+		graph.All()(func(act *checker.Action) bool {
 			if act.Err != nil {
 				numErrors++
 			} else if act.IsRoot {
 				rootDiags += len(act.Diagnostics)
 			}
-		}
-
+			return true
+		})
 		if numErrors > 0 {
 			exitcode = 1 // analysis failed, at least partially
 		} else if rootDiags > 0 {
@@ -265,10 +239,12 @@ func printDiagnostics(graph *checker.Graph) (exitcode int) {
 
 		var list []*checker.Action
 		var total time.Duration
-		for act := range graph.All() {
+		// TODO(adonovan): use "for act := range graph.All() { ... }" in go1.23.
+		graph.All()(func(act *checker.Action) bool {
 			list = append(list, act)
 			total += act.Duration
-		}
+			return true
+		})
 
 		// Print actions accounting for 90% of the total.
 		sort.Slice(list, func(i, j int) bool {
@@ -563,10 +539,6 @@ fixloop:
 			return fmt.Errorf("applied %d of %d fixes; %d files updated. (Re-run the command to apply more.)",
 				goodFixes, len(fixes), filesUpdated)
 		}
-	}
-
-	if dbg('v') {
-		log.Printf("applied %d fixes, updated %d files", len(fixes), filesUpdated)
 	}
 
 	return nil

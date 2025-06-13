@@ -43,7 +43,6 @@ import (
 	"go/token"
 	"math/big"
 	"os"
-	"slices"
 
 	"golang.org/x/tools/internal/typeparams"
 )
@@ -106,7 +105,23 @@ func buildDomFrontier(fn *Function) domFrontier {
 }
 
 func removeInstr(refs []Instruction, instr Instruction) []Instruction {
-	return slices.DeleteFunc(refs, func(i Instruction) bool { return i == instr })
+	return removeInstrsIf(refs, func(i Instruction) bool { return i == instr })
+}
+
+func removeInstrsIf(refs []Instruction, p func(Instruction) bool) []Instruction {
+	// TODO(taking): replace with go1.22 slices.DeleteFunc.
+	i := 0
+	for _, ref := range refs {
+		if p(ref) {
+			continue
+		}
+		refs[i] = ref
+		i++
+	}
+	for j := i; j != len(refs); j++ {
+		refs[j] = nil // aid GC
+	}
+	return refs[:i]
 }
 
 // lift replaces local and new Allocs accessed only with
@@ -374,7 +389,7 @@ func (s *blockSet) add(b *BasicBlock) bool {
 // returns its index, or returns -1 if empty.
 func (s *blockSet) take() int {
 	l := s.BitLen()
-	for i := range l {
+	for i := 0; i < l; i++ {
 		if s.Bit(i) == 1 {
 			s.SetBit(&s.Int, i, 0)
 			return i
@@ -403,8 +418,10 @@ func liftAlloc(df domFrontier, alloc *Alloc, newPhis newPhiMap, fresh *int) bool
 	// Don't lift result values in functions that defer
 	// calls that may recover from panic.
 	if fn := alloc.Parent(); fn.Recover != nil {
-		if slices.Contains(fn.results, alloc) {
-			return false
+		for _, nr := range fn.results {
+			if nr == alloc {
+				return false
+			}
 		}
 	}
 

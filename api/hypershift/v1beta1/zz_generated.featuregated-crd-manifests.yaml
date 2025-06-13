@@ -48,7 +48,8 @@ controlplanecomponents.hypershift.openshift.io:
   CRDName: controlplanecomponents.hypershift.openshift.io
   Capability: ""
   Category: ""
-  FeatureGates: []
+  FeatureGates:
+  - ControlPlaneV2
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -83,7 +84,8 @@ controlplanecomponents.hypershift.openshift.io:
   ShortNames:
   - cpc
   - cpcs
-  TopLevelFeatureGates: []
+  TopLevelFeatureGates:
+  - ControlPlaneV2
   Version: v1beta1
 
 hostedclusters.hypershift.openshift.io:
@@ -181,6 +183,7 @@ nodepools.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - CapacityReservation
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""

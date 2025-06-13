@@ -11,6 +11,10 @@ import (
 )
 
 func routePredicate(cpContext component.WorkloadContext) bool {
+	if cpContext.HCP.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+		return false
+	}
+
 	strategy := util.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
 	if strategy == nil {
 		return false
@@ -19,16 +23,9 @@ func routePredicate(cpContext component.WorkloadContext) bool {
 }
 
 func (ign *ignitionServer) adaptRoute(cpContext component.WorkloadContext, route *routev1.Route) error {
-	serviceName := "ignition-server-proxy"
-	// For IBM Cloud, we don't deploy the ignition server proxy.
-	// Instead, the ignition server service is directly exposed.
-	if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		serviceName = "ignition-server"
-	}
-
 	hcp := cpContext.HCP
 	if util.IsPrivateHCP(hcp) {
-		return util.ReconcileInternalRoute(route, hcp.Name, serviceName)
+		return util.ReconcileInternalRoute(route, hcp.Name, ComponentName)
 	}
 
 	strategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Ignition)
@@ -40,7 +37,7 @@ func (ign *ignitionServer) adaptRoute(cpContext component.WorkloadContext, route
 	if strategy.Route != nil {
 		hostname = strategy.Route.Hostname
 	}
-	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, serviceName, labelHCPRoutes(hcp))
+	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, ComponentName, labelHCPRoutes(hcp))
 }
 
 func labelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {

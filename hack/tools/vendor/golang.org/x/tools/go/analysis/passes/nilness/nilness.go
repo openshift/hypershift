@@ -28,7 +28,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{buildssa.Analyzer},
 }
 
-func run(pass *analysis.Pass) (any, error) {
+func run(pass *analysis.Pass) (interface{}, error) {
 	ssainput := pass.ResultOf[buildssa.Analyzer].(*buildssa.SSA)
 	for _, fn := range ssainput.SrcFuncs {
 		runFunc(pass, fn)
@@ -37,7 +37,7 @@ func run(pass *analysis.Pass) (any, error) {
 }
 
 func runFunc(pass *analysis.Pass, fn *ssa.Function) {
-	reportf := func(category string, pos token.Pos, format string, args ...any) {
+	reportf := func(category string, pos token.Pos, format string, args ...interface{}) {
 		// We ignore nil-checking ssa.Instructions
 		// that don't correspond to syntax.
 		if pos.IsValid() {

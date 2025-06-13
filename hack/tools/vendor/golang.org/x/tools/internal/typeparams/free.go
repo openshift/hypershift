@@ -70,7 +70,7 @@ func (w *Free) Has(typ types.Type) (res bool) {
 
 	case *types.Tuple:
 		n := t.Len()
-		for i := range n {
+		for i := 0; i < n; i++ {
 			if w.Has(t.At(i).Type()) {
 				return true
 			}

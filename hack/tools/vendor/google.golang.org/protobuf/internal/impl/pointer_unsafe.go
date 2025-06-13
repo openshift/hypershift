@@ -8,8 +8,6 @@ import (
 	"reflect"
 	"sync/atomic"
 	"unsafe"
-
-	"google.golang.org/protobuf/internal/protolazy"
 )
 
 const UnsafeEnabled = true
@@ -22,7 +20,7 @@ type Pointer unsafe.Pointer
 type offset uintptr
 
 // offsetOf returns a field offset for the struct field.
-func offsetOf(f reflect.StructField) offset {
+func offsetOf(f reflect.StructField, x exporter) offset {
 	return offset(f.Offset)
 }
 
@@ -111,14 +109,8 @@ func (p pointer) StringSlice() *[]string                { return (*[]string)(p.p
 func (p pointer) Bytes() *[]byte                        { return (*[]byte)(p.p) }
 func (p pointer) BytesPtr() **[]byte                    { return (**[]byte)(p.p) }
 func (p pointer) BytesSlice() *[][]byte                 { return (*[][]byte)(p.p) }
+func (p pointer) WeakFields() *weakFields               { return (*weakFields)(p.p) }
 func (p pointer) Extensions() *map[int32]ExtensionField { return (*map[int32]ExtensionField)(p.p) }
-func (p pointer) LazyInfoPtr() **protolazy.XXX_lazyUnmarshalInfo {
-	return (**protolazy.XXX_lazyUnmarshalInfo)(p.p)
-}
-
-func (p pointer) PresenceInfo() presence {
-	return presence{P: p.p}
-}
 
 func (p pointer) Elem() pointer {
 	return pointer{p: *(*unsafe.Pointer)(p.p)}

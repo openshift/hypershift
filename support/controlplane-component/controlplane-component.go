@@ -55,12 +55,10 @@ type ControlPlaneContext struct {
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
-	// OmitOwnerReference determines whether the HCP OwnerReference should be omitted from resources deployed by this component.
-	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
-	OmitOwnerReference bool
 
-	// SkipPredicate is used for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
+	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
+
 	// SkipCertificateSigning is used for the generic unit test to skip the signing of certificates and maintain a stable output.
 	SkipCertificateSigning bool
 }
@@ -222,14 +220,17 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
 	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
+		adapter, exist := c.manifestsAdapters[manifestName]
+		if exist {
+			return adapter.reconcile(cpContext, c.Name(), manifestName)
+		}
+
 		obj, _, err := assets.LoadManifest(c.name, manifestName)
 		if err != nil {
 			return err
 		}
 		obj.SetNamespace(hcp.Namespace)
-		if !cpContext.OmitOwnerReference {
-			ownerRef.ApplyTo(obj)
-		}
+		ownerRef.ApplyTo(obj)
 
 		switch typedObj := obj.(type) {
 		case *rbacv1.RoleBinding:
@@ -240,11 +241,6 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 			}
 		case *corev1.ServiceAccount:
 			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
-		}
-
-		adapter, exist := c.manifestsAdapters[manifestName]
-		if exist {
-			return adapter.reconcile(cpContext, obj)
 		}
 
 		if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {
@@ -295,27 +291,19 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		}
 	}
 
-	if !cpContext.OmitOwnerReference {
-		ownerRef := config.OwnerRefFrom(cpContext.HCP)
-		ownerRef.ApplyTo(workloadObj)
-	}
-
+	ownerRef := config.OwnerRefFrom(cpContext.HCP)
+	ownerRef.ApplyTo(workloadObj)
 	if c.adapt != nil {
 		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
 			return err
 		}
 	}
 
-	// preserve existing resource requirements.
-	oldPodTemplateSpec := c.workloadProvider.PodTemplateSpec(oldWorkloadObj)
-	existingResources := make(map[string]corev1.ResourceRequirements)
-	for _, container := range oldPodTemplateSpec.Spec.Containers {
-		existingResources[container.Name] = container.Resources
-	}
-
-	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources); err != nil {
+	deploymentConfig, err := c.defaultOptions(cpContext, c.workloadProvider.PodTemplateSpec(workloadObj), c.workloadProvider.Replicas(workloadObj))
+	if err != nil {
 		return err
 	}
+	c.workloadProvider.ApplyOptionsTo(cpContext, workloadObj, oldWorkloadObj, deploymentConfig)
 
 	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj); err != nil {
 		return err

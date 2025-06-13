@@ -15,7 +15,7 @@ RUN mkdir -p /usr/share/bootkube/manifests/manifests
 COPY payload-manifests/crds/* /usr/share/bootkube/manifests/manifests
 
 # these are applied by the CVO
-RUN mkdir -p /manifests
+COPY manifests /manifests
 COPY payload-manifests/crds/* /manifests
 COPY payload-manifests/featuregates/* /manifests
 COPY payload-command/empty-resources /manifests

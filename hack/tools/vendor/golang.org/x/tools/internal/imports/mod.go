@@ -13,7 +13,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -151,8 +150,8 @@ func newModuleResolver(e *ProcessEnv, moduleCacheCache *DirInfoCache) (*ModuleRe
 				Path: "",
 				Dir:  filepath.Join(filepath.Dir(goWork), "vendor"),
 			}
-			r.modsByModPath = append(slices.Clone(mainModsVendor), r.dummyVendorMod)
-			r.modsByDir = append(slices.Clone(mainModsVendor), r.dummyVendorMod)
+			r.modsByModPath = append(append([]*gocommand.ModuleJSON{}, mainModsVendor...), r.dummyVendorMod)
+			r.modsByDir = append(append([]*gocommand.ModuleJSON{}, mainModsVendor...), r.dummyVendorMod)
 		}
 	} else {
 		// Vendor mode is off, so run go list -m ... to find everything.

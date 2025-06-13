@@ -16,7 +16,6 @@ import (
 	"go/types"
 	"io"
 	"math/big"
-	"slices"
 	"sort"
 	"strings"
 
@@ -315,7 +314,7 @@ func iimportCommon(fset *token.FileSet, getPackages GetPackagesFunc, data []byte
 		pkgs = pkgList[:1]
 
 		// record all referenced packages as imports
-		list := slices.Clone(pkgList[1:])
+		list := append(([]*types.Package)(nil), pkgList[1:]...)
 		sort.Sort(byPath(list))
 		pkgs[0].SetImports(list)
 	}
@@ -401,7 +400,7 @@ type iimporter struct {
 	indent int // for tracing support
 }
 
-func (p *iimporter) trace(format string, args ...any) {
+func (p *iimporter) trace(format string, args ...interface{}) {
 	if !trace {
 		// Call sites should also be guarded, but having this check here allows
 		// easily enabling/disabling debug trace statements.

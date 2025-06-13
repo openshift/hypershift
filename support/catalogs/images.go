@@ -13,11 +13,7 @@ import (
 	"github.com/blang/semver"
 )
 
-const (
-	cacheExpiration          = 5 * time.Minute
-	defaultRegistryURL       = "registry.redhat.io"
-	defaultRegistryNamespace = "redhat"
-)
+const cacheExpiration = 5 * time.Minute
 
 type imagesCache struct {
 	timeStamp time.Time
@@ -114,7 +110,7 @@ func imageExistsFn(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSec
 		if err == nil {
 			return true, nil
 		}
-		if strings.Contains(err.Error(), "manifest unknown") || strings.Contains(err.Error(), "access to the requested resource is not authorized") {
+		if strings.Contains(err.Error(), "manifest unknown") {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to get image digest: %w", err)
@@ -122,33 +118,21 @@ func imageExistsFn(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSec
 }
 
 func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageExists func(string) (bool, error), registryOverrides map[string][]string) (map[string]string, error) {
-	var registries []string
 	version, err := releaseVersion()
 	if err != nil {
 		return nil, err
 	}
 
-	defaultRegistry := fmt.Sprintf("%s/%s", defaultRegistryURL, defaultRegistryNamespace)
-
+	defaultRegistry := "registry.redhat.io/redhat"
+	registries := []string{
+		defaultRegistry,
+	}
 	if len(registryOverrides) > 0 {
 		for registrySource, registryDest := range registryOverrides {
-			switch {
-			case registrySource == defaultRegistry:
+			if registrySource == defaultRegistry {
 				registries = registryDest
-			case registrySource == defaultRegistryURL:
-				for _, dest := range registryDest {
-					if strings.Contains(dest, "/") {
-						registries = append(registries, dest)
-					} else {
-						registries = append(registries, fmt.Sprintf("%s/%s", dest, defaultRegistryNamespace))
-					}
-				}
+				break
 			}
-		}
-	}
-	if len(registries) == 0 {
-		registries = []string{
-			defaultRegistry,
 		}
 	}
 
@@ -178,7 +162,6 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 				if err != nil {
 					return nil, err
 				}
-
 				if exists {
 					catalogs[catalog] = testImage
 					break

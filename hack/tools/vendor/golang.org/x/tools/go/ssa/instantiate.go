@@ -7,7 +7,6 @@ package ssa
 import (
 	"fmt"
 	"go/types"
-	"slices"
 	"sync"
 )
 
@@ -123,5 +122,10 @@ func (prog *Program) isParameterized(ts ...types.Type) bool {
 	// handle the most common but shallow cases such as T, pkg.T,
 	// *T without consulting the cache under the lock.
 
-	return slices.ContainsFunc(ts, prog.hasParams.Has)
+	for _, t := range ts {
+		if prog.hasParams.Has(t) {
+			return true
+		}
+	}
+	return false
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -13,7 +12,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
@@ -37,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/image/docker10"
+	imagev1 "github.com/openshift/api/image/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -45,7 +47,9 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,7 +62,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -912,6 +915,289 @@ func (c *createTrackingWorkqueue) Add(item reconcile.Request) {
 	c.items = append(c.items, item)
 }
 
+func TestReconcileRouter(t *testing.T) {
+	t.Parallel()
+
+	const namespace = "test"
+	routerCfg := manifests.RouterConfigurationConfigMap(namespace)
+	err := ingress.ReconcileRouterConfiguration(config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+		Name:      "hcp",
+		Namespace: namespace,
+	}}), routerCfg, &routev1.RouteList{}, map[string]string{})
+	if err != nil {
+		t.Fatalf("%s", err.Error())
+	}
+
+	testCases := []struct {
+		name                         string
+		endpointAccess               hyperv1.AWSEndpointAccessType
+		exposeAPIServerThroughRouter bool
+		existingObjects              []client.Object
+		expectedDeployments          []appsv1.Deployment
+	}{
+		{
+			name:                         "Public HCP, uses public service host name",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			existingObjects:              []client.Object{},
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "PublicPrivate HCP, deployment gets hostname from public service",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: true,
+			existingObjects:              []client.Object{},
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+
+		{
+			name:                         "Private HCP, deployment gets hostname from private service",
+			endpointAccess:               hyperv1.Private,
+			exposeAPIServerThroughRouter: true,
+			existingObjects:              []client.Object{},
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Public HCP apiserver not exposed through router, nothing gets created",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: false,
+		},
+		{
+			name:                         "PublicPrivate HCP apiserver not exposed through router, router without custom template and private router service get created",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Private HCP apiserver not exposed through router, router without custom template and private router service get created",
+			endpointAccess:               hyperv1.Private,
+			exposeAPIServerThroughRouter: false,
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Old router resources get cleaned up when exposed through route",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: true,
+			existingObjects: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+			},
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+		{
+			name:                         "Old router resources get cleaned up when exposed through LB",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			existingObjects: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "private-router"}},
+			},
+			expectedDeployments: []appsv1.Deployment{
+				func() appsv1.Deployment {
+					dep := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+						Namespace: namespace,
+						Name:      "router",
+					}}
+					_ = ingress.ReconcileRouterDeployment(dep,
+						config.OwnerRefFrom(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{
+							Name:      "hcp",
+							Namespace: namespace,
+						}}),
+						ingress.HCPRouterConfig(&hyperv1.HostedControlPlane{ObjectMeta: metav1.ObjectMeta{Namespace: namespace}}, false),
+						"",
+						routerCfg,
+					)
+
+					return *dep
+				}(),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			apiServerService := hyperv1.ServicePublishingStrategyMapping{
+				Service: hyperv1.APIServer,
+			}
+			if tc.exposeAPIServerThroughRouter {
+				apiServerService.Type = hyperv1.Route
+				apiServerService.Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: "example.com",
+				}
+			}
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: tc.endpointAccess,
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{apiServerService},
+				},
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
+
+			r := HostedControlPlaneReconciler{
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
+			if useHCPRouter(hcp) {
+				if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate); err != nil {
+					t.Fatalf("reconcileRouter failed: %v", err)
+				}
+				if err := r.admitHCPManagedRoutes(ctx, hcp, "privateRouterHost", "publicRouterHost"); err != nil {
+					t.Fatalf("admitHCPManagedRoutes failed: %v", err)
+				}
+				if err := r.cleanupOldRouterResources(ctx, hcp); err != nil {
+					t.Fatalf("cleanupOldRouterResources failed: %v", err)
+				}
+			}
+
+			var deployments appsv1.DeploymentList
+			if err := c.List(ctx, &deployments); err != nil {
+				t.Fatalf("failed to list deployments: %v", err)
+			}
+			if diff := testutil.MarshalYamlAndDiff(&deployments, &appsv1.DeploymentList{Items: tc.expectedDeployments}, t); diff != "" {
+				t.Errorf("actual deployments differ from expected: %s", diff)
+			}
+
+			oldRouterResources := []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "private-router"}},
+			}
+			for _, r := range oldRouterResources {
+				if err := c.Get(ctx, client.ObjectKeyFromObject(r), r); !apierrors.IsNotFound(err) {
+					t.Errorf("expected %T %s to be deleted, wasn't the case (err=%v)", r, r.GetName(), err)
+				}
+			}
+		})
+	}
+}
+
 func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
@@ -1439,21 +1725,13 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
-			fakeObjects, err := componentsFakeObjects(hcp.Namespace, featureSet)
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
 			}
-
-			createdObjects := []client.Object{}
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
 				WithObjects(fakeObjects...).
 				WithObjects(componentsFakeDependencies(component.Name(), hcp.Namespace)...).
-				WithInterceptorFuncs(interceptor.Funcs{
-					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
-						createdObjects = append(createdObjects, obj)
-						return client.Create(ctx, obj, opts...)
-					},
-				}).
 				Build()
 			cpContext.Client = fakeClient
 
@@ -1465,37 +1743,75 @@ func TestControlPlaneComponents(t *testing.T) {
 				}
 			}
 
-			for _, obj := range createdObjects {
-				if obj.GetNamespace() != hcp.Namespace {
-					t.Fatalf("expected object %s to be in namespace %s, got %s", obj.GetName(), hcp.Namespace, obj.GetNamespace())
-				}
-
-				switch typedObj := obj.(type) {
-				case *hyperv1.ControlPlaneComponent:
-					// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
-					for i := range typedObj.Status.Conditions {
-						typedObj.Status.Conditions[i].LastTransitionTime = metav1.Time{}
-					}
-				}
-
-				yaml, err := util.SerializeResource(obj, api.Scheme)
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-
-				kind := obj.GetObjectKind().GroupVersionKind().Kind
-				if kind == "" {
-					t.Fatalf("object %s has no kind set", obj.GetName())
-				}
-
-				suffix := fmt.Sprintf("_%s_%s", obj.GetName(), strings.ToLower(kind))
-				subDir := component.Name()
-				if featureSet != configv1.Default {
-					subDir = fmt.Sprintf("%s/%s", component.Name(), featureSet)
-				}
-				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(subDir), testutil.WithSuffix(suffix))
+			var deployments appsv1.DeploymentList
+			if err := fakeClient.List(context.Background(), &deployments); err != nil {
+				t.Fatalf("failed to list deployments: %v", err)
 			}
 
+			var statfulsets appsv1.StatefulSetList
+			if err := fakeClient.List(context.Background(), &statfulsets); err != nil {
+				t.Fatalf("failed to list statfulsets: %v", err)
+			}
+
+			var cronJobs batchv1.CronJobList
+			if err := fakeClient.List(context.Background(), &cronJobs); err != nil {
+				t.Fatalf("failed to list cronJobs: %v", err)
+			}
+
+			var jobs batchv1.JobList
+			if err := fakeClient.List(context.Background(), &jobs); err != nil {
+				t.Fatalf("failed to list jobs: %v", err)
+			}
+
+			if len(deployments.Items) == 0 && len(statfulsets.Items) == 0 && len(cronJobs.Items) == 0 && len(jobs.Items) == 0 {
+				t.Fatalf("expected one of deployment, statefulSet, cronJob or job to exist for component %s", component.Name())
+			}
+
+			var workload client.Object
+			if len(deployments.Items) > 0 {
+				workload = &deployments.Items[0]
+			} else if len(statfulsets.Items) > 0 {
+				workload = &statfulsets.Items[0]
+			} else if len(cronJobs.Items) > 0 {
+				workload = &cronJobs.Items[0]
+			} else {
+				workload = &jobs.Items[0]
+			}
+
+			yaml, err := util.SerializeResource(workload, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			var suffix = ""
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
+
+			controlPaneComponent := &hyperv1.ControlPlaneComponent{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      component.Name(),
+					Namespace: hcp.Namespace,
+				},
+			}
+			if err := fakeClient.Get(context.Background(), client.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+				t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
+			}
+
+			// this is needed to ensure the fixtures match, otherwise LastTransitionTime will have a different value for each execution.
+			for i := range controlPaneComponent.Status.Conditions {
+				controlPaneComponent.Status.Conditions[i].LastTransitionTime = metav1.Time{}
+			}
+
+			yaml, err = util.SerializeResource(controlPaneComponent, api.Scheme)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			suffix = "_component"
+			if featureSet != configv1.Default {
+				suffix = fmt.Sprintf("_component_%s", featureSet)
+			}
+			testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(component.Name()), testutil.WithSuffix(suffix))
 		}
 
 		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
@@ -1508,10 +1824,7 @@ func TestControlPlaneComponents(t *testing.T) {
 //go:embed testdata/featuregate-generator/feature-gate.yaml
 var testFeatureGateYAML string
 
-//go:embed testdata/featuregate-generator/feature-gate-tech-preview-no-upgrade.yaml
-var testFeatureGateTechPreviewNoUpgradeYAML string
-
-func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]client.Object, error) {
+func componentsFakeObjects(namespace string) ([]client.Object, error) {
 	rootCA := manifests.RootCASecret(namespace)
 	rootCA.Data = map[string][]byte{
 		certs.CASignerCertMapKey: []byte("fake"),
@@ -1559,11 +1872,7 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 	fgConfigMap := &corev1.ConfigMap{}
 	fgConfigMap.Name = "feature-gate"
 	fgConfigMap.Namespace = namespace
-	if featureSet == configv1.TechPreviewNoUpgrade {
-		fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateTechPreviewNoUpgradeYAML}
-	} else {
-		fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
-	}
+	fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
 
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,

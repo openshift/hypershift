@@ -120,7 +120,7 @@ func (ix *Index) Lookup(pkg, name string, prefix bool) []Candidate {
 				px.Results = int16(n)
 				if len(flds) >= 4 {
 					sig := strings.Split(flds[3], " ")
-					for i := range sig {
+					for i := 0; i < len(sig); i++ {
 						// $ cannot otherwise occur. removing the spaces
 						// almost works, but for chan struct{}, e.g.
 						sig[i] = strings.Replace(sig[i], "$", " ", -1)
@@ -136,7 +136,7 @@ func (ix *Index) Lookup(pkg, name string, prefix bool) []Candidate {
 
 func toFields(sig []string) []Field {
 	ans := make([]Field, len(sig)/2)
-	for i := range ans {
+	for i := 0; i < len(ans); i++ {
 		ans[i] = Field{Arg: sig[2*i], Type: sig[2*i+1]}
 	}
 	return ans

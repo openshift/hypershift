@@ -1,0 +1,123 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cloud-controller-manager-kubevirt
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: cloud-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        component.hypershift.openshift.io/config-hash: b833e1fe
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: cloud-controller-manager
+        hypershift.openshift.io/control-plane-component: cloud-controller-manager-kubevirt
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: cloud-controller-manager-kubevirt
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: cloud-controller-manager-kubevirt
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --cloud-provider=kubevirt
+        - --cloud-config=/etc/cloud/cloud-config
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --authentication-skip-lookup
+        - --cluster-name=cluster_name
+        command:
+        - /bin/kubevirt-cloud-controller-manager
+        image: kubevirt-cloud-controller-manager
+        imagePullPolicy: IfNotPresent
+        name: cloud-controller-manager
+        resources:
+          requests:
+            cpu: 75m
+            memory: 60Mi
+        volumeMounts:
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+      priorityClassName: hypershift-control-plane
+      serviceAccountName: kubevirt-cloud-controller-manager
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          defaultMode: 420
+          name: kubevirt-cloud-config
+        name: cloud-config
+status: {}

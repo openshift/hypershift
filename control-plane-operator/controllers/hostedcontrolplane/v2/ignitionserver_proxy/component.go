@@ -43,6 +43,11 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 			"service.yaml",
 			component.WithAdaptFunction(adaptService),
 		).
+		WithManifestAdapter(
+			"route.yaml",
+			component.WithAdaptFunction(ignition.adaptRoute),
+			component.WithPredicate(routePredicate),
+		).
 		WithDependencies(ignitionserverv2.ComponentName).
 		Build()
 }

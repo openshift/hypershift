@@ -58,10 +58,6 @@ func NewComponent() ControlPlaneComponent {
 				MountPath: "/test",
 			},
 		).
-		WithManifestAdapter(
-			"serviceaccount.yaml",
-			SetHostedClusterAnnotation(),
-		).
 		Build()
 }
 
@@ -98,14 +94,6 @@ func TestReconcile(t *testing.T) {
 				HCP: &hyperv1.HostedControlPlane{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: testComponentNamespace,
-						Annotations: map[string]string{
-							"hypershift.openshift.io/cluster": "test-cluster",
-						},
-					},
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Labels: map[string]string{
-							"test-label": "test",
-						},
 					},
 				},
 				Client: fake.NewClientBuilder().WithScheme(scheme).
@@ -130,31 +118,21 @@ func TestReconcile(t *testing.T) {
 			// core labels.
 			g.Expect(got.Labels).To(HaveKeyWithValue("hypershift.openshift.io/managed-by", "control-plane-operator"))
 
-			// pod template labels
-			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, testComponentName))
-			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue("test-label", "test"))
-
-			// pod template annotations
-			g.Expect(got.Spec.Template.Annotations).To(HaveKey(hyperv1.ReleaseImageAnnotation))
-
-			// PriorityClassName should be set
-			g.Expect(got.Spec.Template.Spec.PriorityClassName).ToNot(BeEmpty())
-
 			// enforce image pull policy.
 			for _, container := range got.Spec.Template.Spec.Containers {
 				g.Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 			}
 
-			// honor replicas in the yaml.
+			// honour replicas in the yaml.
 			g.Expect(*got.Spec.Replicas).To(Equal(int32(1)))
 
 			// enforce volume permissions.
 			for _, volume := range got.Spec.Template.Spec.Volumes {
 				if volume.ConfigMap != nil {
-					g.Expect(volume.ConfigMap.DefaultMode).To(HaveValue(BeEquivalentTo(420)))
+					g.Expect(volume.ConfigMap.DefaultMode).To(Equal(ptr.To(int32(420))))
 				}
 				if volume.Secret != nil {
-					g.Expect(volume.Secret.DefaultMode).To(HaveValue(BeEquivalentTo(416)))
+					g.Expect(volume.Secret.DefaultMode).To(Equal(ptr.To(int32(416))))
 				}
 			}
 			// enforce automount token sa is false.
@@ -255,20 +233,6 @@ func TestReconcile(t *testing.T) {
 			}
 			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret)
 			g.Expect(err).NotTo(HaveOccurred(), "kubeconfig secret does not exist")
-
-			// validate service account was created and has the expected annotations and pull secret.
-			sa := &corev1.ServiceAccount{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testComponentName,
-					Namespace: testComponentNamespace,
-				},
-			}
-			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(sa), sa)
-			g.Expect(err).NotTo(HaveOccurred(), "sa does not exist")
-
-			g.Expect(sa.ImagePullSecrets).To(HaveLen(1))
-			g.Expect(sa.ImagePullSecrets[0].Name).To(Equal("pull-secret"))
-			g.Expect(sa.Annotations).To(HaveKeyWithValue("hypershift.openshift.io/cluster", "test-cluster"))
 		})
 	}
 }

@@ -193,7 +193,10 @@ func Read(in io.Reader, fset *token.FileSet, imports map[string]*types.Package, 
 			return pkg, err
 
 		default:
-			l := min(len(data), 10)
+			l := len(data)
+			if l > 10 {
+				l = 10
+			}
 			return nil, fmt.Errorf("unexpected export data with prefix %q for path %s", string(data[:l]), path)
 		}
 	}

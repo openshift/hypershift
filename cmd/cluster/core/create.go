@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,7 +30,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -45,6 +45,7 @@ import (
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Namespace:                      "clusters",
+		Name:                           "example",
 		ControlPlaneAvailabilityPolicy: string(hyperv1.SingleReplica),
 		ServiceCIDR:                    []string{globalconfig.DefaultIPv4ServiceCIDR},
 		ClusterCIDR:                    []string{globalconfig.DefaultIPv4ClusterCIDR},
@@ -106,7 +107,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
-	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported values are ImageRegistry,openshift-samples.")
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported value is ImageRegistry.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 }
 
@@ -625,14 +626,6 @@ type ValidatedCreateOptions struct {
 }
 
 func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOptions, error) {
-	if opts.Name == "" {
-		return nil, errors.New("--name is required")
-	}
-
-	if opts.PullSecretFile == "" {
-		return nil, errors.New("--pull-secret is required")
-	}
-
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
@@ -693,14 +686,9 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
-		acceptedValues := sets.NewString(
-			string(hyperv1.ImageRegistryCapability),
-			string(hyperv1.OpenShiftSamplesCapability),
-		)
-		for _, capability := range opts.DisableClusterCapabilities {
-			if !acceptedValues.Has(capability) {
-				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", capability, acceptedValues.List())
-			}
+		acceptedValues := []string{"ImageRegistry"}
+		if !reflect.DeepEqual(opts.DisableClusterCapabilities, acceptedValues) {
+			return nil, fmt.Errorf("unknown capability, accepted values are: %v", acceptedValues)
 		}
 	}
 

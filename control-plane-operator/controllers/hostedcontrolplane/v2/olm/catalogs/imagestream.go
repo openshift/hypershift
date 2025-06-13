@@ -2,8 +2,6 @@ package catalogs
 
 import (
 	"fmt"
-	"maps"
-	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
@@ -38,9 +36,7 @@ func adaptImageStream(cpContext component.WorkloadContext, imageStream *imagev1.
 		return fmt.Errorf("failed to get catalog images: %w", err)
 	}
 
-	// iterate over the sorted keys of catalogImages to ensure a consistent order in the ImageStream.
-	for _, name := range slices.Sorted(maps.Keys(catalogImages)) {
-		image := catalogImages[name]
+	for name, image := range catalogImages {
 		imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{
 			Name: name,
 			From: &corev1.ObjectReference{

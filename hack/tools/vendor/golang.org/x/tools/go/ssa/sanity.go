@@ -14,7 +14,6 @@ import (
 	"go/types"
 	"io"
 	"os"
-	"slices"
 	"strings"
 )
 
@@ -49,7 +48,7 @@ func mustSanityCheck(fn *Function, reporter io.Writer) {
 	}
 }
 
-func (s *sanity) diagnostic(prefix, format string, args ...any) {
+func (s *sanity) diagnostic(prefix, format string, args ...interface{}) {
 	fmt.Fprintf(s.reporter, "%s: function %s", prefix, s.fn)
 	if s.block != nil {
 		fmt.Fprintf(s.reporter, ", block %s", s.block)
@@ -59,12 +58,12 @@ func (s *sanity) diagnostic(prefix, format string, args ...any) {
 	io.WriteString(s.reporter, "\n")
 }
 
-func (s *sanity) errorf(format string, args ...any) {
+func (s *sanity) errorf(format string, args ...interface{}) {
 	s.insane = true
 	s.diagnostic("Error", format, args...)
 }
 
-func (s *sanity) warnf(format string, args ...any) {
+func (s *sanity) warnf(format string, args ...interface{}) {
 	s.diagnostic("Warning", format, args...)
 }
 
@@ -120,7 +119,13 @@ func (s *sanity) checkInstr(idx int, instr Instruction) {
 
 	case *Alloc:
 		if !instr.Heap {
-			found := slices.Contains(s.fn.Locals, instr)
+			found := false
+			for _, l := range s.fn.Locals {
+				if l == instr {
+					found = true
+					break
+				}
+			}
 			if !found {
 				s.errorf("local alloc %s = %s does not appear in Function.Locals", instr.Name(), instr)
 			}
@@ -277,7 +282,13 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 	// Check predecessor and successor relations are dual,
 	// and that all blocks in CFG belong to same function.
 	for _, a := range b.Preds {
-		found := slices.Contains(a.Succs, b)
+		found := false
+		for _, bb := range a.Succs {
+			if bb == b {
+				found = true
+				break
+			}
+		}
 		if !found {
 			s.errorf("expected successor edge in predecessor %s; found only: %s", a, a.Succs)
 		}
@@ -286,7 +297,13 @@ func (s *sanity) checkBlock(b *BasicBlock, index int) {
 		}
 	}
 	for _, c := range b.Succs {
-		found := slices.Contains(c.Preds, b)
+		found := false
+		for _, bb := range c.Preds {
+			if bb == b {
+				found = true
+				break
+			}
+		}
 		if !found {
 			s.errorf("expected predecessor edge in successor %s; found only: %s", c, c.Preds)
 		}
@@ -512,10 +529,12 @@ func (s *sanity) checkFunction(fn *Function) bool {
 	// Build the set of valid referrers.
 	s.instrs = make(map[Instruction]unit)
 
+	// TODO: switch to range-over-func when x/tools updates to 1.23.
 	// instrs are the instructions that are present in the function.
-	for instr := range fn.instrs() {
+	fn.instrs()(func(instr Instruction) bool {
 		s.instrs[instr] = unit{}
-	}
+		return true
+	})
 
 	// Check all Locals allocations appear in the function instruction.
 	for i, l := range fn.Locals {

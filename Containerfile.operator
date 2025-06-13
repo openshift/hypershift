@@ -1,4 +1,4 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.23.6-1745588370 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:v1.23.6 AS builder
 
 WORKDIR /hypershift
 

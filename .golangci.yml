@@ -33,14 +33,13 @@ issues:
       text: "const `tuningConfigKey` is unused"
 linters:
   enable:
-    - errcheck
     - gci
-    - gosimple
-    - govet
-    - ineffassign
-    - misspell
-    - staticcheck
     - unused
+    - ineffassign
+    - gosimple
+    - errcheck
+    - govet
+    - staticcheck
 linters-settings:
   gci:
     sections:
@@ -54,11 +53,3 @@ linters-settings:
       - prefix(sigs.k8s.io)
       - default
     custom-order: true
-  misspell:
-    # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
-    # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
-    locale: US
-    # Typos to ignore.
-    # Should be in lower case.
-    ignore-words:
-      - nto

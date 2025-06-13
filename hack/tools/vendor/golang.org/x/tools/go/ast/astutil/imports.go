@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"slices"
 	"strconv"
 	"strings"
 )
@@ -187,7 +186,7 @@ func AddNamedImport(fset *token.FileSet, f *ast.File, name, path string) (added 
 			spec.(*ast.ImportSpec).Path.ValuePos = first.Pos()
 			first.Specs = append(first.Specs, spec)
 		}
-		f.Decls = slices.Delete(f.Decls, i, i+1)
+		f.Decls = append(f.Decls[:i], f.Decls[i+1:]...)
 		i--
 	}
 

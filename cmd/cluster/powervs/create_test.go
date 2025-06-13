@@ -84,12 +84,6 @@ func TestCreateCluster(t *testing.T) {
 		t.Fatalf("failed to write infra: %v", err)
 	}
 
-	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
-
-	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
-		t.Fatalf("failed to write pullSecret: %v", err)
-	}
-
 	for _, testCase := range []struct {
 		name string
 		args []string
@@ -99,8 +93,6 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--infra-json=" + infraFile,
 				"--render-sensitive",
-				"--name=example",
-				"--pull-secret=" + pullSecretFile,
 			},
 		},
 	} {

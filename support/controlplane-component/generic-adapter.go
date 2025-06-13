@@ -1,6 +1,8 @@
 package controlplanecomponent
 
 import (
+	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,8 +41,16 @@ func ReconcileExisting() option {
 	}
 }
 
-func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Object) error {
+func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, componentName string, manifestName string) error {
 	workloadContext := cpContext.workloadContext()
+	hcp := cpContext.HCP
+	ownerRef := config.OwnerRefFrom(hcp)
+
+	obj, _, err := assets.LoadManifest(componentName, manifestName)
+	if err != nil {
+		return err
+	}
+	obj.SetNamespace(cpContext.HCP.Namespace)
 
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
 		_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
@@ -54,6 +64,7 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 		}
 	}
 
+	ownerRef.ApplyTo(obj)
 	if ga.adapt != nil {
 		if err := ga.adapt(workloadContext, obj); err != nil {
 			return err

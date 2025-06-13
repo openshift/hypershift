@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -156,12 +155,6 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
 	}
 
-	if !slices.Contains(p.FeatureGates, "OpenShiftPodSecurityAdmission=true") {
-		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1beta1.PodSecurityConfiguration).Defaults.Enforce = "privileged"
-	} else {
-		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1beta1.PodSecurityConfiguration).Defaults.Enforce = "restricted"
-	}
-
 	if p.Authentication == nil || p.Authentication.Type == configv1.AuthenticationTypeIntegratedOAuth {
 		config.AuthConfig.OAuthMetadataFile = cpath(oauthMetadataVolumeName, OauthMetadataConfigKey)
 	}
@@ -193,8 +186,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		args.Set("profiling", "false")
 	}
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
-	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
-	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
+	args.Set("enable-admission-plugins", admissionPlugins()...)
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
@@ -214,7 +206,8 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("event-ttl", "3h")
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
-	featureGates = enforceFeatureGates(featureGates, "ValidatingAdmissionPolicy=true", "StructuredAuthenticationConfiguration=true")
+	featureGates = append(featureGates, "StructuredAuthenticationConfiguration=true")
+	featureGates = append(featureGates, "ValidatingAdmissionPolicy=true")
 	args.Set("feature-gates", featureGates...)
 	args.Set("goaway-chance", p.GoAwayChance)
 	args.Set("http2-max-streams-per-connection", "2000")
@@ -235,7 +228,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("requestheader-group-headers", "X-Remote-Group")
 	args.Set("requestheader-username-headers", "X-Remote-User")
 	runtimeConfig := []string{}
-	for _, gate := range featureGates {
+	for _, gate := range p.FeatureGates {
 		if gate == "ValidatingAdmissionPolicy=true" {
 			runtimeConfig = append(runtimeConfig, "admissionregistration.k8s.io/v1beta1=true")
 		}
@@ -306,8 +299,8 @@ func restrictedEndpointsAdmission(clusterNetwork, serviceNetwork []string) (runt
 	return cfg, nil
 }
 
-func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
-	enabled := []string{
+func admissionPlugins() []string {
+	return []string{
 		"CertificateApproval",
 		"CertificateSigning",
 		"CertificateSubjectRestriction",
@@ -330,6 +323,8 @@ func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
 		"TaintNodesByCondition",
 		"ValidatingAdmissionPolicy",
 		"ValidatingAdmissionWebhook",
+		"authorization.openshift.io/RestrictSubjectBindings",
+		"authorization.openshift.io/ValidateRoleBindingRestriction",
 		"config.openshift.io/DenyDeleteClusterConfiguration",
 		"config.openshift.io/ValidateAPIServer",
 		"config.openshift.io/ValidateAuthentication",
@@ -352,22 +347,6 @@ func enabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
 		"security.openshift.io/ValidateSecurityContextConstraints",
 		"storage.openshift.io/CSIInlineVolumeSecurity",
 	}
-
-	if util.ConfigOAuthEnabled(cfg.Authentication) {
-		enabled = append(enabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
-	}
-
-	return enabled
-}
-
-func disabledAdmissionPlugins(cfg KubeAPIServerConfigParams) []string {
-	disabled := []string{}
-
-	if !util.ConfigOAuthEnabled(cfg.Authentication) {
-		disabled = append(disabled, "authorization.openshift.io/RestrictSubjectBindings", "authorization.openshift.io/ValidateRoleBindingRestriction")
-	}
-
-	return disabled
 }
 
 func corsAllowedOrigins(additionalCORSAllowedOrigins []string) []string {
@@ -408,59 +387,4 @@ func jwksURL(issuerURL string) string {
 func auditWebhookConfigFile() string {
 	cfgDir := kasAuditWebhookConfigFileVolumeMount.Path(ComponentName, auditWebhookConfigFileVolumeName)
 	return path.Join(cfgDir, hyperv1.AuditWebhookKubeconfigKey)
-}
-
-// enforceFeatureGates is a helper function that ensures the feature gates
-// are set to a particular state based on the provided feature gate strings.
-// If the existing set of feature gate strings does not contain a
-// desired feature gate string it is added.
-// If the existing set of feature gate strings does contain a desired feature gate,
-// but sets the state to a different value, it will be overridden to match
-// the desired state.
-func enforceFeatureGates(featureGates []string, enforced ...string) []string {
-	existingSet := featureGatesStringToMap(featureGates...)
-
-	for _, gate := range enforced {
-		key, state := keyAndStateForFeatureGateString(gate)
-		existingSet[key] = state
-	}
-
-	return featureGateMapToSlice(existingSet)
-}
-
-// featureGatesStringToMap generates a map[string]string
-// containing the "keys" and "states" of the feature gates strings.
-// For example, a feature gate string of "Foo=true" would result in the
-// key "Foo" being present in the map, pointing to the string "true".
-func featureGatesStringToMap(gates ...string) map[string]string {
-	gateMapping := map[string]string{}
-	for _, gate := range gates {
-		key, state := keyAndStateForFeatureGateString(gate)
-		gateMapping[key] = state
-	}
-
-	return gateMapping
-}
-
-// keyAndStateForFeatureGateString returns the "key" and "state" of a feature gate string.
-// For example, a feature gate string of "Foo=true" would result
-// in the key "Foo" and state "true" being returned.
-// All inputs are expected to be valid feature gate strings, meaning
-// that they follow the pattern `{GateName}={true || false}`.
-func keyAndStateForFeatureGateString(gate string) (string, string) {
-	splits := strings.Split(gate, "=")
-	return splits[0], splits[1]
-}
-
-func featureGateMapToSlice(gates map[string]string) []string {
-	out := []string{}
-	for gate, state := range gates {
-		out = append(out, fmt.Sprintf("%s=%s", gate, state))
-	}
-
-	// sort the slice for deterministic ordering to prevent
-	// potential for thrashing when generating configurations
-	slices.Sort(out)
-
-	return out
 }

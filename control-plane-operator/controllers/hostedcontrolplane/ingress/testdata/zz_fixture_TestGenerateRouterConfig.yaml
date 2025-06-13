@@ -1,0 +1,60 @@
+global
+  log stdout local0
+  maxconn 20000
+
+defaults
+  mode tcp
+  log global
+  log-format "%ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
+  option  dontlognull
+  retries 3
+  timeout http-request 30s
+  timeout queue        1m
+  timeout connect      10s
+  timeout client       86400s
+  timeout server       86400s
+  timeout tunnel       86400s
+
+frontend main
+  bind :::8443 v4v6
+  tcp-request inspect-delay 5s
+  tcp-request content accept if { req_ssl_hello_type 1 }
+  acl is_ignition req_ssl_sni -i ignition-server.example.com
+  acl is_konnectivity req_ssl_sni -i konnectivity.example.com
+  acl is_metrics_forwarder req_ssl_sni -i metrics-forwarder.example.com
+  acl is_oauth req_ssl_sni -i oauth-public.example.com
+  acl is_oauth_internal req_ssl_sni -i oauth-internal.example.com
+  acl is_oauth_private req_ssl_sni -i oauth-private.example.com
+  use_backend ignition if is_ignition
+  use_backend konnectivity if is_konnectivity
+  use_backend metrics_forwarder if is_metrics_forwarder
+  use_backend oauth if is_oauth
+  use_backend oauth_internal if is_oauth_internal
+  use_backend oauth_private if is_oauth_private
+  default_backend kube_api
+
+listen health_check_http_url
+  bind :::9444 v4v6
+  mode http
+  monitor-uri /haproxy_ready
+
+backend ignition
+  server ignition 0.0.0.0:443
+
+backend konnectivity
+  server konnectivity 0.0.0.1:8091
+
+backend metrics_forwarder
+  server metrics_forwarder 0.0.0.5:4000
+
+backend oauth
+  server oauth 0.0.0.4:6443
+
+backend oauth_internal
+  server oauth_internal 0.0.0.4:6443
+
+backend oauth_private
+  server oauth_private 0.0.0.4:6443
+
+backend kube_api
+  server kube_api 0.0.0.7:6443

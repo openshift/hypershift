@@ -22,7 +22,6 @@ import (
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -89,32 +88,6 @@ var expectedKasManagementComponents = []string{
 	"karpenter",
 	"karpenter-operator",
 	"featuregate-generator",
-}
-
-type GuestClients struct {
-	CfgClient  *configv1client.Clientset
-	KubeClient *kubernetes.Clientset
-}
-
-// InitGuestClients initializes the Kubernetes and OpenShift config clients for the guest cluster
-func InitGuestClients(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *GuestClients {
-	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-
-	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-	guestConfig.QPS = -1
-	guestConfig.Burst = -1
-
-	cfgClient, err := configv1client.NewForConfig(guestConfig)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	kubeClient, err := kubernetes.NewForConfig(guestConfig)
-	g.Expect(err).NotTo(HaveOccurred())
-
-	return &GuestClients{
-		CfgClient:  cfgClient,
-		KubeClient: kubeClient,
-	}
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -839,45 +812,6 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 	})
 }
 
-func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError", func(t *testing.T) {
-		AtLeast(t, Version420)
-		var podList corev1.PodList
-		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)}); err != nil {
-			t.Fatalf("failed to list pods in cluster: %v", err)
-		}
-		// CNO is not setting terminationMessagePolicy for its pods
-		// https://issues.redhat.com/browse/OCPBUGS-56051
-		excludedPods := []string{
-			"cloud-network-config-controller",
-			"network-node-identity",
-			"ovnkube-control-plane",
-		}
-		for _, pod := range podList.Items {
-			skip := false
-			for _, excludedPod := range excludedPods {
-				if strings.HasPrefix(pod.Name, excludedPod) {
-					skip = true
-					break
-				}
-			}
-			if skip {
-				continue
-			}
-			for _, initContainer := range pod.Spec.InitContainers {
-				if initContainer.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
-					t.Errorf("ns/%s pod/%s initContainer/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, initContainer.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)
-				}
-			}
-			for _, container := range pod.Spec.Containers {
-				if container.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
-					t.Errorf("ns/%s pod/%s container/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, container.Name, corev1.TerminationMessageFallbackToLogsOnError, container.TerminationMessagePolicy)
-				}
-			}
-		}
-	})
-}
-
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, platform hyperv1.PlatformType, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
 		var nodePoolList hyperv1.NodePoolList
@@ -909,7 +843,7 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 
 func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, Version419)
 		testNamespaceName := "e2e-psa-check"
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1082,7 +1016,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	// Get the component name for each labeled pod and ensure it exists in the components slice
+	// Get the component name for each labelled pod and ensure it exists in the components slice
 	for _, pod := range podList.Items {
 		if pod.Labels[suppconfig.NeedManagementKASAccessLabel] == "" {
 			continue
@@ -1368,7 +1302,6 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
-			"etcd":                                   "app",
 			"cloud-controller-manager":               "app",
 			"cloud-credential-operator":              "app",
 			"aws-ebs-csi-driver-controller":          "app",
@@ -1415,12 +1348,6 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		// involved as an string  and separated by comma, to satisfy CA operator contract.
 		// more info here: https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#what-types-of-pods-can-prevent-ca-from-removing-a-node
 		for _, pod := range hcpPods.Items {
-			// skip etcd and feature-gate-generator pods
-			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
-			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
-				continue
-			}
-
 			var labelKey, labelValue string
 			// Go through our audited list looking for the label that matches the pod Labels
 			// Get the key and value and delete the entry from the audited list.
@@ -1954,14 +1881,6 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 				if metricName == hcmetrics.UpgradingDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
 					continue
 				}
-				// Karpenter related metrics
-				if metricName == karpenterassets.KarpenterBuildInfoMetricName || metricName == karpenterassets.KarpenterOperatorInfoMetricName {
-					if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-						hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
-						continue
-					}
-					query = metricName
-				}
 
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
 				if err != nil {
@@ -2233,61 +2152,64 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			t.Fatalf("failed to get hostedcontrolplane: %v", err)
 		}
 
-		expectedTolerations := []corev1.Toleration{
-			{
-				Key:      controlPlaneLabelTolerationKey,
-				Operator: corev1.TolerationOpEqual,
-				Value:    "true",
-				Effect:   corev1.TaintEffectNoSchedule,
-			},
-			{
-				Key:      hyperv1.HostedClusterLabel,
-				Operator: corev1.TolerationOpEqual,
-				Value:    hcp.Namespace,
-				Effect:   corev1.TaintEffectNoSchedule,
-			},
-		}
-
-		expectedAffinity := &corev1.Affinity{
-			NodeAffinity: &corev1.NodeAffinity{
-				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+		expected := suppconfig.DeploymentConfig{
+			Scheduling: suppconfig.Scheduling{
+				Tolerations: []corev1.Toleration{
 					{
-						Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
-						Preference: corev1.NodeSelectorTerm{
-							MatchExpressions: []corev1.NodeSelectorRequirement{
-								{
-									Key:      controlPlaneLabelTolerationKey,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{"true"},
-								},
-							},
-						},
+						Key:      controlPlaneLabelTolerationKey,
+						Operator: corev1.TolerationOpEqual,
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
 					},
 					{
-						Weight: int32(clusterNodeSchedulingAffinityWeight),
-						Preference: corev1.NodeSelectorTerm{
-							MatchExpressions: []corev1.NodeSelectorRequirement{
-								{
-									Key:      hyperv1.HostedClusterLabel,
-									Operator: corev1.NodeSelectorOpIn,
-									Values:   []string{hcp.Namespace},
-								},
-							},
-						},
+						Key:      hyperv1.HostedClusterLabel,
+						Operator: corev1.TolerationOpEqual,
+						Value:    hcp.Namespace,
+						Effect:   corev1.TaintEffectNoSchedule,
 					},
 				},
-			},
-			PodAffinity: &corev1.PodAffinity{
-				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
-					{
-						Weight: 100,
-						PodAffinityTerm: corev1.PodAffinityTerm{
-							LabelSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{
-									colocationLabelKey: hcp.Namespace,
+				Affinity: &corev1.Affinity{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
+							{
+								Weight: int32(controlPlaneNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      controlPlaneLabelTolerationKey,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"true"},
+										},
+									},
 								},
 							},
-							TopologyKey: corev1.LabelHostname,
+							{
+								Weight: int32(clusterNodeSchedulingAffinityWeight),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      hyperv1.HostedClusterLabel,
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{hcp.Namespace},
+										},
+									},
+								},
+							},
+						},
+					},
+					PodAffinity: &corev1.PodAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+							{
+								Weight: 100,
+								PodAffinityTerm: corev1.PodAffinityTerm{
+									LabelSelector: &metav1.LabelSelector{
+										MatchLabels: map[string]string{
+											colocationLabelKey: hcp.Namespace,
+										},
+									},
+									TopologyKey: corev1.LabelHostname,
+								},
+							},
 						},
 					},
 				},
@@ -2321,11 +2243,11 @@ func EnsureHCPPodsAffinitiesAndTolerations(t *testing.T, ctx context.Context, cl
 			if strings.Contains(pod.Name, awsEbsCsiDriverOperatorPodSubstring) {
 				g.Expect(pod.Spec.Tolerations).To(ContainElements(awsEbsCsiDriverOperatorTolerations), "pod %s", pod.Name)
 			} else {
-				g.Expect(pod.Spec.Tolerations).To(ContainElements(expectedTolerations), "pod %s", pod.Name)
+				g.Expect(pod.Spec.Tolerations).To(ContainElements(expected.Scheduling.Tolerations), "pod %s", pod.Name)
 			}
 
-			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expectedAffinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
-			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expectedAffinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
+			g.Expect(pod.Spec.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.NodeAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
+			g.Expect(pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution).To(ContainElements(expected.Scheduling.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution), "pod %s", pod.Name)
 		}
 	})
 }
@@ -2556,18 +2478,30 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 }
 
 // EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled
-func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureImageRegistryCapabilityDisabled", func(t *testing.T) {
 		AtLeast(t, Version418)
+		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		// we know we're the only real clients for these test servers, so turn off client-side throttling
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
 
-		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+		cfgClient, err := configv1client.NewForConfig(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+
+		_, err = cfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"image-registry\" not found"))
+
+		guestClient, err := kubernetes.NewForConfig(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
 		// ensure existing service accounts don't have pull-secrets.
 		EventuallyObject(t, ctx, "Waiting for service account default/default to be provisioned...",
 			func(ctx context.Context) (*corev1.ServiceAccount, error) {
-				defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+				defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
 				return defaultSA, err
 			},
 			[]Predicate[*corev1.ServiceAccount]{
@@ -2578,19 +2512,19 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 			WithInterval(10*time.Second), WithTimeout(2*time.Minute),
 		)
 
-		defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+		defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
 		g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
 
 		// create a namespace and ensure no pull-secrets are provisioned to
 		// the newly auto-created service accounts.
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"}}
-		ns, err = clients.KubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+		ns, err = guestClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create test namespace")
 
 		EventuallyObject(t, ctx, fmt.Sprintf("Waiting for service account default/%s to be provisioned...", ns.Name),
 			func(ctx context.Context) (*corev1.ServiceAccount, error) {
-				defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+				defaultSA, err := guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
 				return defaultSA, err
 			},
 			[]Predicate[*corev1.ServiceAccount]{
@@ -2601,12 +2535,12 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 			WithInterval(10*time.Second), WithTimeout(2*time.Minute),
 		)
 
-		defaultSA, err = clients.KubeClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+		defaultSA, err = guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
 		g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
 
 		// ensure image-registry resources are not present
-		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
+		_, err = guestClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 	})
@@ -2633,20 +2567,4 @@ func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byt
 	}
 
 	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
-}
-
-// EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled
-func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
-	t.Run("EnsureOpenshiftSamplesCapabilityDisabled", func(t *testing.T) {
-		AtLeast(t, Version420)
-
-		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "openshift-samples", metav1.GetOptions{})
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"openshift-samples\" not found"))
-
-		// ensure console resources are not present
-		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-cluster-samples-operator", metav1.GetOptions{})
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-cluster-samples-operator\" not found"))
-	})
 }

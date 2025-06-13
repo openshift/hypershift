@@ -26,7 +26,6 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
-	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -143,7 +142,6 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
 		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
 		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
-		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
 		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
 		EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
 		EnsureNoRapidDeploymentRollouts(t, context.Background(), h.client, hostedCluster)
@@ -167,8 +165,6 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			HypershiftOperatorInfoName,
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
-			karpenterassets.KarpenterBuildInfoMetricName,
-			karpenterassets.KarpenterOperatorInfoMetricName,
 		}, true)
 	})
 }
