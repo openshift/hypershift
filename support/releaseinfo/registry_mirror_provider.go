@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"sync"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 var _ ProviderWithRegistryOverrides = (*RegistryMirrorProviderDecorator)(nil)
@@ -17,7 +19,7 @@ type RegistryMirrorProviderDecorator struct {
 	// RegistryOverrides contains the source registry string as a key and the destination registry string as value.
 	// images before being applied are scanned for the source registry string and if found the string is replaced with
 	// the destination registry string. This allows hypershift to run in non-crio environments where mirroring is not
-	// applicable.
+	// applicable. why map[string]string?
 	RegistryOverrides map[string]string
 
 	lock sync.Mutex
@@ -26,18 +28,24 @@ type RegistryMirrorProviderDecorator struct {
 func (p *RegistryMirrorProviderDecorator) Lookup(ctx context.Context, image string, pullSecret []byte) (*ReleaseImage, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
+	log := ctrl.LoggerFrom(ctx)
 
 	releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
 	if err != nil {
 		return nil, err
 	}
 
+	log.Info("测试测试", "image", image)
 	imageStream := releaseImage.ImageStream.DeepCopy() // deepCopy so the cache is not overridden.
+	log.Info("测试测试", "imageStream", imageStream.Spec)
+	log.Info("测试测试", "p.RegistryOverrides", p.RegistryOverrides)
+
 	for i := range imageStream.Spec.Tags {
 		for registrySource, registryDest := range p.RegistryOverrides {
 			imageStream.Spec.Tags[i].From.Name = strings.Replace(imageStream.Spec.Tags[i].From.Name, registrySource, registryDest, 1)
 		}
 	}
+	log.Info("测试测试", "imageStream", imageStream.Spec)
 
 	return &ReleaseImage{
 		ImageStream:    imageStream,

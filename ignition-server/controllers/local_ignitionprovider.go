@@ -96,7 +96,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	defer p.lock.Unlock()
 
 	log := ctrl.Log.WithName("get-payload")
-	log.Info("测试:", "releaseImage", releaseImage)
 
 	// Fetch the pull secret contents
 	pullSecret, err := func() ([]byte, error) {
@@ -201,6 +200,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		if err != nil {
 			return nil, fmt.Errorf("failed to look up release image metadata: %w", err)
 		}
+		log.Info("测试:", "img", img, "img.ImageStream.Spec.Tags", img.ImageStream.Spec.Tags)
 		return imageprovider.New(img), nil
 	}()
 	if err != nil {
@@ -213,7 +213,6 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return nil, fmt.Errorf("release image does not contain machine-config-operator (images: %v)", imageProvider.ComponentImages())
 	}
 
-	log.Info("测试:", "mcoImage", mcoImage, "p.ImageMetadataProvider", p.ImageMetadataProvider)
 	//mcoImage = virthost.ostest.test.metalkube.org:5000/fake1/local-release-image@sha256:39dcea3198a7f19207df2fc92f319f7f03fa639f5927c61342e7722c02f0bc3b
 	mcoImage, err = registryclient.GetCorrectArchImage(ctx, component, mcoImage, pullSecret, p.ImageMetadataProvider)
 	if err != nil {
