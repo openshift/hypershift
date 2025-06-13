@@ -1133,6 +1133,81 @@ func TestReportClusterSizeOverride(t *testing.T) {
 	}
 }
 
+func TestHostedClusterInfo(t *testing.T) {
+	wrapExpectedValueAsMetric := func(expectedValue float64) *dto.MetricFamily {
+		return &dto.MetricFamily{
+			Name: ptr.To(string(HostedClusterInfoMetricName)),
+			Help: ptr.To(string(HostedClusterInfoMetricHelp)),
+			Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+			Metric: []*dto.Metric{{
+				Label: []*dto.LabelPair{
+					{Name: ptr.To("Location"), Value: ptr.To("eastus")},
+					{Name: ptr.To("Microsoft_resourceGroupName"), Value: ptr.To("myResourceGroup777")},
+					{Name: ptr.To("Microsoft_resourceId"), Value: ptr.To("/subscriptions/mySubscription888/resourceGroups/myResourceGroup777/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/hc-name")},
+					{Name: ptr.To("Microsoft_resourceType"), Value: ptr.To("hcpOpenShiftClusters")},
+					{Name: ptr.To("Microsoft_subscriptionId"), Value: ptr.To("mySubscription888")},
+					{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+					{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+					{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+				},
+				Gauge: &dto.Gauge{Value: ptr.To(expectedValue)},
+			}},
+		}
+	}
+	testCases := []struct {
+		name         string
+		timestamp    time.Time
+		platformType hyperv1.PlatformType
+		azureSpec    *hyperv1.AzurePlatformSpec
+		expected     *dto.MetricFamily
+	}{
+		{
+			name:         "no Azure Platform, no metric",
+			timestamp:    now,
+			platformType: hyperv1.IBMCloudPlatform,
+		},
+		{
+			name:         "Azure platform but no data, no metric",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec:    nil,
+		},
+		{
+			name:         "Azure, simple",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myResourceGroup777",
+				SubscriptionID:    "mySubscription888",
+			},
+			expected: wrapExpectedValueAsMetric(1),
+		},
+	}
+	for _, tc := range testCases {
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hc-name",
+				Namespace: "hc-ns",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "this-is-the-clusterID",
+				Platform: hyperv1.PlatformSpec{
+					Type:  tc.platformType,
+					Azure: tc.azureSpec,
+				},
+			},
+		}
+		checkMetric(t,
+			fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster).Build(),
+			clocktesting.NewFakeClock(tc.timestamp),
+			HostedClusterInfoMetricName,
+			tc.expected)
+	}
+
+}
+
 func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
