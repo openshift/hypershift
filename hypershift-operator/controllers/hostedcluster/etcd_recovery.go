@@ -11,6 +11,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -302,7 +303,7 @@ func (r *HostedClusterReconciler) reconcileEtcdRecoveryJob(job *batchv1.Job, hc 
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: map[string]string{
-					NeedManagementKASAccessLabel: "true",
+					config.NeedManagementKASAccessLabel: "true",
 				},
 			},
 			Spec: corev1.PodSpec{
