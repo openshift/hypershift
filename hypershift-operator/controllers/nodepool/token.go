@@ -10,7 +10,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/backwardcompat"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -67,7 +66,6 @@ type userData struct {
 	ignitionServerEndpoint string
 	proxy                  *configv1.Proxy
 	ami                    string
-	proxyTrustedCABundle   string
 }
 
 // NewToken is the contract to create a new Token struct.
@@ -147,19 +145,6 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		caCert:                 caCert,
 		proxy:                  proxy,
 		ami:                    ami,
-	}
-
-	if proxy.Spec.TrustedCA.Name != "" {
-		key := client.ObjectKey{Namespace: configGenerator.hostedCluster.Namespace, Name: proxy.Spec.TrustedCA.Name}
-		cm := &corev1.ConfigMap{}
-		if err := configGenerator.Get(ctx, key, cm); err != nil {
-			return nil, fmt.Errorf("failed to get configMap %s: %w", key.Name, err)
-		}
-		data, hasData := cm.Data[certs.UserCABundleMapKey]
-		if !hasData {
-			return nil, fmt.Errorf("configMap %s must have a %s key", cm.Name, certs.UserCABundleMapKey)
-		}
-		token.userData.proxyTrustedCABundle = data
 	}
 
 	return token, nil
@@ -386,14 +371,10 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 		}
 
 	}
-	var encodedProxyTrustedCACert string
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
 	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))
-	if t.userData.proxyTrustedCABundle != "" {
-		encodedProxyTrustedCACert = base64.StdEncoding.EncodeToString([]byte(t.userData.proxyTrustedCABundle))
-	}
-	ignConfig := ignConfig(encodedCACert, encodedToken, encodedProxyTrustedCACert, t.userData.ignitionServerEndpoint, t.Hash(), t.userData.proxy, t.nodePool)
+	ignConfig := ignConfig(encodedCACert, encodedToken, t.userData.ignitionServerEndpoint, t.Hash(), t.userData.proxy, t.nodePool)
 	userDataValue, err := json.Marshal(ignConfig)
 	if err != nil {
 		return fmt.Errorf("failed to marshal ignition config: %w", err)
@@ -405,7 +386,7 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	return nil
 }
 
-func ignConfig(encodedCACert, encodedToken, encodedProxyTrustedCACert, endpoint, targetConfigVersionHash string, proxy *configv1.Proxy, nodePool *hyperv1.NodePool) ignitionapi.Config {
+func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash string, proxy *configv1.Proxy, nodePool *hyperv1.NodePool) ignitionapi.Config {
 	cfg := ignitionapi.Config{
 		Ignition: ignitionapi.Ignition{
 			Version: "3.2.0",
@@ -451,11 +432,6 @@ func ignConfig(encodedCACert, encodedToken, encodedProxyTrustedCACert, endpoint,
 		for _, item := range strings.Split(proxy.Status.NoProxy, ",") {
 			cfg.Ignition.Proxy.NoProxy = append(cfg.Ignition.Proxy.NoProxy, ignitionapi.NoProxyItem(item))
 		}
-	}
-	if encodedProxyTrustedCACert != "" {
-		cfg.Ignition.Security.TLS.CertificateAuthorities = append(cfg.Ignition.Security.TLS.CertificateAuthorities, ignitionapi.Resource{
-			Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedProxyTrustedCACert)),
-		})
 	}
 	return cfg
 }
