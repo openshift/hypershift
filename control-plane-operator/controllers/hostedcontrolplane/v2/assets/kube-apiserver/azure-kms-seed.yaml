@@ -1,0 +1,9 @@
+apiVersion: v1
+data:
+  kubeconfig: ""
+kind: Secret
+metadata:
+  # This name is hardcoded everyone else. It's listed as AzureKMSSeedSecretName in constants.go.
+  name: azure-kms-provider-seed-active
+  namespace: HCP_NAMESPACE
+type: Opaque
