@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -56,11 +58,67 @@ func TestAutoscaling(t *testing.T) {
 			Max: max,
 		}
 		nodepool.Spec.Replicas = nil
+
+		// 设置集群自动扩缩容配置
+		hostedCluster.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+			ScaleDown: &hyperv1.ScaleDownConfig{
+				Enabled:                 "Enabled",
+				DelayAfterAddSeconds:    ptr.To[int32](300),
+				UnneededDurationSeconds: ptr.To[int32](600),
+				UtilizationThreshold:    ptr.To[string]("0.5"),
+			},
+			Expanders: []hyperv1.ExpanderString{
+				hyperv1.LeastWasteExpander,
+				hyperv1.PriorityExpander,
+				hyperv1.RandomExpander,
+			},
+			BalancingIgnoredLabels: []string{
+				"custom.ignore.label",
+			},
+		}
+
+		// update NodePool
 		err = mgtClient.Patch(ctx, nodepool, crclient.MergeFrom(original))
 		g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
+
+		// update HostedCluster
+		err = mgtClient.Update(ctx, hostedCluster)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster")
+
 		t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
 
-		// TODO (alberto): check autoscalingEnabled condition.
+		// 验证配置是否正确应用
+		autoscalerDeployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "cluster-autoscaler",
+				Namespace: hostedCluster.Namespace + "-" + hostedCluster.Name,
+			},
+		}
+		e2eutil.EventuallyObject(t, ctx, "cluster-autoscaler deployment to be ready", func(ctx context.Context) (*appsv1.Deployment, error) {
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(autoscalerDeployment), autoscalerDeployment)
+			return autoscalerDeployment, err
+		}, []e2eutil.Predicate[*appsv1.Deployment]{func(deployment *appsv1.Deployment) (done bool, reasons string, err error) {
+			want := ptr.Deref(deployment.Spec.Replicas, 0)
+			got := deployment.Status.ReadyReplicas
+			return want != 0 && want == got, fmt.Sprintf("wanted %d replicas in spec, got %d in status", want, got), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(5*time.Minute))
+
+		// check autoscalingEnabled condition.
+		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
+		g.Expect(err).NotTo(HaveOccurred())
+		for _, condition := range nodepool.Status.Conditions {
+			if condition.Type == hyperv1.NodePoolAutoscalingEnabledConditionType {
+				g.Expect(condition.Status).To(Equal(corev1.ConditionTrue))
+			}
+		}
+
+		// Verify cluster autoscaler deployment arguments
+		args := autoscalerDeployment.Spec.Template.Spec.Containers[0].Args
+		g.Expect(args).To(ContainElement("--scale-down-delay-after-add=300s"))
+		g.Expect(args).To(ContainElement("--scale-down-unneeded-time=600s"))
+		g.Expect(args).To(ContainElement("--scale-down-utilization-threshold=0.5"))
+		g.Expect(args).To(ContainElement("--expander=least-waste,priority"))
+		g.Expect(args).To(ContainElement("--balancing-ignore-label=custom.ignore.label"))
 
 		// Generate workload.
 		memCapacity := nodes[0].Status.Allocatable[corev1.ResourceMemory]
@@ -70,19 +128,40 @@ func TestAutoscaling(t *testing.T) {
 		g.Expect(ok).Should(BeTrue())
 
 		// Enforce max nodes creation.
-		// 60% - enough that the existing and new nodes will
+		// 80% - enough that the existing and new nodes will
 		// be used, not enough to have more than 1 pod per
 		// node.
-		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.5*float32(bytes)))
+		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.8*float32(bytes)))
 		workload := newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
-		t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
+		t.Logf("Created workload. Node: %s, memcapacity: %s, workload memory request: %s", nodes[0].Name, memCapacity.String(), workloadMemRequest.String())
+
+		// 等待工作负载的 Pod 被调度
+		t.Logf("Waiting for workload pods to be scheduled...")
+		e2eutil.EventuallyObject(t, ctx, "workload pods to be scheduled", func(ctx context.Context) (*batchv1.Job, error) {
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(workload), workload)
+			return workload, err
+		}, []e2eutil.Predicate[*batchv1.Job]{func(job *batchv1.Job) (done bool, reasons string, err error) {
+			if job.Status.Active > 0 {
+				return true, "", nil
+			}
+			return false, fmt.Sprintf("job has %d active pods", job.Status.Active), nil
+		}}, e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(5*time.Minute))
+
+		// 检查 Pod 的调度状态
+		pods := &corev1.PodList{}
+		err = guestClient.List(ctx, pods, crclient.InNamespace(workload.Namespace), crclient.MatchingLabels(workload.Spec.Template.Labels))
+		g.Expect(err).NotTo(HaveOccurred())
+		for _, pod := range pods.Items {
+			t.Logf("Pod %s status: %s, node: %s", pod.Name, pod.Status.Phase, pod.Spec.NodeName)
+		}
 
 		// Wait for one more node.
-		// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
 		numNodes = numNodes + 1
+		t.Logf("Waiting for %d nodes to become ready...", numNodes)
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		t.Logf("Successfully reached %d nodes", numNodes)
 
 		// Delete workload.
 		cascadeDelete := metav1.DeletePropagationForeground
@@ -95,6 +174,34 @@ func TestAutoscaling(t *testing.T) {
 		// Wait for one less node.
 		numNodes = numNodes - 1
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+		// 测试禁用缩容功能
+		hostedCluster.Spec.Autoscaling.ScaleDown.Enabled = "Disabled"
+		err = mgtClient.Update(ctx, hostedCluster)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster")
+
+		// 再次创建工作负载并删除
+		workload = newWorkLoad(max, workloadMemRequest, "", globalOpts.LatestReleaseImage)
+		err = guestClient.Create(ctx, workload)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// 等待节点扩容
+		numNodes = numNodes + 1
+		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+
+		// 删除工作负载
+		err = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
+			PropagationPolicy: &cascadeDelete,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// 验证节点数量保持不变（因为缩容被禁用）
+		time.Sleep(30 * time.Second)
+		currentNodes := &corev1.NodeList{}
+		err = guestClient.List(ctx, currentNodes)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(len(currentNodes.Items)).To(Equal(numNodes))
+
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
 
 }
