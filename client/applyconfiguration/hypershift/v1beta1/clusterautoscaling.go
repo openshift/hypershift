@@ -24,13 +24,14 @@ import (
 // ClusterAutoscalingApplyConfiguration represents a declarative configuration of the ClusterAutoscaling type for use
 // with apply.
 type ClusterAutoscalingApplyConfiguration struct {
-	ScaleDown              *ScaleDownConfigApplyConfiguration `json:"scaleDown,omitempty"`
-	BalancingIgnoredLabels []string                           `json:"balancingIgnoredLabels,omitempty"`
-	MaxNodesTotal          *int32                             `json:"maxNodesTotal,omitempty"`
-	MaxPodGracePeriod      *int32                             `json:"maxPodGracePeriod,omitempty"`
-	MaxNodeProvisionTime   *string                            `json:"maxNodeProvisionTime,omitempty"`
-	PodPriorityThreshold   *int32                             `json:"podPriorityThreshold,omitempty"`
-	Expanders              []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
+	ScaleDown                     *ScaleDownConfigApplyConfiguration `json:"scaleDown,omitempty"`
+	BalancingIgnoredLabels        []string                           `json:"balancingIgnoredLabels,omitempty"`
+	MaxNodesTotal                 *int32                             `json:"maxNodesTotal,omitempty"`
+	MaxPodGracePeriod             *int32                             `json:"maxPodGracePeriod,omitempty"`
+	MaxNodeProvisionTime          *string                            `json:"maxNodeProvisionTime,omitempty"`
+	PodPriorityThreshold          *int32                             `json:"podPriorityThreshold,omitempty"`
+	Expanders                     []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
+	MaxFreeDifferenceRatioPercent *int32                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
@@ -96,5 +97,13 @@ func (b *ClusterAutoscalingApplyConfiguration) WithExpanders(values ...hypershif
 	for i := range values {
 		b.Expanders = append(b.Expanders, values[i])
 	}
+	return b
+}
+
+// WithMaxFreeDifferenceRatioPercent sets the MaxFreeDifferenceRatioPercent field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaxFreeDifferenceRatioPercent field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithMaxFreeDifferenceRatioPercent(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.MaxFreeDifferenceRatioPercent = &value
 	return b
 }

@@ -23,7 +23,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - args:
-            - --expander=priority,least-waste
             - --cloud-provider=clusterapi
             - --node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)
             - --kubeconfig=/mnt/kubeconfig/target-kubeconfig
@@ -34,7 +33,7 @@ spec:
             - --leader-elect-retry-period=26s
             - --leader-elect-renew-deadline=107s
             - --balance-similar-node-groups=true
-            - --v=4
+            - --v=5
             - --balancing-ignore-label=hypershift.openshift.io/nodePool
             - --balancing-ignore-label=vpc-block-csi-driver-labels
           command:

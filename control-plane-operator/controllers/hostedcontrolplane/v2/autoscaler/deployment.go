@@ -37,6 +37,7 @@ const (
 	ScaleDownDelayAfterFailureArg    AutoscalerArg = "--scale-down-delay-after-failure"
 	ScaleDownUnneededTimeArg         AutoscalerArg = "--scale-down-unneeded-time"
 	ScaleDownUtilizationThresholdArg AutoscalerArg = "--scale-down-utilization-threshold"
+	MaxFreeDifferenceRatioArg        AutoscalerArg = "--max-free-difference-ratio"
 )
 
 // Constants for expander flags
@@ -119,6 +120,12 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 
 	for _, ignoredLabel := range options.BalancingIgnoredLabels {
 		args = append(args, BalancingIgnoreLabelArg.Value(ignoredLabel))
+	}
+
+	if options.MaxFreeDifferenceRatioPercent != nil {
+		// Convert percentage to decimal (e.g., 10% -> 0.1)
+		ratio := float64(*options.MaxFreeDifferenceRatioPercent) / 100.0
+		args = append(args, MaxFreeDifferenceRatioArg.Value(fmt.Sprintf("%.2f", ratio)))
 	}
 
 	if len(options.Expanders) > 0 {
@@ -207,6 +214,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	hcp := cpContext.HCP
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		if image, ok := cpContext.HCP.Annotations[hyperv1.ClusterAutoscalerImage]; ok {
+			c.Image = image
+		}
+
 		// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
 		// from the cluster-autoscaler-operator and create some utility functions for these assignments.
 		c.Args = append(c.Args, autoscalerArgs(&hcp.Spec.Autoscaling, hcp.Spec.Platform.Type, ctrl.LoggerFrom(cpContext))...)

@@ -3637,7 +3637,7 @@ ScaleDownConfig
 <p>balancingIgnoredLabels sets &ldquo;&ndash;balancing-ignore-label <label name>&rdquo; flag on cluster-autoscaler for each listed label.
 This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
 For example, if you have nodes with &ldquo;topology.ebs.csi.aws.com/zone&rdquo; label, you can add name of this label here
-to prevent cluster autoscaler from spliting nodes into different node groups based on its value.</p>
+to prevent cluster autoscaler from splitting nodes into different node groups based on its value.</p>
 </td>
 </tr>
 <tr>
@@ -3717,6 +3717,22 @@ Options include:
 * Random - selects a group randomly.
 If not specified, <code>Random</code> is the default.
 Maximum of 3 expanders can be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>maxFreeDifferenceRatioPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups.
+This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+The value represents a percentage from 0 to 100, where 0 means no difference is allowed and 100 means any difference is allowed.
+For example, a value of 10 means that node groups with free resource differences greater than 10% will be considered dissimilar.
+This affects the &ldquo;&ndash;max-free-difference-ratio&rdquo; flag on cluster-autoscaler.</p>
 </td>
 </tr>
 </tbody>

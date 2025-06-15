@@ -1312,7 +1312,7 @@ type ClusterAutoscaling struct {
 	// balancingIgnoredLabels sets "--balancing-ignore-label <label name>" flag on cluster-autoscaler for each listed label.
 	// This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
 	// For example, if you have nodes with "topology.ebs.csi.aws.com/zone" label, you can add name of this label here
-	// to prevent cluster autoscaler from spliting nodes into different node groups based on its value.
+	// to prevent cluster autoscaler from splitting nodes into different node groups based on its value.
 	//
 	//
 	// +kubebuilder:validation:MaxItems=64
@@ -1368,6 +1368,17 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups.
+	// This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+	// The value represents a percentage from 0 to 100, where 0 means no difference is allowed and 100 means any difference is allowed.
+	// For example, a value of 10 means that node groups with free resource differences greater than 10% will be considered dissimilar.
+	// This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	MaxFreeDifferenceRatioPercent *int32 `json:"maxFreeDifferenceRatioPercent,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
