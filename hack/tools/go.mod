@@ -7,7 +7,7 @@ require (
 	github.com/golangci/golangci-lint v1.63.4
 	github.com/openshift/api/tools v0.0.0-20250402150121-50cb52d04f83
 	go.uber.org/mock v0.5.1
-	gotest.tools/gotestsum v1.12.0
+	gotest.tools/gotestsum v1.12.2
 	honnef.co/go/tools v0.5.1
 	k8s.io/code-generator v0.32.2
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
@@ -77,7 +77,7 @@ require (
 	github.com/fatih/structtag v1.2.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/firefart/nonamedreturns v1.0.5 // indirect
-	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	github.com/fsnotify/fsnotify v1.8.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/fzipp/gocyclo v0.6.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
@@ -117,7 +117,7 @@ require (
 	github.com/golangci/unconvert v0.0.0-20240309020433-c5143eacb3ed // indirect
 	github.com/google/cel-go v0.22.0 // indirect
 	github.com/google/gnostic-models v0.6.8 // indirect
-	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
