@@ -47,9 +47,17 @@ var schemaYAML = typed.YAMLObject(`types:
 - name: com.github.openshift.api.config.v1.APIServerEncryption
   map:
     fields:
+    - name: kms
+      type:
+        namedType: com.github.openshift.api.config.v1.KMSConfig
     - name: type
       type:
         scalar: string
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: kms
+        discriminatorValue: KMS
 - name: com.github.openshift.api.config.v1.APIServerNamedServingCert
   map:
     fields:
@@ -127,6 +135,17 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: string
     unions:
     - discriminator: type
+- name: com.github.openshift.api.config.v1.AWSKMSConfig
+  map:
+    fields:
+    - name: keyARN
+      type:
+        scalar: string
+      default: ""
+    - name: region
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1.AWSPlatformSpec
   map:
     fields:
@@ -1280,6 +1299,14 @@ var schemaYAML = typed.YAMLObject(`types:
           elementRelationship: associative
           keys:
           - key
+    - name: serviceEndpoints
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.config.v1.GCPServiceEndpoint
+          elementRelationship: associative
+          keys:
+          - name
 - name: com.github.openshift.api.config.v1.GCPResourceLabel
   map:
     fields:
@@ -1303,6 +1330,17 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: string
       default: ""
     - name: value
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1.GCPServiceEndpoint
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+      default: ""
+    - name: url
       type:
         scalar: string
       default: ""
@@ -1400,16 +1438,15 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: string
 - name: com.github.openshift.api.config.v1.IBMCloudPlatformSpec
   map:
-    elementType:
-      scalar: untyped
-      list:
-        elementType:
-          namedType: __untyped_atomic_
-        elementRelationship: atomic
-      map:
-        elementType:
-          namedType: __untyped_deduced_
-        elementRelationship: separable
+    fields:
+    - name: serviceEndpoints
+      type:
+        list:
+          elementType:
+            namedType: com.github.openshift.api.config.v1.IBMCloudServiceEndpoint
+          elementRelationship: associative
+          keys:
+          - name
 - name: com.github.openshift.api.config.v1.IBMCloudPlatformStatus
   map:
     fields:
@@ -1867,6 +1904,21 @@ var schemaYAML = typed.YAMLObject(`types:
         elementType:
           namedType: __untyped_deduced_
         elementRelationship: separable
+- name: com.github.openshift.api.config.v1.KMSConfig
+  map:
+    fields:
+    - name: aws
+      type:
+        namedType: com.github.openshift.api.config.v1.AWSKMSConfig
+    - name: type
+      type:
+        scalar: string
+      default: ""
+    unions:
+    - discriminator: type
+      fields:
+      - fieldName: aws
+        discriminatorValue: AWS
 - name: com.github.openshift.api.config.v1.KeystoneIdentityProvider
   map:
     fields:
@@ -3794,6 +3846,9 @@ var schemaYAML = typed.YAMLObject(`types:
           elementType:
             scalar: string
           elementRelationship: atomic
+    - name: storage
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.Storage
 - name: com.github.openshift.api.config.v1alpha1.ImagePolicy
   map:
     fields:
@@ -3879,6 +3934,45 @@ var schemaYAML = typed.YAMLObject(`types:
         elementType:
           namedType: __untyped_deduced_
         elementRelationship: separable
+- name: com.github.openshift.api.config.v1alpha1.PKI
+  map:
+    fields:
+    - name: caIntermediatesData
+      type:
+        scalar: string
+    - name: caRootsData
+      type:
+        scalar: string
+    - name: pkiCertificateSubject
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.PKICertificateSubject
+      default: {}
+- name: com.github.openshift.api.config.v1alpha1.PKICertificateSubject
+  map:
+    fields:
+    - name: email
+      type:
+        scalar: string
+    - name: hostname
+      type:
+        scalar: string
+- name: com.github.openshift.api.config.v1alpha1.PersistentVolumeClaimReference
+  map:
+    fields:
+    - name: name
+      type:
+        scalar: string
+      default: ""
+- name: com.github.openshift.api.config.v1alpha1.PersistentVolumeConfig
+  map:
+    fields:
+    - name: claim
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.PersistentVolumeClaimReference
+      default: {}
+    - name: mountPath
+      type:
+        scalar: string
 - name: com.github.openshift.api.config.v1alpha1.Policy
   map:
     fields:
@@ -3945,6 +4039,9 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: fulcioCAWithRekor
       type:
         namedType: com.github.openshift.api.config.v1alpha1.FulcioCAWithRekor
+    - name: pki
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.PKI
     - name: policyType
       type:
         scalar: string
@@ -3957,6 +4054,8 @@ var schemaYAML = typed.YAMLObject(`types:
       fields:
       - fieldName: fulcioCAWithRekor
         discriminatorValue: FulcioCAWithRekor
+      - fieldName: pki
+        discriminatorValue: PKI
       - fieldName: publicKey
         discriminatorValue: PublicKey
 - name: com.github.openshift.api.config.v1alpha1.PublicKey
@@ -4000,6 +4099,16 @@ var schemaYAML = typed.YAMLObject(`types:
     - name: maxSizeOfBackupsGb
       type:
         scalar: numeric
+- name: com.github.openshift.api.config.v1alpha1.Storage
+  map:
+    fields:
+    - name: persistentVolume
+      type:
+        namedType: com.github.openshift.api.config.v1alpha1.PersistentVolumeConfig
+    - name: type
+      type:
+        scalar: string
+      default: ""
 - name: com.github.openshift.api.config.v1alpha1.UserDefinedMonitoring
   map:
     fields:
