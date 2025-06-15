@@ -40,7 +40,7 @@ require (
 	github.com/google/gofuzz v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
-	github.com/k-orc/openstack-resource-controller v1.0.0
+	github.com/k-orc/openstack-resource-controller v1.0.2
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
