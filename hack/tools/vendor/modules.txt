@@ -1098,8 +1098,8 @@ github.com/sivchari/containedctx
 # github.com/sivchari/tenv v1.12.1
 ## explicit; go 1.22.0
 github.com/sivchari/tenv
-# github.com/skeema/knownhosts v1.3.0
-## explicit; go 1.17
+# github.com/skeema/knownhosts v1.3.1
+## explicit; go 1.22
 github.com/skeema/knownhosts
 # github.com/sonatard/noctx v0.1.0
 ## explicit; go 1.22.0
