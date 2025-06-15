@@ -128,6 +128,16 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 			expectedReplicas: 1,
 		},
+		{
+			name: "when MaxFreeDifferenceRatioPercent is set, container has max-free-difference-ratio argument",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				MaxFreeDifferenceRatioPercent: ptr.To[int32](20),
+			},
+			ExpectedArgs: []string{
+				"--max-free-difference-ratio=0.20",
+			},
+			expectedReplicas: 1,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -156,4 +166,41 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdaptDeploymentWithClusterAutoscalerImage(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "test-infra-id",
+		},
+	}
+
+	hcp.Annotations = map[string]string{
+		hyperv1.ClusterAutoscalerImage: "quay.io/custom/cluster-autoscaler:v1.28.0",
+	}
+
+	cpContext := controlplanecomponent.WorkloadContext{
+		Context: context.Background(),
+		HCP:     hcp,
+	}
+
+	g := NewGomegaWithT(t)
+
+	deployment, err := assets.LoadDeploymentManifest(ComponentName)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Store original image for comparison
+	originalImage := deployment.Spec.Template.Spec.Containers[0].Image
+
+	err = adaptDeployment(cpContext, deployment)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify that the image was overridden
+	observedImage := deployment.Spec.Template.Spec.Containers[0].Image
+	g.Expect(observedImage).To(Equal("quay.io/custom/cluster-autoscaler:v1.28.0"))
+	g.Expect(observedImage).ToNot(Equal(originalImage))
 }
