@@ -55,7 +55,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
-	github.com/ppc64le-cloud/powervs-utils v0.0.0-20240610070307-1c0d75a5c247
+	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/client_model v0.6.1
