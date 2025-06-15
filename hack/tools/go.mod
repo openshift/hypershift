@@ -149,7 +149,7 @@ require (
 	github.com/kkHAIKE/contextcheck v1.1.5 // indirect
 	github.com/krishicks/yaml-patch v0.0.10 // indirect
 	github.com/kulti/thelper v0.6.3 // indirect
-	github.com/kunwardeep/paralleltest v1.0.10 // indirect
+	github.com/kunwardeep/paralleltest v1.0.14 // indirect
 	github.com/kyoh86/exportloopref v0.1.11 // indirect
 	github.com/lasiar/canonicalheader v1.1.2 // indirect
 	github.com/ldez/exptostd v0.3.1 // indirect
