@@ -3832,6 +3832,88 @@ spec:
                         x-kubernetes-validations:
                         - message: VnetID is immutable
                           rule: self == oldSelf
+                      workloadIdentities:
+                        description: |-
+                          workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
+                          used in workload identity authentication. These are used to authenticate with Azure cloud on both the control
+                          plane and data plane.
+
+                          These are required for self-managed Azure.
+                        properties:
+                          azureCPClientID:
+                            description: |-
+                              azureCPClientID is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+                              workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          capzClientID:
+                            description: |-
+                              capzClientID is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+                              in workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          cioClientID:
+                            description: |-
+                              cioClientID is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+                              workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          ciroClientID:
+                            description: |-
+                              ciroClientID is the client ID of a federated managed identity, associated with cluster-image-operator, used in
+                              workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          csoDiskClientID:
+                            description: |-
+                              csoDiskClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+                              used in workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                          csoFileClientID:
+                            description: |-
+                              csoFileClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+                              used in workload identity authentication.
+                            maxLength: 255
+                            type: string
+                            x-kubernetes-validations:
+                            - message: the client ID of a managed identity must be
+                                a valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12.
+                              rule: self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                        required:
+                        - azureCPClientID
+                        - capzClientID
+                        - cioClientID
+                        - ciroClientID
+                        - csoDiskClientID
+                        - csoFileClientID
+                        type: object
                     required:
                     - location
                     - resourceGroup

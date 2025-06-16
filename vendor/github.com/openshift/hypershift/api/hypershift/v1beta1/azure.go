@@ -430,6 +430,14 @@ type AzurePlatformSpec struct {
 	// +optional
 	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
 
+	// workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
+	// used in workload identity authentication. These are used to authenticate with Azure cloud on both the control 
+	// plane and data plane.
+	//
+	// These are required for self-managed Azure.
+	// +optional
+	WorkloadIdentities *AzureWorkloadIdentities `json:"workloadIdentities,omitempty"`
+
 	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
 	//
 	// +required
@@ -480,6 +488,49 @@ type AzureResourceManagedIdentities struct {
 	//
 	// +required
 	DataPlane DataPlaneManagedIdentities `json:"dataPlane"`
+}
+type AzureWorkloadIdentities struct {
+	// ciroClientID is the client ID of a federated managed identity, associated with cluster-image-operator, used in 
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CIROClientID string `json:"ciroClientID"`
+
+	// cioClientID is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CIOClientID string `json:"cioClientID"`
+	
+	// csoFileClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+	// used in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CSOFileClientID string `json:"csoFileClientID"`
+	
+	// csoDiskClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+	// used in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CSODiskClientID string `json:"csoDiskClientID"`
+	
+	// capzClientID is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+	// in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."	
+	// +kubebuilder:validation:MaxLength=255
+	CAPZClientID string `json:"capzClientID"`
+	
+	// azureCPClientID is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	AzureCPClientID string `json:"azureCPClientID"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
