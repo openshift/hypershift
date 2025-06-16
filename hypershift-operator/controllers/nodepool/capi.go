@@ -70,6 +70,12 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		return err
 	}
 
+	if c.nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
+		if err := c.reconcileAWSMachines(ctx); err != nil {
+			return err
+		}
+	}
+
 	//  Reconcile (Platform)MachineTemplate.
 	template, err := c.machineTemplateBuilders()
 	if err != nil {

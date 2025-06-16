@@ -9,9 +9,13 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -176,7 +180,11 @@ func (c *CAPI) awsMachineTemplate(templateNameGenerator func(spec any) (string, 
 		return nil, fmt.Errorf("failed to generate AWSMachineTemplateSpec: %w", err)
 	}
 
-	templateName, err := templateNameGenerator(spec)
+	hashedSpec := spec.DeepCopy()
+	// set tags to nil so that it doesn't get considered in the hash calculation for the MachineTemplate name.
+	// this is to avoid a rolling upgrade when tags are changed.
+	hashedSpec.Template.Spec.AdditionalTags = nil
+	templateName, err := templateNameGenerator(hashedSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate template name: %w", err)
 	}
@@ -189,6 +197,27 @@ func (c *CAPI) awsMachineTemplate(templateNameGenerator func(spec any) (string, 
 	}
 
 	return template, nil
+}
+
+func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
+	awsMachines := &capiaws.AWSMachineList{}
+	if err := c.List(ctx, awsMachines, client.InNamespace(c.controlplaneNamespace), client.MatchingLabels{
+		capiv1.MachineDeploymentNameLabel: c.nodePool.Name,
+	}); err != nil {
+		return fmt.Errorf("failed to list AWSMachines for NodePool %s: %w", c.nodePool.Name, err)
+	}
+
+	var errs []error
+	for _, machine := range awsMachines.Items {
+		if _, err := controllerutil.CreateOrPatch(ctx, c.Client, &machine, func() error {
+			machine.Spec.AdditionalTags = awsAdditionalTags(c.nodePool, c.hostedCluster, c.capiClusterName)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile AWSMachine %s: %w", machine.Name, err))
+		}
+	}
+
+	return errors.NewAggregate(errs)
 }
 
 func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
