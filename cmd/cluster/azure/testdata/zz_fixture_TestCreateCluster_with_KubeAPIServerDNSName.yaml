@@ -73,40 +73,42 @@ spec:
   olmCatalogPlacement: management
   platform:
     azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: ManagedIdentities
+        managedIdentities:
+          controlPlane:
+            cloudProvider:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            controlPlaneOperator:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            disk:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            file:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            imageRegistry:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            ingress:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            managedIdentitiesKeyVault:
+              name: ""
+              tenantID: ""
+            network:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            nodePoolManagement:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+          dataPlane:
+            diskMSIClientID: ""
+            fileMSIClientID: ""
+            imageRegistryMSIClientID: ""
       location: fakeLocation
-      managedIdentities:
-        controlPlane:
-          cloudProvider:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          controlPlaneOperator:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          disk:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          file:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          imageRegistry:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          ingress:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          managedIdentitiesKeyVault:
-            name: ""
-            tenantID: ""
-          network:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-          nodePoolManagement:
-            credentialsSecretName: ""
-            objectEncoding: utf-8
-        dataPlane:
-          diskMSIClientID: ""
-          fileMSIClientID: ""
-          imageRegistryMSIClientID: ""
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
