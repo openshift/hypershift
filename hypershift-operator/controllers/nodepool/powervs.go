@@ -86,6 +86,27 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 	}, nil
 }
 
+func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capipowervs.IBMPowerVSMachineTemplate, error) {
+	spec, err := ibmPowerVSMachineTemplateSpec(c.hostedCluster, c.nodePool, c.releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PowerVSMachineTemplateSpec: %w", err)
+	}
+
+	templateName, err := templateNameGenerator(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
+	}
+
+	template := &capipowervs.IBMPowerVSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
+}
+
 func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*releaseinfo.CoreOSPowerVSImage, string, error) {
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["ppc64le"]
 	if !foundArch {

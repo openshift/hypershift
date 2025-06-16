@@ -1,9 +1,6 @@
 package nodepool
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"encoding/base64"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -11,11 +8,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-
-	"golang.org/x/crypto/ssh"
 )
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
@@ -96,18 +92,25 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 	return azureMachineTemplate, nil
 }
 
-func generateSSHPubkey() (string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+func (c *CAPI) azureMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
+	spec, err := azureMachineTemplateSpec(c.nodePool)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate private key: %w", err)
+		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)
 	}
 
-	publicRsaKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	templateName, err := templateNameGenerator(spec)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate public key: %w", err)
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
 	}
 
-	return base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey)), nil
+	template := &capiazure.AzureMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
 }
 
 func failureDomain(nodepool *hyperv1.NodePool) *string {

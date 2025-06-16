@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -161,4 +162,36 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 		})
 	}
 	return nil
+}
+
+func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capikubevirt.KubevirtMachineTemplate, error) {
+	nodePool := c.nodePool
+	spec, err := kubevirt.MachineTemplateSpec(nodePool, c.hostedCluster, c.releaseImage, nil)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.InvalidKubevirtMachineTemplate,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+
+		return nil, err
+	} else {
+		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
+	}
+
+	templateName, err := templateNameGenerator(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
+	}
+
+	template := &capikubevirt.KubevirtMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
 }

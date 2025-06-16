@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -102,18 +103,6 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 
-	tags := capiaws.Tags{}
-	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
-		tags[tag.Key] = tag.Value
-	}
-
-	// We enforce the AWS cluster cloud provider tag here.
-	// Otherwise, this would race with the HC defaulting itself hostedCluster.Spec.Platform.AWS.ResourceTags.
-	key := awsClusterCloudProviderTagKey(infraName)
-	if _, ok := tags[key]; !ok {
-		tags[key] = infraLifecycleOwned
-	}
-
 	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
 		HTTPTokens:              capiaws.HTTPTokensStateOptional,
 		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
@@ -140,7 +129,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 				AdditionalSecurityGroups: securityGroups,
 				Subnet:                   subnet,
 				RootVolume:               rootVolume,
-				AdditionalTags:           tags,
+				AdditionalTags:           awsAdditionalTags(nodePool, hostedCluster, infraName),
 				InstanceMetadataOptions:  instanceMetadataOptions,
 			},
 		},
@@ -164,6 +153,42 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	}
 
 	return awsMachineTemplateSpec, nil
+}
+
+func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
+	tags := capiaws.Tags{}
+	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
+		tags[tag.Key] = tag.Value
+	}
+
+	// We enforce the AWS cluster cloud provider tag here.
+	// Otherwise, this would race with the HC defaulting itself hostedCluster.Spec.Platform.AWS.ResourceTags.
+	key := awsClusterCloudProviderTagKey(infraName)
+	if _, ok := tags[key]; !ok {
+		tags[key] = infraLifecycleOwned
+	}
+	return tags
+}
+
+func (c *CAPI) awsMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
+	spec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate AWSMachineTemplateSpec: %w", err)
+	}
+
+	templateName, err := templateNameGenerator(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
+	}
+
+	template := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
 }
 
 func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
