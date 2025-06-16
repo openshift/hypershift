@@ -1878,7 +1878,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// KAS server secret
 	kasServerSecret := manifests.KASServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, kasServerSecret, func() error {
-		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR)
+		return pki.ReconcileKASServerCertSecret(kasServerSecret, rootCASecret, p.OwnerRef, p.ExternalAPIAddress, p.InternalAPIAddress, p.ServiceCIDR, p.NodeInternalAPIServerIP)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile kas server secret: %w", err)
 	}
