@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -26,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
+	podsecurityadmissionv1 "k8s.io/pod-security-admission/admission/api/v1"
 )
 
 const (
@@ -95,20 +96,20 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 					},
 					"PodSecurity": {
 						Configuration: runtime.RawExtension{
-							Object: &podsecurityadmissionv1beta1.PodSecurityConfiguration{
+							Object: &podsecurityadmissionv1.PodSecurityConfiguration{
 								TypeMeta: metav1.TypeMeta{
-									APIVersion: podsecurityadmissionv1beta1.SchemeGroupVersion.String(),
+									APIVersion: podsecurityadmissionv1.SchemeGroupVersion.String(),
 									Kind:       "PodSecurityConfiguration",
 								},
-								Defaults: podsecurityadmissionv1beta1.PodSecurityDefaults{
-									Enforce:        "privileged",
+								Defaults: podsecurityadmissionv1.PodSecurityDefaults{
+									Enforce:        "restricted",
 									EnforceVersion: "latest",
 									Audit:          "restricted",
 									AuditVersion:   "latest",
 									Warn:           "restricted",
 									WarnVersion:    "latest",
 								},
-								Exemptions: podsecurityadmissionv1beta1.PodSecurityExemptions{
+								Exemptions: podsecurityadmissionv1.PodSecurityExemptions{
 									Usernames: []string{
 										"system:serviceaccount:openshift-infra:build-controller",
 									},
@@ -138,6 +139,12 @@ func generateConfig(p KubeAPIServerConfigParams) *kcpv1.KubeAPIServerConfig {
 		ProjectConfig:                projectConfig(p.DefaultNodeSelector),
 		ServiceAccountPublicKeyFiles: []string{cpath(serviceAccountKeyVolumeName, pki.ServiceSignerPublicKey)},
 		ServicesSubnet:               strings.Join(p.ServiceNetwork, ","),
+	}
+
+	if !slices.Contains(p.FeatureGates, "OpenShiftPodSecurityAdmission=true") {
+		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1.PodSecurityConfiguration).Defaults.Enforce = "privileged"
+	} else {
+		config.AdmissionConfig.PluginConfig["PodSecurity"].Configuration.Object.(*podsecurityadmissionv1.PodSecurityConfiguration).Defaults.Enforce = "restricted"
 	}
 
 	if p.Authentication == nil || p.Authentication.Type == configv1.AuthenticationTypeIntegratedOAuth {
