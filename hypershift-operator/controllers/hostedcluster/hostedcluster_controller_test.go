@@ -1650,10 +1650,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 			t.Setenv("PLATFORMS_INSTALLED", testCase.platform)
 
-			if strings.EqualFold(testCase.platform, string(hyperv1.AzurePlatform)) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			}
-
 			watchedResources := sets.New[string]()
 			for _, resource := range r.managedResources() {
 				resourceType := fmt.Sprintf("%T", resource)
