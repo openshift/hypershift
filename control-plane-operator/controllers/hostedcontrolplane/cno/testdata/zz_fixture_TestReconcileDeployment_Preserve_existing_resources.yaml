@@ -118,6 +118,7 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
@@ -166,6 +167,7 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/kubeconfig
           name: hosted-etc-kube

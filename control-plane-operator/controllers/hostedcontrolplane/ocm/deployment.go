@@ -93,6 +93,7 @@ func ocmContainerMain() *corev1.Container {
 func buildOCMContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"openshift-controller-manager"}
 		c.Args = []string{
 			"start",

@@ -237,10 +237,11 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	if auditConfig.Data[AuditPolicyProfileMapKey] != string(configv1.NoneAuditProfileType) {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "audit-logs",
-			Image:           images.CLI,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/bash"},
+			Name:                     "audit-logs",
+			Image:                    images.CLI,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Command:                  []string{"/bin/bash"},
 			Args: []string{
 				"-c",
 				RenderAuditLogScript(fmt.Sprintf("%s/%s", volumeMounts.Path(kasContainerMain().Name, kasVolumeWorkLogs().Name), "audit.log")),
@@ -275,9 +276,10 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 
 	if cloudProviderName == aws.Provider {
 		deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, corev1.Container{
-			Name:            "aws-pod-identity-webhook",
-			Image:           images.AWSPodIdentityWebhookImage,
-			ImagePullPolicy: corev1.PullIfNotPresent,
+			Name:                     "aws-pod-identity-webhook",
+			Image:                    images.AWSPodIdentityWebhookImage,
+			ImagePullPolicy:          corev1.PullIfNotPresent,
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 			Command: []string{
 				"/usr/bin/aws-pod-identity-webhook",
 				"--annotation-prefix=eks.amazonaws.com",
@@ -340,9 +342,8 @@ func kasContainerBootstrap() *corev1.Container {
 func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/control-plane-operator",
 			"kas-bootstrap",
@@ -374,8 +375,7 @@ func buildKASContainerBootstrapRender(image, payloadVersion, featureGateYaml str
 			"/bin/bash",
 		}
 		c.ImagePullPolicy = corev1.PullIfNotPresent
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Args = []string{
 			"-c",
 			invokeBootstrapRenderScript(volumeMounts.Path(kasContainerBootstrapRender().Name, kasVolumeBootstrapManifests().Name), payloadVersion, featureGateYaml),
@@ -398,9 +398,8 @@ func kasContainerWaitForEtcd() *corev1.Container {
 func buildKASContainerWaitForEtcd(image string, namespace string) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/bin/bash",
 		}
@@ -420,9 +419,8 @@ func kasContainerMain() *corev1.Container {
 func buildKASContainerMain(image string, port int32, noProxyCIDRs []string, hcp *hyperv1.HostedControlPlane) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
-		c.TerminationMessagePolicy = corev1.TerminationMessageReadFile
-		c.TerminationMessagePath = corev1.TerminationMessagePathDefault
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"hyperkube",
 		}
@@ -897,6 +895,7 @@ func buildKonnectivityServerContainer(image string, serverCount int, cipherSuite
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/usr/bin/proxy-server",
 		}

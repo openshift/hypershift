@@ -77,6 +77,7 @@ func cpcContainerMain() *corev1.Container {
 func buildOCMContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"cluster-policy-controller"}
 		c.Args = []string{
 			"start",

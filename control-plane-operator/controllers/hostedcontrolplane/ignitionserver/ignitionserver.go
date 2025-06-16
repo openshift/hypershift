@@ -606,9 +606,10 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 				},
 				InitContainers: []corev1.Container{
 					{
-						Name:            "fetch-feature-gate",
-						Image:           configAPIImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     "fetch-feature-gate",
+						Image:                    configAPIImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						Command: []string{
 							"/bin/bash",
 						},
@@ -632,9 +633,10 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 				},
 				Containers: []corev1.Container{
 					{
-						Name:            ignitionserver.ResourceName,
-						Image:           utilitiesImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     ignitionserver.ResourceName,
+						Image:                    utilitiesImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						Env: []corev1.EnvVar{
 							{
 								Name: "MY_NAMESPACE",
@@ -786,9 +788,10 @@ haproxy -f /tmp/haproxy.conf
 				AutomountServiceAccountToken: ptr.To(false),
 				Containers: []corev1.Container{
 					{
-						Name:            "haproxy",
-						Image:           haproxyImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     "haproxy",
+						Image:                    haproxyImage,
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						Command: []string{
 							"/bin/bash",
 						},

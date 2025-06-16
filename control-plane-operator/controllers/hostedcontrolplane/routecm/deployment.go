@@ -94,6 +94,7 @@ func routeOCMContainerMain() *corev1.Container {
 func buildRouteOCMContainerMain(image string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = image
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"route-controller-manager"}
 		c.Args = []string{
 			"start",

@@ -110,9 +110,10 @@ func ReconcileCCMDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedCo
 				TerminationGracePeriodSeconds: ptr.To[int64](90),
 				Containers: []corev1.Container{
 					{
-						Name:            ccmContainerName,
-						Image:           releaseImageProvider.GetImage("powervs-cloud-controller-manager"),
-						ImagePullPolicy: corev1.PullIfNotPresent,
+						Name:                     ccmContainerName,
+						Image:                    releaseImageProvider.GetImage("powervs-cloud-controller-manager"),
+						ImagePullPolicy:          corev1.PullIfNotPresent,
+						TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 						Env: []corev1.EnvVar{
 							{
 								Name: "POD_IP_ADDRESS",
