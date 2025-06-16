@@ -3346,6 +3346,23 @@ authenticate with Azure&rsquo;s API.</p>
 </tr>
 <tr>
 <td>
+<code>workloadIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
+AzureWorkloadIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
+used in workload identity authentication. These are used to authenticate with Azure cloud on both the control
+plane and data plane.</p>
+<p>These are required for self-managed Azure.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>tenantID</code></br>
 <em>
 string
@@ -3489,6 +3506,95 @@ Valid values are ImageID and AzureMarketplace.</p>
 <td><p>ImageID is the used to specify that an Azure resource ID of a VHD image is used to boot the Azure VMs from.</p>
 </td>
 </tr></tbody>
+</table>
+###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ciroClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ciroClientID is the client ID of a federated managed identity, associated with cluster-image-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cioClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>cioClientID is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csoFileClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>csoFileClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+used in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>csoDiskClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>csoDiskClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+used in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>capzClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>capzClientID is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureCPClientID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>azureCPClientID is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+workload identity authentication.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
 <p>
