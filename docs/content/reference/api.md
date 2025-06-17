@@ -2722,6 +2722,110 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureAuthenticationConfiguration { #hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>azureAuthenticationConfiguration is a discriminated union type that contains the Azure authentication configuration
+for a Hosted Cluster. This configuration is used to determine how the Hosted Cluster authenticates with Azure&rsquo;s API,
+either with managed identities or workload identities.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureAuthenticationConfigType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationType">
+AzureAuthenticationType
+</a>
+</em>
+</td>
+<td>
+<p>azureAuthenticationConfigType is the type of identity configuration used in the Hosted Cluster. This field is
+used to determine which identity configuration is being used. Valid values are &ldquo;ManagedIdentities&rdquo; and
+&ldquo;WorkloadIdentities&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+authenticate with Azure&rsquo;s API.</p>
+<p>These are required for managed Azure, also known as ARO HCP.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
+AzureWorkloadIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentities is a struct of client IDs for each component that needs to authenticate with Azure&rsquo;s API in
+self-managed Azure. These client IDs are used to authenticate with Azure cloud on both the control plane and data
+plane.</p>
+<p>This is required for self-managed Azure.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureAuthenticationType { #hypershift.openshift.io/v1beta1.AzureAuthenticationType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
+</p>
+<p>
+<p>AzureAuthenticationType is a discriminated union type that contains the Azure authentication configuration for an
+Azure Hosted Cluster. This type is used to determine which authentication configuration is being used. Valid values
+are &ldquo;ManagedIdentities&rdquo; and &ldquo;WorkloadIdentities&rdquo;.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ManagedIdentities&#34;</p></td>
+<td><p>&ldquo;ManagedIdentities&rdquo; means that the Hosted Cluster is using managed identities to authenticate with Azure&rsquo;s API.
+This is only valid for managed Azure, also known as ARO HCP.</p>
+</td>
+</tr><tr><td><p>&#34;WorkloadIdentities&#34;</p></td>
+<td><p>&ldquo;WorkloadIdentities&rdquo; means that the Hosted Cluster is using workload identities to authenticate with Azure&rsquo;s API.
+This is only valid for self-managed Azure.</p>
+</td>
+</tr></tbody>
+</table>
+###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>, 
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
+</p>
+<p>
+<p>AzureClientID is a string that represents the client ID of a managed identity.</p>
+</p>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -3330,35 +3434,16 @@ expected to exist under the same subscription as SubscriptionID.</p>
 </tr>
 <tr>
 <td>
-<code>managedIdentities</code></br>
+<code>azureAuthenticationConfig</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
-AzureResourceManagedIdentities
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">
+AzureAuthenticationConfiguration
 </a>
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
-authenticate with Azure&rsquo;s API.</p>
-<p>These are required for managed Azure, also known as ARO HCP.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>workloadIdentities</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
-AzureWorkloadIdentities
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
-used in workload identity authentication. These are used to authenticate with Azure cloud on both the control
-plane and data plane.</p>
-<p>These are required for self-managed Azure.</p>
+<p>azureAuthenticationConfig is the type of Azure authentication configuration to use to authenticate with Azure&rsquo;s
+Cloud API.</p>
 </td>
 </tr>
 <tr>
@@ -3377,7 +3462,7 @@ string
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
 </p>
 <p>
 <p>AzureResourceManagedIdentities contains the managed identities needed for HCP control plane and data plane components
@@ -3510,9 +3595,11 @@ Valid values are ImageID and AzureMarketplace.</p>
 ###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
 </p>
 <p>
+<p>AzureWorkloadIdentities is a struct that contains the client IDs of all the managed identities in self-managed Azure
+needing to authenticate with Azure&rsquo;s API.</p>
 </p>
 <table>
 <thead>
@@ -3524,73 +3611,85 @@ Valid values are ImageID and AzureMarketplace.</p>
 <tbody>
 <tr>
 <td>
-<code>ciroClientID</code></br>
+<code>imageRegistry</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>ciroClientID is the client ID of a federated managed identity, associated with cluster-image-operator, used in
+<p>imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
 workload identity authentication.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>cioClientID</code></br>
+<code>ingress</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>cioClientID is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+<p>ingress is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
 workload identity authentication.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>csoFileClientID</code></br>
+<code>file</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>csoFileClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+<p>file is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
 used in workload identity authentication.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>csoDiskClientID</code></br>
+<code>disk</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>csoDiskClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+<p>disk is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
 used in workload identity authentication.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>capzClientID</code></br>
+<code>nodePoolManagement</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>capzClientID is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+<p>nodePoolManagement is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
 in workload identity authentication.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>azureCPClientID</code></br>
+<code>cloudProvider</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
 </em>
 </td>
 <td>
-<p>azureCPClientID is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+<p>cloudProvider is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
 workload identity authentication.</p>
 </td>
 </tr>
@@ -8596,7 +8695,9 @@ used, by an HCP component, to authenticate with the Azure API.</p>
 <td>
 <code>clientID</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
 </em>
 </td>
 <td>
@@ -12219,6 +12320,38 @@ string
 <td>
 <em>(Optional)</em>
 <p>encryptionKey is the KMS key to use for volume encryption.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
+</p>
+<p>
+<p>WorkloadIdentity is a struct that contains the client ID of a federated managed identity used in workload identity
+authentication.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
+</em>
+</td>
+<td>
+<p>clientID is client ID of a federated managed identity used in workload identity authentication</p>
 </td>
 </tr>
 </tbody>

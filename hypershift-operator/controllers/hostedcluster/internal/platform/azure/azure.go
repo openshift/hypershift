@@ -294,7 +294,7 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 	} else {
 		if hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
 			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-				ClientID: hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.CAPZClientID,
+				ClientID: string(hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.NodePoolManagement.ClientID),
 				TenantID: hc.Spec.Platform.Azure.TenantID,
 				Type:     capiazure.WorkloadIdentity,
 				AllowedNamespaces: &capiazure.AllowedNamespaces{

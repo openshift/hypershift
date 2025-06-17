@@ -20,12 +20,12 @@ package v1beta1
 // AzureWorkloadIdentitiesApplyConfiguration represents a declarative configuration of the AzureWorkloadIdentities type for use
 // with apply.
 type AzureWorkloadIdentitiesApplyConfiguration struct {
-	CIROClientID    *string `json:"ciroClientID,omitempty"`
-	CIOClientID     *string `json:"cioClientID,omitempty"`
-	CSOFileClientID *string `json:"csoFileClientID,omitempty"`
-	CSODiskClientID *string `json:"csoDiskClientID,omitempty"`
-	CAPZClientID    *string `json:"capzClientID,omitempty"`
-	AzureCPClientID *string `json:"azureCPClientID,omitempty"`
+	ImageRegistry      *WorkloadIdentityApplyConfiguration `json:"imageRegistry,omitempty"`
+	Ingress            *WorkloadIdentityApplyConfiguration `json:"ingress,omitempty"`
+	File               *WorkloadIdentityApplyConfiguration `json:"file,omitempty"`
+	Disk               *WorkloadIdentityApplyConfiguration `json:"disk,omitempty"`
+	NodePoolManagement *WorkloadIdentityApplyConfiguration `json:"nodePoolManagement,omitempty"`
+	CloudProvider      *WorkloadIdentityApplyConfiguration `json:"cloudProvider,omitempty"`
 }
 
 // AzureWorkloadIdentitiesApplyConfiguration constructs a declarative configuration of the AzureWorkloadIdentities type for use with
@@ -34,50 +34,50 @@ func AzureWorkloadIdentities() *AzureWorkloadIdentitiesApplyConfiguration {
 	return &AzureWorkloadIdentitiesApplyConfiguration{}
 }
 
-// WithCIROClientID sets the CIROClientID field in the declarative configuration to the given value
+// WithImageRegistry sets the ImageRegistry field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CIROClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCIROClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.CIROClientID = &value
+// If called multiple times, the ImageRegistry field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithImageRegistry(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.ImageRegistry = value
 	return b
 }
 
-// WithCIOClientID sets the CIOClientID field in the declarative configuration to the given value
+// WithIngress sets the Ingress field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CIOClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCIOClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.CIOClientID = &value
+// If called multiple times, the Ingress field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithIngress(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.Ingress = value
 	return b
 }
 
-// WithCSOFileClientID sets the CSOFileClientID field in the declarative configuration to the given value
+// WithFile sets the File field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CSOFileClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCSOFileClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.CSOFileClientID = &value
+// If called multiple times, the File field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithFile(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.File = value
 	return b
 }
 
-// WithCSODiskClientID sets the CSODiskClientID field in the declarative configuration to the given value
+// WithDisk sets the Disk field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CSODiskClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCSODiskClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.CSODiskClientID = &value
+// If called multiple times, the Disk field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithDisk(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.Disk = value
 	return b
 }
 
-// WithCAPZClientID sets the CAPZClientID field in the declarative configuration to the given value
+// WithNodePoolManagement sets the NodePoolManagement field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CAPZClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCAPZClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.CAPZClientID = &value
+// If called multiple times, the NodePoolManagement field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithNodePoolManagement(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.NodePoolManagement = value
 	return b
 }
 
-// WithAzureCPClientID sets the AzureCPClientID field in the declarative configuration to the given value
+// WithCloudProvider sets the CloudProvider field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the AzureCPClientID field is set to the value of the last call.
-func (b *AzureWorkloadIdentitiesApplyConfiguration) WithAzureCPClientID(value string) *AzureWorkloadIdentitiesApplyConfiguration {
-	b.AzureCPClientID = &value
+// If called multiple times, the CloudProvider field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCloudProvider(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.CloudProvider = value
 	return b
 }

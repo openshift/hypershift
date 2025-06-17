@@ -45,10 +45,13 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 						Azure: &hyperv1.AzurePlatformSpec{
 							TenantID: "test-tenant-id",
 							Cloud:    "AzurePublicCloud",
-							ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
-								ControlPlane: hyperv1.ControlPlaneManagedIdentities{
-									NodePoolManagement: hyperv1.ManagedIdentity{
-										CredentialsSecretName: "credentials",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "ManagedIdentities",
+								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+									ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+										NodePoolManagement: hyperv1.ManagedIdentity{
+											CredentialsSecretName: "credentials",
+										},
 									},
 								},
 							},
@@ -82,8 +85,13 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 						Azure: &hyperv1.AzurePlatformSpec{
 							TenantID: "test-tenant-id",
 							Cloud:    "AzurePublicCloud",
-							WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
-								CAPZClientID: "test-client-id",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "WorkloadIdentities",
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									NodePoolManagement: hyperv1.WorkloadIdentity{
+										ClientID: "test-client-id",
+									},
+								},
 							},
 						},
 					},
