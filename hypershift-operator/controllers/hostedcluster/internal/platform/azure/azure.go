@@ -285,7 +285,7 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
 				TenantID:                                 hc.Spec.Platform.Azure.TenantID,
 				UserAssignedIdentityCredentialsCloudType: azureCloudType,
-				UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
+				UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
 				Type:                                     capiazure.UserAssignedIdentityCredential,
 				AllowedNamespaces: &capiazure.AllowedNamespaces{
 					NamespaceList: []string{
@@ -296,9 +296,9 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 		} else {
 			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
 				// TODO - this client ID will need to be updated to the correct value once the API is fully updated to support workload identity
-				ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
+				ClientID: hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
 				TenantID: hc.Spec.Platform.Azure.TenantID,
-				CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
+				CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
 				Type:     capiazure.ServicePrincipalCertificate,
 				AllowedNamespaces: &capiazure.AllowedNamespaces{
 					NamespaceList: []string{
@@ -308,9 +308,9 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 			}
 		}
 	} else {
-		if hc.Spec.Platform.Azure.WorkloadIdentities != nil {
+		if hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
 			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-				ClientID: hc.Spec.Platform.Azure.WorkloadIdentities.CAPZClientID,
+				ClientID: hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.CAPZClientID,
 				TenantID: hc.Spec.Platform.Azure.TenantID,
 				Type:     capiazure.WorkloadIdentity,
 				AllowedNamespaces: &capiazure.AllowedNamespaces{

@@ -250,20 +250,23 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+				AzureAuthenticationConfigType: "ManagedIdentities",
+			},
 		},
 	}
 
-	cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
-	cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities = o.infra.ControlPlaneMIs
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
 
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{

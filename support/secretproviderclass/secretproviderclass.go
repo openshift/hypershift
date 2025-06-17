@@ -38,8 +38,8 @@ func ReconcileManagedAzureSecretProviderClass(secretProviderClass *secretsstorev
 			"usePodIdentity":         "false",
 			"useVMManagedIdentity":   "true",
 			"userAssignedIdentityID": azureutil.GetKeyVaultAuthorizedUser(),
-			"keyvaultName":           hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
-			"tenantId":               hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+			"keyvaultName":           hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+			"tenantId":               hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
 			"objects":                formatSecretProviderClassObject(secretName, string(managedIdentity.ObjectEncoding)),
 		},
 	}

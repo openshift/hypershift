@@ -2717,6 +2717,77 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureAuthenticationConfiguration { #hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>azureAuthenticationConfiguration is a discriminated union type that contains the Azure authentication configuration
+for a Hosted Cluster. This configuration is used to determine how the Hosted Cluster authenticates with Azure&rsquo;s API,
+either with managed identities or workload identities.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureAuthenticationConfigType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>azureAuthenticationConfigType is the type of identity configuration used in the Hosted Cluster. This field is
+used to determine which identity configuration is being used. Valid values are &ldquo;ManagedIdentities&rdquo; and
+&ldquo;WorkloadIdentities&rdquo;.</p>
+<p>&ldquo;ManagedIdentities&rdquo; means that the Hosted Cluster is using managed identities to authenticate with Azure&rsquo;s API.
+This is only valid for managed Azure, also known as ARO HCP.</p>
+<p>&ldquo;WorkloadIdentities&rdquo; means that the Hosted Cluster is using workload identities to authenticate with Azure&rsquo;s API.
+This is only valid for self-managed Azure.</p>
+<p>unionDiscriminator</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+authenticate with Azure&rsquo;s API.</p>
+<p>These are required for managed Azure, also known as ARO HCP.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
+AzureWorkloadIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
+used in workload identity authentication. These are used to authenticate with Azure cloud on both the control
+plane and data plane.</p>
+<p>These are required for self-managed Azure.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -3325,35 +3396,16 @@ expected to exist under the same subscription as SubscriptionID.</p>
 </tr>
 <tr>
 <td>
-<code>managedIdentities</code></br>
+<code>azureAuthenticationConfig</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
-AzureResourceManagedIdentities
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">
+AzureAuthenticationConfiguration
 </a>
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
-authenticate with Azure&rsquo;s API.</p>
-<p>These are required for managed Azure, also known as ARO HCP.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>workloadIdentities</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
-AzureWorkloadIdentities
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
-used in workload identity authentication. These are used to authenticate with Azure cloud on both the control
-plane and data plane.</p>
-<p>These are required for self-managed Azure.</p>
+<p>azureAuthenticationConfig is the type of Azure authentication configuration to use to authenticate with Azure&rsquo;s
+Cloud API.</p>
 </td>
 </tr>
 <tr>
@@ -3372,7 +3424,7 @@ string
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
 </p>
 <p>
 <p>AzureResourceManagedIdentities contains the managed identities needed for HCP control plane and data plane components
@@ -3505,7 +3557,7 @@ Valid values are ImageID and AzureMarketplace.</p>
 ###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
 </p>
 <p>
 </p>

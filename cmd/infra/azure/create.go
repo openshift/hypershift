@@ -74,18 +74,18 @@ type CreateInfraOptions struct {
 }
 
 type CreateInfraOutput struct {
-	BaseDomain          string                                 `json:"baseDomain"`
-	PublicZoneID        string                                 `json:"publicZoneID"`
-	PrivateZoneID       string                                 `json:"privateZoneID"`
-	Location            string                                 `json:"region"`
-	ResourceGroupName   string                                 `json:"resourceGroupName"`
-	VNetID              string                                 `json:"vnetID"`
-	SubnetID            string                                 `json:"subnetID"`
-	BootImageID         string                                 `json:"bootImageID"`
-	InfraID             string                                 `json:"infraID"`
-	SecurityGroupID     string                                 `json:"securityGroupID"`
-	ControlPlaneMIs     hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
-	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities     `json:"dataPlaneIdentities"`
+	BaseDomain          string                                  `json:"baseDomain"`
+	PublicZoneID        string                                  `json:"publicZoneID"`
+	PrivateZoneID       string                                  `json:"privateZoneID"`
+	Location            string                                  `json:"region"`
+	ResourceGroupName   string                                  `json:"resourceGroupName"`
+	VNetID              string                                  `json:"vnetID"`
+	SubnetID            string                                  `json:"subnetID"`
+	BootImageID         string                                  `json:"bootImageID"`
+	InfraID             string                                  `json:"infraID"`
+	SecurityGroupID     string                                  `json:"securityGroupID"`
+	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
+	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
 }
 
 type ServicePrincipalResponse struct {
@@ -229,6 +229,8 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	if o.ManagedIdentitiesFile != "" {
+		result.ControlPlaneMIs = &hyperv1.AzureResourceManagedIdentities{}
+
 		managedIdentitiesRaw, err := os.ReadFile(o.ManagedIdentitiesFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read --managed-identities-file %s: %w", o.ManagedIdentitiesFile, err)
