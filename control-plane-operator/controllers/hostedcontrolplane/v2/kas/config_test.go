@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
-	podsecurityadmissionv1beta1 "k8s.io/pod-security-admission/admission/api/v1beta1"
+	podsecurityadmissionv1 "k8s.io/pod-security-admission/admission/api/v1"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/require"
@@ -263,12 +263,12 @@ func TestGenerateConfig(t *testing.T) {
 				func(kasc *kcpv1.KubeAPIServerConfig) {
 					kasc.AdmissionConfig.PluginConfig["PodSecurity"] = configv1.AdmissionPluginConfig{
 						Configuration: runtime.RawExtension{
-							Object: &podsecurityadmissionv1beta1.PodSecurityConfiguration{
+							Object: &podsecurityadmissionv1.PodSecurityConfiguration{
 								TypeMeta: metav1.TypeMeta{
-									APIVersion: podsecurityadmissionv1beta1.SchemeGroupVersion.String(),
+									APIVersion: podsecurityadmissionv1.SchemeGroupVersion.String(),
 									Kind:       "PodSecurityConfiguration",
 								},
-								Defaults: podsecurityadmissionv1beta1.PodSecurityDefaults{
+								Defaults: podsecurityadmissionv1.PodSecurityDefaults{
 									Enforce:        "restricted",
 									EnforceVersion: "latest",
 									Audit:          "restricted",
@@ -276,7 +276,7 @@ func TestGenerateConfig(t *testing.T) {
 									Warn:           "restricted",
 									WarnVersion:    "latest",
 								},
-								Exemptions: podsecurityadmissionv1beta1.PodSecurityExemptions{
+								Exemptions: podsecurityadmissionv1.PodSecurityExemptions{
 									Usernames: []string{
 										"system:serviceaccount:openshift-infra:build-controller",
 									},
@@ -611,12 +611,12 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 				PluginConfig: map[string]configv1.AdmissionPluginConfig{
 					"PodSecurity": {
 						Configuration: runtime.RawExtension{
-							Object: &podsecurityadmissionv1beta1.PodSecurityConfiguration{
+							Object: &podsecurityadmissionv1.PodSecurityConfiguration{
 								TypeMeta: metav1.TypeMeta{
-									APIVersion: podsecurityadmissionv1beta1.SchemeGroupVersion.String(),
+									APIVersion: podsecurityadmissionv1.SchemeGroupVersion.String(),
 									Kind:       "PodSecurityConfiguration",
 								},
-								Defaults: podsecurityadmissionv1beta1.PodSecurityDefaults{
+								Defaults: podsecurityadmissionv1.PodSecurityDefaults{
 									Enforce:        "privileged",
 									EnforceVersion: "latest",
 									Audit:          "restricted",
@@ -624,7 +624,7 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 									Warn:           "restricted",
 									WarnVersion:    "latest",
 								},
-								Exemptions: podsecurityadmissionv1beta1.PodSecurityExemptions{
+								Exemptions: podsecurityadmissionv1.PodSecurityExemptions{
 									Usernames: []string{
 										"system:serviceaccount:openshift-infra:build-controller",
 									},
