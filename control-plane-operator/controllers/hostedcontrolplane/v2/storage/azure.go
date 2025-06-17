@@ -46,23 +46,23 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 }
 
 func adaptAzureCSIDiskSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk
+	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk
 	return adaptAzureCSISecret(cpContext, managedIdentity, secret)
 }
 
 func adaptAzureCSIDiskSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk
+	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk
 	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
 	return nil
 }
 
 func adaptAzureCSIFileSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File
+	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File
 	return adaptAzureCSISecret(cpContext, managedIdentity, secret)
 }
 
 func adaptAzureCSIFileSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File
+	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File
 	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
 	return nil
 }
