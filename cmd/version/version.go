@@ -38,35 +38,6 @@ type OCPVersion struct {
 	DownloadURL string `json:"downloadURL"`
 }
 
-func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
-	if len(releaseStream) == 0 {
-		releaseStream = DefaultReleaseStream
-	}
-
-	var releaseURL string
-	if strings.Contains(releaseStream, hyperv1.ArchitectureMulti) {
-		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
-	} else {
-		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
-	}
-
-	var version OCPVersion
-	resp, err := http.Get(releaseURL)
-	if err != nil {
-		return version, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return version, err
-	}
-	err = json.Unmarshal(body, &version)
-	if err != nil {
-		return version, err
-	}
-	return version, nil
-}
-
 func NewVersionCommand() *cobra.Command {
 	var commitOnly, clientOnly bool
 	namespace := "hypershift"
@@ -115,4 +86,33 @@ func NewVersionCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&clientOnly, "client-only", clientOnly, "Output only the client version")
 	cmd.Flags().StringVar(&namespace, "namespace", namespace, "The namespace in which HyperShift is installed")
 	return cmd
+}
+
+func LookupDefaultOCPVersion(releaseStream string) (OCPVersion, error) {
+	if len(releaseStream) == 0 {
+		releaseStream = DefaultReleaseStream
+	}
+
+	var releaseURL string
+	if strings.Contains(releaseStream, hyperv1.ArchitectureMulti) {
+		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
+	} else {
+		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
+	}
+
+	var version OCPVersion
+	resp, err := http.Get(releaseURL)
+	if err != nil {
+		return version, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return version, err
+	}
+	err = json.Unmarshal(body, &version)
+	if err != nil {
+		return version, err
+	}
+	return version, nil
 }
