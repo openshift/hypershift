@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/pkg/tracing"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -189,6 +190,11 @@ func NewStartCommand() *cobra.Command {
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
+
+	_, err := tracing.ConfigureOpenTelemetryTracer(ctx, log)
+	if err != nil {
+		log.Error(err, "Could not initialize opentelemetry sdk")
+	}
 
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "hypershift-operator-manager"
