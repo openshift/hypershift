@@ -151,6 +151,8 @@ spec:
           value: networking-console-plugin
         - name: CLI_IMAGE
           value: cli
+        - name: FRR_K8S_IMAGE
+          value: metallb-frr
         - name: PROXY_INTERNAL_APISERVER_ADDRESS
           value: "true"
         image: cluster-network-operator
