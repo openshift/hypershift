@@ -20,8 +20,8 @@ import (
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
-	"github.com/openshift/hypershift/cmd/version"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -377,7 +377,7 @@ func (o *Options) Complete() error {
 	}
 
 	if len(o.LatestReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion("")
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion("")
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}

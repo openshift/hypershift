@@ -6,13 +6,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"runtime/debug"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
+	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
+	"github.com/openshift/hypershift/support/config"
 
 	"k8s.io/utils/ptr"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/blang/semver"
+)
+
+// https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
+const (
+	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
+	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
@@ -24,6 +36,8 @@ var (
 	MinSupportedVersion    = semver.MustParse("4.14.0")
 )
 
+// ocpVersionToKubeVersion maps OCP versions to their corresponding Kubernetes versions.
+// This mapping is used to determine the Kubernetes version for a given OCP version.
 var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.14.0": semver.MustParse("1.27.0"),
 	"4.15.0": semver.MustParse("1.28.0"),
@@ -125,6 +139,50 @@ type ocpVersion struct {
 	DownloadURL string `json:"downloadURL"`
 }
 
+func getOCPVersion(releaseURL string) (ocpVersion, error) {
+	var version ocpVersion
+
+	resp, err := http.Get(releaseURL)
+	if err != nil {
+		return version, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return version, err
+	}
+	err = json.Unmarshal(body, &version)
+	if err != nil {
+		return version, err
+	}
+	return version, nil
+}
+
+func LookupDefaultOCPVersion(releaseStream string) (ocpVersion, error) {
+	var (
+		version    ocpVersion
+		err        error
+		releaseURL string
+	)
+
+	if len(releaseStream) == 0 {
+		// No release stream was provided, so we will look up the supported OCP versions from the HO and use the latest
+		// release image from the multi-arch release stream that is not a release candidate.
+		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
+		version, err = retrieveSupportedOCPVersion(releaseURL)
+	} else {
+		// We look up the release URL based on the user provided release stream.
+		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
+		version, err = getOCPVersion(releaseURL)
+	}
+
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to get OCP version from release URL %s: %v", releaseURL, err)
+	}
+
+	return version, nil
+}
+
 // LookupLatestSupportedRelease picks the latest multi-arch image supported by this Hypershift Operator
 func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster) (string, error) {
 	minSupportedVersion := GetMinSupportedVersion(hc)
@@ -162,4 +220,71 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	return version.PullSpec, nil
+}
+
+// GetRevision returns the overall codebase version. It's for detecting
+// what code a binary was built from.
+func GetRevision() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "<unknown>"
+	}
+
+	for _, setting := range bi.Settings {
+		if setting.Key == "vcs.revision" {
+			return setting.Value
+		}
+	}
+	return "<unknown>"
+}
+
+func String() string {
+	return fmt.Sprintf("openshift/hypershift: %s. Latest supported OCP: %s", GetRevision(), LatestSupportedVersion)
+}
+
+type SupportedVersions struct {
+	Versions []string `json:"versions"`
+}
+
+// GetSupportedOCPVersions retrieves the supported OCP versions from the server. It fetches the ConfigMap containing the
+// supported versions and the server version from the specified namespace and unmarshals the versions into a
+// SupportedVersions struct. If the ConfigMap or the required keys are not found, it returns an error. The function
+// returns the supported versions, the server version, and any error encountered during the process.
+func GetSupportedOCPVersions(ctx context.Context, namespace string) (SupportedVersions, string, error) {
+	var versions SupportedVersions
+	var serverVersion string
+
+	// Get the Kubernetes client
+	client, err := util.GetClient()
+	if err != nil {
+		return SupportedVersions{}, "", fmt.Errorf("failed to connect to server: %v", err)
+	}
+
+	// Fetch the supported versions ConfigMap from the specified namespace
+	supportedVersions := manifests.ConfigMap(namespace)
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
+		return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %v", err)
+	}
+
+	// Check if the ConfigMap contains the server version key
+	if serverVersionValue, present := supportedVersions.Data[config.ConfigMapServerVersionKey]; present {
+		serverVersion = serverVersionValue
+	} else {
+		return SupportedVersions{}, "", fmt.Errorf("the server did not advertise its HyperShift version")
+	}
+
+	// Check if the ConfigMap contains the supported versions key
+	if supportedVersionData, present := supportedVersions.Data[config.ConfigMapVersionsKey]; present {
+		if err := json.Unmarshal([]byte(supportedVersionData), &versions); err != nil {
+			return SupportedVersions{}, "", fmt.Errorf("failed to parse supported versions on the server: %v", err)
+		}
+
+		return versions, serverVersion, nil
+	} else {
+		return SupportedVersions{}, "", fmt.Errorf("the server did not advertise supported OCP versions")
+	}
+}
+
+func retrieveSupportedOCPVersion(releaseURL string) (ocpVersion, error) {
+	return ocpVersion{}, nil
 }
