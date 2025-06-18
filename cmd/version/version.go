@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	"github.com/spf13/cobra"
@@ -28,7 +29,13 @@ func NewVersionCommand() *cobra.Command {
 				return
 			}
 
-			supportedVersions, serverVersion, err := supportedversion.GetSupportedOCPVersions(cmd.Context(), namespace)
+			client, err := util.GetClient()
+			if err != nil {
+				fmt.Printf("failed to connect to server: %v", err)
+				return
+			}
+
+			supportedVersions, serverVersion, err := supportedversion.GetSupportedOCPVersions(cmd.Context(), namespace, client)
 			if err != nil {
 				fmt.Printf("failed to get supported OCP versions: %v\n", err)
 				return
