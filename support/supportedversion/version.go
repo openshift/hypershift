@@ -14,6 +14,7 @@ import (
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
 	"github.com/openshift/hypershift/support/config"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -23,7 +24,7 @@ import (
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
 const (
-	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
+	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
 	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
 )
 
@@ -285,6 +286,68 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string) (SupportedVe
 	}
 }
 
-func retrieveSupportedOCPVersion(releaseURL string) (ocpVersion, error) {
-	return ocpVersion{}, nil
+// retrieveSupportedOCPVersion retrieves the latest supported OCP version from supported versions ConfigMap, retrieves
+// the latest stable release images from the provided release URL, and returns the latest supported OCP version that is
+// not a release candidate and matches the latest supported OCP version supported by the HyperShift operator.
+func retrieveSupportedOCPVersion(releaseURL string, client crclient.Client) (ocpVersion, error) {
+	var stableOCPVersions ocpTags
+	var namespace string
+
+	// Find the supported versions ConfigMap since it may be in a different namespace than the default "hypershift"
+	configMapList := &corev1.ConfigMapList{}
+	err := client.List(context.TODO(), configMapList)
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to list ConfigMaps to find supported versions: %v", err)
+	}
+	for _, configMap := range configMapList.Items {
+		if configMap.Name == "supported-versions" {
+			namespace = configMap.Namespace
+			break
+		}
+	}
+
+	if namespace == "" {
+		return ocpVersion{}, fmt.Errorf("failed to find supported versions ConfigMap")
+	}
+
+	// Get the latest supported OCP version from the supported versions ConfigMap
+	supportedOCPVersions, _, err := GetSupportedOCPVersions(context.TODO(), namespace, client)
+	if err != nil {
+		return ocpVersion{}, fmt.Errorf("failed to get supported OCP versions: %v", err)
+	}
+	if len(supportedOCPVersions.Versions) == 0 {
+		return ocpVersion{}, fmt.Errorf("no supported OCP versions found in the ConfigMap")
+	}
+
+	// Grab the latest stable release images
+	resp, err := http.Get(releaseURL)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+	err = json.Unmarshal(body, &stableOCPVersions)
+	if err != nil {
+		return ocpVersion{}, err
+	}
+
+	// Find the latest supported OCP version that is not a release candidate and matches the latest supported OCP
+	// version supported by the HyperShift operator.
+	for _, version := range supportedOCPVersions.Versions {
+		for _, ocpVersion := range stableOCPVersions.Tags {
+			if strings.Contains(ocpVersion.Name, "rc") {
+				// Skip release candidates
+				continue
+			}
+			if strings.Contains(ocpVersion.Name, version) {
+				// We found the latest supported OCP version
+				return ocpVersion, nil
+			}
+		}
+	}
+
+	return ocpVersion{}, fmt.Errorf("failed to find the latest supported OCP version in the release stream %s", releaseURL)
 }
