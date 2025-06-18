@@ -279,6 +279,11 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 	}
 }
 
+type ocpTags struct {
+	Name string       `json:"name"`
+	Tags []ocpVersion `json:"tags"`
+}
+
 // retrieveSupportedOCPVersion retrieves the latest supported OCP version from supported versions ConfigMap, retrieves
 // the latest stable release images from the provided release URL, and returns the latest supported OCP version that is
 // not a release candidate and matches the latest supported OCP version supported by the HyperShift operator.
@@ -288,7 +293,7 @@ func retrieveSupportedOCPVersion(releaseURL string, client crclient.Client) (ocp
 
 	// Find the supported versions ConfigMap since it may be in a different namespace than the default "hypershift"
 	configMapList := &corev1.ConfigMapList{}
-	err := client.List(context.TODO(), configMapList)
+	err := client.List(ctx, configMapList, crclient.MatchingLabels{"hypershift.openshift.io/supported-versions": "true"})
 	if err != nil {
 		return ocpVersion{}, fmt.Errorf("failed to list ConfigMaps to find supported versions: %v", err)
 	}
