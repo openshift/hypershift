@@ -165,6 +165,7 @@ func TestPrototypeResources(t *testing.T) {
 			ValidatedCreateOptions: &ValidatedCreateOptions{
 				validatedCreateOptions: &validatedCreateOptions{
 					RawCreateOptions: &RawCreateOptions{
+						EnableClusterCapabilities:  []string{string(hyperv1.BaremetalCapability)},
 						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
 						KubeAPIServerDNSName:       "test-dns-name.example.com",
 					},
@@ -176,6 +177,8 @@ func TestPrototypeResources(t *testing.T) {
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
 		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+	g.Expect(resources.Cluster.Spec.Capabilities.Enabled).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.BaremetalCapability}))
 	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
 }
 
@@ -196,7 +199,7 @@ func TestValidate(t *testing.T) {
 		expectedErr string
 	}{
 		{
-			name: "fails with unsupported capability",
+			name: "fails with unsupported disabled capability",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
@@ -204,15 +207,27 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"UnsupportedCapability"},
 			},
-			expectedErr: "unknown capability: UnsupportedCapability, accepted values are:",
+			expectedErr: "unknown disabled capability: UnsupportedCapability, accepted values are:",
 		},
 		{
-			name: "passes with ImageRegistry capability",
+			name: "fails with unsupported enabled capability",
+			rawOpts: &RawCreateOptions{
+				Name:                      "test-hc",
+				Namespace:                 "test-hc",
+				PullSecretFile:            pullSecretFile,
+				Arch:                      "amd64",
+				EnableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown enabled capability: UnsupportedCapability, accepted values are:",
+		},
+		{
+			name: "passes with valid capabilities being enabled and disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
 				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
+				EnableClusterCapabilities:  []string{"baremetal"},
 				DisableClusterCapabilities: []string{"ImageRegistry"},
 			},
 			expectedErr: "",
