@@ -1,13 +1,19 @@
 package supportedversion
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	. "github.com/onsi/gomega"
-
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/blang/semver"
 )
@@ -197,4 +203,110 @@ func TestGetMinSupportedVersion(t *testing.T) {
 	}
 	minVer := GetMinSupportedVersion(hc)
 	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("0.0.0").String()))
+}
+
+func TestGetSupportedOCPVersions(t *testing.T) {
+	namespace := "hypershift"
+
+	// Define a valid SupportedVersions struct and then marshal it to JSON for type safety.
+	// This ensures our test data is coupled to the real data structure. If the SupportedVersions
+	// struct is ever refactored, this test will fail to compile, providing an early signal that
+	// the test is out of date. It also allows for a clean, type-safe assertion.
+	validVersions := SupportedVersions{
+		Versions: []string{"4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"},
+	}
+	validVersionsJSON, err := json.Marshal(validVersions)
+	if err != nil {
+		t.Fatalf("failed to marshal valid versions: %v", err)
+	}
+
+	baseCM := supportedversion.ConfigMap(namespace)
+
+	testCases := []struct {
+		name                  string
+		cm                    *corev1.ConfigMap
+		expectErr             bool
+		expectedErrMsg        string
+		expectedVersions      SupportedVersions
+		expectedServerVersion string
+	}{
+		{
+			name: "When the ConfigMap is valid, expect versions to be returned successfully",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: baseCM.ObjectMeta,
+				Data: map[string]string{
+					config.ConfigMapVersionsKey:      string(validVersionsJSON),
+					config.ConfigMapServerVersionKey: "test-server-version",
+				},
+			},
+			expectErr:             false,
+			expectedVersions:      validVersions,
+			expectedServerVersion: "test-server-version",
+		},
+		{
+			name:           "When the ConfigMap is not found, expect an error",
+			cm:             nil, // No configmap will be added to the client
+			expectErr:      true,
+			expectedErrMsg: "failed to find supported versions on the server",
+		},
+		{
+			name: "When the server-version key is missing, expect an error",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: baseCM.ObjectMeta,
+				Data:       map[string]string{config.ConfigMapVersionsKey: string(validVersionsJSON)},
+			},
+			expectErr:      true,
+			expectedErrMsg: "the server did not advertise its HyperShift version",
+		},
+		{
+			name: "When the supported-versions key is missing, expect an error",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: baseCM.ObjectMeta,
+				Data:       map[string]string{config.ConfigMapServerVersionKey: "test-server-version"},
+			},
+			expectErr:      true,
+			expectedErrMsg: "the server did not advertise supported OCP versions",
+		},
+		{
+			name: "When the supported-versions JSON is malformed, expect an error",
+			cm: &corev1.ConfigMap{
+				ObjectMeta: baseCM.ObjectMeta,
+				Data: map[string]string{
+					config.ConfigMapVersionsKey:      `{"versions": "not-an-array"}`,
+					config.ConfigMapServerVersionKey: "test-server-version",
+				},
+			},
+			expectErr:      true,
+			expectedErrMsg: "failed to parse supported versions on the server",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Setup fake client
+			scheme := api.Scheme
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			var fakeClient client.Client
+			if tc.cm != nil {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.cm).Build()
+			} else {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+			}
+
+			// Execute the function
+			supportedVersions, serverVersion, err := GetSupportedOCPVersions(context.Background(), namespace, fakeClient)
+
+			// Assert results
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(supportedVersions).To(Equal(tc.expectedVersions))
+				g.Expect(serverVersion).To(Equal(tc.expectedServerVersion))
+			}
+		})
+	}
 }

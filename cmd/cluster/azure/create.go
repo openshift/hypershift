@@ -561,7 +561,11 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
 func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
 	if len(image) == 0 && len(releaseStream) != 0 {
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(releaseStream)
+		client, err := util.GetClient()
+		if err != nil {
+			return "", fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(releaseStream, client)
 		if err != nil {
 			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
 		}

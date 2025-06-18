@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/util"
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
 	"github.com/openshift/hypershift/support/config"
 
@@ -159,7 +158,7 @@ func getOCPVersion(releaseURL string) (ocpVersion, error) {
 	return version, nil
 }
 
-func LookupDefaultOCPVersion(releaseStream string) (ocpVersion, error) {
+func LookupDefaultOCPVersion(releaseStream string, client crclient.Client) (ocpVersion, error) {
 	var (
 		version    ocpVersion
 		err        error
@@ -170,7 +169,7 @@ func LookupDefaultOCPVersion(releaseStream string) (ocpVersion, error) {
 		// No release stream was provided, so we will look up the supported OCP versions from the HO and use the latest
 		// release image from the multi-arch release stream that is not a release candidate.
 		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
-		version, err = retrieveSupportedOCPVersion(releaseURL)
+		version, err = retrieveSupportedOCPVersion(releaseURL, client)
 	} else {
 		// We look up the release URL based on the user provided release stream.
 		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
@@ -251,15 +250,9 @@ type SupportedVersions struct {
 // supported versions and the server version from the specified namespace and unmarshals the versions into a
 // SupportedVersions struct. If the ConfigMap or the required keys are not found, it returns an error. The function
 // returns the supported versions, the server version, and any error encountered during the process.
-func GetSupportedOCPVersions(ctx context.Context, namespace string) (SupportedVersions, string, error) {
+func GetSupportedOCPVersions(ctx context.Context, namespace string, client crclient.Client) (SupportedVersions, string, error) {
 	var versions SupportedVersions
 	var serverVersion string
-
-	// Get the Kubernetes client
-	client, err := util.GetClient()
-	if err != nil {
-		return SupportedVersions{}, "", fmt.Errorf("failed to connect to server: %v", err)
-	}
 
 	// Fetch the supported versions ConfigMap from the specified namespace
 	supportedVersions := manifests.ConfigMap(namespace)

@@ -33,7 +33,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
-	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/upsert"
@@ -1231,7 +1230,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		GetRegistryOverrides().
 		Return(nil).AnyTimes()
 
-	releaseImage, _ := supportedversion.LookupDefaultOCPVersion("")
+	releaseImage := "quay.io/openshift-release-dev/ocp-release:4.15.0"
+
 	manifests := []manifestlist.ManifestDescriptor{
 		{
 			Descriptor: distribution.Descriptor{
@@ -1279,7 +1279,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1312,7 +1312,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1329,7 +1329,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						Type: hyperv1.NonePlatform,
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1347,7 +1347,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1385,7 +1385,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1473,7 +1473,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1495,7 +1495,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1543,6 +1543,19 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cloud", Namespace: "test"},
 		},
 		&configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "supported-versions",
+				Namespace: "hypershift",
+				Labels: map[string]string{
+					"hypershift.openshift.io/supported-versions": "true",
+				},
+			},
+			Data: map[string]string{
+				"supported-versions": "{\"versions\":[\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
+				"server-version":     "some-fake-server-version",
+			},
+		},
 	}
 
 	// Initialize some common data among the HostedClusters
