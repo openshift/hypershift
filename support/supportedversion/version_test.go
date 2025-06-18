@@ -6,12 +6,15 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -306,6 +309,99 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(supportedVersions).To(Equal(tc.expectedVersions))
 				g.Expect(serverVersion).To(Equal(tc.expectedServerVersion))
+			}
+		})
+	}
+}
+
+func TestRetrieveSupportedOCPVersion(t *testing.T) {
+	supportedVersionsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "supported-versions",
+			Namespace: "test",
+			Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+		},
+		Data: map[string]string{
+			"server-version":     "test-server",
+			"supported-versions": `{"versions":["4.19", "4.18", "4.17", "4.16", "4.15", "4.14"]}`,
+		},
+	}
+
+	olderSupportedVersionsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "supported-versions",
+			Namespace: "hypershift",
+			Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+		},
+		Data: map[string]string{
+			"server-version":     "test-server",
+			"supported-versions": `{"versions":["4.18", "4.17", "4.16", "4.15", "4.14"]}`,
+		},
+	}
+
+	testCases := []struct {
+		name               string
+		cm                 *corev1.ConfigMap
+		releaseURL         string
+		expectErr          bool
+		expectedErrMsg     string
+		expectedOCPVersion ocpVersion
+	}{
+		{
+			name:       "When latest stable release is supported, expect it to be returned",
+			cm:         supportedVersionsCM,
+			releaseURL: "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/tags",
+			expectErr:  false,
+			expectedOCPVersion: ocpVersion{
+				Name:     "4.19.0",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.0-multi",
+			},
+		},
+		{
+			name:       "When latest stable release is NOT supported, expect an error",
+			cm:         supportedVersionsCM,
+			releaseURL: "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi-fake/tags",
+			expectErr:  true,
+		},
+		{
+			name:           "When the ConfigMap is missing, expect an error",
+			cm:             nil,
+			releaseURL:     "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/tags",
+			expectErr:      true,
+			expectedErrMsg: "failed to get supported OCP versions",
+		},
+		{
+			name:       "When the ConfigMap supports older versions, expect the latest older version to be returned",
+			cm:         olderSupportedVersionsCM,
+			releaseURL: "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/tags",
+			expectErr:  false,
+			expectedOCPVersion: ocpVersion{
+				Name:     "4.18",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.18",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := api.Scheme
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			var fakeClient client.Client
+			if tc.cm != nil {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.cm).Build()
+			} else {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+			}
+
+			version, err := retrieveSupportedOCPVersion(tc.releaseURL, fakeClient)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(version.Name).To(ContainSubstring(tc.expectedOCPVersion.Name))
+				g.Expect(version.PullSpec).To(ContainSubstring(tc.expectedOCPVersion.PullSpec))
 			}
 		})
 	}

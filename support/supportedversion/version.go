@@ -279,6 +279,11 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 	}
 }
 
+type ocpTags struct {
+	Name string       `json:"name"`
+	Tags []ocpVersion `json:"tags"`
+}
+
 // retrieveSupportedOCPVersion retrieves the latest supported OCP version from supported versions ConfigMap, retrieves
 // the latest stable release images from the provided release URL, and returns the latest supported OCP version that is
 // not a release candidate and matches the latest supported OCP version supported by the HyperShift operator.
