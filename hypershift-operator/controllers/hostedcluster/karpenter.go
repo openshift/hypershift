@@ -84,7 +84,7 @@ spec:
 		},
 	}
 
-	releaseProvider, imageMetadataProvider, err := r.ReconcileMetadataProvidersImpl(ctx, r.RegistryOverrides)
+	err = r.RegistryProvider.Reconcile(ctx, r.Client)
 	if err != nil {
 		return err
 	}
@@ -94,12 +94,12 @@ spec:
 		return err
 	}
 
-	releaseImage, err := releaseProvider.Lookup(ctx, nodePool.Spec.Release.Image, pullSecretBytes)
+	releaseImage, err := r.RegistryProvider.GetReleaseProvider().Lookup(ctx, nodePool.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
 		return err
 	}
 
-	if err := r.reconcileKarpenterUserDataSecret(ctx, hcluster, releaseImage, nodePool, releaseProvider, imageMetadataProvider); err != nil {
+	if err := r.reconcileKarpenterUserDataSecret(ctx, hcluster, releaseImage, nodePool, r.RegistryProvider.GetReleaseProvider(), r.RegistryProvider.GetMetadataProvider()); err != nil {
 		return err
 	}
 
