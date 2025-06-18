@@ -25,13 +25,13 @@ import (
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -67,7 +67,7 @@ func main() {
 	basename := filepath.Base(os.Args[0])
 	cmd := commandFor(basename)
 
-	cmd.Version = version.GetRevision()
+	cmd.Version = supportedversion.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -192,7 +192,7 @@ func NewStartCommand() *cobra.Command {
 			"replacement when --registry-overrides is used.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		setupLog.Info("Starting hypershift-controlplane-manager", "version", version.String())
+		setupLog.Info("Starting hypershift-controlplane-manager", "version", supportedversion.String())
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()

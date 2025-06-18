@@ -16,12 +16,12 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -226,7 +226,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(opts.ReleaseStream)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}

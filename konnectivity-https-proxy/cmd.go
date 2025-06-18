@@ -8,8 +8,8 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/konnectivityproxy"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
@@ -66,7 +66,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.ConnectDirectlyToCloudAPIs, "connect-directly-to-cloud-apis", false, "If true, bypass konnectivity to connect to cloud APIs while still honoring management proxy config")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		l.Info("Starting proxy", "version", version.String())
+		l.Info("Starting proxy", "version", supportedversion.String())
 		c, err := client.New(ctrl.GetConfigOrDie(), client.Options{})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: failed to get kubernetes client: %v", err)

@@ -27,8 +27,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
@@ -60,6 +60,8 @@ const (
 	// TODO this needs to be updated to a multi-arch image including Arm - https://issues.redhat.com/browse/NE-1298
 	ExternalDNSImage = "registry.redhat.io/edo/external-dns-rhel8@sha256:638fb6b5fc348f5cf52b9800d3d8e9f5315078fc9b1e57e800cb0a4a50f1b4b9"
 )
+
+var HyperShiftImage = fmt.Sprintf("%s:%s", config.HypershiftImageBase, config.HypershiftImageTag)
 
 // ValidPlatforms should contain all the CAPI provider types we support; see also crds in assests.go
 // https://github.com/openshift/hypershift/blob/3ea313694d386763578646b157a8d4d3d187e98e/cmd/install/assets/assets.go#L26
@@ -163,7 +165,7 @@ func (o *Options) Validate() error {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
 		}
 	}
-	if o.HyperShiftImage != version.HyperShiftImage && len(o.ImageRefsFile) > 0 {
+	if o.HyperShiftImage != HyperShiftImage && len(o.ImageRefsFile) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --hypershift-image or --image-refs-file should be specified"))
 	}
 	if o.RHOBSMonitoring && os.Getenv(rhobsmonitoring.EnvironmentVariable) != "1" {
@@ -330,7 +332,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.EnableValidatingWebhook = false
 	opts.ExcludeEtcdManifests = false
 	opts.ExternalDNSImage = ExternalDNSImage
-	opts.HyperShiftImage = version.HyperShiftImage
+	opts.HyperShiftImage = HyperShiftImage
 	opts.MetricsSet = metrics.DefaultMetricsSet
 	opts.Namespace = "hypershift"
 	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"

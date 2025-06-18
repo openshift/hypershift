@@ -8,6 +8,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -29,9 +30,9 @@ func TestEnsureSupportedVersionConfigMap(t *testing.T) {
 	cfgMap := manifests.ConfigMap("hypershift")
 	err = c.Get(context.Background(), client.ObjectKeyFromObject(cfgMap), cfgMap)
 	g.Expect(err).To(BeNil())
-	g.Expect(cfgMap.Data[ConfigMapVersionsKey]).ToNot(BeEmpty())
-	data := &SupportedVersions{}
-	err = json.Unmarshal([]byte(cfgMap.Data[ConfigMapVersionsKey]), data)
+	g.Expect(cfgMap.Data[config.ConfigMapVersionsKey]).ToNot(BeEmpty())
+	data := &supportedversion.SupportedVersions{}
+	err = json.Unmarshal([]byte(cfgMap.Data[config.ConfigMapVersionsKey]), data)
 	g.Expect(err).To(BeNil())
 	g.Expect(len(data.Versions)).To(Equal(len(supportedversion.Supported())))
 }

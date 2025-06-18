@@ -52,6 +52,16 @@ const (
 
 	// DefaultMachineNetwork is the default network CIDR for the machine network.
 	DefaultMachineNetwork = "10.0.0.0/16"
+
+	// Constants related to supported OCP versions.
+	ConfigMapVersionsKey      = "supported-versions"
+	ConfigMapServerVersionKey = "server-version"
+	SupportedVersionsLabel    = "hypershift.openshift.io/supported-versions"
+	DefaultReleaseStream      = "4-stable-multi"
+
+	// Constants related to HyperShift operator image.
+	HypershiftImageBase = "quay.io/hypershift/hypershift-operator"
+	HypershiftImageTag  = "latest"
 )
 
 // Managed Azure Related Constants
