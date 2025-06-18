@@ -504,6 +504,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 			ConfigGenerator: &ConfigGenerator{
 				hostedCluster: hcluster,
 				nodePool:      nodePool,
+				Client:        c,
 				rolloutConfig: &rolloutConfig{
 					releaseImage: &releaseinfo.ReleaseImage{},
 				},
@@ -514,7 +515,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		},
 		capiClusterName: "test",
 	}
-	template, err := capi.machineTemplateBuilders()
+	template, err := capi.machineTemplateBuilders(context.Background())
 	g.Expect(err).ToNot(HaveOccurred())
 
 	machineTemplateSpec := template.(*capiaws.AWSMachineTemplate).Spec
@@ -1033,7 +1034,7 @@ func TestCAPIReconcile(t *testing.T) {
 	maxSurge := intstr.FromInt(1)
 	// This is the generated name by machineTemplateBuilders.
 	// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-	awsMachineTemplateName := "test-nodepool-77a60936"
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
 	capiClusterName := "infra-id"
 
 	tests := []struct {
@@ -1397,6 +1398,7 @@ func TestCAPIReconcile(t *testing.T) {
 					CreateOrUpdateProvider: upsert.New(false),
 				},
 				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
 			// Make sure the templates are populates in the control plane namespace

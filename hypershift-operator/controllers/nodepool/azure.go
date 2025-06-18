@@ -14,6 +14,10 @@ import (
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 )
 
+// dummySSHKey is a base64 encoded dummy SSH public key.
+// The CAPI AzureMachineTemplate requires an SSH key to be set, so we provide a dummy one here.
+const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JLN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
+
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
 	if err != nil {
@@ -88,6 +92,8 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 			}
 		}
 	}
+
+	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
 
 	return azureMachineTemplate, nil
 }

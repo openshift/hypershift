@@ -16,6 +16,9 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 const (
@@ -174,13 +177,13 @@ func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hosted
 	return tags
 }
 
-func (c *CAPI) awsMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
-	spec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage)
+func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
+	desiredSpec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AWSMachineTemplateSpec: %w", err)
 	}
 
-	hashedSpec := spec.DeepCopy()
+	hashedSpec := *desiredSpec.DeepCopy()
 	// set tags to nil so that it doesn't get considered in the hash calculation for the MachineTemplate name.
 	// this is to avoid a rolling upgrade when tags are changed.
 	hashedSpec.Template.Spec.AdditionalTags = nil
@@ -189,11 +192,27 @@ func (c *CAPI) awsMachineTemplate(templateNameGenerator func(spec any) (string, 
 		return nil, fmt.Errorf("failed to generate template name: %w", err)
 	}
 
+	existingTemplate := &capiaws.AWSMachineTemplate{}
+	if err := c.getExistingMachineTemplate(ctx, existingTemplate); err == nil {
+		opts := cmp.Options{
+			cmpopts.IgnoreFields(capiaws.AWSMachineSpec{}, "AdditionalTags"),
+		}
+
+		if cmp.Equal(*desiredSpec, existingTemplate.Spec, opts...) {
+			// If a template already exist and the spec has not changed (excluding AdditionalTags), we should reuse the existing template name.
+			// This is especially important for clusters created before the change that omitted the AdditionalTags from template name generation (https://github.com/openshift/hypershift/pull/6285).
+			// Otherwise, we would end up with a new template name and trigger a rolling upgrade.
+			templateName = existingTemplate.Name
+		}
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, fmt.Errorf("failed to get existing AWSMachineTemplate: %w", err)
+	}
+
 	template := &capiaws.AWSMachineTemplate{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: templateName,
 		},
-		Spec: *spec,
+		Spec: *desiredSpec,
 	}
 
 	return template, nil

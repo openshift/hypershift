@@ -77,7 +77,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 	}
 
 	//  Reconcile (Platform)MachineTemplate.
-	template, err := c.machineTemplateBuilders()
+	template, err := c.machineTemplateBuilders(ctx)
 	if err != nil {
 		return err
 	}
@@ -731,7 +731,7 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 // machineTemplateBuilders returns a client.Object with a particular (platform)MachineTemplate type.
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
-func (c *CAPI) machineTemplateBuilders() (client.Object, error) {
+func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, error) {
 	templateNameGenerator := func(spec any) (string, error) {
 		specJSON, err := json.Marshal(spec)
 		if err != nil {
@@ -749,7 +749,7 @@ func (c *CAPI) machineTemplateBuilders() (client.Object, error) {
 	switch c.nodePool.Spec.Platform.Type {
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
-		template, err = c.awsMachineTemplate(templateNameGenerator)
+		template, err = c.awsMachineTemplate(ctx, templateNameGenerator)
 	case hyperv1.AgentPlatform:
 		template, err = c.agentMachineTemplate(templateNameGenerator)
 	case hyperv1.KubevirtPlatform:
@@ -1170,6 +1170,40 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 	}
 
 	return filtered, nil
+}
+
+func (c *CAPI) getExistingMachineTemplate(ctx context.Context, template client.Object) error {
+	templateName := ""
+
+	if c.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		md := c.machineDeployment()
+		if err := c.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to get MachineDeployment %s: %w", md.Name, err)
+			}
+			// MachineDeployment does not exist, return NotFoundError.
+			return err
+		}
+		templateName = md.Spec.Template.Spec.InfrastructureRef.Name
+	} else {
+		ms := c.machineSet()
+		if err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to get MachineSet %s: %w", ms.Name, err)
+			}
+			//MachineSet does not exist, return NotFoundError.
+			return err
+		}
+		templateName = ms.Spec.Template.Spec.InfrastructureRef.Name
+	}
+
+	template.SetName(templateName)
+	template.SetNamespace(c.controlplaneNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(template), template); err != nil {
+		return fmt.Errorf("failed to get existing %T %s: %w", template, templateName, err)
+	}
+
+	return nil
 }
 
 // TODO (alberto): Let the all the deletion logic be a capi func.
