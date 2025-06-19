@@ -29,14 +29,14 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 	for registrySource, registryDest := range p.OpenShiftImageRegistryOverrides {
 		if strings.Contains(image, registrySource) {
 			for _, registryReplacement := range registryDest {
-				image = strings.Replace(image, registrySource, registryReplacement, 1)
+				replacedImage := strings.Replace(image, registrySource, registryReplacement, 1)
 
 				// Attempt to lookup image with mirror registry destination
-				releaseImage, err := p.Delegate.Lookup(ctx, image, pullSecret)
+				releaseImage, err := p.Delegate.Lookup(ctx, replacedImage, pullSecret)
 				if releaseImage != nil {
 					// Verify mirror image availability.
-					if _, _, err = registryclient.GetRepoSetup(ctx, image, pullSecret); err == nil {
-						p.mirroredReleaseImage = image
+					if _, _, err = registryclient.GetRepoSetup(ctx, replacedImage, pullSecret); err == nil {
+						p.mirroredReleaseImage = replacedImage
 						return releaseImage, nil
 					}
 					logger.Info("WARNING: The current mirrors image is unavailable, continue Scanning multiple mirrors", "error", err.Error(), "mirror image", image)
