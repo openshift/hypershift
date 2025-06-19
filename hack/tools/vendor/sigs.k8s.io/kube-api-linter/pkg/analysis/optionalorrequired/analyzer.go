@@ -102,6 +102,10 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 		a.checkField(pass, field, markersAccess.FieldMarkers(field), jsonTagInfo)
 	})
 
+	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
+		a.checkTypeSpec(pass, typeSpec, markersAccess)
+	})
+
 	return nil, nil //nolint:nilnil
 }
 
@@ -208,6 +212,33 @@ func reportShouldRemoveSecondaryMarker(field *ast.Field, marker []markers.Marker
 				TextEdits: textEdits,
 			},
 		},
+	}
+}
+
+func (a *analyzer) checkTypeSpec(pass *analysis.Pass, typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
+	name := typeSpec.Name.Name
+	set := markersAccess.TypeMarkers(typeSpec)
+
+	for _, marker := range set.UnsortedList() {
+		switch marker.Identifier {
+		case a.primaryOptionalMarker, a.secondaryOptionalMarker, a.primaryRequiredMarker, a.secondaryRequiredMarker:
+			pass.Report(analysis.Diagnostic{
+				Pos:     typeSpec.Pos(),
+				Message: fmt.Sprintf("type %s should not be marked as %s", name, marker.String()),
+				SuggestedFixes: []analysis.SuggestedFix{
+					{
+						Message: fmt.Sprintf("should remove `// +%s`", marker.String()),
+						TextEdits: []analysis.TextEdit{
+							{
+								Pos:     marker.Pos,
+								End:     marker.End,
+								NewText: nil,
+							},
+						},
+					},
+				},
+			})
+		}
 	}
 }
 
