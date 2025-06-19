@@ -31,6 +31,7 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 		hyperv1.HostedClusterProgressing:  metav1.ConditionFalse,
 		hyperv1.HostedClusterDegraded:     metav1.ConditionFalse,
 		hyperv1.ClusterVersionProgressing: metav1.ConditionFalse,
+		hyperv1.ControlPlaneUpToDate:      metav1.ConditionTrue,
 	}
 
 	switch hostedCluster.Spec.Platform.Type {

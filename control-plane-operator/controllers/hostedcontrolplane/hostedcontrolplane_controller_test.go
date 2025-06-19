@@ -1953,3 +1953,177 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 
 	return fakeComponents
 }
+
+func TestReconcileControlPlaneUpToDateCondition(t *testing.T) {
+	namespace := "hcp-namespace"
+	testCases := []struct {
+		name           string
+		components     []*hyperv1.ControlPlaneComponent
+		releaseVersion string
+		expectStatus   metav1.ConditionStatus
+		expectReason   string
+		expectMessages []string // substrings expected in the message
+	}{
+		{
+			name: "when all components are up-to-date and available it should return true",
+			components: []*hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.15.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.15.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+						},
+					},
+				},
+			},
+			releaseVersion: "4.15.0",
+			expectStatus:   metav1.ConditionTrue,
+			expectReason:   string(hyperv1.AsExpectedReason),
+			expectMessages: []string{""},
+		},
+		{
+			name: "when a component version mismatch it should return false",
+			components: []*hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.15.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.14.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+						},
+					},
+				},
+			},
+			releaseVersion: "4.15.0",
+			expectStatus:   metav1.ConditionFalse,
+			expectReason:   "VersionMismatch",
+			expectMessages: []string{"component \"etcd\" version \"4.14.0\" does not match expected version 4.15.0"},
+		},
+		{
+			name: "when a component is not available but version matches it should return true",
+			components: []*hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.15.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionFalse, Reason: "SomeReason", Message: "Not available"},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionTrue},
+						},
+					},
+				},
+			},
+			releaseVersion: "4.15.0",
+			expectStatus:   metav1.ConditionTrue, // still true if version matches, but error is reported in message
+			expectReason:   string(hyperv1.AsExpectedReason),
+			expectMessages: []string{"component kas is not available. Reason: SomeReason, Message: Not available"},
+		},
+		{
+			name: "when a component rollout is not complete but version matches it should return true",
+			components: []*hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.15.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionFalse, Reason: "RolloutPending", Message: "Waiting for rollout"},
+						},
+					},
+				},
+			},
+			releaseVersion: "4.15.0",
+			expectStatus:   metav1.ConditionTrue, // still true if version matches, but error is reported in message
+			expectReason:   string(hyperv1.AsExpectedReason),
+			expectMessages: []string{"component kas rollout is not complete. Reason: RolloutPending, Message: Waiting for rollout"},
+		},
+		{
+			name: "when there are multiple errors and version mismatch it should return false",
+			components: []*hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kas", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.14.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionFalse, Reason: "SomeReason", Message: "Not available"},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionFalse, Reason: "RolloutPending", Message: "Waiting for rollout"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "etcd", Namespace: namespace},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Version: "4.13.0",
+						Conditions: []metav1.Condition{
+							{Type: string(hyperv1.ControlPlaneComponentAvailable), Status: metav1.ConditionTrue},
+							{Type: string(hyperv1.ControlPlaneComponentRolloutComplete), Status: metav1.ConditionFalse, Reason: "RolloutPending", Message: "Waiting for rollout"},
+						},
+					},
+				},
+			},
+			releaseVersion: "4.15.0",
+			expectStatus:   metav1.ConditionFalse,
+			expectReason:   "VersionMismatch",
+			expectMessages: []string{
+				"component \"kas\" version \"4.14.0\" does not match expected version 4.15.0",
+				"component kas is not available. Reason: SomeReason, Message: Not available",
+				"component kas rollout is not complete. Reason: RolloutPending, Message: Waiting for rollout",
+				"component \"etcd\" version \"4.13.0\" does not match expected version 4.15.0",
+				"component etcd rollout is not complete. Reason: RolloutPending, Message: Waiting for rollout",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			objects := make([]client.Object, len(tc.components))
+			for i, c := range tc.components {
+				objects[i] = c
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "hcp", Namespace: namespace},
+				Spec:       hyperv1.HostedControlPlaneSpec{ReleaseImage: "dummy"},
+				Status:     hyperv1.HostedControlPlaneStatus{},
+			}
+			releaseImage := testutils.InitReleaseImageOrDie(tc.releaseVersion)
+
+			r := &HostedControlPlaneReconciler{Client: fakeClient}
+			err := r.reconcileControlPlaneUpToDateCondition(context.Background(), hcp, releaseImage)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ControlPlaneUpToDate))
+			g.Expect(cond).NotTo(BeNil())
+			g.Expect(cond.Status).To(Equal(tc.expectStatus))
+			g.Expect(cond.Reason).To(Equal(tc.expectReason))
+			for _, msg := range tc.expectMessages {
+				g.Expect(cond.Message).To(ContainSubstring(msg))
+			}
+		})
+	}
+}

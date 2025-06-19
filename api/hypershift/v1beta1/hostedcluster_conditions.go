@@ -20,6 +20,13 @@ const (
 
 	// Bubble up from HCP.
 
+	// ControlPlaneUpToDate indicates whether the control plane components running management side are up to date with the desired release version.
+	// This is a useful semantic to make decisions decoupled from the ability of components running on the data plane to roll out during an upgrade to a specific version.
+	// For example, acknowledge that none of the components running management side are vulnerable to a specific CVE.
+	// For example, don't block HostedCluster upgrades when there's no data plane compute.
+	// Until https://issues.redhat.com/browse/OCPSTRAT-1454 is fixed, this condition has limited value, as the versions of OVN Control plane components are still dictated by the ability of the data plane to rollout.
+	ControlPlaneUpToDate ConditionType = "ControlPlaneUpToDate"
+
 	// InfrastructureReady bubbles up the same condition from HCP. It signals if the infrastructure for a control plane to be operational,
 	// e.g. load balancers were created successfully.
 	// A failure here may require external user intervention to resolve. E.g. hitting quotas on the cloud provider.

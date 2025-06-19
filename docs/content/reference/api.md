@@ -4697,6 +4697,13 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneUpToDate&#34;</p></td>
+<td><p>ControlPlaneUpToDate indicates whether the control plane components running management side are up to date with the desired release version.
+This is a useful semantic to make decisions decoupled from the ability of components running on the data plane to roll out during an upgrade to a specific version.
+For example, acknowledge that none of the components running management side are vulnerable to a specific CVE.
+For example, don&rsquo;t block HostedCluster upgrades when there&rsquo;s no data plane compute.
+Until <a href="https://issues.redhat.com/browse/OCPSTRAT-1454">https://issues.redhat.com/browse/OCPSTRAT-1454</a> is fixed, this condition has limited value, as the versions of OVN Control plane components are still dictated by the ability of the data plane to rollout.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
