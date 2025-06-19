@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/cmd/version"
+	cliversion "github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -111,6 +112,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -173,6 +175,7 @@ type RawCreateOptions struct {
 	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	VersionCheck                     bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -644,6 +647,22 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, errors.New("--pull-secret is required")
 	}
 
+	if opts.VersionCheck {
+		versionCLI := cliversion.GetRevision()
+		kubecfg, err := util.GetConfig()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get Kubernetes config: %w", err)
+		}
+		kubeClient, err := kubeclient.NewForConfig(kubecfg)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Kubernetes client: %w", err)
+		}
+		metadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
+		if err = validateVersion(ctx, opts, versionCLI, kubeClient, metadataProvider); err != nil {
+			return nil, fmt.Errorf("version validation failed: %w", err)
+		}
+	}
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
@@ -1102,5 +1121,32 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		}
 	}
 
+	return nil
+}
+
+// validateVersion is a version check when creating a Hypershift cluster that checks if the CLI and Hypershift
+// operator are both running the same version of Hypershift by comparing their commit SHAs.
+func validateVersion(ctx context.Context, opts *RawCreateOptions, versionCLI string, kubeClient kubeclient.Interface, metadataProvider hyperutil.ImageMetadataProvider) error {
+	deployment, err := kubeClient.AppsV1().Deployments("hypershift").Get(ctx, "operator", metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to get HyperShift operator deployment: %w", err)
+	}
+	if len(deployment.Spec.Template.Spec.Containers) == 0 {
+		return fmt.Errorf("operator deployment has no containers")
+	}
+	operatorImage := deployment.Spec.Template.Spec.Containers[0].Image
+	pullSecret, err := os.ReadFile(opts.PullSecretFile)
+	if err != nil {
+		return fmt.Errorf("failed to read pull secret file: %w", err)
+	}
+	metadata, err := metadataProvider.ImageMetadata(ctx, operatorImage, pullSecret)
+	if err != nil {
+		return fmt.Errorf("failed to retrieve operator image metadata: %w", err)
+	}
+	operatorVersion := metadata.Config.Labels["io.openshift.build.commit.id"]
+	if operatorVersion != versionCLI {
+		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)
+	}
+	opts.Log.Info("versions matched", "CLI", versionCLI, "Operator", operatorVersion)
 	return nil
 }
