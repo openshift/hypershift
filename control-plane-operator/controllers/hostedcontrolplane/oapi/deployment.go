@@ -343,6 +343,7 @@ chmod 0444 /run/ca-trust-generated/tls-ca-bundle.pem
 func buildOASTrustAnchorGenerator(oasImage string) func(*corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = oasImage
+		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{
 			"/bin/bash",
 			"-c",
