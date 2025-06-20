@@ -13,6 +13,7 @@ import (
 
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -62,6 +63,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 					Parameters: map[string]string{
 						"bus": "scsi",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 			},
 			expectedVolumeSnapshotClasses: []snapshotv1.VolumeSnapshotClass{
@@ -111,6 +113,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 					Parameters: map[string]string{
 						"bus": "scsi",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 			},
 			expectedVolumeSnapshotClasses: []snapshotv1.VolumeSnapshotClass{
@@ -212,6 +215,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 						"bus":                   "scsi",
 						"infraStorageClassName": "s1",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -222,6 +226,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 						"bus":                   "scsi",
 						"infraStorageClassName": "s2",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 			},
 			expectedVolumeSnapshotClasses: []snapshotv1.VolumeSnapshotClass{
@@ -300,6 +305,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 						"bus":                   "scsi",
 						"infraStorageClassName": "s1",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -310,6 +316,7 @@ func TestReconcileKubevirtCSIDriver(t *testing.T) {
 						"bus":                   "scsi",
 						"infraStorageClassName": "s2",
 					},
+					AllowVolumeExpansion: ptr.To(true),
 				},
 			},
 			expectedVolumeSnapshotClasses: []snapshotv1.VolumeSnapshotClass{

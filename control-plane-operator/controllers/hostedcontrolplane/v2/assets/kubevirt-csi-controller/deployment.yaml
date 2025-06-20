@@ -122,6 +122,24 @@ spec:
             requests:
               memory: 50Mi
               cpu: 10m
+        - name: csi-resizer
+          args:
+          - "--v=5"
+          - "--csi-address=/csi/csi.sock"
+          - "--kubeconfig=/var/run/secrets/tenantcluster/kubeconfig"
+          - "--timeout=3m"
+          - "--handle-volume-inuse-error=false"
+          image: csi-external-resizer
+          imagePullPolicy: IfNotPresent
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /csi
+            name: socket-dir
+          resources:
+            requests:
+              memory: 50Mi
+              cpu: 10m
       volumes:
         - name: socket-dir
           emptyDir: {}
