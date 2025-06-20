@@ -450,7 +450,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling oauth client secrets")
-	if err := r.reconcileAuthOIDC(ctx, hcp); err != nil {
+	if err := r.reconcileAuthOIDC(ctx, hcp, log); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile oauth client secrets: %w", err))
 	}
 
@@ -1115,7 +1115,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 	return errors.NewAggregate(errs)
 }
 
-func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	var errs []error
 	if !util.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
@@ -1149,30 +1149,33 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		}
 
 		// Copy OIDCClient Secrets into openshift-config namespace
-		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
-			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
-				var src corev1.Secret
-				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
-					continue
+		for _, oidcClient := range provider.OIDCClients {
+			// If the secret name is empty, we assume the guest cluster admin is going to create this secret manually
+			if oidcClient.ClientSecret.Name == "" {
+				log.Info("OIDC client secret is empty, skipping reconciliation", "component", oidcClient.ComponentName)
+				continue
+			}
+			var src corev1.Secret
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+				continue
+			}
+			dest := corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      oidcClient.ClientSecret.Name,
+					Namespace: ConfigNamespace,
+				},
+			}
+			_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+				if dest.Data == nil {
+					dest.Data = map[string][]byte{}
 				}
-				dest := corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      oidcClient.ClientSecret.Name,
-						Namespace: ConfigNamespace,
-					},
-				}
-				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
-					if dest.Data == nil {
-						dest.Data = map[string][]byte{}
-					}
-					dest.Data["clientSecret"] = src.Data["clientSecret"]
-					return nil
-				})
-				if err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
-				}
+				dest.Data["clientSecret"] = src.Data["clientSecret"]
+				return nil
+			})
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
 			}
 		}
 	}
