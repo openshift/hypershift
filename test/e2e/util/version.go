@@ -78,3 +78,7 @@ func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster)
 func IsLessThan(version semver.Version) bool {
 	return releaseVersion.LT(version)
 }
+
+func IsGreaterThanOrEqualTo(version semver.Version) bool {
+	return releaseVersion.GE(version)
+}
