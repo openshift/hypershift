@@ -140,7 +140,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
+In this scenario, we are using Cilium version v1.14.5, which is the latest release at the time of writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
