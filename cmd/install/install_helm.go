@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -85,7 +85,7 @@ func WriteChartYaml(dir string) error {
 		"description": "A Helm chart for the HyperShift Operator",
 		"type":        "application",
 		"version":     "0.1.0",
-		"appVersion":  version.GetRevision(),
+		"appVersion":  supportedversion.GetRevision(),
 	}
 	return writeYamlFile(fmt.Sprintf("%s/Chart.yaml", dir), data)
 }

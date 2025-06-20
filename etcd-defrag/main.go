@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -60,7 +60,7 @@ func run(ctx context.Context, opts Options) error {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 	ctrl.SetLogger(logger)
-	logger.Info("Starting etcd-defrag-controller", "version", version.String(), "namespace", opts.Namespace)
+	logger.Info("Starting etcd-defrag-controller", "version", supportedversion.String(), "namespace", opts.Namespace)
 	leaseDuration := time.Minute * 5
 	renewDeadline := time.Minute * 4
 	retryPeriod := time.Second * 30

@@ -99,16 +99,24 @@ guaranteed.
 
 It helps create required infrastructure needed for a HostedCluster CR and NodePool CR to successfully install. 
 
+#### Showing General Version Information
 Running the following command will show what the latest OCP version the CLI supports against your KUBECONFIG:
 ```
-% ./bin/hypershift version
+% hypershift version
 Client Version: openshift/hypershift: 1ed535a8d27c5a1546f1ff4cc71abf32dd1a26aa. Latest supported OCP: 4.17.0
 Server Version: 2f6cfe21a0861dea3130f3bed0d3ae5553b8c28b
 Server Supports OCP Versions: 4.17, 4.16, 4.15, 4.14
+```
+
+#### Showing HyperShift CLI Version Information
+Running the following command will show the commit sha the HyperShift CLI was built from:
+```
+ % hypershift version --commit-only
+211a8536809aca94d6047c057866be54d96777c5
 ```
 
 ### HCP CLI
 The HCP CLI is the productized version of the HyperShift CLI. This CLI is available through download from MCE. 
 
 Similar to the HyperShift CLI, running the `hcp version` command will show the latest OCP version the CLI supports 
-against your KUBECONFIG.
+against your KUBECONFIG. Running the `hcp version --commit-only` will show the commit sha the HCP CLI was built from.
