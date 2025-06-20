@@ -53,7 +53,7 @@ func conditionCountMetric(objectName string, additionalLabels ...string) pmetric
 			Namespace: pmetrics.Namespace,
 			Subsystem: subsystem,
 			Name:      "count",
-			Help:      "The number of an condition for a given object, type and status. e.g. Alarm := Available=False > 0",
+			Help:      "The number of a condition for a given object, type and status. e.g. Alarm := Available=False > 0",
 		},
 		append([]string{
 			MetricLabelNamespace,
