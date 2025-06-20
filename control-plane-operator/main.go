@@ -37,6 +37,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
+	syncpullsecret "github.com/openshift/hypershift/sync-pullsecret-ds"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -147,6 +148,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(etcdbackup.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
+	cmd.AddCommand(syncpullsecret.NewRunCommand())
 	return cmd
 }
 
