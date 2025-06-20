@@ -9,10 +9,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/openstack"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
@@ -28,7 +26,6 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-	capipowervs "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -46,6 +43,7 @@ import (
 type CAPI struct {
 	*Token
 	capiClusterName string
+	upsert.ApplyProvider
 }
 
 func newCAPI(token *Token, capiClusterName string) (*CAPI, error) {
@@ -60,6 +58,7 @@ func newCAPI(token *Token, capiClusterName string) (*CAPI, error) {
 	return &CAPI{
 		Token:           token,
 		capiClusterName: capiClusterName,
+		ApplyProvider:   upsert.NewApplyProvider(false),
 	}, nil
 }
 
@@ -71,14 +70,19 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 		return err
 	}
 
+	if c.nodePool.Spec.Platform.Type == hyperv1.AWSPlatform {
+		if err := c.reconcileAWSMachines(ctx); err != nil {
+			return err
+		}
+	}
+
 	//  Reconcile (Platform)MachineTemplate.
-	template, mutateTemplate, _, err := c.machineTemplateBuilders()
+	template, err := c.machineTemplateBuilders(ctx)
 	if err != nil {
 		return err
 	}
-	if result, err := c.CreateOrUpdate(ctx, c.Client, template, func() error {
-		return mutateTemplate(template)
-	}); err != nil {
+
+	if result, err := c.ApplyManifest(ctx, c.Client, template); err != nil {
 		return err
 	} else {
 		log.Info("Reconciled Machine template", "result", result)
@@ -727,161 +731,52 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 // machineTemplateBuilders returns a client.Object with a particular (platform)MachineTemplate type.
 // a func to mutate the (platform)MachineTemplate.spec, a json string representation for (platform)MachineTemplate.spec
 // and an error.
-func (c *CAPI) machineTemplateBuilders() (client.Object, func(object client.Object) error, string, error) {
-	var mutateTemplate func(object client.Object) error
+func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, error) {
+	templateNameGenerator := func(spec any) (string, error) {
+		specJSON, err := json.Marshal(spec)
+		if err != nil {
+			return "", err
+		}
+		// using HashStruct(specJSON) ensures a rolling upgrade is triggered
+		// by creating a new template with a different name if any field changes.
+		return getName(c.nodePool.GetName(), supportutil.HashSimple(specJSON),
+			validation.DNS1123SubdomainMaxLength), nil
+	}
+
 	var template client.Object
-	var machineTemplateSpec interface{}
+	var err error
 
-	nodePool := c.nodePool
-	capiClusterName := c.capiClusterName
-	hcluster := c.hostedCluster
-	createDefaultAWSSecurityGroup := c.cpoCapabilities.CreateDefaultAWSSecurityGroup
-	releaseImage := c.releaseImage
-
-	switch nodePool.Spec.Platform.Type {
+	switch c.nodePool.Spec.Platform.Type {
 	// Define the desired template type and mutateTemplate function.
 	case hyperv1.AWSPlatform:
-		template = &capiaws.AWSMachineTemplate{}
-		var err error
-		machineTemplateSpec, err = awsMachineTemplateSpec(capiClusterName, hcluster, nodePool, createDefaultAWSSecurityGroup, releaseImage)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capiaws.AWSMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capiaws.AWSMachineTemplateSpec)
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
+		template, err = c.awsMachineTemplate(ctx, templateNameGenerator)
 	case hyperv1.AgentPlatform:
-		template = &agentv1.AgentMachineTemplate{}
-		machineTemplateSpec = agentMachineTemplateSpec(nodePool)
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*agentv1.AgentMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*agentv1.AgentMachineTemplateSpec)
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
+		template, err = c.agentMachineTemplate(templateNameGenerator)
 	case hyperv1.KubevirtPlatform:
-		template = &capikubevirt.KubevirtMachineTemplate{}
-		var err error
-		machineTemplateSpec, err = kubevirt.MachineTemplateSpec(nodePool, hcluster, c.releaseImage, nil)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.InvalidKubevirtMachineTemplate,
-				Message:            err.Error(),
-				ObservedGeneration: nodePool.Generation,
-			})
-
-			return nil, nil, "", err
-		} else {
-			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
-		}
-
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capikubevirt.KubevirtMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capikubevirt.KubevirtMachineTemplateSpec)
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
+		template, err = c.kubevirtMachineTemplate(templateNameGenerator)
 	case hyperv1.AzurePlatform:
-		var err error
-		template = &capiazure.AzureMachineTemplate{}
-		machineTemplateSpec, err = azureMachineTemplateSpec(nodePool)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capiazure.AzureMachineTemplate)
-
-			// The azure api requires passing a public key. This key is randomly generated, the private portion is thrown away and the public key
-			// gets written to the template.
-			sshKey := o.Spec.Template.Spec.SSHPublicKey
-			if sshKey == "" {
-				sshKey, err = generateSSHPubkey()
-				if err != nil {
-					return fmt.Errorf("failed to generate a SSH key: %w", err)
-				}
-			}
-
-			o.Spec = *machineTemplateSpec.(*capiazure.AzureMachineTemplateSpec)
-			o.Spec.Template.Spec.SSHPublicKey = sshKey
-
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
-
+		template, err = c.azureMachineTemplate(templateNameGenerator)
 	case hyperv1.PowerVSPlatform:
-		template = &capipowervs.IBMPowerVSMachineTemplate{}
-		var err error
-		machineTemplateSpec, err = ibmPowerVSMachineTemplateSpec(hcluster, nodePool, c.releaseImage)
-		if err != nil {
-			return nil, nil, "", err
-		}
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capipowervs.IBMPowerVSMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capipowervs.IBMPowerVSMachineTemplateSpec)
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
+		template, err = c.ibmPowerVSMachineTemplate(templateNameGenerator)
 	case hyperv1.OpenStackPlatform:
-		template = &capiopenstackv1beta1.OpenStackMachineTemplate{}
-		var err error
-		machineTemplateSpec, err = openstack.MachineTemplateSpec(hcluster, nodePool, c.releaseImage)
-		if err != nil {
-			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-				Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
-				Status:             corev1.ConditionFalse,
-				Reason:             hyperv1.InvalidOpenStackMachineTemplate,
-				Message:            err.Error(),
-				ObservedGeneration: nodePool.Generation,
-			})
-
-			return nil, nil, "", err
-		} else {
-			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
-		}
-
-		mutateTemplate = func(object client.Object) error {
-			o, _ := object.(*capiopenstackv1beta1.OpenStackMachineTemplate)
-			o.Spec = *machineTemplateSpec.(*capiopenstackv1beta1.OpenStackMachineTemplateSpec)
-			if o.Annotations == nil {
-				o.Annotations = make(map[string]string)
-			}
-			o.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(nodePool).String()
-			return nil
-		}
+		template, err = c.openstackMachineTemplate(templateNameGenerator)
 	default:
 		// TODO(alberto): Consider signal in a condition.
-		return nil, nil, "", fmt.Errorf("unsupported platform type: %s", nodePool.Spec.Platform.Type)
+		err = fmt.Errorf("unsupported platform type: %s", c.nodePool.Spec.Platform.Type)
 	}
-	template.SetNamespace(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
-
-	machineTemplateSpecJSON, err := json.Marshal(machineTemplateSpec)
 	if err != nil {
-		return nil, nil, "", err
+		return nil, fmt.Errorf("failed to create machine template: %w", err)
 	}
 
-	template.SetName(generateMachineTemplateName(nodePool, machineTemplateSpecJSON))
+	annotations := template.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(c.nodePool).String()
 
-	return template, mutateTemplate, string(machineTemplateSpecJSON), nil
+	template.SetAnnotations(annotations)
+	template.SetNamespace(c.controlplaneNamespace)
+	return template, nil
 }
 
 func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
@@ -1275,6 +1170,40 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 	}
 
 	return filtered, nil
+}
+
+func (c *CAPI) getExistingMachineTemplate(ctx context.Context, template client.Object) error {
+	templateName := ""
+
+	if c.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+		md := c.machineDeployment()
+		if err := c.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to get MachineDeployment %s: %w", md.Name, err)
+			}
+			// MachineDeployment does not exist, return NotFoundError.
+			return err
+		}
+		templateName = md.Spec.Template.Spec.InfrastructureRef.Name
+	} else {
+		ms := c.machineSet()
+		if err := c.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if client.IgnoreNotFound(err) != nil {
+				return fmt.Errorf("failed to get MachineSet %s: %w", ms.Name, err)
+			}
+			//MachineSet does not exist, return NotFoundError.
+			return err
+		}
+		templateName = ms.Spec.Template.Spec.InfrastructureRef.Name
+	}
+
+	template.SetName(templateName)
+	template.SetNamespace(c.controlplaneNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(template), template); err != nil {
+		return fmt.Errorf("failed to get existing %T %s: %w", template, templateName, err)
+	}
+
+	return nil
 }
 
 // TODO (alberto): Let the all the deletion logic be a capi func.
