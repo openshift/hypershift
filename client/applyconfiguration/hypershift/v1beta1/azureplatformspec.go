@@ -20,15 +20,15 @@ package v1beta1
 // AzurePlatformSpecApplyConfiguration represents a declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
-	Cloud             *string                                           `json:"cloud,omitempty"`
-	Location          *string                                           `json:"location,omitempty"`
-	ResourceGroupName *string                                           `json:"resourceGroup,omitempty"`
-	VnetID            *string                                           `json:"vnetID,omitempty"`
-	SubnetID          *string                                           `json:"subnetID,omitempty"`
-	SubscriptionID    *string                                           `json:"subscriptionID,omitempty"`
-	SecurityGroupID   *string                                           `json:"securityGroupID,omitempty"`
-	ManagedIdentities *AzureResourceManagedIdentitiesApplyConfiguration `json:"managedIdentities,omitempty"`
-	TenantID          *string                                           `json:"tenantID,omitempty"`
+	Cloud                     *string                                             `json:"cloud,omitempty"`
+	Location                  *string                                             `json:"location,omitempty"`
+	ResourceGroupName         *string                                             `json:"resourceGroup,omitempty"`
+	VnetID                    *string                                             `json:"vnetID,omitempty"`
+	SubnetID                  *string                                             `json:"subnetID,omitempty"`
+	SubscriptionID            *string                                             `json:"subscriptionID,omitempty"`
+	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
+	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
+	TenantID                  *string                                             `json:"tenantID,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -93,11 +93,11 @@ func (b *AzurePlatformSpecApplyConfiguration) WithSecurityGroupID(value string) 
 	return b
 }
 
-// WithManagedIdentities sets the ManagedIdentities field in the declarative configuration to the given value
+// WithAzureAuthenticationConfig sets the AzureAuthenticationConfig field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ManagedIdentities field is set to the value of the last call.
-func (b *AzurePlatformSpecApplyConfiguration) WithManagedIdentities(value *AzureResourceManagedIdentitiesApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
-	b.ManagedIdentities = value
+// If called multiple times, the AzureAuthenticationConfig field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(value *AzureAuthenticationConfigurationApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
+	b.AzureAuthenticationConfig = value
 	return b
 }
 
