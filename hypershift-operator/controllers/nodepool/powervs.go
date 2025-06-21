@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -119,6 +120,9 @@ func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*re
 	if !hasRegionData {
 		return nil, "", fmt.Errorf("couldn't find PowerVS image for region %q", COSRegion)
 	}
+	// PowerVS now enforces stricter validation rules on image names, disallowing dots.
+	// To ensure compatibility, transform the release name by replacing dots with hyphens.
+	regionData.Release = strings.ReplaceAll(regionData.Release, ".", "-")
 	return &regionData, COSRegion, nil
 }
 
