@@ -30,7 +30,7 @@ github.com/Antonboom/testifylint/internal/checkers
 github.com/Antonboom/testifylint/internal/checkers/printf
 github.com/Antonboom/testifylint/internal/config
 github.com/Antonboom/testifylint/internal/testify
-# github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
+# github.com/BurntSushi/toml v1.5.0
 ## explicit; go 1.18
 github.com/BurntSushi/toml
 github.com/BurntSushi/toml/internal
