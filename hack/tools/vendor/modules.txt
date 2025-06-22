@@ -176,8 +176,8 @@ github.com/butuzov/ireturn/analyzer/internal/types
 ## explicit; go 1.19
 github.com/butuzov/mirror
 github.com/butuzov/mirror/internal/checker
-# github.com/catenacyber/perfsprint v0.7.1
-## explicit; go 1.20
+# github.com/catenacyber/perfsprint v0.9.1
+## explicit; go 1.22.0
 github.com/catenacyber/perfsprint/analyzer
 # github.com/ccojocar/zxcvbn-go v1.0.2
 ## explicit; go 1.20
