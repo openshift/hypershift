@@ -98,7 +98,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.1
 	sigs.k8s.io/cluster-api-provider-azure v1.19.2
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0
-	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
+	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.10
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.20.1
 	sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
