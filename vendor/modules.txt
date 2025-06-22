@@ -1229,12 +1229,12 @@ golang.org/x/crypto/salsa20/salsa
 golang.org/x/crypto/sha3
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac
-## explicit; go 1.22.0
+# golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
+## explicit; go 1.23.0
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-# golang.org/x/mod v0.23.0
-## explicit; go 1.22.0
+# golang.org/x/mod v0.25.0
+## explicit; go 1.23.0
 golang.org/x/mod/semver
 # golang.org/x/net v0.37.0
 ## explicit; go 1.23.0
@@ -1257,7 +1257,7 @@ golang.org/x/net/websocket
 ## explicit; go 1.23.0
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
-# golang.org/x/sync v0.12.0
+# golang.org/x/sync v0.15.0
 ## explicit; go 1.23.0
 golang.org/x/sync/errgroup
 golang.org/x/sync/singleflight
