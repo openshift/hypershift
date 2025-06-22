@@ -828,8 +828,9 @@ github.com/ldez/exptostd
 # github.com/ldez/gomoddirectives v0.6.0
 ## explicit; go 1.22.0
 github.com/ldez/gomoddirectives
-# github.com/ldez/grignotin v0.7.0
+# github.com/ldez/grignotin v0.9.0
 ## explicit; go 1.22.0
+github.com/ldez/grignotin/goenv
 github.com/ldez/grignotin/gomod
 # github.com/ldez/tagliatelle v0.7.1
 ## explicit; go 1.22.0
