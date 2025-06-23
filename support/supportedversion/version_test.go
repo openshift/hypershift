@@ -442,7 +442,7 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			}
 
-			version, err := retrieveSupportedOCPVersion(tc.releaseURL, fakeClient)
+			version, err := retrieveSupportedOCPVersion(context.Background(), tc.releaseURL, fakeClient)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {

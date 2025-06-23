@@ -158,7 +158,7 @@ func getOCPVersion(releaseURL string) (ocpVersion, error) {
 	return version, nil
 }
 
-func LookupDefaultOCPVersion(releaseStream string, client crclient.Client) (ocpVersion, error) {
+func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client crclient.Client) (ocpVersion, error) {
 	var (
 		version    ocpVersion
 		err        error
@@ -169,7 +169,7 @@ func LookupDefaultOCPVersion(releaseStream string, client crclient.Client) (ocpV
 		// No release stream was provided, so we will look up the supported OCP versions from the HO and use the latest
 		// release image from the multi-arch release stream that is not a release candidate.
 		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
-		version, err = retrieveSupportedOCPVersion(releaseURL, client)
+		version, err = retrieveSupportedOCPVersion(ctx, releaseURL, client)
 	} else {
 		// We look up the release URL based on the user provided release stream.
 		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
@@ -287,7 +287,7 @@ type ocpTags struct {
 // retrieveSupportedOCPVersion retrieves the latest supported OCP version from supported versions ConfigMap, retrieves
 // the latest stable release images from the provided release URL, and returns the latest supported OCP version that is
 // not a release candidate and matches the latest supported OCP version supported by the HyperShift operator.
-func retrieveSupportedOCPVersion(releaseURL string, client crclient.Client) (ocpVersion, error) {
+func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client crclient.Client) (ocpVersion, error) {
 	var stableOCPVersions ocpTags
 	var namespace string
 
