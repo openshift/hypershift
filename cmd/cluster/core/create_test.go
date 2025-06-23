@@ -170,7 +170,7 @@ func TestPrototypeResources(t *testing.T) {
 			},
 		},
 	}
-	resources, err := prototypeResources(opts)
+	resources, err := prototypeResources(context.Background(), opts)
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
 		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))

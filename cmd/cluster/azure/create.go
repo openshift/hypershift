@@ -564,7 +564,7 @@ func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecre
 		if err != nil {
 			return "", fmt.Errorf("failed to get client: %w", err)
 		}
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(releaseStream, client)
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, releaseStream, client)
 		if err != nil {
 			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
 		}

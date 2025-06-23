@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -382,7 +383,7 @@ func (o *Options) Complete() error {
 		if err != nil {
 			return fmt.Errorf("failed to get client: %w", err)
 		}
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion("", client)
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(context.TODO(), "", client)
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}

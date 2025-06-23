@@ -222,7 +222,7 @@ func (r *resources) asObjects() []crclient.Object {
 	return objects
 }
 
-func prototypeResources(opts *CreateOptions) (*resources, error) {
+func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, error) {
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
@@ -230,7 +230,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
 		}
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(opts.ReleaseStream, client)
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, opts.ReleaseStream, client)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
@@ -783,7 +783,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 		return fmt.Errorf("could not complete platform specific options: %w", err)
 	}
 
-	resources, err := prototypeResources(opts)
+	resources, err := prototypeResources(ctx, opts)
 	if err != nil {
 		return err
 	}
