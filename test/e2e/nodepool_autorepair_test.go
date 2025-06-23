@@ -99,7 +99,7 @@ func (ar *NodePoolAutoRepairTest) Run(t *testing.T, nodePool hyperv1.NodePool, n
 }
 
 func ec2Client(awsCredsFile, region string) *ec2.EC2 {
-	awsSession := awsutil.NewSession("hypershift-e2e", awsCredsFile, "", "", region)
+	awsSession := awsutil.NewSession("e2e-autorepair", awsCredsFile, "", "", region)
 	awsConfig := awsutil.NewConfig()
 	return ec2.New(awsSession, awsConfig)
 }

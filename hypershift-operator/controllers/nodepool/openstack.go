@@ -12,43 +12,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	orc "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 )
 
-func (c *CAPI) openstackMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiopenstackv1beta1.OpenStackMachineTemplate, error) {
-	nodePool := c.nodePool
-	spec, err := openstack.MachineTemplateSpec(c.hostedCluster, nodePool, c.releaseImage)
-	if err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidMachineTemplateConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             hyperv1.InvalidOpenStackMachineTemplate,
-			Message:            err.Error(),
-			ObservedGeneration: nodePool.Generation,
-		})
-
-		return nil, err
-	} else {
-		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
-	}
-
-	templateName, err := templateNameGenerator(spec)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate template name: %w", err)
-	}
-
-	template := &capiopenstackv1beta1.OpenStackMachineTemplate{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: templateName,
-		},
-		Spec: *spec,
-	}
-
-	return template, nil
-}
 func (r *NodePoolReconciler) setOpenStackConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
 	if nodePool.Spec.Platform.OpenStack.ImageName == "" {
 		_, err := openstack.OpenStackReleaseImage(releaseImage)

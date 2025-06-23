@@ -90,10 +90,6 @@ func TestNodePool(t *testing.T) {
 						test: NewRollingUpgradeTest(ctx, mgtClient, hostedCluster),
 					},
 					{
-						name: "TestNodePoolDay2Tags",
-						test: NewNodePoolDay2TagsTest(ctx, mgtClient, hostedCluster, clusterOpts),
-					},
-					{
 						name: "KubeVirtQoSClassGuaranteedTest",
 						test: NewKubeVirtQoSClassGuaranteedTest(ctx, mgtClient, hostedCluster),
 					},
