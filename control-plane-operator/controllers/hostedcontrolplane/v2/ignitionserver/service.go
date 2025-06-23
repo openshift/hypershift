@@ -27,7 +27,10 @@ func adaptService(cpContext component.WorkloadContext, svc *corev1.Service) erro
 			svc.Spec.Ports[0].NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if (cpContext.HCP.Spec.Platform.Type != hyperv1.IBMCloudPlatform) ||
+			(cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform && svc.Spec.Type != corev1.ServiceTypeNodePort) {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Ignition service: %s", strategy.Type)
 	}
