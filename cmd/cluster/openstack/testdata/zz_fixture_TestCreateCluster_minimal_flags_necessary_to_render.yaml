@@ -49,7 +49,6 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
-  capabilities: {}
   configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:

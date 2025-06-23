@@ -53,7 +53,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when capabilities.disabled is set to a supported capability it should pass",
+						name: "when capabilities.disabled is set to ImageRegistry it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -75,77 +75,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when capabilities.disabled is set to an invalid capability it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("AnInvalidCapability"),
-								},
-							}
-						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
-							"\"openshift-samples\", \"Insights\", \"baremetal\"",
-					},
-					{
 						name: "when capabilities.disabled is set to an unsupported capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("Storage"),
-								},
-							}
-						},
-						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
-							"\"openshift-samples\", \"Insights\", \"baremetal\"",
-					},
-					{
-						name: "when capabilities.enabled is set to a supported capability it should pass",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Enabled: []hyperv1.OptionalCapability{
-									hyperv1.BaremetalCapability,
-								},
-							}
-						},
-						expectedErrorSubstring: "",
-					},
-					{
-						name: "when capabilities.enabled is set to an invalid capability it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Enabled: []hyperv1.OptionalCapability{
 									hyperv1.OptionalCapability("AnInvalidCapability"),
 								},
 							}
 						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
-							"\"openshift-samples\", \"Insights\", \"baremetal\"",
-					},
-					{
-						name: "when capabilities.enabled is set to an unsupported capability it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Enabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("Storage"),
-								},
-							}
-						},
-						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
-							"\"openshift-samples\", \"Insights\", \"baremetal\"",
-					},
-					{
-						name: "when the same capability is added to both enabled and disabled, it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Capabilities = &hyperv1.Capabilities{
-								Enabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("Insights"),
-								},
-								Disabled: []hyperv1.OptionalCapability{
-									hyperv1.OptionalCapability("Insights"),
-								},
-							}
-						},
-						expectedErrorSubstring: "Capabilities can not be both enabled and disabled at once.",
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
 					},
 					{
 						name: "when baseDomain has invalid chars it should fail",

@@ -379,32 +379,25 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
+
 const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityOpenShiftSamples)
+
 const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
-const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
 
-// capabilities allows enabling or disabling optional components at install time.
-// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-// OpenShift version, minus the baremetal capability.
+// capabilities allows disabling optional components at install time.
 // Once set, it cannot be changed.
-//
-// +kubebuilder:validation:XValidation:rule="has(self.enabled) && has(self.disabled) ? self.enabled.all(e, !(e in self.disabled)) : true", message="Capabilities can not be both enabled and disabled at once."
 type Capabilities struct {
-	// enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
-	// Once set, this field cannot be changed.
+	// disabled when specified, sets the cluster version baselineCapabilitySet to None
+	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+	// This effectively disables that capability on the hosted cluster.
 	//
-	// +listType=atomic
-	// +immutable
-	// +optional
-	// +kubebuilder:validation:MaxItems=25
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Enabled is immutable. Changes might result in unpredictable and disruptive behavior."
-	Enabled []OptionalCapability `json:"enabled,omitempty"`
-
-	// disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+	// OpenShift version.
+	//
 	// Once set, this field cannot be changed.
 	//
 	// Note: Disabling 'openshift-samples','Insights' are only supported in OpenShift versions 4.20 and above.

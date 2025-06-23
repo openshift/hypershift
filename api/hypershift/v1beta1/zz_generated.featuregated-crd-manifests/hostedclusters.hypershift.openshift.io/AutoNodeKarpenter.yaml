@@ -205,7 +205,13 @@ spec:
                 properties:
                   disabled:
                     description: |-
-                      disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+                      disabled when specified, sets the cluster version baselineCapabilitySet to None
+                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+                      This effectively disables that capability on the hosted cluster.
+
+                      When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+                      OpenShift version.
+
                       Once set, this field cannot be changed.
 
                       Note: Disabling 'openshift-samples','Insights' are only supported in OpenShift versions 4.20 and above.
@@ -214,7 +220,6 @@ spec:
                       - ImageRegistry
                       - openshift-samples
                       - Insights
-                      - baremetal
                       type: string
                     maxItems: 25
                     type: array
@@ -223,32 +228,11 @@ spec:
                     - message: Disabled is immutable. Changes might result in unpredictable
                         and disruptive behavior.
                       rule: self == oldSelf
-                  enabled:
-                    description: |-
-                      enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
-                      Once set, this field cannot be changed.
-                    items:
-                      enum:
-                      - ImageRegistry
-                      - openshift-samples
-                      - Insights
-                      - baremetal
-                      type: string
-                    maxItems: 25
-                    type: array
-                    x-kubernetes-list-type: atomic
-                    x-kubernetes-validations:
-                    - message: Enabled is immutable. Changes might result in unpredictable
-                        and disruptive behavior.
-                      rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
                 - message: Capabilities is immutable. Changes might result in unpredictable
                     and disruptive behavior.
                   rule: self == oldSelf
-                - message: Capabilities can not be both enabled and disabled at once.
-                  rule: 'has(self.enabled) && has(self.disabled) ? self.enabled.all(e,
-                    !(e in self.disabled)) : true'
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.

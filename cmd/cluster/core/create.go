@@ -54,8 +54,6 @@ func DefaultOptions() *RawCreateOptions {
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
 		NetworkType:                    string(hyperv1.OVNKubernetes),
 		FeatureSet:                     string(configv1.Default),
-		EnableClusterCapabilities:      []string{},
-		DisableClusterCapabilities:     []string{},
 	}
 }
 
@@ -108,8 +106,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
-	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
-	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported values are ImageRegistry,openshift-samples,Insights.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 }
 
@@ -170,7 +167,6 @@ type RawCreateOptions struct {
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
 	FeatureSet                       string
-	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
 
@@ -333,16 +329,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 			ControllerAvailabilityPolicy:     hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
 			InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 			Configuration:                    &hyperv1.ClusterConfiguration{},
-			Capabilities:                     &hyperv1.Capabilities{},
 		},
-	}
-
-	if len(opts.EnableClusterCapabilities) > 0 {
-		caps := make([]hyperv1.OptionalCapability, len(opts.EnableClusterCapabilities))
-		for i, c := range opts.EnableClusterCapabilities {
-			caps[i] = hyperv1.OptionalCapability(c)
-		}
-		prototype.Cluster.Spec.Capabilities.Enabled = caps
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
@@ -350,7 +337,9 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		for i, c := range opts.DisableClusterCapabilities {
 			caps[i] = hyperv1.OptionalCapability(c)
 		}
-		prototype.Cluster.Spec.Capabilities.Disabled = caps
+		prototype.Cluster.Spec.Capabilities = &hyperv1.Capabilities{
+			Disabled: caps,
+		}
 	}
 
 	if opts.EtcdStorageClass != "" {
@@ -703,23 +692,15 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
 	}
 
-	acceptedValues := sets.NewString(
-		string(hyperv1.ImageRegistryCapability),
-		string(hyperv1.OpenShiftSamplesCapability),
-		string(hyperv1.InsightsCapability),
-		string(hyperv1.BaremetalCapability),
-	)
 	if len(opts.DisableClusterCapabilities) > 0 {
+		acceptedValues := sets.NewString(
+			string(hyperv1.ImageRegistryCapability),
+			string(hyperv1.OpenShiftSamplesCapability),
+			string(hyperv1.InsightsCapability),
+		)
 		for _, capability := range opts.DisableClusterCapabilities {
 			if !acceptedValues.Has(capability) {
-				return nil, fmt.Errorf("unknown disabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
-			}
-		}
-	}
-	if len(opts.EnableClusterCapabilities) > 0 {
-		for _, capability := range opts.EnableClusterCapabilities {
-			if !acceptedValues.Has(capability) {
-				return nil, fmt.Errorf("unknown enabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
+				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", capability, acceptedValues.List())
 			}
 		}
 	}
