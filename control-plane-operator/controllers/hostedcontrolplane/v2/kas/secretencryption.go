@@ -78,7 +78,7 @@ func adaptSecretEncryptionConfig(cpContext component.WorkloadContext, secret *co
 		if err != nil {
 			return err
 		}
-		data, err = generateKMSEncryptionConfig(secretEncryption.KMS, apiVersion)
+		data, err = generateKMSEncryptionConfig(cpContext.HCP.Namespace, secretEncryption.KMS, apiVersion)
 		if err != nil {
 			return err
 		}
