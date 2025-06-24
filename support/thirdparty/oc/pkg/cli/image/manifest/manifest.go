@@ -4,20 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	imagereference "github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/registryclient"
-	"github.com/openshift/hypershift/support/thirdparty/oc/pkg/helpers/image/dockerlayer/add"
+
+	"k8s.io/klog"
 
 	"github.com/docker/distribution"
 	"github.com/docker/distribution/manifest/manifestlist"
 	"github.com/docker/distribution/manifest/ocischema"
-	"github.com/docker/distribution/manifest/schema1"
 	"github.com/docker/distribution/manifest/schema2"
 	"github.com/opencontainers/go-digest"
 	imagespecv1 "github.com/opencontainers/image-spec/specs-go/v1"
 )
+
+var ErrAllImagesFiltered = fmt.Errorf("filtered all images from manifest list")
 
 // PreferManifestList specifically requests a manifest list first
 var PreferManifestList = distribution.WithManifestMediaTypes([]string{
@@ -25,6 +28,50 @@ var PreferManifestList = distribution.WithManifestMediaTypes([]string{
 	schema2.MediaTypeManifest,
 	imagespecv1.MediaTypeImageManifest,
 })
+
+func PlatformSpecString(platform manifestlist.PlatformSpec) string {
+	if len(platform.Variant) > 0 {
+		return fmt.Sprintf("%s/%s/%s", platform.OS, platform.Architecture, platform.Variant)
+	}
+	return fmt.Sprintf("%s/%s", platform.OS, platform.Architecture)
+}
+
+// FilterOptions assist in filtering out unneeded manifests from ManifestList objects.
+type FilterOptions struct {
+	FilterByOS      string
+	DefaultOSFilter bool
+	OSFilter        *regexp.Regexp
+}
+
+// IsWildcardFilter returns true if the filter regex is set to a wildcard
+func (o *FilterOptions) IsWildcardFilter() bool {
+	wildcardFilter := ".*"
+	return o.FilterByOS == wildcardFilter
+}
+
+// Include returns true if the provided manifest should be included, or the first image if the user didn't alter the
+// default selection and there is only one image.
+func (o *FilterOptions) Include(d *manifestlist.ManifestDescriptor, hasMultiple bool) bool {
+	if o.OSFilter == nil {
+		return true
+	}
+	if o.DefaultOSFilter && !hasMultiple {
+		return true
+	}
+	s := PlatformSpecString(d.Platform)
+	return o.OSFilter.MatchString(s)
+}
+
+// IncludeAll returns true if the provided manifest matches the filter, or all if there was no filter.
+func (o *FilterOptions) IncludeAll(d *manifestlist.ManifestDescriptor, hasMultiple bool) bool {
+	if o.OSFilter == nil {
+		return true
+	}
+	s := PlatformSpecString(d.Platform)
+	return o.OSFilter.MatchString(s)
+}
+
+type FilterFunc func(*manifestlist.ManifestDescriptor, bool) bool
 
 type ManifestLocation struct {
 	Manifest     digest.Digest
@@ -43,7 +90,7 @@ func (m ManifestLocation) String() string {
 }
 
 // FirstManifest returns the first manifest at the request location that matches the filter function.
-func FirstManifest(ctx context.Context, from imagereference.DockerImageReference, repo distribution.Repository) (distribution.Manifest, ManifestLocation, error) {
+func FirstManifest(ctx context.Context, from imagereference.DockerImageReference, repo distribution.Repository, filterFn FilterFunc) (distribution.Manifest, ManifestLocation, error) {
 	var srcDigest digest.Digest
 	if len(from.ID) > 0 {
 		srcDigest = digest.Digest(from.ID)
@@ -66,17 +113,27 @@ func FirstManifest(ctx context.Context, from imagereference.DockerImageReference
 	}
 
 	originalSrcDigest := srcDigest
-	srcManifests, srcManifest, srcDigest, err := ProcessManifestList(ctx, srcDigest, srcManifest, manifests, from, false)
+	srcChildren, srcManifest, srcDigest, err := ProcessManifestList(ctx, srcDigest, srcManifest, manifests, from, filterFn, false)
 	if err != nil {
 		return nil, ManifestLocation{}, err
 	}
-	if len(srcManifests) == 0 {
-		return nil, ManifestLocation{}, fmt.Errorf("filtered all images from manifest list")
+	if srcManifest == nil {
+		return nil, ManifestLocation{}, ErrAllImagesFiltered
 	}
-
+	if len(srcChildren) > 0 {
+		// More than one match within the list, return the first
+		childManifest := srcChildren[0]
+		childDigest, err := registryclient.ContentDigestForManifest(childManifest, srcDigest.Algorithm())
+		if err != nil {
+			return nil, ManifestLocation{}, fmt.Errorf("could not generate digest for first manifest")
+		}
+		return childManifest, ManifestLocation{Manifest: childDigest, ManifestList: originalSrcDigest}, nil
+	}
 	if srcDigest != originalSrcDigest {
+		// One match in list selected by ProcessManifestList
 		return srcManifest, ManifestLocation{Manifest: srcDigest, ManifestList: originalSrcDigest}, nil
 	}
+	// Was not a list
 	return srcManifest, ManifestLocation{Manifest: srcDigest}, nil
 }
 
@@ -91,6 +148,7 @@ func ManifestToImageConfig(ctx context.Context, srcManifest distribution.Manifes
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %v", location, err)
 		}
+		klog.V(4).Infof("Raw image config json:\n%s", string(configJSON))
 		config := &dockerv1client.DockerImageConfig{}
 		if err := json.Unmarshal(configJSON, &config); err != nil {
 			return nil, nil, fmt.Errorf("unable to parse image configuration: %v", err)
@@ -113,6 +171,7 @@ func ManifestToImageConfig(ctx context.Context, srcManifest distribution.Manifes
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot retrieve image configuration for %s: %v", location, err)
 		}
+		klog.V(4).Infof("Raw image config json:\n%s", string(configJSON))
 		config := &dockerv1client.DockerImageConfig{}
 		if err := json.Unmarshal(configJSON, &config); err != nil {
 			return nil, nil, fmt.Errorf("unable to parse image configuration: %v", err)
@@ -126,75 +185,76 @@ func ManifestToImageConfig(ctx context.Context, srcManifest distribution.Manifes
 		}
 
 		return base, layers, nil
-
-	case *schema1.SignedManifest:
-		if len(t.History) == 0 {
-			return nil, nil, fmt.Errorf("input image is in an unknown format: no v1Compatibility history")
-		}
-		config := &dockerv1client.DockerV1CompatibilityImage{}
-		if err := json.Unmarshal([]byte(t.History[0].V1Compatibility), &config); err != nil {
-			return nil, nil, err
-		}
-
-		base := &dockerv1client.DockerImageConfig{}
-		if err := dockerv1client.Convert_DockerV1CompatibilityImage_to_DockerImageConfig(config, base); err != nil {
-			return nil, nil, err
-		}
-
-		// schema1 layers are in reverse order
-		layers := make([]distribution.Descriptor, 0, len(t.FSLayers))
-		for i := len(t.FSLayers) - 1; i >= 0; i-- {
-			layer := distribution.Descriptor{
-				MediaType: schema2.MediaTypeLayer,
-				Digest:    t.FSLayers[i].BlobSum,
-				// size must be reconstructed from the blobs
-			}
-			// we must reconstruct the tar sum from the blobs
-			add.AddLayerToConfig(base, layer, "")
-			layers = append(layers, layer)
-		}
-
-		return base, layers, nil
-
+	case *manifestlist.DeserializedManifestList:
+		return nil, nil, fmt.Errorf("use --keep-manifest-list option for image manifest type %T from %s", srcManifest, location)
 	default:
 		return nil, nil, fmt.Errorf("unknown image manifest of type %T from %s", srcManifest, location)
 	}
 }
 
-func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManifest distribution.Manifest, manifests distribution.ManifestService, ref imagereference.DockerImageReference, keepManifestList bool) ([]distribution.Manifest, distribution.Manifest, digest.Digest, error) {
-	var srcManifests []distribution.Manifest
+func ProcessManifestList(ctx context.Context, srcDigest digest.Digest, srcManifest distribution.Manifest, manifests distribution.ManifestService, ref imagereference.DockerImageReference, filterFn FilterFunc, keepManifestList bool) ([]distribution.Manifest, distribution.Manifest, digest.Digest, error) {
+	var childManifests []distribution.Manifest
 	switch t := srcManifest.(type) {
 	case *manifestlist.DeserializedManifestList:
 		manifestDigest := srcDigest
 		manifestList := t
 
 		filtered := make([]manifestlist.ManifestDescriptor, 0, len(t.Manifests))
-		filtered = append(filtered, t.Manifests...)
+		for _, manifest := range t.Manifests {
+			if !filterFn(&manifest, len(t.Manifests) > 1) {
+				klog.V(5).Infof("Skipping image %s for %#v from %s", manifest.Digest, manifest.Platform, ref)
+				continue
+			}
+			klog.V(5).Infof("Including image %s for %#v from %s", manifest.Digest, manifest.Platform, ref)
+			filtered = append(filtered, manifest)
+		}
 
-		if len(filtered) == 0 {
+		if len(filtered) == 0 && !keepManifestList {
 			return nil, nil, "", nil
 		}
 
-		for i, manifest := range t.Manifests {
-			childManifest, err := manifests.Get(ctx, manifest.Digest, distribution.WithManifestMediaTypes([]string{manifestlist.MediaTypeManifestList, schema2.MediaTypeManifest}))
+		// if we're not keeping manifest lists and this one has been filtered, make a new one with
+		// just the filtered platforms.
+		if len(filtered) != len(t.Manifests) && !keepManifestList {
+			var err error
+			t, err = manifestlist.FromDescriptors(filtered)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("unable to retrieve source image %s manifest #%d from manifest list: %v", ref, i+1, err)
+				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list: %v", ref, err)
 			}
-			srcManifests = append(srcManifests, childManifest)
-		}
-
-		switch {
-		case len(srcManifests) >= 1 && !keepManifestList:
-			manifestDigest, err := registryclient.ContentDigestForManifest(srcManifests[0], srcDigest.Algorithm())
+			_, body, err := t.Payload()
+			if err != nil {
+				return nil, nil, "", fmt.Errorf("unable to filter source image %s manifest list (bad payload): %v", ref, err)
+			}
+			manifestList = t
+			manifestDigest, err = registryclient.ContentDigestForManifest(t, srcDigest.Algorithm())
 			if err != nil {
 				return nil, nil, "", err
 			}
-			return srcManifests, srcManifests[0], manifestDigest, nil
+			klog.V(5).Infof("Filtered manifest list to new digest %s:\n%s", manifestDigest, body)
+		}
+
+		for i, manifest := range filtered {
+			childManifest, err := manifests.Get(ctx, manifest.Digest, PreferManifestList)
+			if err != nil {
+				return nil, nil, "", fmt.Errorf("unable to retrieve source image %s manifest #%d from manifest list: %v", ref, i+1, err)
+			}
+			childManifests = append(childManifests, childManifest)
+		}
+
+		switch {
+		case len(childManifests) == 1 && !keepManifestList:
+			// Just return the single platform specific image
+			manifestDigest, err := registryclient.ContentDigestForManifest(childManifests[0], srcDigest.Algorithm())
+			if err != nil {
+				return nil, nil, "", err
+			}
+			klog.V(2).Infof("Chose %s/%s manifest from the manifest list.", t.Manifests[0].Platform.OS, t.Manifests[0].Platform.Architecture)
+			return nil, childManifests[0], manifestDigest, nil
 		default:
-			return append(srcManifests, manifestList), manifestList, manifestDigest, nil
+			return childManifests, manifestList, manifestDigest, nil
 		}
 
 	default:
-		return []distribution.Manifest{srcManifest}, srcManifest, srcDigest, nil
+		return nil, srcManifest, srcDigest, nil
 	}
 }
