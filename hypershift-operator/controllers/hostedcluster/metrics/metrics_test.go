@@ -1133,6 +1133,118 @@ func TestReportClusterSizeOverride(t *testing.T) {
 	}
 }
 
+func TestHostedClusterAzureInfo(t *testing.T) {
+	const (
+		one float64 = 1
+	)
+	testCases := []struct {
+		name               string
+		timestamp          time.Time
+		platformType       hyperv1.PlatformType
+		azureSpec          *hyperv1.AzurePlatformSpec
+		managed            bool
+		expectedMetricName string
+		expected           *dto.MetricFamily
+	}{
+		{
+			name:               "no Azure Platform, no metric",
+			timestamp:          now,
+			platformType:       hyperv1.IBMCloudPlatform,
+			expectedMetricName: "no metric expected",
+		},
+		{
+			name:               "Azure platform but no data, no metric",
+			timestamp:          now,
+			platformType:       hyperv1.AzurePlatform,
+			azureSpec:          nil,
+			expectedMetricName: "no metric expected",
+		},
+		{
+			name:         "Azure, simple unmanaged",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myResourceGroup777",
+				SubscriptionID:    "mySubscription888",
+			},
+			managed:            false,
+			expectedMetricName: HostedClusterAzureInfoMetricName,
+			expected: &dto.MetricFamily{
+				Name: ptr.To(string(HostedClusterAzureInfoMetricName)),
+				Help: ptr.To(string(HostedClusterAzureInfoMetricHelp)),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+						{Name: ptr.To("location"), Value: ptr.To("eastus")},
+						{Name: ptr.To("microsoft_resource_group_name"), Value: ptr.To("myResourceGroup777")},
+						{Name: ptr.To("microsoft_subscription_id"), Value: ptr.To("mySubscription888")},
+						{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+						{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+					},
+					Gauge: &dto.Gauge{Value: ptr.To(one)},
+				}},
+			},
+		},
+		{
+			name:         "Azure, simple managed",
+			timestamp:    now,
+			platformType: hyperv1.AzurePlatform,
+			azureSpec: &hyperv1.AzurePlatformSpec{
+				Cloud:             "AzureCloud",
+				Location:          "eastus",
+				ResourceGroupName: "myResourceGroup777",
+				SubscriptionID:    "mySubscription888",
+			},
+			managed:            true,
+			expectedMetricName: HostedClusterManagedAzureInfoMetricName,
+			expected: &dto.MetricFamily{
+				Name: ptr.To(string(HostedClusterManagedAzureInfoMetricName)),
+				Help: ptr.To(string(HostedClusterManagedAzureInfoMetricHelp)),
+				Type: func() *dto.MetricType { v := dto.MetricType(1); return &v }(),
+				Metric: []*dto.Metric{{
+					Label: []*dto.LabelPair{
+						{Name: ptr.To("_id"), Value: ptr.To("this-is-the-clusterID")},
+						{Name: ptr.To("location"), Value: ptr.To("eastus")},
+						{Name: ptr.To("microsoft_resource_group_name"), Value: ptr.To("myResourceGroup777")},
+						{Name: ptr.To("microsoft_resource_id"), Value: ptr.To("/subscriptions/mySubscription888/resourceGroups/myResourceGroup777/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/hc-name")},
+						{Name: ptr.To("microsoft_resource_type"), Value: ptr.To("hcpOpenShiftClusters")},
+						{Name: ptr.To("microsoft_subscription_id"), Value: ptr.To("mySubscription888")},
+						{Name: ptr.To("name"), Value: ptr.To("hc-name")},
+						{Name: ptr.To("namespace"), Value: ptr.To("hc-ns")},
+					},
+					Gauge: &dto.Gauge{Value: ptr.To(one)},
+				}},
+			},
+		},
+	}
+	for _, tc := range testCases {
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hc-name",
+				Namespace: "hc-ns",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "this-is-the-clusterID",
+				Platform: hyperv1.PlatformSpec{
+					Type:  tc.platformType,
+					Azure: tc.azureSpec,
+				},
+			},
+		}
+		if tc.managed {
+			t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+		}
+		checkMetric(t,
+			fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hostedCluster).Build(),
+			clocktesting.NewFakeClock(tc.timestamp),
+			tc.expectedMetricName,
+			tc.expected)
+	}
+}
+
 func createCa(notBefore, notAfter time.Time) (*x509.Certificate, string, error) {
 	ca := &x509.Certificate{
 		SerialNumber: big.NewInt(2019),
