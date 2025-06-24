@@ -23,6 +23,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -1933,10 +1934,6 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 			t.Skip("skipping on None platform")
 		}
 
-		if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
-			t.Skip("skipping on Azure platform")
-		}
-
 		g := NewWithT(t)
 
 		prometheusClient, err := NewPrometheusClient(ctx)
@@ -1963,6 +1960,14 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 					if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
 						hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
 						continue
+					}
+					query = metricName
+				}
+
+				if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
+					metricName = hcmetrics.HostedClusterAzureInfoMetricName
+					if azureutil.IsAroHCP() {
+						metricName = hcmetrics.HostedClusterManagedAzureInfoMetricName
 					}
 					query = metricName
 				}
