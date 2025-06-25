@@ -746,7 +746,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
 	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
-		originalHCP := hcp.DeepCopy()
 		condition := &metav1.Condition{
 			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
 			Reason: hyperv1.RecoveryFinishedReason,
@@ -758,9 +757,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			condition.Message = fmt.Sprintf("Hosted cluster recovery not finished: %v", err)
 
 			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-			if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
+				return nil
+			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 			}
+
 			return ctrl.Result{RequeueAfter: 120 * time.Second}, errors.NewAggregate(errs)
 		}
 
@@ -768,7 +770,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		condition.Status = metav1.ConditionTrue
 		condition.Message = "Hosted cluster recovery finished"
 		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
+			return nil
+		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 		}
 	}

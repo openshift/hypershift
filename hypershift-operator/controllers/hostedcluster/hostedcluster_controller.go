@@ -1335,14 +1335,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hclusterAnnotations := hcluster.GetAnnotations()
 				delete(hclusterAnnotations, hyperv1.HostedClusterRestoredFromBackupAnnotation)
 				hcluster.SetAnnotations(hclusterAnnotations)
-				if err := r.Update(ctx, hcluster); err != nil {
+				_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+					return nil
+				})
+				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to remove annotations %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 				}
 			}
 
 			// Persist status updates
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if _, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+				return nil
+			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
