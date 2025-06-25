@@ -301,7 +301,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 			}
 
 			// Execute the function
-			supportedVersions, serverVersion, err := GetSupportedOCPVersions(context.Background(), namespace, fakeClient)
+			supportedVersions, serverVersion, err := GetSupportedOCPVersions(context.Background(), namespace, fakeClient, tc.cm)
 
 			// Assert results
 			if tc.expectErr {

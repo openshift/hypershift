@@ -35,7 +35,7 @@ func NewVersionCommand() *cobra.Command {
 				return
 			}
 
-			supportedVersions, serverVersion, err := supportedversion.GetSupportedOCPVersions(cmd.Context(), namespace, client)
+			supportedVersions, serverVersion, err := supportedversion.GetSupportedOCPVersions(cmd.Context(), namespace, client, nil)
 			if err != nil {
 				fmt.Printf("failed to get supported OCP versions: %v\n", err)
 				return
