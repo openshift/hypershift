@@ -31,7 +31,7 @@ func RecoverMonitoringStack(ctx context.Context, hcp *hyperv1.HostedControlPlane
 		return fmt.Errorf("prometheus statefulSet is still starting, rescheduling reconciliation: %w", err)
 	}
 
-	if prometheusSts.Status.ReadyReplicas < prometheusSts.Status.Replicas {
+	if prometheusSts.Status.AvailableReplicas < prometheusSts.Status.Replicas {
 		log.Info("Prometheus statefulSet not ready, deleting pods")
 		stsPods := &corev1.PodList{}
 		if err := c.List(ctx, stsPods, client.InNamespace(monitoringStackNS), client.MatchingLabels(prometheusSts.Spec.Selector.MatchLabels)); err != nil {
