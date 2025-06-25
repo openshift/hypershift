@@ -91,6 +91,7 @@ nav:
     - how-to/aws/create-aws-hosted-cluster-arm-workers.md
     - how-to/aws/create-infra-iam-separately.md
     - how-to/aws/create-aws-hosted-cluster-multiple-zones.md
+    - how-to/aws/create-aws-hosted-cluster-autonode.md
     - how-to/aws/deploy-aws-private-clusters.md
     - how-to/aws/external-dns.md
     - how-to/aws/etc-backup-restore.md
