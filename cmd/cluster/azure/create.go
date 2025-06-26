@@ -13,8 +13,8 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -561,7 +561,11 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
 func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
 	if len(image) == 0 && len(releaseStream) != 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion(releaseStream)
+		client, err := util.GetClient()
+		if err != nil {
+			return "", fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, releaseStream, client)
 		if err != nil {
 			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
 		}

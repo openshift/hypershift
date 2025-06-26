@@ -16,9 +16,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/ignition-server/controllers"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -190,7 +190,7 @@ func run(ctx context.Context, opts Options) error {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
 	ctrl.SetLogger(logger)
-	logger.Info("Starting ignition-server", "version", version.String())
+	logger.Info("Starting ignition-server", "version", supportedversion.String())
 
 	certWatcher, err := certwatcher.New(opts.CertFile, opts.KeyFile)
 	if err != nil {

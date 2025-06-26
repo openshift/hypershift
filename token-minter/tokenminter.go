@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -69,7 +69,7 @@ refresh the token as it expires.`,
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(cmd.Context())
 
-		log.Printf("Starting token minter. Version = %s\n", version.String())
+		log.Printf("Starting token minter. Version = %s\n", supportedversion.String())
 
 		c := make(chan os.Signal, 2)
 		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
