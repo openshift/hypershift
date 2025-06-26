@@ -189,7 +189,7 @@ type HostedControlPlaneSpec struct {
 
 	// imageContentSources lists sources/repositories for the release-image content.
 	// +optional
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=255
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
