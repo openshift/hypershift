@@ -95,6 +95,8 @@ spec:
                 - s390x
                 type: string
                 x-kubernetes-validations:
+                - message: Setting arch to s390x is only supported for KubeVirt platform
+                  rule: self != 's390x' || has(self.platform.kubevirt)
                 - message: Arch is immutable
                   rule: self == oldSelf
               autoScaling:
