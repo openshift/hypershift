@@ -209,6 +209,7 @@ type NodePoolSpec struct {
 	//
 	// +kubebuilder:default:=amd64
 	// +kubebuilder:validation:Enum=arm64;amd64;ppc64le;s390x
+	// +kubebuilder:validation:XValidation:rule="self != 's390x' || has(self.platform.kubevirt)", message="Setting arch to s390x is only supported for KubeVirt platform"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
