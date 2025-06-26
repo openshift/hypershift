@@ -168,7 +168,7 @@ func (r *NodePoolReconciler) reconcileHAProxyIgnitionConfig(ctx context.Context,
 	serializedConfig, err := apiServerProxyConfig(haProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
-		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR)
+		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR, hcluster.Spec.Platform.Type)
 	if err != nil {
 		return "", true, fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -236,9 +236,15 @@ var (
 
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	externalAPIAddress, internalAPIAddress string,
-	externalAPIPort, internalAPIPort int32, proxyAddr, noProxy, serviceNetwork, clusterNetwork string) ([]byte, error) {
+	externalAPIPort, internalAPIPort int32,
+	proxyAddr, noProxy, serviceNetwork, clusterNetwork string, platform hyperv1.PlatformType) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
+	livenessProbeEndpoint := "/version"
+
+	if platform == hyperv1.IBMCloudPlatform {
+		livenessProbeEndpoint = "/livez?exclude=etcd&exclude=log"
+	}
 
 	if sharedingress.UseSharedIngress() {
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
@@ -277,16 +283,17 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 				name:     "/etc/kubernetes/apiserver-proxy-config/haproxy.cfg",
 				mode:     0644,
 				params: map[string]any{
-					"InternalAPIAddress": internalAPIAddress,
-					"InternalAPIPort":    internalAPIPort,
-					"ExternalAPIAddress": externalAPIAddress,
-					"ExternalAPIPort":    externalAPIPort,
-					"UseProxyProtocol":   sharedingress.UseSharedIngress(),
-					"ClusterID":          clusterID,
+					"InternalAPIAddress":    internalAPIAddress,
+					"InternalAPIPort":       internalAPIPort,
+					"ExternalAPIAddress":    externalAPIAddress,
+					"ExternalAPIPort":       externalAPIPort,
+					"LivenessProbeEndpoint": livenessProbeEndpoint,
+					"UseProxyProtocol":      sharedingress.UseSharedIngress(),
+					"ClusterID":             clusterID,
 				},
 			},
 			{
-				source: generateHAProxyStaticPod("kube-apiserver-proxy", haProxyImage, internalAPIAddress, "/etc/kubernetes/apiserver-proxy-config", internalAPIPort),
+				source: generateHAProxyStaticPod("kube-apiserver-proxy", haProxyImage, internalAPIAddress, "/etc/kubernetes/apiserver-proxy-config", internalAPIPort, livenessProbeEndpoint),
 				name:   "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml",
 				mode:   0644,
 			},
@@ -325,7 +332,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	return json.Marshal(config)
 }
 
-func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string, internalAPIPort int32) func() ([]byte, error) {
+func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string, internalAPIPort int32, livenessProbeEndpoint string) func() ([]byte, error) {
 	return func() ([]byte, error) {
 		pod := &corev1.Pod{}
 		pod.APIVersion = corev1.SchemeGroupVersion.String()
@@ -378,7 +385,7 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 					SuccessThreshold:    1,
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
-							Path:   "/version",
+							Path:   livenessProbeEndpoint,
 							Scheme: corev1.URISchemeHTTPS,
 							Host:   internalAPIAddress,
 							Port:   intstr.FromInt(int(internalAPIPort)),
