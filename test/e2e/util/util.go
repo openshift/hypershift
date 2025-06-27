@@ -967,7 +967,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform && hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 			t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
 		}
 
