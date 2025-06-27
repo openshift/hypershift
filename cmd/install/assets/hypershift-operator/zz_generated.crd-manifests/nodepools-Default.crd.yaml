@@ -95,8 +95,6 @@ spec:
                 - s390x
                 type: string
                 x-kubernetes-validations:
-                - message: Setting arch to s390x is only supported for KubeVirt platform
-                  rule: self != 's390x' || has(self.platform.kubevirt)
                 - message: Arch is immutable
                   rule: self == oldSelf
               autoScaling:
@@ -1380,6 +1378,8 @@ spec:
                 || has(self.platform.agent) || self.platform.type == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'
+            - message: s390x is only supported on KubeVirt platform
+              rule: self.arch != 's390x' || has(self.platform.kubevirt)
           status:
             description: status is the latest observed status of the NodePool.
             properties:
