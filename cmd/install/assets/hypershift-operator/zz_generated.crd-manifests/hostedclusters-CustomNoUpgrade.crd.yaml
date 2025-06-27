@@ -6691,7 +6691,6 @@ spec:
                       - state
                       - verified
                       type: object
-                    maxItems: 10
                     type: array
                   observedGeneration:
                     description: |-

@@ -1624,7 +1624,6 @@ type ClusterVersionStatus struct {
 	// is preserved.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
 	// observedGeneration reports which version of the spec is being synced.
