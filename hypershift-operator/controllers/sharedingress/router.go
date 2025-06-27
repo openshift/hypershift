@@ -128,7 +128,14 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 				HostName:             route.Spec.Host,
 				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
 				DestinationPort:      6443})
+		case "kube-apiserver-custom":
+			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
+				Name:                 route.Namespace + "-apiserver-custom",
+				HostName:             route.Spec.Host,
+				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
+				DestinationPort:      config.KASSVCPort})
 		}
+
 	}
 
 	out := &bytes.Buffer{}
