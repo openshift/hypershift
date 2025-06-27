@@ -30,10 +30,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -220,7 +220,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	cfg := operator.CfgFromFile(o.TargetKubeconfig)
 	cpConfig := ctrl.GetConfigOrDie()
 	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
-	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", version.String())
+	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
 			DefaultNamespaces: map[string]cache.Config{o.Namespace: {}},
