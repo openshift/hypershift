@@ -2421,6 +2421,28 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		return nil
 	}
 
+	// Fix: Remove existing CAPI provider deployment if it contains outdated labels
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
+	capiProviderDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "capi-provider",
+			Namespace: controlPlaneNamespace.Name,
+		},
+	}
+	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
+		}
+	}
+	if err == nil {
+		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/control-plane-component"] != "capi-provider" {
+			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
+			// Always return an error so we can retry when the cache is updated
+			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
+		}
+	}
+
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
 	if err := capi.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
