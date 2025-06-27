@@ -23,7 +23,8 @@ data:
       "useInstanceMetadata": true,
       "loadBalancerSku": "standard",
       "disableOutboundSNAT": true,
-      "loadBalancerName": ""
+      "loadBalancerName": "",
+      "clusterServiceLoadBalancerHealthProbeMode": "shared"
     }
 kind: ConfigMap
 metadata:
