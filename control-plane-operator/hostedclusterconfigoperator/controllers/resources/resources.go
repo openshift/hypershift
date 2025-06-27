@@ -724,6 +724,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
 	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
+		originalHCP := hcp.DeepCopy()
 		condition := &metav1.Condition{
 			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
 			Reason: hyperv1.RecoveryFinishedReason,
@@ -735,12 +736,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			condition.Message = fmt.Sprintf("Hosted cluster recovery not finished: %v", err)
 
 			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-			if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
-				return nil
-			}); err != nil {
+			if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 			}
-
 			return ctrl.Result{RequeueAfter: 120 * time.Second}, errors.NewAggregate(errs)
 		}
 
@@ -748,9 +746,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		condition.Status = metav1.ConditionTrue
 		condition.Message = "Hosted cluster recovery finished"
 		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-		if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
-			return nil
-		}); err != nil {
+		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 		}
 	}
@@ -1284,9 +1280,12 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
-		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
-			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+		clusterVersion.Spec.Capabilities = nil
+		if capabilities.HasDisabledCapabilities(hcp.Spec.Capabilities) {
+			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
+			}
 		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel

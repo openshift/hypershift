@@ -3497,9 +3497,7 @@ Valid values are ImageID and AzureMarketplace.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>capabilities allows enabling or disabling optional components at install time.
-When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-OpenShift version, minus the baremetal capability.
+<p>capabilities allows disabling optional components at install time.
 Once set, it cannot be changed.</p>
 </p>
 <table>
@@ -3512,21 +3510,6 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
-<code>enabled</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
-[]OptionalCapability
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
-Once set, this field cannot be changed.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>disabled</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
@@ -3536,8 +3519,12 @@ Once set, this field cannot be changed.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
-Once set, this field cannot be changed.</p>
+<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
+and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
+This effectively disables that capability on the hosted cluster.</p>
+<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version.</p>
+<p>Once set, this field cannot be changed.</p>
 <p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
 </td>
 </tr>
@@ -9752,9 +9739,7 @@ ClusterVersionOperatorSpec
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;baremetal&#34;</p></td>
-<td></td>
-</tr><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Insights&#34;</p></td>
 <td></td>
