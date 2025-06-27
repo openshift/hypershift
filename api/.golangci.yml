@@ -119,6 +119,10 @@ issues:
       text: "nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum."
       linters:
         - kubeapilinter
+    - path: "hypershift/v1beta1/hostedcluster_types.go"
+      text: "maxlength: field History must have a maximum items, add kubebuilder:validation:MaxItems marker"
+      linters:
+        - kubeapilinter        
 linters:
   enable:
     - kubeapilinter
