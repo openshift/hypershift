@@ -379,13 +379,14 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal;Console
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
 const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityOpenShiftSamples)
 const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
 const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
+const ConsoleCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityConsole)
 
 // capabilities allows enabling or disabling optional components at install time.
 // When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective

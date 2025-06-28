@@ -1416,12 +1416,18 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			// Disable Console only for versions >= 4.20 due to OCPBUGS-57129 — the Hypershift-specific deployment is missing the capability.openshift.io/name: Console annotation.
+			disabledCaps := []hyperv1.OptionalCapability{
+				hyperv1.ImageRegistryCapability,
+				hyperv1.OpenShiftSamplesCapability,
+				hyperv1.InsightsCapability,
+			}
+			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
+				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability)
+			}
+
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
-					hyperv1.OpenShiftSamplesCapability,
-					hyperv1.InsightsCapability,
-				},
+				Disabled: disabledCaps,
 			}
 		}
 	}
@@ -1454,6 +1460,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure insights component is disabled
 		e2eutil.EnsureInsightsCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure console component is disabled
+		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
