@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/api
 
-go 1.23.6
+go 1.24.0
 
 require (
 	github.com/aws/karpenter-provider-aws v1.0.8
