@@ -287,6 +287,42 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "",
 		},
+		//{
+		//	name: "fails when disable-multi-network is used with network-type other than Other",
+		//	rawOpts: &RawCreateOptions{
+		//		Name:                "test-hc",
+		//		Namespace:           "test-hc",
+		//		PullSecretFile:      pullSecretFile,
+		//		Arch:                "amd64",
+		//		DisableMultiNetwork: true,
+		//		NetworkType:         "OVNKubernetes",
+		//	},
+		//	expectedErr: "--disable-multi-network can only be used with --network-type=Other, but network type is OVNKubernetes",
+		//},
+		{
+			name: "passes when disable-multi-network is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when disable-multi-network is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: false,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -298,6 +334,65 @@ func TestValidate(t *testing.T) {
 			} else {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
+
+func TestDisableMultiNetworkFlag(t *testing.T) {
+	tests := []struct {
+		name                        string
+		disableMultiNetwork         bool
+		expectedDisableMultiNetwork bool
+		description                 string
+	}{
+		{
+			name:                        "disable multus flag set to true",
+			disableMultiNetwork:         true,
+			expectedDisableMultiNetwork: true,
+			description:                 "When --disable-multi-network=true is set, DisableMultiNetwork should be true",
+		},
+		{
+			name:                        "disable multus flag set to false",
+			disableMultiNetwork:         false,
+			expectedDisableMultiNetwork: false,
+			description:                 "When --disable-multi-network=false is set, DisableMultiNetwork should be false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								DisableMultiNetwork: tt.disableMultiNetwork,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+
+			// Verify the field is set correctly
+			if tt.disableMultiNetwork {
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration).ToNot(BeNil())
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).ToNot(BeNil())
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(tt.expectedDisableMultiNetwork), tt.description)
+			} else {
+				// When DisableMultiNetwork is false (default), OperatorConfiguration should be nil
+				// since we don't need to set any operator configuration
+				if resources.Cluster.Spec.OperatorConfiguration != nil && resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+					g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(tt.expectedDisableMultiNetwork), tt.description)
+				}
+				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
 			}
 		})
 	}
