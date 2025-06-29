@@ -1,4 +1,4 @@
-package ngfunc
+package noctx
 
 import (
 	"errors"
@@ -27,12 +27,12 @@ func typeFuncs(pass *analysis.Pass, funcs []string) []*types.Func {
 }
 
 func typeFunc(pass *analysis.Pass, funcName string) (*types.Func, error) {
-	ss := strings.Split(strings.TrimSpace(funcName), ".")
+	nameParts := strings.Split(strings.TrimSpace(funcName), ".")
 
-	switch len(ss) {
+	switch len(nameParts) {
 	case 2:
 		// package function: pkgname.Func
-		f, ok := analysisutil.ObjectOf(pass, ss[0], ss[1]).(*types.Func)
+		f, ok := analysisutil.ObjectOf(pass, nameParts[0], nameParts[1]).(*types.Func)
 		if !ok || f == nil {
 			return nil, errNotFound
 		}
@@ -40,20 +40,20 @@ func typeFunc(pass *analysis.Pass, funcName string) (*types.Func, error) {
 		return f, nil
 	case 3:
 		// method: (*pkgname.Type).Method
-		pkgname := strings.TrimLeft(ss[0], "(")
-		typename := strings.TrimRight(ss[1], ")")
+		pkgName := strings.TrimLeft(nameParts[0], "(")
+		typeName := strings.TrimRight(nameParts[1], ")")
 
-		if pkgname != "" && pkgname[0] == '*' {
-			pkgname = pkgname[1:]
-			typename = "*" + typename
+		if pkgName != "" && pkgName[0] == '*' {
+			pkgName = pkgName[1:]
+			typeName = "*" + typeName
 		}
 
-		typ := analysisutil.TypeOf(pass, pkgname, typename)
+		typ := analysisutil.TypeOf(pass, pkgName, typeName)
 		if typ == nil {
 			return nil, errNotFound
 		}
 
-		m := analysisutil.MethodOf(typ, ss[2])
+		m := analysisutil.MethodOf(typ, nameParts[2])
 		if m == nil {
 			return nil, errNotFound
 		}
