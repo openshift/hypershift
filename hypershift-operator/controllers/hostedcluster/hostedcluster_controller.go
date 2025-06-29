@@ -2365,6 +2365,12 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 	hcp.Spec.Capabilities = hcluster.Spec.Capabilities
 
+	if hcluster.Spec.OperatorConfiguration != nil {
+		hcp.Spec.OperatorConfiguration = hcluster.Spec.OperatorConfiguration.DeepCopy()
+	} else {
+		hcp.Spec.OperatorConfiguration = nil
+	}
+
 	return nil
 }
 
