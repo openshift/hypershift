@@ -184,7 +184,6 @@ type HostedControlPlaneSpec struct {
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
 	//
 	// +optional
-	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
 	// imageContentSources lists sources/repositories for the release-image content.

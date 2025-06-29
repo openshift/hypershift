@@ -547,10 +547,16 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
 	}
 
+	disableMultus := false
+	if hcp.Spec.OperatorConfiguration != nil &&
+		hcp.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+		disableMultus = hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultus
+	}
+
 	log.Info("reconciling network operator")
 	networkOperator := networkoperator.NetworkOperator()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type)
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, disableMultus)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
