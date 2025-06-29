@@ -33,11 +33,20 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 	switch x := n.(type) {
 	case *ast.AssignStmt:
 		// Skip any assignment to the field.
-		for _, s := range x.Lhs {
+		for i, s := range x.Lhs {
 			c.filter.AddPos(s.Pos())
 
 			if se, ok := s.(*ast.StarExpr); ok {
 				c.filter.AddPos(se.X.Pos())
+			}
+
+			if len(x.Rhs) > i {
+				value := x.Rhs[i]
+				if se, ok := value.(*ast.SelectorExpr); ok {
+					if hasPointerKeyWithoutPointerGetter(c.info, s, se) {
+						c.filter.AddPos(se.Sel.Pos())
+					}
+				}
 			}
 		}
 
@@ -50,6 +59,13 @@ func (c *processor) process(n ast.Node) (*Result, error) {
 			// Skip all expressions when the field is used as a pointer.
 			// Because this is not direct reading, but most likely writing by pointer (for example like sql.Scan).
 			c.filter.AddPos(x.X.Pos())
+		}
+
+	case *ast.KeyValueExpr:
+		if se, ok := x.Value.(*ast.SelectorExpr); ok {
+			if hasPointerKeyWithoutPointerGetter(c.info, x.Key, se) {
+				c.filter.AddPos(se.Sel.Pos())
+			}
 		}
 
 	case *ast.CallExpr:
@@ -176,8 +192,11 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.processInner(x.X)
 		c.write(".")
 
+		// Skip if the field is filtered.
+		isFiltered := c.filter.IsFiltered(x.Sel.Pos())
+
 		// If getter exists, use it.
-		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) {
+		if methodIsExists(c.info, x.X, "Get"+x.Sel.Name) && !isFiltered {
 			c.writeFrom(x.Sel.Name)
 			c.writeTo("Get" + x.Sel.Name + "()")
 			return
@@ -218,7 +237,7 @@ func (c *processor) processInner(expr ast.Expr) {
 		c.write("*")
 		c.processInner(x.X)
 
-	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr:
+	case *ast.CompositeLit, *ast.TypeAssertExpr, *ast.ArrayType, *ast.FuncLit, *ast.SliceExpr, *ast.MapType:
 		// Process the node as is.
 		c.write(formatNode(x))
 
@@ -348,4 +367,18 @@ func getterResultHasPointer(info *types.Info, x ast.Expr, name string) (hasPoint
 	}
 
 	return false, false
+}
+
+func hasPointerKeyWithoutPointerGetter(info *types.Info, key ast.Expr, value *ast.SelectorExpr) bool {
+	_, isPtr := info.TypeOf(key).(*types.Pointer)
+	if !isPtr {
+		return false
+	}
+
+	getterHasPointer, ok := getterResultHasPointer(info, value.X, value.Sel.Name)
+	if !ok {
+		return false
+	}
+
+	return !getterHasPointer
 }

@@ -28,6 +28,9 @@ import (
 type Inspector interface {
 	// InspectFields is a function that iterates over fields in structs.
 	InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers))
+
+	// InspectTypeSpec is a function that inspects the type spec and calls the provided inspectTypeSpec function.
+	InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers))
 }
 
 // inspector implements the Inspector interface.
@@ -98,5 +101,21 @@ func (i *inspector) InspectFields(inspectField func(field *ast.Field, stack []as
 		inspectField(field, stack, tagInfo, i.markers)
 
 		return true
+	})
+}
+
+// InspectTypeSpec inspects the type spec and calls the provided inspectTypeSpec function.
+func (i *inspector) InspectTypeSpec(inspectTypeSpec func(typeSpec *ast.TypeSpec, markersAccess markers.Markers)) {
+	nodeFilter := []ast.Node{
+		(*ast.TypeSpec)(nil),
+	}
+
+	i.inspector.Preorder(nodeFilter, func(n ast.Node) {
+		typeSpec, ok := n.(*ast.TypeSpec)
+		if !ok {
+			return
+		}
+
+		inspectTypeSpec(typeSpec, i.markers)
 	})
 }

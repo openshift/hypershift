@@ -66,6 +66,9 @@ func (pf *parsedFile) getComments(scope Scope, exclude []*regexp.Regexp) []comme
 	case AllScope:
 		// All comments
 		comments = pf.getAllComments(exclude)
+	case NoInlineScope:
+		// All except inline comments
+		comments = pf.getNoInline(exclude)
 	case TopLevelScope:
 		// All top level comments and comments from the inside
 		// of top level blocks
@@ -169,6 +172,34 @@ func (pf *parsedFile) getDeclarationComments(exclude []*regexp.Regexp) []comment
 			text:  getText(cg, exclude),
 			start: pf.fset.Position(cg.List[0].Slash),
 		})
+	}
+	return comments
+}
+
+// getNoInline gets all except inline comments.
+func (pf *parsedFile) getNoInline(exclude []*regexp.Regexp) []comment {
+	var comments []comment //nolint:prealloc
+	for _, c := range pf.file.Comments {
+		if c == nil || len(c.List) == 0 {
+			continue
+		}
+		firstLine := pf.fset.Position(c.Pos()).Line
+		lastLine := pf.fset.Position(c.End()).Line
+
+		c := comment{
+			lines: pf.lines[firstLine-1 : lastLine],
+			start: pf.fset.Position(c.List[0].Slash),
+			text:  getText(c, exclude),
+		}
+
+		// Skip inline
+		if len(c.lines) == 1 {
+			before := c.lines[0][:c.start.Column-1]
+			if len(strings.TrimSpace(before)) > 0 {
+				continue
+			}
+		}
+		comments = append(comments, c)
 	}
 	return comments
 }
