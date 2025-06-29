@@ -1,6 +1,6 @@
-version:  v1.63.4
-name: golangci-kal
+version:  v1.64.8
+name: golangci-kube-api-linter
 destination: ./bin
 plugins:
-- module: 'github.com/JoelSpeed/kal'
-  version:  v0.0.0-20250305092907-abd233a9fed8
+- module: 'sigs.k8s.io/kube-api-linter'
+  version:  v0.0.0-20250424114031-64417f625b7d
