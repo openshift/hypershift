@@ -30,9 +30,13 @@ func ReconcileAuthenticationConfiguration(authentication *configv1.Authenticatio
 	for i := range authentication.Spec.OIDCProviders {
 		for j, client := range authentication.Spec.OIDCProviders[i].OIDCClients {
 			if client.ClientSecret.Name == "" {
-				authentication.Spec.OIDCProviders[i].OIDCClients[j].ClientSecret.Name = fmt.Sprintf("%s-%s", client.ComponentName, postInstallClientSecretSuffix)
+				authentication.Spec.OIDCProviders[i].OIDCClients[j].ClientSecret.Name = DefaultOIDCClientSecretName(client)
 			}
 		}
 	}
 	return nil
+}
+
+func DefaultOIDCClientSecretName(client configv1.OIDCClientConfig) string {
+	return fmt.Sprintf("%s-%s", client.ComponentName, postInstallClientSecretSuffix)
 }
