@@ -1,5 +1,5 @@
-# 4d63.com/gocheckcompilerdirectives v1.2.1
-## explicit; go 1.19
+# 4d63.com/gocheckcompilerdirectives v1.3.0
+## explicit; go 1.22.0
 4d63.com/gocheckcompilerdirectives/checkcompilerdirectives
 # 4d63.com/gochecknoglobals v0.2.1
 ## explicit; go 1.15
