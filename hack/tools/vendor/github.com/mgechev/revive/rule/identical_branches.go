@@ -3,6 +3,7 @@ package rule
 import (
 	"go/ast"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -59,17 +60,17 @@ func (w *lintIdenticalBranches) Visit(node ast.Node) ast.Visitor {
 	return w
 }
 
-func (lintIdenticalBranches) identicalBranches(branches []*ast.BlockStmt) bool {
+func (*lintIdenticalBranches) identicalBranches(branches []*ast.BlockStmt) bool {
 	if len(branches) < 2 {
 		return false // only one branch to compare thus we return
 	}
 
-	referenceBranch := gofmt(branches[0])
+	referenceBranch := astutils.GoFmt(branches[0])
 	referenceBranchSize := len(branches[0].List)
 	for i := 1; i < len(branches); i++ {
 		currentBranch := branches[i]
 		currentBranchSize := len(currentBranch.List)
-		if currentBranchSize != referenceBranchSize || gofmt(currentBranch) != referenceBranch {
+		if currentBranchSize != referenceBranchSize || astutils.GoFmt(currentBranch) != referenceBranch {
 			return false
 		}
 	}
@@ -77,11 +78,11 @@ func (lintIdenticalBranches) identicalBranches(branches []*ast.BlockStmt) bool {
 	return true
 }
 
-func (w lintIdenticalBranches) newFailure(node ast.Node, msg string) {
+func (w *lintIdenticalBranches) newFailure(node ast.Node, msg string) {
 	w.onFailure(lint.Failure{
 		Confidence: 1,
 		Node:       node,
-		Category:   "logic",
+		Category:   lint.FailureCategoryLogic,
 		Failure:    msg,
 	})
 }

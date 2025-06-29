@@ -6,7 +6,7 @@ import (
 	"github.com/mgechev/revive/lint"
 )
 
-// BareReturnRule lints given else constructs.
+// BareReturnRule lints bare returns.
 type BareReturnRule struct{}
 
 // Apply applies the rule to given file.
@@ -42,14 +42,14 @@ func (w lintBareReturnRule) Visit(node ast.Node) ast.Visitor {
 	return w
 }
 
-// checkFunc will verify if the given function has named result and bare returns
+// checkFunc will verify if the given function has named result and bare returns.
 func (w lintBareReturnRule) checkFunc(results *ast.FieldList, body *ast.BlockStmt) {
 	hasNamedResults := results != nil && len(results.List) > 0 && results.List[0].Names != nil
 	if !hasNamedResults || body == nil {
 		return // nothing to do
 	}
 
-	brf := bareReturnFinder{w.onFailure}
+	brf := bareReturnFinder(w)
 	ast.Walk(brf, body)
 }
 
@@ -60,8 +60,8 @@ type bareReturnFinder struct {
 func (w bareReturnFinder) Visit(node ast.Node) ast.Visitor {
 	_, ok := node.(*ast.FuncLit)
 	if ok {
-		// skip analysing function literals
-		// they will be analysed by the lintBareReturnRule.Visit method
+		// skip analyzing function literals
+		// they will be analyzed by the lintBareReturnRule.Visit method
 		return nil
 	}
 
