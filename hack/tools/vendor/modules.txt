@@ -260,7 +260,7 @@ github.com/dnephin/pflag
 # github.com/elliotchance/orderedmap v1.6.0
 ## explicit; go 1.12
 github.com/elliotchance/orderedmap
-# github.com/emicklei/go-restful/v3 v3.11.0
+# github.com/emicklei/go-restful/v3 v3.12.2
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
 github.com/emicklei/go-restful/v3/log
