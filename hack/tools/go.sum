@@ -2,8 +2,8 @@
 4d63.com/gocheckcompilerdirectives v1.2.1/go.mod h1:yjDJSxmDTtIHHCqX0ufRYZDL6vQtMG7tJdKVeWwsqvs=
 4d63.com/gochecknoglobals v0.2.1 h1:1eiorGsgHOFOuoOiJDy2psSrQbRdIHrlge0IJIkUgDc=
 4d63.com/gochecknoglobals v0.2.1/go.mod h1:KRE8wtJB3CXCsb1xy421JfTHIIbmT3U5ruxw2Qu8fSU=
-cel.dev/expr v0.18.0 h1:CJ6drgk+Hf96lkLikr4rFf19WrU0BOWEihyZnI2TAzo=
-cel.dev/expr v0.18.0/go.mod h1:MrpN08Q+lEBs+bGYdLxxHkZoUSsCp0nSKTs0nTymJgw=
+cel.dev/expr v0.24.0 h1:56OvJKSH3hDGL0ml5uSxZmz3/3Pq4tJ+fb1unVLAFcY=
+cel.dev/expr v0.24.0/go.mod h1:hLPLo1W4QUmuYdA72RBX06QTs6MXw941piREPl3Yfiw=
 dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 github.com/4meepo/tagalign v1.4.1 h1:GYTu2FaPGOGb/xJalcqHeD4il5BiCywyEYZOA55P6J4=
