@@ -916,8 +916,8 @@ github.com/nishanths/exhaustive
 # github.com/nishanths/predeclared v0.2.2
 ## explicit; go 1.14
 github.com/nishanths/predeclared/passes/predeclared
-# github.com/nunnatsa/ginkgolinter v0.18.4
-## explicit; go 1.22.0
+# github.com/nunnatsa/ginkgolinter v0.19.1
+## explicit; go 1.23.0
 github.com/nunnatsa/ginkgolinter
 github.com/nunnatsa/ginkgolinter/internal/expression
 github.com/nunnatsa/ginkgolinter/internal/expression/actual
@@ -925,6 +925,7 @@ github.com/nunnatsa/ginkgolinter/internal/expression/matcher
 github.com/nunnatsa/ginkgolinter/internal/expression/value
 github.com/nunnatsa/ginkgolinter/internal/formatter
 github.com/nunnatsa/ginkgolinter/internal/ginkgohandler
+github.com/nunnatsa/ginkgolinter/internal/ginkgoinfo
 github.com/nunnatsa/ginkgolinter/internal/gomegahandler
 github.com/nunnatsa/ginkgolinter/internal/gomegainfo
 github.com/nunnatsa/ginkgolinter/internal/interfaces
@@ -1335,7 +1336,7 @@ golang.org/x/crypto/ssh/knownhosts
 golang.org/x/exp/constraints
 golang.org/x/exp/maps
 golang.org/x/exp/slices
-# golang.org/x/exp/typeparams v0.0.0-20241108190413-2d47ceb2692f
+# golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac
 ## explicit; go 1.18
 golang.org/x/exp/typeparams
 # golang.org/x/mod v0.23.0
