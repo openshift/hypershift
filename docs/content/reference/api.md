@@ -4226,6 +4226,41 @@ field is not used by the plugin, it can be left unset.</p>
 </tr>
 </tbody>
 </table>
+###ClusterNetworkOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>disableMultiNetwork</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disableMultiNetwork when set to true disables the Multus CNI plugin and related components
+in the hosted cluster. This prevents the installation of multus daemon sets in the
+guest cluster and the multus-admission-controller in the management cluster.
+Default is false (Multus is enabled).
+This field is immutable.
+This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
+with any other NetworkType will result in a validation error during cluster creation.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ClusterNetworking { #hypershift.openshift.io/v1beta1.ClusterNetworking }
 <p>
 (<em>Appears on:</em>
@@ -10060,6 +10095,20 @@ ClusterVersionOperatorSpec
 <td>
 <em>(Optional)</em>
 <p>clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterNetworkOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec">
+ClusterNetworkOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterNetworkOperator specifies the configuration for the Cluster Network Operator in the hosted cluster.</p>
 </td>
 </tr>
 </tbody>

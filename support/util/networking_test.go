@@ -118,3 +118,73 @@ func TestMachineNetworksToList(t *testing.T) {
 		})
 	}
 }
+
+func TestIsMultusDisabled(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "DisableMultiNetwork is nil - defaults to false (multus enabled)",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "DisableMultiNetwork is explicitly false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+							DisableMultiNetwork: func() *bool { b := false; return &b }(),
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "DisableMultiNetwork is explicitly true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{
+						ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+							DisableMultiNetwork: func() *bool { b := true; return &b }(),
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "OperatorConfiguration is nil",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: false,
+		},
+		{
+			name: "ClusterNetworkOperator is nil",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					OperatorConfiguration: &hyperv1.OperatorConfiguration{},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsDisableMultiNetwork(tt.hcp); got != tt.expected {
+				t.Errorf("IsDisableMultiNetwork() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}

@@ -2079,28 +2079,30 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
 	//   cert secret ourselves.
 
-	// Multus Admission Controller Serving Cert
-	multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
-	if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
-		}
-	}
-
-	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
-	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
-	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
-		multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
-
-		err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
-		if err != nil {
-			return err
+	// Multus Admission Controller Serving Cert - only if Multus is not disabled
+	if !util.IsDisableMultiNetwork(hcp) {
+		multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
+			}
 		}
 
-		if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
-			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+		// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+		// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
+			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
+			if err != nil {
+				return err
+			}
+
+			if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+				return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+			}
 		}
 	}
 
@@ -2297,9 +2299,12 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 	if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
 		// TODO: why is this not done in CNO?
-		multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
-		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
-			return fmt.Errorf("failed to restart multus admission controller: %w", err)
+		// Only restart multus deployment if Multus is not disabled
+		if !util.IsDisableMultiNetwork(hcp) {
+			multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
+			if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
+				return fmt.Errorf("failed to restart multus admission controller: %w", err)
+			}
 		}
 
 		// CNO manages overall network-node-identity deployment. CPO manages restarts.
