@@ -23,7 +23,7 @@ require (
 	github.com/IBM/vpc-go-sdk v0.50.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.55.6
-	github.com/aws/karpenter-provider-aws v1.0.8
+	github.com/aws/karpenter-provider-aws v1.5.1
 	github.com/blang/semver v3.5.1+incompatible
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/ignition/v2 v2.18.0

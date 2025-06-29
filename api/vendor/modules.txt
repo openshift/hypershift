@@ -1,4 +1,4 @@
-# github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# github.com/aws/karpenter-provider-aws v1.5.1 => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 ## explicit; go 1.23.6
 github.com/aws/karpenter-provider-aws/pkg/apis
 github.com/aws/karpenter-provider-aws/pkg/apis/v1
