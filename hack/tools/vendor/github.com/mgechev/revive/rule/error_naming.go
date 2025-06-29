@@ -6,10 +6,11 @@ import (
 	"go/token"
 	"strings"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
-// ErrorNamingRule lints given else constructs.
+// ErrorNamingRule lints naming of error variables.
 type ErrorNamingRule struct{}
 
 // Apply applies the rule to given file.
@@ -56,11 +57,22 @@ func (w lintErrors) Visit(_ ast.Node) ast.Visitor {
 			if !ok {
 				continue
 			}
-			if !isPkgDot(ce.Fun, "errors", "New") && !isPkgDot(ce.Fun, "fmt", "Errorf") {
+			if !astutils.IsPkgDotName(ce.Fun, "errors", "New") && !astutils.IsPkgDotName(ce.Fun, "fmt", "Errorf") {
 				continue
 			}
 
 			id := spec.Names[0]
+			if id.Name == "_" {
+				// avoid false positive for blank identifier
+
+				// The fact that the error variable is not used
+				// is out of the scope of the rule
+
+				// This pattern that can be found in benchmarks and examples
+				// should be allowed.
+				continue
+			}
+
 			prefix := "err"
 			if id.IsExported() {
 				prefix = "Err"
@@ -69,7 +81,7 @@ func (w lintErrors) Visit(_ ast.Node) ast.Visitor {
 				w.onFailure(lint.Failure{
 					Node:       id,
 					Confidence: 0.9,
-					Category:   "naming",
+					Category:   lint.FailureCategoryNaming,
 					Failure:    fmt.Sprintf("error var %s should have name of the form %sFoo", id.Name, prefix),
 				})
 			}

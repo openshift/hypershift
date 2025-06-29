@@ -13,7 +13,7 @@ type Default struct {
 	Metadata lint.FormatterMetadata
 }
 
-// Name returns the name of the formatter
+// Name returns the name of the formatter.
 func (*Default) Name() string {
 	return "default"
 }
@@ -25,4 +25,8 @@ func (*Default) Format(failures <-chan lint.Failure, _ lint.Config) (string, err
 		fmt.Fprintf(&buf, "%v: %s\n", failure.Position.Start, failure.Failure)
 	}
 	return buf.String(), nil
+}
+
+func ruleDescriptionURL(ruleName string) string {
+	return "https://revive.run/r#" + ruleName
 }

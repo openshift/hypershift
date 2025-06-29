@@ -1,10 +1,11 @@
 package rule
 
 import (
+	"errors"
 	"fmt"
 	"go/ast"
-	"sync"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -16,37 +17,35 @@ const (
 // UncheckedTypeAssertionRule lints missing or ignored `ok`-value in dynamic type casts.
 type UncheckedTypeAssertionRule struct {
 	acceptIgnoredAssertionResult bool
-
-	configureOnce sync.Once
 }
 
-func (r *UncheckedTypeAssertionRule) configure(arguments lint.Arguments) {
+// Configure validates the rule configuration, and configures the rule accordingly.
+//
+// Configuration implements the [lint.ConfigurableRule] interface.
+func (r *UncheckedTypeAssertionRule) Configure(arguments lint.Arguments) error {
 	if len(arguments) == 0 {
-		return
+		return nil
 	}
 
 	args, ok := arguments[0].(map[string]any)
 	if !ok {
-		panic("Unable to get arguments. Expected object of key-value-pairs.")
+		return errors.New("unable to get arguments. Expected object of key-value-pairs")
 	}
 
 	for k, v := range args {
-		switch k {
-		case "acceptIgnoredAssertionResult":
-			r.acceptIgnoredAssertionResult, ok = v.(bool)
-			if !ok {
-				panic(fmt.Sprintf("Unable to parse argument '%s'. Expected boolean.", k))
-			}
-		default:
-			panic(fmt.Sprintf("Unknown argument: %s", k))
+		if !isRuleOption(k, "acceptIgnoredAssertionResult") {
+			return fmt.Errorf("unknown argument: %s", k)
+		}
+		r.acceptIgnoredAssertionResult, ok = v.(bool)
+		if !ok {
+			return fmt.Errorf("unable to parse argument '%s'. Expected boolean", k)
 		}
 	}
+	return nil
 }
 
 // Apply applies the rule to given file.
-func (r *UncheckedTypeAssertionRule) Apply(file *lint.File, args lint.Arguments) []lint.Failure {
-	r.configureOnce.Do(func() { r.configure(args) })
-
+func (r *UncheckedTypeAssertionRule) Apply(file *lint.File, _ lint.Arguments) []lint.Failure {
 	var failures []lint.Failure
 
 	walker := &lintUncheckedTypeAssertion{
@@ -72,12 +71,7 @@ type lintUncheckedTypeAssertion struct {
 }
 
 func isIgnored(e ast.Expr) bool {
-	ident, ok := e.(*ast.Ident)
-	if !ok {
-		return false
-	}
-
-	return ident.Name == "_"
+	return astutils.IsIdent(e, "_")
 }
 
 func isTypeSwitch(e *ast.TypeAssertExpr) bool {
@@ -142,7 +136,7 @@ func (w *lintUncheckedTypeAssertion) handleAssignment(n *ast.AssignStmt) {
 	}
 }
 
-// handles "return foo(.*bar)" - one of them is enough to fail as golang does not forward the type cast tuples in return statements
+// handles "return foo(.*bar)" - one of them is enough to fail as golang does not forward the type cast tuples in return statements.
 func (w *lintUncheckedTypeAssertion) handleReturn(n *ast.ReturnStmt) {
 	for _, r := range n.Results {
 		w.requireNoTypeAssert(r)
@@ -179,9 +173,9 @@ func (w *lintUncheckedTypeAssertion) Visit(node ast.Node) ast.Visitor {
 }
 
 func (w *lintUncheckedTypeAssertion) addFailure(n *ast.TypeAssertExpr, why string) {
-	s := fmt.Sprintf("type cast result is unchecked in %v - %s", gofmt(n), why)
+	s := fmt.Sprintf("type cast result is unchecked in %v - %s", astutils.GoFmt(n), why)
 	w.onFailure(lint.Failure{
-		Category:   "bad practice",
+		Category:   lint.FailureCategoryBadPractice,
 		Confidence: 1,
 		Node:       n,
 		Failure:    s,

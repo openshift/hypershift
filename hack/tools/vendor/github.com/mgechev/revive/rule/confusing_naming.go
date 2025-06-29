@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -35,7 +36,7 @@ func (ps *packages) methodNames(lp *lint.Package) pkgMethods {
 		}
 	}
 
-	pkgm := pkgMethods{pkg: lp, methods: make(map[string]map[string]*referenceMethod), mu: &sync.Mutex{}}
+	pkgm := pkgMethods{pkg: lp, methods: map[string]map[string]*referenceMethod{}, mu: &sync.Mutex{}}
 	ps.pkgs = append(ps.pkgs, pkgm)
 
 	return pkgm
@@ -43,7 +44,7 @@ func (ps *packages) methodNames(lp *lint.Package) pkgMethods {
 
 var allPkgs = packages{pkgs: make([]pkgMethods, 1)}
 
-// ConfusingNamingRule lints method names that differ only by capitalization
+// ConfusingNamingRule lints method names that differ only by capitalization.
 type ConfusingNamingRule struct{}
 
 // Apply applies the rule to given file.
@@ -102,7 +103,7 @@ func checkMethodName(holder string, id *ast.Ident, w *lintConfusingNames) {
 				Failure:    fmt.Sprintf("Method '%s' differs only by capitalization to %s '%s' in %s", id.Name, kind, refMethod.id.Name, fileName),
 				Confidence: 1,
 				Node:       id,
-				Category:   "naming",
+				Category:   lint.FailureCategoryNaming,
 			})
 
 			return
@@ -126,7 +127,7 @@ type lintConfusingNames struct {
 
 const defaultStructName = "_" // used to map functions
 
-// getStructName of a function receiver. Defaults to defaultStructName
+// getStructName of a function receiver. Defaults to defaultStructName.
 func getStructName(r *ast.FieldList) string {
 	result := defaultStructName
 
@@ -159,8 +160,7 @@ func extractFromStarExpr(expr *ast.StarExpr) string {
 }
 
 func extractFromIndexExpr(expr *ast.IndexExpr) string {
-	switch v := expr.X.(type) {
-	case *ast.Ident:
+	if v, ok := expr.X.(*ast.Ident); ok {
 		return v.Name
 	}
 	return defaultStructName
@@ -176,7 +176,7 @@ func checkStructFields(fields *ast.FieldList, structName string, w *lintConfusin
 					Failure:    fmt.Sprintf("Field '%s' differs only by capitalization to other field in the struct type %s", id.Name, structName),
 					Confidence: 1,
 					Node:       id,
-					Category:   "naming",
+					Category:   lint.FailureCategoryNaming,
 				})
 			} else {
 				bl[normName] = true
@@ -191,7 +191,7 @@ func (w *lintConfusingNames) Visit(n ast.Node) ast.Visitor {
 		// Exclude naming warnings for functions that are exported to C but
 		// not exported in the Go API.
 		// See https://github.com/golang/lint/issues/144.
-		if ast.IsExported(v.Name.Name) || !isCgoExported(v) {
+		if ast.IsExported(v.Name.Name) || !astutils.IsCgoExported(v) {
 			checkMethodName(getStructName(v.Recv), v.Name, w)
 		}
 	case *ast.TypeSpec:
