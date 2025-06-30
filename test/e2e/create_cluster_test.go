@@ -1396,9 +1396,6 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
@@ -1423,21 +1420,30 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					hyperv1.InsightsCapability,
 				},
 			}
+			hc.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
+				AllowedCIDRBlocks: []hyperv1.CIDRBlock{
+					"1.2.3.4/32",
+					"5.6.7.8/32",
+				},
+			}
 		}
 	}
 
-	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
-	if err != nil || kmsKeyArn == nil {
-		t.Fatal("failed to retrieve kms key arn")
+	if globalOpts.Platform == hyperv1.AWSPlatform {
+		// find kms key ARN using alias
+		kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
+		if err != nil || kmsKeyArn == nil {
+			t.Fatal("failed to retrieve kms key arn")
+		}
+		clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 	}
-
-	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+		if globalOpts.Platform == hyperv1.AWSPlatform {
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+		}
 
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
@@ -1457,6 +1463,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+
+		// ensure ApiServer Allowed CIDRs contain the set of IPs provided.
+		e2eutil.EnsureKubeAPIServerAllowedCIDRs(ctx, t, g, clients, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 

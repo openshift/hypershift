@@ -66,13 +66,14 @@ func (r routeByNamespaceName) Less(i, j int) bool {
 	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
 }
 
-func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
+func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route,
+	svcsNameToIP map[string]string, svcsNamespaceToApiServerNetworking map[string]*hyperv1.APIServerNetworking) (string, error) {
 	type backendDesc struct {
-		Name        string
-		SVCIP       string
-		SVCPort     int32
-		ClusterID   string
-		AllowedCIDR string
+		Name         string
+		SVCIP        string
+		SVCPort      int32
+		ClusterID    string
+		AllowedCIDRs []hyperv1.CIDRBlock
 	}
 	type ExternalDNSBackendDesc struct {
 		Name                 string
@@ -89,12 +90,11 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 	p.Backends = make([]backendDesc, 0, len(svcList.Items))
 	for _, svc := range svcList.Items {
 		p.Backends = append(p.Backends, backendDesc{
-			Name:        svc.Namespace + "-" + svc.Name,
-			SVCIP:       svc.Spec.ClusterIP,
-			SVCPort:     svc.Spec.Ports[0].Port,
-			ClusterID:   svcsNamespaceToClusterID[svc.Namespace],
-			AllowedCIDR: "1.1.1.1/32",
-			// AllowedCIDR: "0.0.0.0/0",
+			Name:         svc.Namespace + "-" + svc.Name,
+			SVCIP:        svc.Spec.ClusterIP,
+			SVCPort:      svc.Spec.Ports[0].Port,
+			ClusterID:    svcsNamespaceToClusterID[svc.Namespace],
+			AllowedCIDRs: setAllowedCIDRs(svcsNamespaceToApiServerNetworking[svc.Namespace]),
 		})
 	}
 
@@ -139,6 +139,13 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 		return "", fmt.Errorf("failed to generate router config: %w", err)
 	}
 	return out.String(), nil
+}
+
+func setAllowedCIDRs(apiServerNetworking *hyperv1.APIServerNetworking) []hyperv1.CIDRBlock {
+	if apiServerNetworking == nil || len(apiServerNetworking.AllowedCIDRBlocks) == 0 {
+		return []hyperv1.CIDRBlock{}
+	}
+	return apiServerNetworking.AllowedCIDRBlocks
 }
 
 func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {

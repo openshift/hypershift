@@ -128,10 +128,12 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 
 	namespaces := make([]string, 0, len(hcList.Items))
 	svcsNamespaceToClusterID := make(map[string]string)
+	svcsNamespaceToApiServerNetworking := make(map[string]*hyperv1.APIServerNetworking)
 	for _, hc := range hcList.Items {
 		hcpNamespace := hc.Namespace + "-" + hc.Name
 		namespaces = append(namespaces, hcpNamespace)
 		svcsNamespaceToClusterID[hcpNamespace] = hc.Spec.ClusterID
+		svcsNamespaceToApiServerNetworking[hc.Spec.ClusterID] = hc.Spec.Networking.APIServer
 	}
 
 	// This enables traffic from through external DNS.
@@ -167,7 +169,8 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 		return "", nil, err
 	}
 
-	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP)
+	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP,
+		svcsNamespaceToApiServerNetworking)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to generate router config: %w", err)
 	}

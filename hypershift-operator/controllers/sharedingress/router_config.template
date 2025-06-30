@@ -30,11 +30,13 @@ frontend dataplane-kas-svc
 
   {{- range .Backends }}
   acl is_{{ .Name }} var(sess.cluster_id) -m str {{ .ClusterID }}
-  acl is_{{ .Name }}_request_allowed src {{ .AllowedCIDR }}
+  {{- if .AllowedCIDRs }}
+  acl is_{{ .Name }}_request_allowed src {{ join .AllowedCIDRs " " }}
+  {{- end }}
   {{- end }}
 
   {{- range .Backends }}
-  use_backend {{ .Name }} if is_{{ .Name }} is_{{ .Name }}_request_allowed
+  use_backend {{ .Name }} if is_{{ .Name }}{{ if .AllowedCIDRs }} is_{{ .Name }}_request_allowed{{ end }}
   {{- end }}
 
   default_backend no-match
@@ -51,10 +53,9 @@ frontend external-dns
 
   {{- range .ExternalDNSBackends }}
   acl is_{{ .Name }} req_ssl_sni -i {{ .HostName }}
-  acl is_{{ .Name }}_request_allowed src 91.47.40.124
   {{- end }}
   {{- range .ExternalDNSBackends }}
-  use_backend {{ .Name }} if is_{{ .Name }} is_{{ .Name }}_request_allowed
+  use_backend {{ .Name }} if is_{{ .Name }}
   {{- end }}
 
 listen health_check_http_url

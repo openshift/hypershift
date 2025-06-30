@@ -1825,6 +1825,20 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 }
 
+func EnsureKubeAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients, hc *hyperv1.HostedCluster) {
+	t.Run("EnsureKubeAPIServerAllowedCIDRs", func(t *testing.T) {
+		cfgMap, err := clients.KubeClient.CoreV1().ConfigMaps("hypershift-sharedingress").Get(ctx, "router", metav1.GetOptions{})
+		g.Expect(err).To(Not(HaveOccurred()))
+		cidrs := make([]string, len(hc.Spec.Networking.APIServer.AllowedCIDRBlocks))
+		for i, cidr := range hc.Spec.Networking.APIServer.AllowedCIDRBlocks {
+			cidrs[i] = string(cidr)
+		}
+		g.Expect(cfgMap.Data).To(ContainSubstring(
+			fmt.Sprintf("_request_allowed src %s", strings.Join(cidrs, " ")),
+		))
+	})
+}
+
 func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
 	if !util.IsPublicHC(hc) {
 		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
