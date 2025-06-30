@@ -2120,7 +2120,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -2163,7 +2163,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -2174,7 +2174,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 }
 
-func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	if !hasWorkerNodes {
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
