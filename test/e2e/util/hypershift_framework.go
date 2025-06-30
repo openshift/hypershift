@@ -114,7 +114,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		validateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
 }
 
