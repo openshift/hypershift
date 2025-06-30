@@ -35,6 +35,7 @@ const (
 
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
 	rawCreateOptions := &RawCreateOptions{
+		client:       client,
 		Location:     "eastus",
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
@@ -78,6 +79,8 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 type RawCreateOptions struct {
+	client crclient.Client
+
 	CredentialsFile                  string
 	Location                         string
 	EncryptionKeyID                  string
@@ -531,7 +534,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 	rhcosImage := azureOpts.RHCOSImage
 	if rhcosImage == "" && azureOpts.MarketplacePublisher == "" {
 		var err error
-		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile)
+		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile, azureOpts.client)
 		if err != nil {
 			return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
 		}
@@ -559,12 +562,17 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 }
 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
-func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
-	if len(image) == 0 && len(releaseStream) != 0 {
-		client, err := util.GetClient()
+func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string, client crclient.Client) (string, error) {
+	var err error
+
+	if client == nil {
+		client, err = util.GetClient()
 		if err != nil {
 			return "", fmt.Errorf("failed to get client: %w", err)
 		}
+	}
+
+	if len(image) == 0 {
 		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, releaseStream, client)
 		if err != nil {
 			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
