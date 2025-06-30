@@ -307,7 +307,16 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	patch := tokenSecret.DeepCopy()
-	patch.Data[TokenSecretPayloadKey] = payload
+
+	// In inplace upgrade, compress and encode payload for inplace upgrader to consume.
+	if string(hyperv1.UpgradeTypeInPlace) == tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] {
+		compressedAndEncodedPayload, err := util.CompressAndEncode(payload)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to compress and encode payload: %w", err)
+		}
+		patch.Data[TokenSecretPayloadKey] = compressedAndEncodedPayload.Bytes()
+	}
+	// In replace upgrade, ensure the payload is not stored in the secret.
 	if string(hyperv1.UpgradeTypeReplace) == tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] {
 		delete(patch.Data, TokenSecretPayloadKey)
 	}
