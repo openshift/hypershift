@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 
@@ -23,6 +24,14 @@ import (
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
 const multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
+
+// getMultiArchReleaseURLTemplate returns the release URL template, checking for an environment variable override first
+func getMultiArchReleaseURLTemplate() string {
+	if envURL := os.Getenv("HYPERSHIFT_RELEASE_URL_TEMPLATE"); envURL != "" {
+		return envURL
+	}
+	return multiArchReleaseURLTemplate
+}
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
 // HyperShift operator.
@@ -176,11 +185,11 @@ func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client c
 	if len(releaseStream) == 0 {
 		// No release stream was provided, so we will look up the supported OCP versions from the HO and use the latest
 		// release image from the multi-arch release stream that is not a release candidate.
-		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
+		releaseURL = fmt.Sprintf(getMultiArchReleaseURLTemplate(), config.DefaultReleaseStream)
 		version, err = retrieveSupportedOCPVersion(ctx, releaseURL, client)
 	} else {
 		// We look up the release URL based on the user provided release stream.
-		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
+		releaseURL = fmt.Sprintf(getMultiArchReleaseURLTemplate(), releaseStream)
 		version, err = getOCPVersion(releaseURL)
 	}
 

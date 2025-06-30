@@ -108,7 +108,7 @@ spec:
   pullSecret:
     name: example-pull-secret
   release:
-    image: ""
+    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
   secretEncryption:
     aescbc:
       activeKey:
@@ -160,7 +160,7 @@ spec:
       vmSize: Standard_D4s_v3
     type: Azure
   release:
-    image: ""
+    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
   replicas: 0
 status:
   replicas: 0
@@ -192,7 +192,7 @@ spec:
       vmSize: Standard_D4s_v3
     type: Azure
   release:
-    image: ""
+    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
   replicas: 0
 status:
   replicas: 0
