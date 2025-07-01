@@ -115,6 +115,11 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),
 		).
+		WithManifestAdapter(
+			"azure-kms-cluster-seed-secretprovider.yaml",
+			component.WithAdaptFunction(kms.AdaptAzureClusterSeedSecretProvider),
+			component.WithPredicate(enableAzureKMSSecretProvider),
+		).
 		Build()
 }
 

@@ -2039,6 +2039,16 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
 			}
 
+			// Reconcile KMS Cluster Seed SecretProviderClass CR
+			kmsClusterSeedSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSClusterSeedSecretProviderClassName, hcp.Namespace)
+			if _, err := createOrUpdate(ctx, r, kmsClusterSeedSecretProviderClass, func() error {
+				clusterSeedSecretName := fmt.Sprintf("cluster-seed-%s", hcp.Name)
+				secretproviderclass.ReconcileAzureKMSClusterSeedSecretProviderClass(kmsClusterSeedSecretProviderClass, hcp, clusterSeedSecretName)
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS Cluster Seed SecretProviderClass: %w", err)
+			}
+
 		}
 	}
 
