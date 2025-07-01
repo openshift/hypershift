@@ -34,7 +34,7 @@ const (
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
 
-	encryptedClusterSeedLocation = "/data/encrypted_cluster_seed"
+	encryptedClusterSeedLocation = "/data/2025-07-01-cluster-seed"
 )
 
 var (
