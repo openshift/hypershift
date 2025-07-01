@@ -11,6 +11,19 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// IsNodeTuningCapabilityEnabled returns true if the NodeTuning capability is enabled, or false if disabled.
+func IsNodeTuningCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.NodeTuningCapability {
+			return false
+		}
+	}
+	return true
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {

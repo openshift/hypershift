@@ -1425,6 +1425,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				hyperv1.ImageRegistryCapability,
 				hyperv1.OpenShiftSamplesCapability,
 				hyperv1.InsightsCapability,
+				hyperv1.NodeTuningCapability,
 			}
 			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
 				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability)
@@ -1467,6 +1468,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure console component is disabled
 		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure NodeTuning component is disabled
+		e2eutil.EnsureNodeTuningCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 

@@ -47,8 +47,11 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	kapierror "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -2720,5 +2723,88 @@ func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega
 		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-console", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-console\" not found"))
+	})
+}
+
+// EnsureNodeTuningCapabilityDisabled validates the expectations for when NodeTuningCapability is Disabled
+func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNodeTuningCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+		g := NewWithT(t)
+		// Check guest cluster - node-tuning cluster operator should not exist
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "node-tuning", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"node-tuning\" not found"))
+
+		// Check guest cluster - openshift-cluster-node-tuning-operator namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-cluster-node-tuning-operator", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-cluster-node-tuning-operator\" not found"))
+
+		// Get guest cluster CR client for custom resource checks
+		guestClient := WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+
+		// Check guest cluster - Tuned resource type should not exist (equivalent to: oc get tuned)
+		// Expected error: "the server doesn't have a resource type 'tuned'"
+		t.Log("Checking that Tuned resource type does not exist in guest cluster")
+		tunedList := &unstructured.UnstructuredList{}
+		tunedList.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "tuned.openshift.io",
+			Version: "v1",
+			Kind:    "TunedList",
+		})
+		err = guestClient.List(ctx, tunedList)
+		g.Expect(err).To(HaveOccurred(), "expected error when trying to list Tuned objects")
+		g.Expect(meta.IsNoMatchError(err)).To(BeTrue(), "expected NoMatchError indicating 'tuned' resource type doesn't exist, got: %v", err)
+
+		// Check guest cluster - Profile resource type should not exist (equivalent to: oc get profile)
+		// Expected error: "the server doesn't have a resource type 'profile'"
+		t.Log("Checking that Profile resource type does not exist in guest cluster")
+		profileList := &unstructured.UnstructuredList{}
+		profileList.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "tuned.openshift.io",
+			Version: "v1",
+			Kind:    "ProfileList",
+		})
+		err = guestClient.List(ctx, profileList)
+		g.Expect(err).To(HaveOccurred(), "expected error when trying to list Profile objects")
+		g.Expect(meta.IsNoMatchError(err)).To(BeTrue(), "expected NoMatchError indicating 'profile' resource type doesn't exist, got: %v", err)
+
+		// Check guest cluster - no tuned DaemonSet should exist (equivalent to: oc get ds tuned --kubeconfig=hosted-kubeconfig -A)
+		t.Log("Checking that no tuned DaemonSet exists in guest cluster")
+		tunedDaemonSet := &appsv1.DaemonSet{}
+		err = guestClient.Get(ctx, crclient.ObjectKey{
+			Namespace: "openshift-cluster-node-tuning-operator",
+			Name:      "tuned",
+		}, tunedDaemonSet)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected no 'tuned' DaemonSet in guest cluster openshift-cluster-node-tuning-operator namespace")
+
+		// Check guest cluster - no tuned-related ConfigMaps should exist
+		t.Log("Checking that no tuned-related ConfigMaps exist in guest cluster")
+		var configMapList corev1.ConfigMapList
+		err = guestClient.List(ctx, &configMapList)
+		if err != nil {
+			t.Logf("Failed to list ConfigMaps in guest cluster: %v", err)
+		} else {
+			for _, cm := range configMapList.Items {
+				// Check for ConfigMaps that might be related to node tuning
+				if strings.Contains(cm.Name, "tuned") || strings.Contains(cm.Name, "node-tuning") ||
+					(cm.Labels != nil && (cm.Labels["tuned.openshift.io/tuned"] != "" || cm.Labels["hypershift.openshift.io/nto-generated-machine-config"] != "")) {
+					t.Errorf("Found tuned-related ConfigMap %s/%s in guest cluster when NodeTuning capability is disabled", cm.Namespace, cm.Name)
+				}
+			}
+		}
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// Check management cluster - no cluster-node-tuning-operator deployment in HCP namespace
+		cntoDeployment := &appsv1.Deployment{}
+		err = mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "cluster-node-tuning-operator",
+		}, cntoDeployment)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected no 'cluster-node-tuning-operator' deployment in management cluster HCP namespace")
+
+		t.Log("NodeTuning capability disabled validation completed successfully")
 	})
 }

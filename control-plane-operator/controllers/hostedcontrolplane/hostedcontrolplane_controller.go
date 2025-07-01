@@ -2005,20 +2005,21 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
 		}
 	}
-
-	// Cluster Node Tuning Operator metrics Serving Cert
-	NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
-	NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
-	err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
-	if err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+	var err error
+	if capabilities.IsNodeTuningCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Cluster Node Tuning Operator metrics Serving Cert
+		NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
+		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
+		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
+			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
+		}
 	}
-	if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
-		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
-	}
-
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
