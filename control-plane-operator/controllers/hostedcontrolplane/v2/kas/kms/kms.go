@@ -8,7 +8,6 @@ import (
 )
 
 type KMSPodConfig struct {
-	InitContainers []corev1.Container
 	Containers     []corev1.Container
 	Volumes        []corev1.Volume
 
