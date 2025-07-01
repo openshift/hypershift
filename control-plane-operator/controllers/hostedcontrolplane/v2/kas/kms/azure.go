@@ -34,7 +34,7 @@ const (
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
 
-	encryptedClusterSeedLocation = "/data/2025-07-01-cluster-seed"
+	encryptedClusterSeedLocation = "/data/cluster-seed"
 )
 
 var (
@@ -268,7 +268,6 @@ func AdaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvide
 // AdaptAzureClusterSeedSecretProvider configures the SecretProviderClass for the KMS cluster seed secret.
 // This uses the cluster seed secret name "2025-07-01-cluster-seed" from Azure Key Vault.
 func AdaptAzureClusterSeedSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	clusterSeedSecretName := "2025-07-01-cluster-seed"
-	secretproviderclass.ReconcileAzureKMSClusterSeedSecretProviderClass(secretProvider, cpContext.HCP, clusterSeedSecretName)
+	secretproviderclass.ReconcileAzureKMSClusterSeedSecretProviderClass(secretProvider, cpContext.HCP)
 	return nil
 }

@@ -57,7 +57,7 @@ func formatSecretProviderClassObject(certName, objectEncoding string) string {
 // This configures the SecretProviderClass to pull the cluster seed secret from Azure Key Vault using the KMS managed identity.
 //
 // https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-identity-access?tabs=azure-portal&pivots=access-with-a-user-assigned-managed-identity
-func ReconcileAzureKMSClusterSeedSecretProviderClass(secretProviderClass *secretsstorev1.SecretProviderClass, hcp *hyperv1.HostedControlPlane, clusterSeedSecretName string) {
+func ReconcileAzureKMSClusterSeedSecretProviderClass(secretProviderClass *secretsstorev1.SecretProviderClass, hcp *hyperv1.HostedControlPlane) {
 	secretProviderClass.Spec = secretsstorev1.SecretProviderClassSpec{
 		Provider: "azure",
 		Parameters: map[string]string{
@@ -66,7 +66,7 @@ func ReconcileAzureKMSClusterSeedSecretProviderClass(secretProviderClass *secret
 			"userAssignedIdentityID": azureutil.GetKeyVaultAuthorizedUser(),
 			"keyvaultName":           hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
 			"tenantId":               hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
-			"objects":                formatSecretProviderClassObject(clusterSeedSecretName, "base64"),
+			"objects":                formatSecretProviderClassObject("cluster-seed", "base64"),
 		},
 	}
 }
