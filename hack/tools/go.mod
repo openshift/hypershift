@@ -1,4 +1,4 @@
-module github.com/openshift-hive/hypershift/hack/tools
+module github.com/openshift/hypershift/hack/tools
 
 go 1.23.0
 
