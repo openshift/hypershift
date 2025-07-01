@@ -266,6 +266,17 @@ func TestValidate(t *testing.T) {
 			expectedErr: "",
 		},
 		{
+			name: "passes with NodeTuning capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"NodeTuning"},
+			},
+			expectedErr: "",
+		},
+		{
 			name: "fails with an invalid DNS name as KubeAPIServerDNSName",
 			rawOpts: &RawCreateOptions{
 				Name:                 "test-hc",
