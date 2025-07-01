@@ -2,7 +2,7 @@ FROM registry.redhat.io/rhel9/go-toolset:1.23.6-1745588370 AS builder
 
 WORKDIR /hypershift
 
-COPY . .
+COPY --chown=default . .
 
 RUN make control-plane-operator \
   && make control-plane-pki-operator
