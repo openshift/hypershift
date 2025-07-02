@@ -12,7 +12,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	api "github.com/openshift/hypershift/support/api"
 	testutil "github.com/openshift/hypershift/support/testutil"
-	upsert "github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -172,11 +171,7 @@ func TestGenerateConfig(t *testing.T) {
 				WithIndex(&corev1.Service{}, "metadata.name", indexFunc).
 				Build()
 
-			r := SharedIngressReconciler{
-				Client:         fakeClient,
-				createOrUpdate: upsert.New(false).CreateOrUpdate,
-			}
-			config, _, err := r.generateConfig(ctx.Background())
+			config, err := generateRouterConfig(ctx.Background(), fakeClient)
 			g.Expect(err).ToNot(HaveOccurred())
 			testutil.CompareWithFixture(t, config, testutil.WithExtension(".cfg"))
 		})
