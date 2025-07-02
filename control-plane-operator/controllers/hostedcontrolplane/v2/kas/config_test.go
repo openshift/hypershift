@@ -556,6 +556,20 @@ func TestGenerateConfig(t *testing.T) {
 				},
 			),
 		},
+		{
+			name: "with MutatingAdmissionPolicy feature gate enabled",
+			params: KubeAPIServerConfigParams{
+				FeatureGates: []string{
+					"MutatingAdmissionPolicy=true",
+				},
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["runtime-config"] = append(kcpv1.Arguments{"admissionregistration.k8s.io/v1alpha1=true"}, kasc.APIServerArguments["runtime-config"]...)
+					kasc.APIServerArguments["feature-gates"] = append(kcpv1.Arguments{"MutatingAdmissionPolicy=true"}, kasc.APIServerArguments["feature-gates"]...)
+				},
+			),
+		},
 	}
 
 	for _, tc := range testcases {
