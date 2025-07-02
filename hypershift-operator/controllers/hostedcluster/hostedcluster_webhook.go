@@ -283,7 +283,7 @@ func validateJsonAnnotation(annotations map[string]string) error {
 			kind := p.Kind()
 			if kind == "unknown" {
 				return fmt.Errorf("wrong json patch structure in the %q annotation: missing op field", hyperv1.JSONPatchAnnotation)
-			} else if kind != "delete" {
+			} else if kind != "remove" {
 				v, err := p.ValueInterface()
 				if err != nil {
 					return fmt.Errorf("wrong json patch structure in the %q annotation: %w, %v", hyperv1.JSONPatchAnnotation, err, v)
