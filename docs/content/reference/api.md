@@ -4348,6 +4348,10 @@ A failure here often means a software bug or a non-stable cluster.</p>
 <td><p>KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
 hosted cluster can be live migrated without experiencing a node restart</p>
 </td>
+</tr><tr><td><p>&#34;OIDCProviderReady&#34;</p></td>
+<td><p>OIDCProvider indicates that the readiness of the OIDCProvider.
+FIXME: Add proper documentation</p>
+</td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
 desired platform are valid.
