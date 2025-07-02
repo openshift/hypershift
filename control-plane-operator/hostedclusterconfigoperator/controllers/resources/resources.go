@@ -1193,6 +1193,10 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
 						continue
 					}
+					if util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
+						continue
+					}
 					dest := corev1.Secret{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      oidcClient.ClientSecret.Name,
@@ -1208,6 +1212,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 					})
 					if err != nil {
 						errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+
 					}
 				}
 			}
