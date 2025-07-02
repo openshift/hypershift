@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	manifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/supportedversion"
-	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -21,12 +21,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
-)
-
-const (
-	ConfigMapVersionsKey      = "supported-versions"
-	ConfigMapServerVersionKey = "server-version"
-	supportedVersionsLabel    = "hypershift.openshift.io/supported-versions"
 )
 
 type Reconciler struct {
@@ -59,10 +53,6 @@ func (r *Reconciler) SetupWithManager(mgr manager.Manager) error {
 	return nil
 }
 
-type SupportedVersions struct {
-	Versions []string `json:"versions"`
-}
-
 func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	return reconcile.Result{}, r.ensureSupportedVersionConfigMap(ctx)
 }
@@ -72,9 +62,9 @@ func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error 
 	if cm.Labels == nil {
 		cm.Labels = map[string]string{}
 	}
-	cm.Labels[supportedVersionsLabel] = "true"
+	cm.Labels[config.SupportedVersionsLabel] = "true"
 	if _, err := r.CreateOrUpdate(ctx, r, cm, func() error {
-		content := &SupportedVersions{
+		content := &supportedversion.SupportedVersions{
 			Versions: supportedversion.Supported(),
 		}
 		contentBytes, err := json.Marshal(content)
@@ -84,8 +74,8 @@ func (r *Reconciler) ensureSupportedVersionConfigMap(ctx context.Context) error 
 		if cm.Data == nil {
 			cm.Data = map[string]string{}
 		}
-		cm.Data[ConfigMapVersionsKey] = string(contentBytes)
-		cm.Data[ConfigMapServerVersionKey] = version.GetRevision()
+		cm.Data[config.ConfigMapVersionsKey] = string(contentBytes)
+		cm.Data[config.ConfigMapServerVersionKey] = supportedversion.GetRevision()
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to update supported version configmap: %w", err)

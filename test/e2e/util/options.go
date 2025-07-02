@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -20,8 +21,9 @@ import (
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
-	"github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -377,7 +379,11 @@ func (o *Options) Complete() error {
 	}
 
 	if len(o.LatestReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion("")
+		client, err := util.GetClient()
+		if err != nil {
+			return fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(context.TODO(), "", client)
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}

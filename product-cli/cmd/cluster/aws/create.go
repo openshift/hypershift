@@ -5,7 +5,7 @@ import (
 
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/core"
-	"github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/spf13/cobra"
 )
@@ -17,7 +17,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.ReleaseStream = version.DefaultReleaseStream
+	opts.ReleaseStream = config.DefaultReleaseStream
 
 	awsOpts := hypershiftaws.DefaultOptions()
 

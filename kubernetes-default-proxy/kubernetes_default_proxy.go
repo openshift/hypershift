@@ -11,7 +11,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 
@@ -71,7 +71,7 @@ func (s *server) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on tcp:%s: %w", s.listenAddr, err)
 	}
-	s.log.Info("Starting to listen", "listen-address", s.listenAddr, "version", version.String())
+	s.log.Info("Starting to listen", "listen-address", s.listenAddr, "version", supportedversion.String())
 
 	for {
 		if ctx.Err() != nil {

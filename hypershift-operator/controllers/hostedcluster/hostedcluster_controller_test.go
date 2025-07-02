@@ -14,7 +14,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
@@ -1274,7 +1273,7 @@ func expectedRules(addRules []rbacv1.PolicyRule) []rbacv1.PolicyRule {
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
-	releaseImage, _ := version.LookupDefaultOCPVersion("")
+	releaseImage := "quay.io/openshift-release-dev/ocp-release:4.15.0"
 	manifests := []manifestlist.ManifestDescriptor{
 		{
 			Descriptor: distribution.Descriptor{
@@ -1316,7 +1315,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 				},
 				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+					Image: releaseImage,
 				},
 			},
 			Status: hyperv1.HostedClusterStatus{
@@ -1346,7 +1345,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					},
 				},
 				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+					Image: releaseImage,
 				},
 			},
 		},
@@ -1360,7 +1359,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Type: hyperv1.NonePlatform,
 				},
 				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+					Image: releaseImage,
 				},
 			},
 		},
@@ -1375,7 +1374,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
 				},
 				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+					Image: releaseImage,
 				},
 			},
 		},
@@ -1410,7 +1409,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					},
 				},
 				Release: hyperv1.Release{
-					Image: releaseImage.PullSpec,
+					Image: releaseImage,
 				},
 			},
 		},
