@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 
@@ -1501,6 +1503,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 		expectOIDCClientSecrets []string
 		expectErrors            bool
 		expectedErrorMessages   []string
+		setAROHCP               bool
 	}{
 		"when OAuth is enabled, should not copy OIDC resources": {
 			inputHCP: &hyperv1.HostedControlPlane{
@@ -1765,6 +1768,105 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{"console-client-secret"},
 			expectErrors:            false,
 		},
+		"when OAuth is disabled with OIDC provider with a hosted-cluster-sourced annotated client secret and ARO-HCP platform, should not copy the client secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterSourcedAnnotation: "true",
+						},
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+			setAROHCP:               true,
+		},
+		"when OAuth is disabled with OIDC provider and not ARO-HCP platform, setting hosted-cluster-sourced annotation on a client secret should not skip copying the secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterSourcedAnnotation: "true",
+						},
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+			setAROHCP:               false,
+		},
 		"when OAuth is disabled but CA configmap is missing, should return error": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1952,6 +2054,10 @@ func TestReconcileAuthOIDC(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
+			if test.setAROHCP {
+				azureutil.SetAsAroHCPTest(t)
+			}
+
 			// Verify that CA configmaps and OIDC client secrets don't exist in hosted cluster before reconciliation
 			if test.expectIssuerCAConfigMap {
 				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
@@ -2034,6 +2140,18 @@ func TestReconcileAuthOIDC(t *testing.T) {
 						Name:      provider.Issuer.CertificateAuthority.Name,
 					}, caConfigMap)
 					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				}
+			}
+			// Verify that no unexpected client secrets were copied
+			secretList := &corev1.SecretList{}
+			err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace))
+			g.Expect(err).ToNot(HaveOccurred())
+
+			expectedSecrets := sets.New(test.expectOIDCClientSecrets...)
+
+			for _, secret := range secretList.Items {
+				if !expectedSecrets.Has(secret.Name) {
+					t.Errorf("unexpected OIDC client secret copied: %s", secret.Name)
 				}
 			}
 		})
