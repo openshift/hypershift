@@ -204,6 +204,14 @@ func TestValidateJsonAnnotation(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "valid remove without value",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "remove","path": "/spec/template/metadata/annotations/kubevirt.io~1allow-pod-bridge-network-live-migration"}]`,
+			},
+			expectError: false,
+		},
+
+		{
 			name: "not an array",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
@@ -235,6 +243,13 @@ func TestValidateJsonAnnotation(t *testing.T) {
 			name: "missing value",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores"}]`,
+			},
+			expectError: true,
+		},
+		{
+			name: "bad operation",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "delete","path": "/spec/domain/cpu/cores", "value": "1"}]`,
 			},
 			expectError: true,
 		},
