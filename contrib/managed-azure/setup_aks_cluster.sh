@@ -34,7 +34,7 @@ az group create \
 az aks create \
 --resource-group ${AKS_RG} \
 --name ${AKS_CLUSTER_NAME} \
---replicas 2 \
+--replicas 3 \
 --generate-ssh-keys \
 --load-balancer-sku standard \
 --os-sku AzureLinux \
@@ -45,7 +45,9 @@ az aks create \
 --enable-secret-rotation \
 --rotation-poll-interval 1m \
 --assign-identity ${AKS_MI} \
---assign-kubelet-identity ${AKS_KUBELET_MI}
+--assign-kubelet-identity ${AKS_KUBELET_MI} \
+--network-plugin azure \
+--network-policy azure 
 
 # Save the KV MI Info
 AZURE_KEY_VAULT_AUTHORIZED_USER_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -r)
