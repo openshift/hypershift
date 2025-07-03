@@ -214,7 +214,7 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		}
 	}
 
-	log.Info("Reconciling global pull secret RBAC", "exists", exists)
+	log.Info("Reconciling global pull secret RBAC", "User provided pull secret exists", exists)
 
 	if !exists {
 		log.Info("Deleting global pull secret RBAC resources", "exists", exists)
@@ -224,16 +224,16 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 				return fmt.Errorf("failed to delete service account for global pull secret: %w", err)
 			}
 		}
-		clusterRole := manifests.GlobalPullSecretClusterRole()
-		if err := c.Delete(ctx, clusterRole); err != nil {
+		role := manifests.GlobalPullSecretRole()
+		if err := c.Delete(ctx, role); err != nil {
 			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete cluster role for global pull secret: %w", err)
+				return fmt.Errorf("failed to delete role for global pull secret: %w", err)
 			}
 		}
-		clusterRoleBinding := manifests.GlobalPullSecretClusterRoleBinding()
-		if err := c.Delete(ctx, clusterRoleBinding); err != nil {
+		roleBinding := manifests.GlobalPullSecretRoleBinding()
+		if err := c.Delete(ctx, roleBinding); err != nil {
 			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("failed to delete cluster role binding for global pull secret: %w", err)
+				return fmt.Errorf("failed to delete role binding for global pull secret: %w", err)
 			}
 		}
 
@@ -248,30 +248,31 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		return fmt.Errorf("failed to reconcile service account: %w", err)
 	}
 
-	// Create ClusterRole
-	clusterRole := manifests.GlobalPullSecretClusterRole()
-	if _, err := createOrUpdate(ctx, c, clusterRole, func() error {
-		clusterRole.Rules = []rbacv1.PolicyRule{
+	// Create Role with ResourceNames to scope access to specific secrets
+	role := manifests.GlobalPullSecretRole()
+	if _, err := createOrUpdate(ctx, c, role, func() error {
+		role.Rules = []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-				Verbs:     []string{"get", "list", "watch"},
+				APIGroups:     []string{""},
+				Resources:     []string{"secrets"},
+				ResourceNames: []string{"additional-pull-secret", "global-pull-secret"},
+				Verbs:         []string{"get", "list", "watch"},
 			},
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer cluster role: %w", err)
+		return fmt.Errorf("failed to reconcile global pull secret syncer role: %w", err)
 	}
 
-	// Create ClusterRoleBinding
-	clusterRoleBinding := manifests.GlobalPullSecretClusterRoleBinding()
-	if _, err := createOrUpdate(ctx, c, clusterRoleBinding, func() error {
-		clusterRoleBinding.RoleRef = rbacv1.RoleRef{
+	// Create RoleBinding
+	roleBinding := manifests.GlobalPullSecretRoleBinding()
+	if _, err := createOrUpdate(ctx, c, roleBinding, func() error {
+		roleBinding.RoleRef = rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     clusterRole.Name,
+			Kind:     "Role",
+			Name:     role.Name,
 		}
-		clusterRoleBinding.Subjects = []rbacv1.Subject{
+		roleBinding.Subjects = []rbacv1.Subject{
 			{
 				Kind:      "ServiceAccount",
 				Name:      sa.Name,
@@ -280,7 +281,7 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer cluster role binding: %w", err)
+		return fmt.Errorf("failed to reconcile global pull secret syncer role binding: %w", err)
 	}
 
 	return nil
