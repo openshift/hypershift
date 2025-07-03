@@ -3002,7 +3002,7 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 
 	// Use the Global Pull Secret to deploy the DaemonSet in the DataPlane.
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := globalpullsecret.ReconcileDaemonSet(ctx, daemonSet, globalPullSecretBytes, r.uncachedClient, r.CreateOrUpdate, cpoImage); err != nil {
+	if err := globalpullsecret.ReconcileDaemonSet(ctx, daemonSet, secret.Name, r.uncachedClient, r.CreateOrUpdate, cpoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 

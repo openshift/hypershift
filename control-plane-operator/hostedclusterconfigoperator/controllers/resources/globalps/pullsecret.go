@@ -32,7 +32,7 @@ const (
 	NodePullSecretPath = "/var/lib/kubelet/config.json"
 )
 
-func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretBytes []byte, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, cpoImage string) error {
+func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, cpoImage string) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get logger: %w", err)
@@ -69,6 +69,7 @@ func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							},
 							Args: []string{
 								"sync-global-pullsecret",
+								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
 								"--check-interval=10s",
 							},
 							SecurityContext: &corev1.SecurityContext{
