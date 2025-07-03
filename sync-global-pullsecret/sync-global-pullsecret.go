@@ -41,14 +41,9 @@ const (
 	kubeletServiceUnit               = "kubelet.service"
 )
 
-// systemd job completion states as documented in go-systemd/dbus
+// systemd job completion state as documented in go-systemd/dbus
 const (
-	systemdJobDone       = "done"       // Job completed successfully
-	systemdJobCanceled   = "canceled"   // Job was canceled before completion
-	systemdJobTimeout    = "timeout"    // Job timeout was reached
-	systemdJobFailed     = "failed"     // Job failed
-	systemdJobDependency = "dependency" // Job dependency failed
-	systemdJobSkipped    = "skipped"    // Job was skipped (not applicable to current state)
+	systemdJobDone = "done" // Job completed successfully
 )
 
 //go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
@@ -241,7 +236,7 @@ func (r *GlobalPullSecretReconciler) checkAndFixFile(ctx context.Context, global
 			}
 		}
 
-		// If we reach here, all retries failed - perform rollback
+		// If we reach this point, all retries failed - perform rollback
 		log.Info("Failed to restart Kubelet after some attempts, executing rollback", "maxRetries", maxRetries, "lastErr", lastErr)
 		if err := writeFileFunc(r.kubeletConfigJsonPath, originalContent, 0600); err != nil {
 			return fmt.Errorf("2 errors happened: the kubelet restart failed after %d attempts and it failed to rollback the file: %w", maxRetries, err)

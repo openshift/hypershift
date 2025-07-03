@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"reflect"
 	"testing"
 
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var (
@@ -61,9 +64,12 @@ func TestValidateUserProvidedPullSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			_, err := ValidateUserProvidedPullSecret(tt.secret)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ValidateUserProvidedPullSecret() error = %v, wantErr %v", err, tt.wantErr)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
 			}
 		})
 	}
@@ -121,13 +127,13 @@ func TestMergePullSecrets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
 			result, err := MergePullSecrets(context.Background(), tt.originalSecret, tt.additionalSecret)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("MergePullSecrets() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(result, tt.expectedResult) {
-				t.Errorf("expected result: %+v, got %+v", tt.expectedResult, result)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result).To(Equal(tt.expectedResult))
 			}
 		})
 	}
@@ -147,4 +153,47 @@ func composePullSecretBytes(auths map[string]string) []byte {
 		panic(err)
 	}
 	return authsBytes
+}
+
+func TestUserProvidedPullSecretExists(t *testing.T) {
+	pullSecret := composePullSecretBytes(map[string]string{"quay.io": validAuth})
+	tests := []struct {
+		name           string
+		secretExists   bool
+		expectedExists bool
+		objects        []client.Object
+	}{
+		{
+			name:           "secret exists",
+			secretExists:   true,
+			expectedExists: true,
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "additional-pull-secret",
+						Namespace: "kube-system",
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: pullSecret,
+					},
+				},
+			},
+		},
+		{
+			name:           "secret does not exist",
+			secretExists:   false,
+			expectedExists: false,
+			objects:        []client.Object{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			fakeClient := fake.NewClientBuilder().WithObjects(tt.objects...).Build()
+			exists, err := UserProvidedPullSecretExists(fakeClient, context.Background())
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(exists).To(Equal(tt.expectedExists))
+		})
+	}
 }
