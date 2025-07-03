@@ -970,7 +970,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform && hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-			t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
+			t.Skipf("test only supported on AWS and Azure platforms, saw %s", hostedCluster.Spec.Platform.Type)
 		}
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -990,10 +990,19 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			kasAddress := ""
 			for _, subset := range kubernetesEndpoint.Subsets {
 				if len(subset.Addresses) > 0 && len(subset.Ports) > 0 {
-					kasAddress = fmt.Sprintf("https://%s:%v", subset.Addresses[0].IP, subset.Ports[0].Port)
-					break
+					// Check for valid IP to prevent potential issues
+					if subset.Addresses[0].IP != "" {
+						kasAddress = fmt.Sprintf("https://%s:%v", subset.Addresses[0].IP, subset.Ports[0].Port)
+						break
+					}
 				}
 			}
+
+			// If we couldn't find a valid kasAddress, this indicates an unexpected issue
+			if kasAddress == "" {
+				t.Fatalf("Unable to determine management KAS endpoint from kubernetes service")
+			}
+
 			t.Logf("Connecting to kubernetes endpoint on: %s", kasAddress)
 
 			command := []string{
@@ -1010,6 +1019,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			g.Expect(err).To(HaveOccurred())
 
 			// Validate private router is not allowed to access management KAS.
+			// Note: Private router validation only applies to AWS - Azure doesn't have private router config
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 				if hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
 					// TODO (alberto): Run also in private case. Today it results in a flake:
@@ -1025,7 +1035,11 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
-				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
+				errMsg := "no error"
+				if err != nil {
+					errMsg = err.Error()
+				}
+				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, errMsg)
 			}
 		})
 	})
@@ -1109,6 +1123,42 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 }
 
 func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
+	// Networks can be unstable, add retry logic for pod execution
+	maxRetries := 3
+	baseDelay := 2 * time.Second
+
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		if attempt > 0 {
+			// Add delay between retries
+			time.Sleep(time.Duration(attempt) * baseDelay)
+		}
+
+		result, err := runCommandInPodOnce(ctx, c, component, namespace, command, containerName, timeout)
+
+		// If successful, return immediately
+		if err == nil {
+			return result, nil
+		}
+
+		// Check if this is a retryable networking error
+		errStr := err.Error()
+		isRetryable := strings.Contains(errStr, "unexpected EOF") ||
+			strings.Contains(errStr, "network namespace") ||
+			strings.Contains(errStr, "connection refused") ||
+			strings.Contains(errStr, "connection reset") ||
+			strings.Contains(errStr, "port forward") ||
+			strings.Contains(errStr, "context deadline exceeded")
+
+		// On last attempt or non-retryable error, return the error
+		if attempt == maxRetries-1 || !isRetryable {
+			return "", fmt.Errorf("RunCommandInPod failed after %d attempts: %w", attempt+1, err)
+		}
+	}
+
+	return "", fmt.Errorf("RunCommandInPod failed after %d attempts", maxRetries)
+}
+
+func runCommandInPodOnce(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
 		client.InNamespace(namespace),
@@ -1124,12 +1174,19 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 		return "", fmt.Errorf("failed to get restConfig; %w", err)
 	}
 
+	// Add timeouts to handle network instability
+	if restConfig.Timeout == 0 {
+		restConfig.Timeout = 30 * time.Second
+	}
+
 	stdOut := new(bytes.Buffer)
+	stdErr := new(bytes.Buffer)
+
 	podExecuter := PodExecOptions{
 		StreamOptions: StreamOptions{
 			IOStreams: genericclioptions.IOStreams{
 				Out:    stdOut,
-				ErrOut: os.Stderr,
+				ErrOut: stdErr, // Capture stderr to a buffer instead of os.Stderr for better error handling
 			},
 		},
 		Command:       command,
@@ -1141,7 +1198,14 @@ func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespac
 	}
 
 	err = podExecuter.Run(ctx)
-	return stdOut.String(), err
+	result := stdOut.String()
+
+	// Include stderr in error messages for better debugging
+	if err != nil && stdErr.Len() > 0 {
+		return result, fmt.Errorf("pod execution failed: %w (stderr: %s)", err, stdErr.String())
+	}
+
+	return result, err
 }
 
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
