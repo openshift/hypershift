@@ -101,6 +101,7 @@ type Images struct {
 	CLI                          string
 	CLIControlPlane              string
 	Socks5Proxy                  string
+	FRR                          string
 }
 
 type Params struct {
@@ -155,6 +156,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 			CLI:                          userReleaseImageProvider.GetImage("cli"),
 			CLIControlPlane:              releaseImageProvider.GetImage("cli"),
 			Socks5Proxy:                  releaseImageProvider.GetImage("socks5-proxy"),
+			FRR:                          userReleaseImageProvider.GetImage("metallb-frr"),
 		},
 		ReleaseVersion:          version,
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
@@ -747,5 +749,6 @@ func buildCNOEnvVars(envVars []corev1.EnvVar, params Params) []corev1.EnvVar {
 		{Name: "CLI_CONTROL_PLANE_IMAGE", Value: params.Images.CLIControlPlane},
 		{Name: "SOCKS5_PROXY_IMAGE", Value: params.Images.Socks5Proxy},
 		{Name: "OPENSHIFT_RELEASE_IMAGE", Value: params.DeploymentConfig.AdditionalAnnotations[hyperv1.ReleaseImageAnnotation]},
+		{Name: "FRR_K8S_IMAGE", Value: params.Images.FRR},
 	}...)
 }
