@@ -14,7 +14,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -26,6 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -56,16 +57,18 @@ func init() {
 }
 
 type backendDesc struct {
-	Name      string
-	SVCIP     string
-	SVCPort   int32
-	ClusterID string
+	Name         string
+	SVCIP        string
+	SVCPort      int32
+	ClusterID    string
+	AllowedCIDRs string
 }
 type ExternalDNSBackendDesc struct {
 	Name                 string
 	HostName             string
 	DestinationServiceIP string
 	DestinationPort      int32
+	AllowedCIDRs         string
 }
 
 func generateRouterConfig(ctx context.Context, client crclient.Client) (string, error) {
@@ -111,6 +114,18 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 	backends := []backendDesc{}
 	externalDNSBackends := []ExternalDNSBackendDesc{}
 
+	var allowedCIDRs string
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.AllowedCIDRBlocks != nil {
+		allowedCIDRBlocks := make([]string, 0, len(hc.Spec.Networking.APIServer.AllowedCIDRBlocks))
+		for _, cidr := range hc.Spec.Networking.APIServer.AllowedCIDRBlocks {
+			if cidr != "" {
+				allowedCIDRBlocks = append(allowedCIDRBlocks, string(cidr))
+			}
+		}
+
+		allowedCIDRs = strings.Join(allowedCIDRBlocks, " ")
+	}
+
 	hcpNamespace := hc.Namespace + "-" + hc.Name
 	kasService := manifests.KubeAPIServerService(hcpNamespace)
 	if err := client.Get(ctx, crclient.ObjectKeyFromObject(kasService), kasService); err != nil {
@@ -118,10 +133,11 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 	}
 
 	backends = append(backends, backendDesc{
-		Name:      kasService.Namespace + "-" + kasService.Name,
-		SVCIP:     kasService.Spec.ClusterIP,
-		SVCPort:   kasService.Spec.Ports[0].Port,
-		ClusterID: hc.Spec.ClusterID,
+		Name:         kasService.Namespace + "-" + kasService.Name,
+		SVCIP:        kasService.Spec.ClusterIP,
+		SVCPort:      kasService.Spec.Ports[0].Port,
+		ClusterID:    hc.Spec.ClusterID,
+		AllowedCIDRs: allowedCIDRs,
 	})
 
 	// This enables traffic from through external DNS.
@@ -152,7 +168,8 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 				Name:                 route.Namespace + "-apiserver",
 				HostName:             route.Spec.Host,
 				DestinationServiceIP: svc.Spec.ClusterIP,
-				DestinationPort:      config.KASSVCPort})
+				DestinationPort:      config.KASSVCPort,
+				AllowedCIDRs:         allowedCIDRs})
 		case ignitionserver.Route("").Name:
 			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
 				Name:                 route.Namespace + "-ignition",
@@ -299,6 +316,8 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Labels[k] = v
 	}
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	// ServiceExternalTrafficPolicyLocal preserves the client source IP. see: https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
 	svc.Spec.Selector = hcpRouterLabels()
 	foundExternaDNS := false
 	foundKASSVC := false
