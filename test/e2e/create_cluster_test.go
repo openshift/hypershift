@@ -1463,6 +1463,10 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 func TestNoneCreateCluster(t *testing.T) {
 	t.Parallel()
 
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		t.Skip("test not supported on platform Azure")
+	}
+
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
