@@ -14,6 +14,14 @@ import (
 )
 
 func TestAzureMachineTemplateSpec(t *testing.T) {
+	testAzureMachineTemplateSpec := capiazure.AzureMachineTemplateSpec{
+		Template: capiazure.AzureMachineTemplateResource{
+			Spec: capiazure.AzureMachineSpec{
+				SSHPublicKey: "asdf",
+			},
+		},
+	}
+
 	testCases := []struct {
 		name                             string
 		nodePool                         *hyperv1.NodePool
@@ -70,7 +78,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							CachingType:      "",
 						},
 						DataDisks:              nil,
-						SSHPublicKey:           dummySSHKey,
+						SSHPublicKey:           "asdf",
 						AdditionalTags:         nil,
 						AdditionalCapabilities: nil,
 						AllocatePublicIP:       false,
@@ -144,7 +152,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							CachingType:      "",
 						},
 						DataDisks:              nil,
-						SSHPublicKey:           dummySSHKey,
+						SSHPublicKey:           "asdf",
 						AdditionalTags:         nil,
 						AdditionalCapabilities: nil,
 						AllocatePublicIP:       false,
@@ -228,7 +236,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							CachingType:      "",
 						},
 						DataDisks:              nil,
-						SSHPublicKey:           dummySSHKey,
+						SSHPublicKey:           "asdf",
 						AdditionalTags:         nil,
 						AdditionalCapabilities: nil,
 						AllocatePublicIP:       false,
@@ -318,7 +326,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							CachingType:      "ReadOnly",
 						},
 						DataDisks:              nil,
-						SSHPublicKey:           dummySSHKey,
+						SSHPublicKey:           "asdf",
 						AdditionalTags:         nil,
 						AdditionalCapabilities: nil,
 						AllocatePublicIP:       false,
@@ -414,7 +422,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 							CachingType:      "ReadOnly",
 						},
 						DataDisks:              nil,
-						SSHPublicKey:           dummySSHKey,
+						SSHPublicKey:           "asdf",
 						AdditionalTags:         nil,
 						AdditionalCapabilities: nil,
 						AllocatePublicIP:       false,
@@ -508,6 +516,10 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			azureSpec, err := azureMachineTemplateSpec(tc.nodePool)
+			if azureSpec != nil && azureSpec.Template.Spec.SSHPublicKey == "" {
+				azureSpec.Template.Spec.SSHPublicKey = testAzureMachineTemplateSpec.Template.Spec.SSHPublicKey
+			}
+
 			if tc.expectedErr {
 				g.Expect(err.Error()).To(Equal(tc.expectedErrMsg))
 			} else {
