@@ -161,12 +161,22 @@ func TestUserProvidedPullSecretExists(t *testing.T) {
 		name           string
 		secretExists   bool
 		expectedExists bool
+		expectedSecret *corev1.Secret
 		objects        []client.Object
 	}{
 		{
 			name:           "secret exists",
 			secretExists:   true,
 			expectedExists: true,
+			expectedSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "additional-pull-secret",
+					Namespace: "kube-system",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: pullSecret,
+				},
+			},
 			objects: []client.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
@@ -180,9 +190,56 @@ func TestUserProvidedPullSecretExists(t *testing.T) {
 			},
 		},
 		{
+			name:           "secret exists but has no content",
+			secretExists:   true,
+			expectedExists: true,
+			expectedSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "additional-pull-secret",
+					Namespace: "kube-system",
+				},
+				Data: nil,
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "additional-pull-secret",
+						Namespace: "kube-system",
+					},
+					Data: nil,
+				},
+			},
+		},
+		{
+			name:           "secret exists but has incorrect content",
+			secretExists:   true,
+			expectedExists: true,
+			expectedSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "additional-pull-secret",
+					Namespace: "kube-system",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`invalid json content`),
+				},
+			},
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "additional-pull-secret",
+						Namespace: "kube-system",
+					},
+					Data: map[string][]byte{
+						corev1.DockerConfigJsonKey: []byte(`invalid json content`),
+					},
+				},
+			},
+		},
+		{
 			name:           "secret does not exist",
 			secretExists:   false,
 			expectedExists: false,
+			expectedSecret: nil,
 			objects:        []client.Object{},
 		},
 	}
@@ -191,9 +248,18 @@ func TestUserProvidedPullSecretExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			fakeClient := fake.NewClientBuilder().WithObjects(tt.objects...).Build()
-			exists, err := UserProvidedPullSecretExists(fakeClient, context.Background())
+			exists, secret, err := UserProvidedPullSecretExists(context.Background(), fakeClient)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(exists).To(Equal(tt.expectedExists))
+
+			if tt.expectedSecret != nil {
+				g.Expect(secret).NotTo(BeNil())
+				g.Expect(secret.Name).To(Equal(tt.expectedSecret.Name))
+				g.Expect(secret.Namespace).To(Equal(tt.expectedSecret.Namespace))
+				g.Expect(secret.Data).To(Equal(tt.expectedSecret.Data))
+			} else {
+				g.Expect(secret).To(BeNil())
+			}
 		})
 	}
 }
