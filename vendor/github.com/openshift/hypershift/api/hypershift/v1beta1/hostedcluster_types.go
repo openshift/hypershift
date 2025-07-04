@@ -782,7 +782,7 @@ type ImageContentSource struct {
 	//
 	// +optional
 	// +immutable
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=255
 	// +listType=set
 	// +kubebuilder:validation:items:MaxLength=255
 	Mirrors []string `json:"mirrors,omitempty"`

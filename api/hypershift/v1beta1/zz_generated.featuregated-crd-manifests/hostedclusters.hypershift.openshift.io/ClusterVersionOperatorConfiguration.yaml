@@ -2373,7 +2373,7 @@ spec:
                       items:
                         maxLength: 255
                         type: string
-                      maxItems: 25
+                      maxItems: 255
                       type: array
                       x-kubernetes-list-type: set
                     source:

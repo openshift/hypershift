@@ -2447,7 +2447,7 @@ spec:
                       items:
                         maxLength: 255
                         type: string
-                      maxItems: 25
+                      maxItems: 255
                       type: array
                       x-kubernetes-list-type: set
                     source:
@@ -2459,7 +2459,7 @@ spec:
                   required:
                   - source
                   type: object
-                maxItems: 25
+                maxItems: 255
                 type: array
               infraID:
                 description: infraID is the unique id that identifies the cluster
