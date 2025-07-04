@@ -33,6 +33,8 @@ const (
 
 	azureKMSCredsFileKey          = "azure.json"
 	azureProviderConfigNamePrefix = "azure"
+
+	encryptedClusterSeedLocation = "/data/cluster-seed"
 )
 
 var (
@@ -41,12 +43,14 @@ var (
 			kasVolumeKMSSocket().Name: "/opt",
 		},
 		kasContainerAzureKMSActive().Name: {
-			kasVolumeKMSSocket().Name:           "/opt",
-			kasVolumeAzureKMSCredentials().Name: "/etc/kubernetes",
+			kasVolumeKMSSocket().Name:                "/opt",
+			kasVolumeAzureKMSCredentials().Name:      "/etc/kubernetes",
+			kasVolumeKMSEncryptionClusterSeed().Name: "/data",
 		},
 		kasContainerAzureKMSBackup().Name: {
-			kasVolumeKMSSocket().Name:           "/opt",
-			kasVolumeAzureKMSCredentials().Name: "/etc/kubernetes",
+			kasVolumeKMSSocket().Name:                "/opt",
+			kasVolumeAzureKMSCredentials().Name:      "/etc/kubernetes",
+			kasVolumeKMSEncryptionClusterSeed().Name: "/data",
 		},
 	}
 
@@ -126,8 +130,8 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
 		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
 		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
+		util.BuildVolume(kasVolumeKMSEncryptionClusterSeed(), buildVolumeKMSEncryptionClusterSeed),
 	)
-
 	podConfig.Containers = append(podConfig.Containers,
 		util.BuildContainer(
 			kasContainerAzureKMSActive(),
@@ -166,16 +170,18 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			fmt.Sprintf("--listen-addr=%s", unixSocketPath),
 			fmt.Sprintf("--healthz-port=%d", healthPort),
 			fmt.Sprintf("--metrics-addr=%s", metricsAddr),
+			fmt.Sprintf("--encrypted-cluster-seed-file=%s", encryptedClusterSeedLocation),
 			"--healthz-path=/healthz",
 			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
-			"-v=1",
+			"-v=2",
 		}
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
-		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-			Name:      config.ManagedAzureKMSSecretStoreVolumeName,
-			MountPath: config.ManagedAzureCertificateMountPath,
-			ReadOnly:  true,
-		})
+		c.VolumeMounts = append(c.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      config.ManagedAzureKMSSecretStoreVolumeName,
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			})
 		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
@@ -247,8 +253,21 @@ func buildVolumeKMSSecretStore(v *corev1.Volume) {
 	}
 }
 
+func kasVolumeKMSEncryptionClusterSeed() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "data",
+	}
+}
+
 func AdaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
 	managedIdentity := cpContext.HCP.Spec.SecretEncryption.KMS.Azure.KMS
 	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity, true)
+	return nil
+}
+
+// AdaptAzureClusterSeedSecretProvider configures the SecretProviderClass for the KMS cluster seed secret.
+// This uses the cluster seed secret name "2025-07-01-cluster-seed" from Azure Key Vault.
+func AdaptAzureClusterSeedSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
+	secretproviderclass.ReconcileAzureKMSClusterSeedSecretProviderClass(secretProvider, cpContext.HCP)
 	return nil
 }
