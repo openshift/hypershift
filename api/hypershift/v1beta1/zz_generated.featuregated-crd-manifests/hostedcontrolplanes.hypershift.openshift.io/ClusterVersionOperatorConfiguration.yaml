@@ -2569,6 +2569,25 @@ spec:
                 description: operatorConfiguration specifies configuration for individual
                   OCP operators in the cluster.
                 properties:
+                  clusterNetworkOperator:
+                    description: clusterNetworkOperator specifies the configuration
+                      for the Cluster Network Operator in the hosted cluster.
+                    properties:
+                      disableMultus:
+                        default: false
+                        description: |-
+                          disableMultus when set to true disables the Multus CNI plugin and related components
+                          in the hosted cluster. This prevents the installation of multus daemon sets in the
+                          guest cluster and the multus-admission-controller in the management cluster.
+                          Default is false (Multus is enabled).
+                          This field is immutable.
+                          This field can only be set to true when NetworkType is "Other". Setting it to true
+                          with any other NetworkType will result in a validation error during cluster creation.
+                        type: boolean
+                        x-kubernetes-validations:
+                        - message: disableMultus is immutable
+                          rule: self == oldSelf
+                    type: object
                   clusterVersionOperator:
                     description: clusterVersionOperator specifies the configuration
                       for the Cluster Version Operator in the hosted cluster.

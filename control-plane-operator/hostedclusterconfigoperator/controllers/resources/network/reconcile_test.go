@@ -21,6 +21,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputNetwork      *operatorv1.Network
 		inputNetworkType  hyperv1.NetworkType
 		inputPlatformType hyperv1.PlatformType
+		disableMultus     bool
 		expectedNetwork   *operatorv1.Network
 	}{
 		{
@@ -28,6 +29,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OVNKubernetes,
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -48,6 +50,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -79,6 +82,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -111,6 +115,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 			inputNetworkType:  hyperv1.OVNKubernetes,
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -144,6 +149,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 			inputNetworkType:  hyperv1.OVNKubernetes,
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -165,6 +171,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  "fake",
 			inputPlatformType: hyperv1.KubevirtPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -179,6 +186,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.AWSPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -189,10 +197,27 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
+			name:              "DisableMultus sets disableMultiNetwork to true",
+			inputNetwork:      NetworkOperator(),
+			inputNetworkType:  hyperv1.Other,
+			inputPlatformType: hyperv1.AWSPlatform,
+			disableMultus:     true,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DisableMultiNetwork: &[]bool{true}[0],
+				},
+			},
+		},
+		{
 			name:              "None with SDN does not set unique vxlan port",
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.NonePlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -207,6 +232,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.IBMCloudPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -221,6 +247,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.AzurePlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -235,6 +262,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			inputNetwork:      NetworkOperator(),
 			inputNetworkType:  hyperv1.OpenShiftSDN,
 			inputPlatformType: hyperv1.AgentPlatform,
+			disableMultus:     false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -248,7 +276,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType)
+			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultus)
 			g.Expect(tc.inputNetwork).To(BeEquivalentTo(tc.expectedNetwork))
 		})
 	}
