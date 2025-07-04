@@ -91,9 +91,8 @@ func TestReconcileOpenShiftControllerManagerConfig(t *testing.T) {
 
 	caps := &hyperv1.Capabilities{
 		Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
-		Enabled:  []hyperv1.OptionalCapability{hyperv1.BaremetalCapability},
 	}
 
 	t.Run("WithAllCapabilitiesEnabled", testFunc(nil))
-	t.Run("WithCapabilitiesEnabledAndDisabled", testFunc(caps))
+	t.Run("WithImageRegistryCapabilityDisabled", testFunc(caps))
 }
