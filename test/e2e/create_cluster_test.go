@@ -1353,6 +1353,10 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
+
+		if globalOpts.Platform == hyperv1.AzurePlatform {
+			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+		}
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
