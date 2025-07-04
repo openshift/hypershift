@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	kubeconfigVolumeName      = "kubeconfig"
-	rootCAVolumeName          = "root-ca"
-	clusterSignerCAVolumeName = "cluster-signer-ca"
+	kubeconfigVolumeName             = "kubeconfig"
+	rootCAVolumeName                 = "root-ca"
+	clusterSignerCAVolumeName        = "cluster-signer-ca"
+	hostedClusterConfigOperatorImage = "hosted-cluster-config-operator"
 )
 
 func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -28,6 +29,7 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	kubeVersion := versions["kubernetes"]
 	hcp := cpContext.HCP
 	openShiftVersion := cpContext.ReleaseImageProvider.Version()
+	hccoImage := cpContext.ReleaseImageProvider.GetImage(hostedClusterConfigOperatorImage)
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
@@ -61,6 +63,10 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 			{
 				Name:  "OPENSHIFT_IMG_OVERRIDES",
 				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(h.openShiftImageRegistryOverrides),
+			},
+			{
+				Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
+				Value: hccoImage,
 			},
 		}...)
 
