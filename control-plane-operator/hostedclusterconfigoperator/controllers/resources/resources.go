@@ -2949,14 +2949,37 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 		err                         error
 	)
 	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling global pull secret")
 
 	// Get the user provided pull secret
-	userProvidedPullSecret := manifests.UserProvidedPullSecret()
-	if err := r.uncachedClient.Get(ctx, client.ObjectKeyFromObject(userProvidedPullSecret), userProvidedPullSecret); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+	exists, userProvidedPullSecret, err := globalpullsecret.UserProvidedPullSecretExists(ctx, r.uncachedClient)
+	if err != nil {
+		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
+	}
+
+	// Reconcile the RBAC for the Global Pull Secret
+	if err := globalpullsecret.ReconcileGlobalPullSecretRBAC(ctx, r.uncachedClient, r.CreateOrUpdate, hcp.Namespace); err != nil {
+		return fmt.Errorf("failed to reconcile global pull secret RBAC: %w", err)
+	}
+
+	if !exists {
+		// Early cleanup
+		secret := manifests.GlobalPullSecret()
+		if err := r.uncachedClient.Delete(ctx, secret); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete global pull secret: %w", err)
+			}
 		}
-		return fmt.Errorf("failed to get user provided pull secret: %w", err)
+
+		daemonSet := manifests.GlobalPullSecretDaemonSet()
+		if err := r.uncachedClient.Delete(ctx, daemonSet); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete global pull secret daemon set: %w", err)
+			}
+		}
+
+		log.Info("Skipping global pull secret reconciliation")
+		return nil
 	}
 
 	// If the PS doesn't exist, the HCCO doesn't do anything.
@@ -2993,11 +3016,6 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
-	}
-
-	// Reconcile the RBAC for the Global Pull Secret
-	if err := globalpullsecret.ReconcileGlobalPullSecretRBAC(ctx, r.uncachedClient, r.CreateOrUpdate, hcp.Namespace); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret RBAC: %w", err)
 	}
 
 	// Use the Global Pull Secret to deploy the DaemonSet in the DataPlane.
