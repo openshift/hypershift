@@ -6,7 +6,6 @@ import (
 
 	"github.com/IBM-Cloud/power-go-client/errors"
 	"github.com/IBM-Cloud/power-go-client/helpers"
-
 	"github.com/IBM-Cloud/power-go-client/ibmpisession"
 	"github.com/IBM-Cloud/power-go-client/power/client/p_cloud_v_p_n_policies"
 	"github.com/IBM-Cloud/power-go-client/power/models"
@@ -25,10 +24,10 @@ func NewIBMPIVpnPolicyClient(ctx context.Context, sess *ibmpisession.IBMPISessio
 }
 
 // IKE Policies
-// Get an IKE Policy
+// Deprecated Get an IKE Policy
 func (f *IBMPIVpnPolicyClient) GetIKEPolicy(id string) (*models.IKEPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
@@ -43,10 +42,10 @@ func (f *IBMPIVpnPolicyClient) GetIKEPolicy(id string) (*models.IKEPolicy, error
 	return resp.Payload, nil
 }
 
-// Create an IKE Policy
+// Deprecated Create an IKE Policy
 func (f *IBMPIVpnPolicyClient) CreateIKEPolicy(body *models.IKEPolicyCreate) (*models.IKEPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
@@ -61,10 +60,10 @@ func (f *IBMPIVpnPolicyClient) CreateIKEPolicy(body *models.IKEPolicyCreate) (*m
 	return nil, fmt.Errorf("failed to Create VPN Policy")
 }
 
-// Update an IKE Policy
+// Deprecated Update an IKE Policy
 func (f *IBMPIVpnPolicyClient) UpdateIKEPolicy(id string, body *models.IKEPolicyUpdate) (*models.IKEPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
@@ -80,10 +79,10 @@ func (f *IBMPIVpnPolicyClient) UpdateIKEPolicy(id string, body *models.IKEPolicy
 	return nil, fmt.Errorf("failed to Update VPN Policy")
 }
 
-// Get All IKE Policies
+// Deprecated Get All IKE Policies
 func (f *IBMPIVpnPolicyClient) GetAllIKEPolicies() (*models.IKEPolicies, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
@@ -98,10 +97,10 @@ func (f *IBMPIVpnPolicyClient) GetAllIKEPolicies() (*models.IKEPolicies, error) 
 	return resp.Payload, nil
 }
 
-// Delete an IKE Policy
+// Deprecated Delete an IKE Policy
 func (f *IBMPIVpnPolicyClient) DeleteIKEPolicy(id string) error {
 	if f.session.IsOnPrem() {
-		return fmt.Errorf("operation not supported in satellite location, check documentation")
+		return fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIkepoliciesDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
@@ -114,10 +113,10 @@ func (f *IBMPIVpnPolicyClient) DeleteIKEPolicy(id string) error {
 }
 
 // IPSec Policies
-// Get an IPSec Policy
+// Deprecated Get an IPSec Policy
 func (f *IBMPIVpnPolicyClient) GetIPSecPolicy(id string) (*models.IPSecPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesGetParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
@@ -132,10 +131,10 @@ func (f *IBMPIVpnPolicyClient) GetIPSecPolicy(id string) (*models.IPSecPolicy, e
 	return resp.Payload, nil
 }
 
-// Create an IPSec Policy
+// Deprecated Create an IPSec Policy
 func (f *IBMPIVpnPolicyClient) CreateIPSecPolicy(body *models.IPSecPolicyCreate) (*models.IPSecPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesPostParams().
 		WithContext(f.ctx).WithTimeout(helpers.PICreateTimeOut).
@@ -150,10 +149,10 @@ func (f *IBMPIVpnPolicyClient) CreateIPSecPolicy(body *models.IPSecPolicyCreate)
 	return nil, fmt.Errorf("failed to Create VPN Policy")
 }
 
-// Update an IPSec Policy
+// Deprecated Update an IPSec Policy
 func (f *IBMPIVpnPolicyClient) UpdateIPSecPolicy(id string, body *models.IPSecPolicyUpdate) (*models.IPSecPolicy, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesPutParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIUpdateTimeOut).
@@ -169,10 +168,10 @@ func (f *IBMPIVpnPolicyClient) UpdateIPSecPolicy(id string, body *models.IPSecPo
 	return nil, fmt.Errorf("failed to Update VPN Policy")
 }
 
-// Get All IPSec Policies
+// Deprecated Get All IPSec Policies
 func (f *IBMPIVpnPolicyClient) GetAllIPSecPolicies() (*models.IPSecPolicies, error) {
 	if f.session.IsOnPrem() {
-		return nil, fmt.Errorf("operation not supported in satellite location, check documentation")
+		return nil, fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesGetallParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIGetTimeOut).
@@ -187,10 +186,10 @@ func (f *IBMPIVpnPolicyClient) GetAllIPSecPolicies() (*models.IPSecPolicies, err
 	return resp.Payload, nil
 }
 
-// Delete an IPSec Policy
+// Deprecated Delete an IPSec Policy
 func (f *IBMPIVpnPolicyClient) DeleteIPSecPolicy(id string) error {
 	if f.session.IsOnPrem() {
-		return fmt.Errorf("operation not supported in satellite location, check documentation")
+		return fmt.Errorf(helpers.NotOnPremSupported)
 	}
 	params := p_cloud_v_p_n_policies.NewPcloudIpsecpoliciesDeleteParams().
 		WithContext(f.ctx).WithTimeout(helpers.PIDeleteTimeOut).
