@@ -36,6 +36,9 @@ spec:
         - --v=4
         - --balancing-ignore-label=hypershift.openshift.io/nodePool
         - --balancing-ignore-label=vpc-block-csi-driver-labels
+        - --balancing-ignore-label=topology.ebs.csi.aws.com/zone
+        - --balancing-ignore-label=topology.disk.csi.azure.com/zone
+        - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
         command:
         - /usr/bin/cluster-autoscaler
         env:
