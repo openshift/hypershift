@@ -242,6 +242,9 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		if gate == "DynamicResourceAllocation=true" {
 			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1beta1=true")
 		}
+		if gate == "MutatingAdmissionPolicy=true" {
+			runtimeConfig = append(runtimeConfig, "admissionregistration.k8s.io/v1alpha1=true")
+		}
 	}
 	args.Set("runtime-config", runtimeConfig...)
 	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
