@@ -47,47 +47,6 @@ const (
 	randomFlag     string = "random"
 )
 
-// AWS cloud provider ignore labels for the autoscaler.
-const (
-	// AwsIgnoredLabelEksctlInstanceId  is a label used by eksctl to identify instances.
-	AwsIgnoredLabelEksctlInstanceId = "alpha.eksctl.io/instance-id"
-
-	// AwsIgnoredLabelEksctlNodegroupName is a label used by eksctl to identify "node group" names.
-	AwsIgnoredLabelEksctlNodegroupName = "alpha.eksctl.io/nodegroup-name"
-
-	// AwsIgnoredLabelEksNodegroup is a label used by eks to identify "node group".
-	AwsIgnoredLabelEksNodegroup = "eks.amazonaws.com/nodegroup"
-
-	// AwsIgnoredLabelK8sEniconfig is a label used by the AWS CNI for custom networking.
-	AwsIgnoredLabelK8sEniconfig = "k8s.amazonaws.com/eniConfig"
-
-	// AwsIgnoredLabelLifecycle is a label used by the AWS for spot.
-	AwsIgnoredLabelLifecycle = "lifecycle"
-
-	// AwsIgnoredLabelEbsCsiZone is a label used by the AWS EBS CSI driver as a target for Persistent Volume Node Affinity.
-	AwsIgnoredLabelEbsCsiZone = "topology.ebs.csi.aws.com/zone"
-
-	// AwsIgnoredLabelZoneID is a label used for the AWS-specific zone identifier, see https://github.com/kubernetes/cloud-provider-aws/issues/300 for a more detailed explanation of its use.
-	AwsIgnoredLabelZoneID = "topology.k8s.aws/zone-id"
-)
-
-// Azure cloud provider ignore labels for the autoscaler.
-const (
-	// AzureDiskTopologyKey is the topology key of Azure Disk CSI driver.
-	AzureDiskTopologyKey = "topology.disk.csi.azure.com/zone"
-
-	// AzureNodepoolLegacyLabel is a label specifying which Azure node pool a particular node belongs to.
-	AzureNodepoolLegacyLabel = "agentpool"
-
-	// AzureNodepoolLabel is an AKS label specifying which nodepool a particular node belongs to.
-	AzureNodepoolLabel = "kubernetes.azure.com/agentpool"
-)
-
-// IBM cloud provider ignore labels for the autoscaler.
-const (
-	IBMCloudWorkerIdLabel = "ibm-cloud.kubernetes.io/worker-id"
-)
-
 func (a AutoscalerArg) String() string {
 	return string(a)
 }
@@ -153,10 +112,6 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 		args = append(args, ExpanderArg.Value(strings.Join([]string{priorityFlag, leastWasteFlag}, ",")))
 	}
 
-	// Since we hardcode "balance-similar-node-groups" to true in the deployment yaml
-	// Append basic ignore labels for a specific cloud provider.
-	args = appendBasicIgnoreLabels(args, platformType)
-
 	return args
 }
 
@@ -183,30 +138,6 @@ func ScaleDownArgs(sd *hyperv1.ScaleDownConfig) []string {
 
 	if sd.UtilizationThresholdPercent != nil {
 		args = append(args, ScaleDownUtilizationThresholdArg.Value(fmt.Sprintf("%.2f", float64(*sd.UtilizationThresholdPercent)/100.0)))
-	}
-
-	return args
-}
-
-// AppendBasicIgnoreLabels appends ignore labels for specific cloud provider to the arguments
-// so the autoscaler can use these labels without the user having to input them manually.
-func appendBasicIgnoreLabels(args []string, platformType hyperv1.PlatformType) []string {
-	switch platformType {
-	case hyperv1.AWSPlatform:
-		args = append(args, BalancingIgnoreLabelArg.Value(AwsIgnoredLabelEbsCsiZone),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelLifecycle),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelK8sEniconfig),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelEksNodegroup),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelEksctlNodegroupName),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelEksctlInstanceId),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelZoneID))
-	case hyperv1.AzurePlatform:
-		args = append(args, BalancingIgnoreLabelArg.Value(AzureDiskTopologyKey),
-			BalancingIgnoreLabelArg.Value(AzureNodepoolLegacyLabel),
-			BalancingIgnoreLabelArg.Value(AzureNodepoolLabel),
-		)
-	case hyperv1.IBMCloudPlatform:
-		args = append(args, BalancingIgnoreLabelArg.Value(IBMCloudWorkerIdLabel))
 	}
 
 	return args

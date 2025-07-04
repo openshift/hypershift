@@ -77,14 +77,11 @@ spec:
         - --balance-similar-node-groups=true
         - --v=4
         - --balancing-ignore-label=hypershift.openshift.io/nodePool
-        - --balancing-ignore-label=vpc-block-csi-driver-labels
         - --balancing-ignore-label=topology.ebs.csi.aws.com/zone
-        - --balancing-ignore-label=lifecycle
-        - --balancing-ignore-label=k8s.amazonaws.com/eniConfig
-        - --balancing-ignore-label=eks.amazonaws.com/nodegroup
-        - --balancing-ignore-label=alpha.eksctl.io/nodegroup-name
-        - --balancing-ignore-label=alpha.eksctl.io/instance-id
-        - --balancing-ignore-label=topology.k8s.aws/zone-id
+        - --balancing-ignore-label=topology.disk.csi.azure.com/zone
+        - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
+        - --balancing-ignore-label=vpc-block-csi-driver-labels
+        - --expander=priority,least-waste
         command:
         - /usr/bin/cluster-autoscaler
         env:
