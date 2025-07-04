@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/openshift/hypershift/cmd/install/assets"
+	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/supportedversion"
 
@@ -28,7 +29,7 @@ const (
 // semantically constant - not supposed to be changed at runtime
 var (
 	latestSupportedVersion = supportedversion.LatestSupportedVersion.String()
-	hypershiftVersion      = supportedversion.GetRevision()
+	hypershiftVersion      = version.GetRevision()
 	goVersion              = runtime.Version()
 	goArch                 = runtime.GOARCH
 )

@@ -1379,19 +1379,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hclusterAnnotations := hcluster.GetAnnotations()
 				delete(hclusterAnnotations, hyperv1.HostedClusterRestoredFromBackupAnnotation)
 				hcluster.SetAnnotations(hclusterAnnotations)
-				_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
-					return nil
-				})
-				if err != nil {
+				if err := r.Update(ctx, hcluster); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to remove annotations %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 				}
 			}
 
 			// Persist status updates
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-			if _, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
-				return nil
-			}); err != nil {
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
@@ -2424,6 +2419,28 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
+	}
+
+	// Fix: Remove existing CAPI provider deployment if it contains outdated labels
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
+	capiProviderDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "capi-provider",
+			Namespace: controlPlaneNamespace.Name,
+		},
+	}
+	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
+		}
+	}
+	if err == nil {
+		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/control-plane-component"] != "capi-provider" {
+			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
+			// Always return an error so we can retry when the cache is updated
+			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
+		}
 	}
 
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
