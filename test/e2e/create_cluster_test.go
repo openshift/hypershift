@@ -1421,6 +1421,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					hyperv1.ImageRegistryCapability,
 					hyperv1.OpenShiftSamplesCapability,
 					hyperv1.InsightsCapability,
+					hyperv1.IngressCapability,
 				},
 			}
 		}
@@ -1454,6 +1455,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure insights component is disabled
 		e2eutil.EnsureInsightsCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure ingress component is disabled
+		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, g, clients, mgtClient, hostedCluster)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)

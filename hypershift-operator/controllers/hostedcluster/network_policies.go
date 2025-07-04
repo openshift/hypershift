@@ -36,16 +36,18 @@ const (
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	// Reconcile openshift-ingress Network Policy
-	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftIngressNetworkPolicy(policy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
+	if capabilities.IsCapabilityEnabled(hcluster.Spec.Capabilities, hyperv1.IngressCapability) {
+		// Reconcile openshift-ingress Network Policy
+		policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileOpenshiftIngressNetworkPolicy(policy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
+		}
 	}
 
 	// Reconcile same-namespace Network Policy
-	policy = networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
+	policy := networkpolicy.SameNamespaceNetworkPolicy(controlPlaneNamespaceName)
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileSameNamespaceNetworkPolicy(policy)
 	}); err != nil {

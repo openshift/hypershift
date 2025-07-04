@@ -2666,3 +2666,55 @@ func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomeg
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-insights\" not found"))
 	})
 }
+
+// EnsureIngressCapabilityDisabled validates the expectations for when IngressCapability is Disabled
+func EnsureIngressCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureIngressCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		// Check guest cluster - ingress cluster operator should not exist
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "ingress", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"ingress\" not found"))
+
+		// Check guest cluster - openshift-ingress-operator namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress-operator", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress-operator\" not found"))
+
+		// Check guest cluster - openshift-ingress namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress\" not found"))
+
+		// Check guest cluster - openshift-ingress-canary namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress-canary", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress-canary\" not found"))
+
+		// Check management cluster - no ingress-operator deployment in HCP namespace
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		var deploymentList appsv1.DeploymentList
+		err = mgmtClient.List(ctx, &deploymentList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": "ingress-operator"})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deploymentList.Items).To(BeEmpty(), "expected no ingress-operator deployment in management cluster HCP namespace")
+
+		// Check management cluster - no ingress-operator pods in HCP namespace
+		var podList corev1.PodList
+		err = mgmtClient.List(ctx, &podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": "ingress-operator"})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(podList.Items).To(BeEmpty(), "expected no ingress-operator pods in management cluster HCP namespace")
+
+		// Check guest cluster - no IngressController resources should exist
+		// Try to list IngressControllers - this should fail because the CRD shouldn't exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/operator.openshift.io/v1/ingresscontrollers").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(Or(
+			ContainSubstring("not found"),
+			ContainSubstring("could not find the requested resource"),
+			ContainSubstring("the server could not find the requested resource"),
+		), "expected IngressController API to not be available when ingress capability is disabled")
+	})
+}
