@@ -111,6 +111,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: userReleaseImageProvider.GetImage("cluster-network-operator")},
 		{Name: "NETWORKING_CONSOLE_PLUGIN_IMAGE", Value: userReleaseImageProvider.GetImage("networking-console-plugin")},
 		{Name: "CLI_IMAGE", Value: userReleaseImageProvider.GetImage("cli")},
+		{Name: "FRR_K8S_IMAGE", Value: userReleaseImageProvider.GetImage("metallb-frr")},
 	}
 
 	if !util.IsPrivateHCP(hcp) {
