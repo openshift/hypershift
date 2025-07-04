@@ -3538,7 +3538,7 @@ Once set, this field cannot be changed.</p>
 <em>(Optional)</em>
 <p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
 Once set, this field cannot be changed.</p>
-<p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
+<p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo;, &lsquo;Console&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
 </td>
 </tr>
 </tbody>
@@ -9753,6 +9753,8 @@ ClusterVersionOperatorSpec
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;baremetal&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Console&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;ImageRegistry&#34;</p></td>
 <td></td>
