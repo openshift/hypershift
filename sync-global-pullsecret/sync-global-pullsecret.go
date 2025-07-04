@@ -13,8 +13,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -100,6 +100,9 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 	// Create manager
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: hyperapi.Scheme,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{defaultGlobalPullSecretNamespace: {}},
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create manager: %w", err)
@@ -114,22 +117,13 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 		globalPSSecretNS:      defaultGlobalPullSecretNamespace,
 	}
 
-	// Get the global pull secret
-	globalPullSecret := &corev1.Secret{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Namespace: defaultGlobalPullSecretNamespace,
-		Name:      o.globalPSSecretName,
-	}, globalPullSecret); err != nil {
-		return fmt.Errorf("failed to get global pull secret: %w", err)
-	}
-
 	// Create controller
 	if err := ctrl.NewControllerManagedBy(mgr).
-		For(globalPullSecret).
+		For(&corev1.Secret{}).
 		WithEventFilter(predicate.Funcs{
 			// Adding filters to avoid processing events that are not relevant
 			CreateFunc: func(e event.CreateEvent) bool {
-				return false
+				return o.isTargetSecret(e.Object)
 			},
 			UpdateFunc: func(e event.UpdateEvent) bool {
 				return o.isTargetSecret(e.ObjectNew)
@@ -143,16 +137,6 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 		}).
 		Complete(r); err != nil {
 		return fmt.Errorf("failed to create controller: %w", err)
-	}
-
-	// Initial reconciliation
-	if _, err := r.Reconcile(ctx, reconcile.Request{
-		NamespacedName: types.NamespacedName{
-			Namespace: defaultGlobalPullSecretNamespace,
-			Name:      o.globalPSSecretName,
-		},
-	}); err != nil {
-		return fmt.Errorf("initial reconciliation failed: %w", err)
 	}
 
 	// Start manager

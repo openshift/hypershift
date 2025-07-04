@@ -109,6 +109,7 @@ func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							VolumeSource: corev1.VolumeSource{
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/var/run/dbus",
+									Type: ptr.To(corev1.HostPathDirectory),
 								},
 							},
 						},
@@ -207,17 +208,17 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		return fmt.Errorf("failed to get logger: %w", err)
 	}
 
-	exists, err := UserProvidedPullSecretExists(c, ctx)
+	exists, _, err := UserProvidedPullSecretExists(ctx, c)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
 		}
 	}
 
-	log.Info("Reconciling global pull secret RBAC", "User provided pull secret exists", exists)
+	log.Info("Reconciling global pull secret RBAC", "exists", exists)
 
 	if !exists {
-		log.Info("Deleting global pull secret RBAC resources", "exists", exists)
+		log.Info("Removing global pull secret RBAC resources", "exists", exists)
 		sa := manifests.GlobalPullSecretServiceAccount()
 		if err := c.Delete(ctx, sa); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -248,15 +249,20 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		return fmt.Errorf("failed to reconcile service account: %w", err)
 	}
 
-	// Create Role with ResourceNames to scope access to specific secrets
+	// Create Role with separate rules for list/watch and get
 	role := manifests.GlobalPullSecretRole()
 	if _, err := createOrUpdate(ctx, c, role, func() error {
 		role.Rules = []rbacv1.PolicyRule{
 			{
+				APIGroups: []string{""},
+				Resources: []string{"secrets"},
+				Verbs:     []string{"list", "watch"},
+			},
+			{
 				APIGroups:     []string{""},
 				Resources:     []string{"secrets"},
 				ResourceNames: []string{"additional-pull-secret", "global-pull-secret"},
-				Verbs:         []string{"get", "list", "watch"},
+				Verbs:         []string{"get"},
 			},
 		}
 		return nil
@@ -287,13 +293,13 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 	return nil
 }
 
-func UserProvidedPullSecretExists(c crclient.Client, ctx context.Context) (bool, error) {
+func UserProvidedPullSecretExists(ctx context.Context, c crclient.Client) (bool, *corev1.Secret, error) {
 	userProvidedPullSecret := manifests.UserProvidedPullSecret()
 	if err := c.Get(ctx, crclient.ObjectKeyFromObject(userProvidedPullSecret), userProvidedPullSecret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return false, nil
+			return false, nil, nil
 		}
-		return false, err
+		return false, nil, err
 	}
-	return true, nil
+	return true, userProvidedPullSecret, nil
 }
