@@ -26,6 +26,7 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 	"sigs.k8s.io/kube-api-linter/pkg/config"
 )
 
@@ -67,8 +68,6 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 }
 
 func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
-	stringToStringMapType := types.NewMap(types.Typ[types.String], types.Typ[types.String])
-
 	underlyingType := pass.TypesInfo.TypeOf(field.Type).Underlying()
 
 	if ptr, ok := underlyingType.(*types.Pointer); ok {
@@ -81,16 +80,17 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
 	}
 
 	if a.policy == config.NoMapsEnforce {
-		report(pass, field.Pos(), field.Names[0].Name)
+		report(pass, field.Pos(), utils.FieldName(field))
 		return
 	}
 
 	if a.policy == config.NoMapsAllowStringToStringMaps {
-		if types.Identical(m, stringToStringMapType) {
+		if types.AssignableTo(m.Elem().Underlying(), types.Typ[types.String]) &&
+			types.AssignableTo(m.Key().Underlying(), types.Typ[types.String]) {
 			return
 		}
 
-		report(pass, field.Pos(), field.Names[0].Name)
+		report(pass, field.Pos(), utils.FieldName(field))
 	}
 
 	if a.policy == config.NoMapsIgnore {
@@ -104,7 +104,7 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
 			return
 		}
 
-		report(pass, field.Pos(), field.Names[0].Name)
+		report(pass, field.Pos(), utils.FieldName(field))
 	}
 }
 
