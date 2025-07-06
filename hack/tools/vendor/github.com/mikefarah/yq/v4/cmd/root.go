@@ -71,6 +71,10 @@ yq -P -oy sample.json
 			level := logging.WARNING
 			stringFormat := `[%{level}] %{color}%{time:15:04:05}%{color:reset} %{message}`
 
+			// when NO_COLOR environment variable presents and not an empty string the coloured output should be disabled;
+			// refer to no-color.org
+			forceNoColor = forceNoColor || os.Getenv("NO_COLOR") != ""
+
 			if verbose && forceNoColor {
 				level = logging.DEBUG
 				stringFormat = `[%{level:5.5s}] %{time:15:04:05} %{shortfile:-33s} %{shortfunc:-25s} %{message}`
@@ -89,10 +93,6 @@ yq -P -oy sample.json
 
 			logging.SetBackend(backend)
 			yqlib.InitExpressionParser()
-
-			// when NO_COLOR environment variable presents and not an empty string the coloured output should be disabled;
-			// refer to no-color.org
-			forceNoColor = os.Getenv("NO_COLOR") != ""
 
 			return nil
 		},
@@ -197,7 +197,7 @@ yq -P -oy sample.json
 	}
 	rootCmd.PersistentFlags().BoolVarP(&yqlib.ConfiguredYamlPreferences.LeadingContentPreProcessing, "header-preprocess", "", true, "Slurp any header comments and separators before processing expression.")
 
-	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter.")
+	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter. The necessary directories will be created.")
 	if err = rootCmd.RegisterFlagCompletionFunc("split-exp", cobra.NoFileCompletions); err != nil {
 		panic(err)
 	}
