@@ -1,4 +1,4 @@
-// Package garif defines all the GO structures required to model a SARIF log file.
+// Package garif defines all the Go structures required to model a SARIF log file.
 // These structures were created using the JSON-schema sarif-schema-2.1.0.json of SARIF logfiles
 // available at https://github.com/oasis-tcs/sarif-spec/tree/master/Schemata.
 //

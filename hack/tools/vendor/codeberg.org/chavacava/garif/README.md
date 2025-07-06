@@ -1,6 +1,6 @@
 # garif
 
-A GO package to create and manipulate SARIF logs.
+A Go package to create and manipulate SARIF logs.
 
 SARIF, from _Static Analysis Results Interchange Format_, is a standard JSON-based format for the output of static analysis tools defined and promoted by [OASIS](https://www.oasis-open.org/).
 
