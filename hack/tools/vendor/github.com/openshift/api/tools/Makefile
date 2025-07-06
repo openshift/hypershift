@@ -57,11 +57,8 @@ deepcopy-gen: $(OUTPUT_DIR)/deepcopy-gen
 .PHONY:go-to-protobuf
 go-to-protobuf: $(OUTPUT_DIR)/go-to-protobuf
 
-.PHONY:golangci-kal
-golangci-kal: $(OUTPUT_DIR)/golangci-kal
-
-.PHONY:kal
-kal: $(OUTPUT_DIR)/kal
+.PHONY:golangci-kube-api-linter
+golangci-kube-api-linter: $(OUTPUT_DIR)/golangci-kube-api-linter
 
 .PHONY:openapi-gen
 openapi-gen: $(OUTPUT_DIR)/openapi-gen
@@ -111,13 +108,10 @@ $(OUTPUT_DIR)/golangci-lint: $(OUTPUT_DIR)/vendor-version
 	go build -mod=vendor -o $(OUTPUT_DIR)/golangci-lint ./vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
 
 # The golangci-lint custom command relies on finding a module, this uses a workaround to init the go.mod in the kal directory.
-$(OUTPUT_DIR)/golangci-kal: $(OUTPUT_DIR)/vendor-version $(OUTPUT_DIR)/golangci-lint
+$(OUTPUT_DIR)/golangci-kube-api-linter: $(OUTPUT_DIR)/vendor-version $(OUTPUT_DIR)/golangci-lint
 	GOFLAGS=-mod=readonly $(OUTPUT_DIR)/golangci-lint custom
-	@ mv bin/golangci-kal $(OUTPUT_DIR)/golangci-kal
+	@ mv bin/golangci-kube-api-linter $(OUTPUT_DIR)/golangci-kube-api-linter
 	@ rmdir bin
-
-$(OUTPUT_DIR)/kal: $(OUTPUT_DIR)/vendor-version
-	go build -mod=vendor -o $(OUTPUT_DIR)/kal ./vendor/github.com/JoelSpeed/kal/cmd/kal
 
 $(OUTPUT_DIR)/openapi-gen: $(OUTPUT_DIR)/vendor-version
 	go build -mod=vendor -o $(OUTPUT_DIR)/openapi-gen ./vendor/k8s.io/code-generator/cmd/openapi-gen
