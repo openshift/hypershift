@@ -57,6 +57,16 @@ type InterfaceUnmarshalerContext interface {
 	UnmarshalYAML(context.Context, func(interface{}) error) error
 }
 
+// NodeUnmarshaler interface is similar to BytesUnmarshaler but provide related AST node instead of raw YAML source.
+type NodeUnmarshaler interface {
+	UnmarshalYAML(ast.Node) error
+}
+
+// NodeUnmarshalerContext interface is similar to BytesUnmarshaler but provide related AST node instead of raw YAML source.
+type NodeUnmarshalerContext interface {
+	UnmarshalYAML(context.Context, ast.Node) error
+}
+
 // MapItem is an item in a MapSlice.
 type MapItem struct {
 	Key, Value interface{}
@@ -212,11 +222,9 @@ func NodeToValue(node ast.Node, v interface{}, opts ...DecodeOption) error {
 // If the third argument `inclSource` is true, the error message will
 // contain snippets of the YAML source that was used.
 func FormatError(e error, colored, inclSource bool) string {
-	var pp errors.PrettyPrinter
-	if errors.As(e, &pp) {
-		var buf bytes.Buffer
-		pp.PrettyPrint(&errors.Sink{Buffer: &buf}, colored, inclSource)
-		return buf.String()
+	var yamlErr Error
+	if errors.As(e, &yamlErr) {
+		return yamlErr.FormatError(colored, inclSource)
 	}
 
 	return e.Error()
