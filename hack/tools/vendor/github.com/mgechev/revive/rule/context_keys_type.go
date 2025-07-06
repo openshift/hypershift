@@ -5,10 +5,11 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
-// ContextKeysType lints given else constructs.
+// ContextKeysType disallows the usage of basic types in `context.WithValue`.
 type ContextKeysType struct{}
 
 // Apply applies the rule to given file.
@@ -42,8 +43,7 @@ type lintContextKeyTypes struct {
 }
 
 func (w lintContextKeyTypes) Visit(n ast.Node) ast.Visitor {
-	switch n := n.(type) {
-	case *ast.CallExpr:
+	if n, ok := n.(*ast.CallExpr); ok {
 		checkContextKeyType(w, n)
 	}
 
@@ -52,15 +52,7 @@ func (w lintContextKeyTypes) Visit(n ast.Node) ast.Visitor {
 
 func checkContextKeyType(w lintContextKeyTypes, x *ast.CallExpr) {
 	f := w.file
-	sel, ok := x.Fun.(*ast.SelectorExpr)
-	if !ok {
-		return
-	}
-	pkg, ok := sel.X.(*ast.Ident)
-	if !ok || pkg.Name != "context" {
-		return
-	}
-	if sel.Sel.Name != "WithValue" {
+	if !astutils.IsPkgDotName(x.Fun, "context", "WithValue") {
 		return
 	}
 
@@ -74,7 +66,7 @@ func checkContextKeyType(w lintContextKeyTypes, x *ast.CallExpr) {
 		w.onFailure(lint.Failure{
 			Confidence: 1,
 			Node:       x,
-			Category:   "content",
+			Category:   lint.FailureCategoryContent,
 			Failure:    fmt.Sprintf("should not use basic type %s as key in context.WithValue", key.Type),
 		})
 	}

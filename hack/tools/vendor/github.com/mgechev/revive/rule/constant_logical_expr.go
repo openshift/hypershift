@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/token"
 
+	"github.com/mgechev/revive/internal/astutils"
 	"github.com/mgechev/revive/lint"
 )
 
@@ -35,13 +36,12 @@ type lintConstantLogicalExpr struct {
 }
 
 func (w *lintConstantLogicalExpr) Visit(node ast.Node) ast.Visitor {
-	switch n := node.(type) {
-	case *ast.BinaryExpr:
+	if n, ok := node.(*ast.BinaryExpr); ok {
 		if !w.isOperatorWithLogicalResult(n.Op) {
 			return w
 		}
 
-		subExpressionsAreNotEqual := gofmt(n.X) != gofmt(n.Y)
+		subExpressionsAreNotEqual := astutils.GoFmt(n.X) != astutils.GoFmt(n.Y)
 		if subExpressionsAreNotEqual {
 			return w // nothing to say
 		}
@@ -91,11 +91,11 @@ func (*lintConstantLogicalExpr) isInequalityOperator(t token.Token) bool {
 	return false
 }
 
-func (w lintConstantLogicalExpr) newFailure(node ast.Node, msg string) {
+func (w *lintConstantLogicalExpr) newFailure(node ast.Node, msg string) {
 	w.onFailure(lint.Failure{
 		Confidence: 1,
 		Node:       node,
-		Category:   "logic",
+		Category:   lint.FailureCategoryLogic,
 		Failure:    msg,
 	})
 }

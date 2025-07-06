@@ -8,7 +8,7 @@ import (
 	"github.com/mgechev/revive/lint"
 )
 
-// IfReturnRule lints given else constructs.
+// IfReturnRule searches for redundant `if` when returning an error.
 type IfReturnRule struct{}
 
 // Apply applies the rule to given file.
@@ -36,15 +36,15 @@ type lintElseError struct {
 }
 
 func (w *lintElseError) Visit(node ast.Node) ast.Visitor {
-	switch v := node.(type) {
-	case *ast.BlockStmt:
-		for i := 0; i < len(v.List)-1; i++ {
+	if v, ok := node.(*ast.BlockStmt); ok {
+		for i := range len(v.List) - 1 {
 			// if var := whatever; var != nil { return var }
 			s, ok := v.List[i].(*ast.IfStmt)
 			if !ok || s.Body == nil || len(s.Body.List) != 1 || s.Else != nil {
 				continue
 			}
 			assign, ok := s.Init.(*ast.AssignStmt)
+			//nolint:staticcheck // QF1001: it's readable enough
 			if !ok || len(assign.Lhs) != 1 || !(assign.Tok == token.DEFINE || assign.Tok == token.ASSIGN) {
 				continue
 			}
