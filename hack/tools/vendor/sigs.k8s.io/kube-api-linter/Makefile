@@ -1,5 +1,5 @@
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
-GOLANGCI_LINT = go run ${PROJECT_DIR}/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint
+GOLANGCI_LINT = go run ${PROJECT_DIR}/vendor/github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 
 VERSION     ?= $(shell git describe --always --abbrev=7)
 
@@ -44,7 +44,7 @@ lint: ## Run golangci-lint over the codebase.
 	${GOLANGCI_LINT} run ./... --timeout 5m -v
 
 .PHONY: lint-fix
-lint-fix: $(GOLANGCI_LINT) ## Run golangci-lint over the codebase and run auto-fixers if supported by the linter
+lint-fix: ## Run golangci-lint over the codebase and run auto-fixers if supported by the linter
 	${GOLANGCI_LINT} run ./... --timeout 5m -v --fix
 
 .PHONY: test
