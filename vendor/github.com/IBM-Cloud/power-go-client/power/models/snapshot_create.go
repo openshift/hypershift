@@ -24,7 +24,12 @@ type SnapshotCreate struct {
 
 	// Name of the PVM instance snapshot to create
 	// Required: true
+	// Max Length: 120
+	// Pattern: ^[a-zA-Z0-9_.-]+$
 	Name *string `json:"name"`
+
+	// user tags
+	UserTags Tags `json:"userTags,omitempty"`
 
 	// List of volumes to include in the PVM instance snapshot
 	VolumeIDs []string `json:"volumeIDs"`
@@ -35,6 +40,10 @@ func (m *SnapshotCreate) Validate(formats strfmt.Registry) error {
 	var res []error
 
 	if err := m.validateName(formats); err != nil {
+		res = append(res, err)
+	}
+
+	if err := m.validateUserTags(formats); err != nil {
 		res = append(res, err)
 	}
 
@@ -50,11 +59,59 @@ func (m *SnapshotCreate) validateName(formats strfmt.Registry) error {
 		return err
 	}
 
+	if err := validate.MaxLength("name", "body", *m.Name, 120); err != nil {
+		return err
+	}
+
+	if err := validate.Pattern("name", "body", *m.Name, `^[a-zA-Z0-9_.-]+$`); err != nil {
+		return err
+	}
+
 	return nil
 }
 
-// ContextValidate validates this snapshot create based on context it is used
+func (m *SnapshotCreate) validateUserTags(formats strfmt.Registry) error {
+	if swag.IsZero(m.UserTags) { // not required
+		return nil
+	}
+
+	if err := m.UserTags.Validate(formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("userTags")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("userTags")
+		}
+		return err
+	}
+
+	return nil
+}
+
+// ContextValidate validate this snapshot create based on the context it is used
 func (m *SnapshotCreate) ContextValidate(ctx context.Context, formats strfmt.Registry) error {
+	var res []error
+
+	if err := m.contextValidateUserTags(ctx, formats); err != nil {
+		res = append(res, err)
+	}
+
+	if len(res) > 0 {
+		return errors.CompositeValidationError(res...)
+	}
+	return nil
+}
+
+func (m *SnapshotCreate) contextValidateUserTags(ctx context.Context, formats strfmt.Registry) error {
+
+	if err := m.UserTags.ContextValidate(ctx, formats); err != nil {
+		if ve, ok := err.(*errors.Validation); ok {
+			return ve.ValidateName("userTags")
+		} else if ce, ok := err.(*errors.CompositeError); ok {
+			return ce.ValidateName("userTags")
+		}
+		return err
+	}
+
 	return nil
 }
 
