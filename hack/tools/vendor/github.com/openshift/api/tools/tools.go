@@ -4,8 +4,6 @@
 package tools
 
 import (
-	_ "github.com/JoelSpeed/kal"
-	_ "github.com/JoelSpeed/kal/cmd/kal"
 	_ "github.com/gogo/protobuf/gogoproto"
 	_ "github.com/gogo/protobuf/proto"
 	_ "github.com/gogo/protobuf/sortkeys"
@@ -17,4 +15,5 @@ import (
 	_ "k8s.io/code-generator/cmd/go-to-protobuf/protoc-gen-gogo"
 	_ "k8s.io/code-generator/cmd/prerelease-lifecycle-gen"
 	_ "sigs.k8s.io/controller-tools/cmd/controller-gen"
+	_ "sigs.k8s.io/kube-api-linter"
 )

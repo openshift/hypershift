@@ -37,6 +37,7 @@ func defaultConfig() *Configuration {
 		AllowCuddleWithRHS:               []string{"Unlock", "RUnlock"},
 		ErrorVariableNames:               []string{"err"},
 		ForceCaseTrailingWhitespaceLimit: 0,
+		AllowCuddleUsedInBlock:           false,
 	}
 }
 
@@ -68,6 +69,7 @@ func (wa *wslAnalyzer) flags() flag.FlagSet {
 	flags.BoolVar(&wa.config.ForceExclusiveShortDeclarations, "force-short-decl-cuddling", false, "Force short declarations to cuddle by themselves")
 	flags.BoolVar(&wa.config.StrictAppend, "strict-append", true, "Strict rules for append")
 	flags.BoolVar(&wa.config.IncludeGenerated, "include-generated", false, "Include generated files")
+	flags.BoolVar(&wa.config.AllowCuddleUsedInBlock, "allow-cuddle-used-in-block", false, "Allow cuddling of variables used in block statements")
 	flags.IntVar(&wa.config.ForceCaseTrailingWhitespaceLimit, "force-case-trailing-whitespace", 0, "Force newlines for case blocks > this number.")
 
 	flags.Var(&multiStringValue{slicePtr: &wa.config.AllowCuddleWithCalls}, "allow-cuddle-with-calls", "Comma separated list of idents that can have cuddles after")
