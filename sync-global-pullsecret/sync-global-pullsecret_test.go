@@ -358,7 +358,7 @@ func TestRestartKubelet(t *testing.T) {
 			mock := NewMockdbusConn(ctrl)
 			tt.setupMock(mock)
 
-			err := restartKubelet(mock)
+			err := restartKubelet(context.Background(), mock)
 			if err != nil {
 				if tt.expectedError == "" {
 					t.Errorf("unexpected error: %v", err)
