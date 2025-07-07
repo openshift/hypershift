@@ -1506,10 +1506,14 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
 	AtLeast(t, Version419)
+	serviceDomain := "service.ci.hypershift.devcluster.openshift.com"
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		serviceDomain = "aks-e2e.hypershift.azure.devcluster.openshift.com"
+	}
 	var (
 		hcKASCustomKubeconfigSecretName string
 		// Using domain name filtered by the external-dns deployment in CI
-		customApiServerHost     = fmt.Sprintf("api-custom-cert-%s.service.ci.hypershift.devcluster.openshift.com", entryHostedCluster.Spec.InfraID)
+		customApiServerHost     = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
 		hcpNamespace            = manifests.HostedControlPlaneNamespace(entryHostedCluster.Namespace, entryHostedCluster.Name)
 		kasCustomCertSecretName = fmt.Sprintf("%s-kas-custom-cert", entryHostedCluster.Name)
 	)
