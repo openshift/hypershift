@@ -1183,12 +1183,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Arch = "s390x"
 							np.Spec.Platform.Type = hyperv1.KubevirtPlatform
-							np.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
-								RootVolume: &hyperv1.Volume{
-									Type: hyperv1.VolumeTypePersistent,
-									Size: resourceMustParse("16Gi"),
-								},
-							}
 						},
 						expectedErrorSubstring: "",
 					},
