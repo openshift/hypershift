@@ -1158,6 +1158,42 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when arch is s390x and platform is not kubevirt it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "should fail for s390x arch on AWS platform",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = "s390x"
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.Kubevirt = nil
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType: "m6i.large",
+							}
+						},
+						expectedErrorSubstring: "s390x is only supported on KubeVirt platform",
+					},
+					{
+						name: "should pass for s390x arch on KubeVirt platform",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = "s390x"
+							np.Spec.Platform.Type = hyperv1.KubevirtPlatform
+							np.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+								RootVolume: &hyperv1.Volume{
+									Type: hyperv1.VolumeTypePersistent,
+									Size: resourceMustParse("16Gi"),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
