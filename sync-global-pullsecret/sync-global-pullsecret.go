@@ -5,7 +5,6 @@ package syncglobalpullsecret
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -207,7 +207,7 @@ func (r *GlobalPullSecretReconciler) checkAndFixFile(ctx context.Context, global
 		maxRetries := 3
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := signalKubeletToRestartProcess(); err != nil {
+			if err := signalKubeletToRestartProcess(ctx); err != nil {
 				lastErr = err
 				if attempt < maxRetries {
 					log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
@@ -233,18 +233,20 @@ func (r *GlobalPullSecretReconciler) checkAndFixFile(ctx context.Context, global
 
 // signalKubeletToRestartProcess signals Kubelet to reload the config by restarting the kubelet.service.
 // This is done by sending a signal to systemd via dbus.
-func signalKubeletToRestartProcess() error {
-	log.Println("Signaling Kubelet to reload config")
+func signalKubeletToRestartProcess(ctx context.Context) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Signaling Kubelet to reload config")
 	conn, err := dbus.New()
 	if err != nil {
 		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 	defer conn.Close()
 
-	return restartKubelet(conn)
+	return restartKubelet(ctx, conn)
 }
 
-func restartKubelet(conn dbusConn) error {
+func restartKubelet(ctx context.Context, conn dbusConn) error {
+	log := ctrl.LoggerFrom(ctx)
 	ch := make(chan string)
 	if _, err := conn.RestartUnit(kubeletServiceUnit, dbusRestartUnitMode, ch); err != nil {
 		return fmt.Errorf("failed to restart kubelet: %w", err)
@@ -256,6 +258,6 @@ func restartKubelet(conn dbusConn) error {
 		return fmt.Errorf("failed to restart kubelet, result: %s", result)
 	}
 
-	log.Printf("Successfully signaled Kubelet to reload config")
+	log.Info("Successfully signaled Kubelet to reload config")
 	return nil
 }

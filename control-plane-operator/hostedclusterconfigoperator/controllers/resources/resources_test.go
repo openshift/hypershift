@@ -161,6 +161,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
+			kubeSystemSecretClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
@@ -186,6 +187,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
+			kubeSystemSecretClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 		}
 		_, _ = r.Reconcile(ctx, controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
@@ -1471,6 +1473,7 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 				releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 				platformType:           tc.platformType,
+				kubeSystemSecretClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 			}
 			_, err := r.Reconcile(ctx, controllerruntime.Request{})
 			g.Expect(err).NotTo(HaveOccurred())
