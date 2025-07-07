@@ -31,6 +31,7 @@ var (
 		"cluster-api",
 		"capi-provider",
 		"karpenter-operator",
+		"karpenter",
 	)
 )
 
