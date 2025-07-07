@@ -1,5 +1,5 @@
 #!/bin/bash
-set -x
+set +x
 
 # Prerequisites: define these constants
 LOCATION="eastus"
@@ -33,7 +33,3 @@ export KEY_ID=$(az keyvault key create --vault-name $KV_NAME --name $KEY_NAME --
 
 # Assign the Key Vault Crypto User role to the KMS Managed Identity
 az role assignment create --assignee $OBJECT_ID --role "Key Vault Crypto User" --scope "$(az keyvault show --name $KV_NAME --query "resourceGroup" -o tsv | xargs -I{} az group show --name {} --query "id" -o tsv)"
-
-set +x
-
-set +x
