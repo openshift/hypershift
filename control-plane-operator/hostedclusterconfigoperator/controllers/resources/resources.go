@@ -76,6 +76,7 @@ import (
 	"k8s.io/utils/set"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -143,6 +144,10 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
+
+	// Informer and client for secrets of kube-system for data plane
+	kubeSystemSecretInformer cache.Informer
+	kubeSystemSecretClient   client.Client
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -180,6 +185,34 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
 	}
 
+	secretPredicate := predicate.NewPredicateFuncs(func(o client.Object) bool {
+		return o.GetNamespace() == "kube-system"
+	})
+
+	kubeSystemCache, err := cache.New(opts.Manager.GetConfig(), cache.Options{
+		Scheme: opts.Manager.GetScheme(),
+		DefaultNamespaces: map[string]cache.Config{
+			"kube-system": {},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create kube-system cache: %w", err)
+	}
+
+	kubeSystemClient, err := client.New(opts.Manager.GetConfig(), client.Options{
+		Scheme: opts.Manager.GetScheme(),
+		Cache:  &client.CacheOptions{Reader: kubeSystemCache},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create kube-system client: %w", err)
+	}
+
+	// Get the informer for secrets
+	kubeSystemSecretInformer, err := kubeSystemCache.GetInformer(ctx, &corev1.Secret{})
+	if err != nil {
+		return fmt.Errorf("failed to get kube-system secret informer: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
@@ -199,6 +232,8 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
+		kubeSystemSecretInformer:  kubeSystemSecretInformer,
+		kubeSystemSecretClient:    kubeSystemClient,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -211,6 +246,9 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	hcp := manifests.HostedControlPlane(opts.Namespace, opts.HCPName)
 	if err = ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+	if err := opts.Manager.Add(kubeSystemCache); err != nil {
+		return fmt.Errorf("failed to add kube-system cache: %w", err)
 	}
 
 	resourcesToWatch := []client.Object{
@@ -254,8 +292,20 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
+
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
+	}
+
+	// Watch for secrets in kube-system
+	if err := c.Watch(&source.Informer{
+		Informer: kubeSystemSecretInformer,
+		Handler:  eventHandler(),
+		Predicates: []predicate.Predicate{
+			secretPredicate,
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to watch kube-system secrets: %w", err)
 	}
 	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
 	// and mirrors them to the hosted cluster so the operators on the hosted cluster
@@ -2952,7 +3002,7 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 	log.Info("Reconciling global pull secret")
 
 	// Get the user provided pull secret
-	exists, userProvidedPullSecret, err := globalpullsecret.UserProvidedPullSecretExists(ctx, r.uncachedClient)
+	exists, userProvidedPullSecret, err := globalpullsecret.UserProvidedPullSecretExists(ctx, r.kubeSystemSecretClient)
 	if err != nil {
 		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
 	}
