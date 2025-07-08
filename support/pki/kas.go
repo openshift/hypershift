@@ -33,6 +33,8 @@ func GetKASServerCertificatesSANs(externalAPIAddress, internalAPIAddress string,
 		"openshift.default",
 		"openshift.default.svc",
 		"openshift.default.svc.cluster.local",
+		fmt.Sprintf("%s.%s.svc", svc.Name, svc.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", svc.Name, svc.Namespace),
 	}
 	apiServerIPs := []string{
 		"127.0.0.1",
