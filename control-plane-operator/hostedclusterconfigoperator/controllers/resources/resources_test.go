@@ -952,28 +952,7 @@ func TestReconcileClusterVersion(t *testing.T) {
 	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(clusterVersion.Spec.ClusterID).To(Equal(configv1.ClusterID("test-cluster-id")))
-	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
-		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
-		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
-			configv1.ClusterVersionCapabilityBuild,
-			configv1.ClusterVersionCapabilityCSISnapshot,
-			configv1.ClusterVersionCapabilityCloudControllerManager,
-			configv1.ClusterVersionCapabilityCloudCredential,
-			configv1.ClusterVersionCapabilityConsole,
-			configv1.ClusterVersionCapabilityDeploymentConfig,
-			configv1.ClusterVersionCapabilityImageRegistry,
-			configv1.ClusterVersionCapabilityIngress,
-			configv1.ClusterVersionCapabilityInsights,
-			configv1.ClusterVersionCapabilityMachineAPI,
-			configv1.ClusterVersionCapabilityNodeTuning,
-			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
-			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
-			configv1.ClusterVersionCapabilityStorage,
-			configv1.ClusterVersionCapabilityMarketplace,
-			configv1.ClusterVersionCapabilityOpenShiftSamples,
-		},
-	}
-	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
+	g.Expect(clusterVersion.Spec.Capabilities).To(BeNil())
 	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
 	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
 	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
@@ -1049,86 +1028,9 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
 			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
 			configv1.ClusterVersionCapabilityStorage,
-			configv1.ClusterVersionCapabilityMarketplace,
-			// configv1.ClusterVersionCapabilityOpenShiftSamples,
-		},
-	}
-	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
-}
-
-func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
-	hcp := &hyperv1.HostedControlPlane{
-		Spec: hyperv1.HostedControlPlaneSpec{
-			ClusterID: "test-cluster-id",
-			Capabilities: &hyperv1.Capabilities{
-				Enabled: []hyperv1.OptionalCapability{
-					hyperv1.BaremetalCapability,
-				},
-			},
-		},
-	}
-	testOverrides := []configv1.ComponentOverride{
-		{
-			Kind:      "Pod",
-			Group:     "",
-			Name:      "test",
-			Namespace: "default",
-			Unmanaged: true,
-		},
-	}
-	clusterVersion := &configv1.ClusterVersion{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "version",
-		},
-		Spec: configv1.ClusterVersionSpec{
-			ClusterID: "some-other-id",
-			Capabilities: &configv1.ClusterVersionCapabilitiesSpec{
-				AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
-					"foo",
-					"bar",
-				},
-			},
-			Channel: "fast",
-			DesiredUpdate: &configv1.Update{
-				Version: "4.12.5",
-				Image:   "example.com/imagens/image:latest",
-				Force:   true,
-			},
-			Upstream:  configv1.URL("https://upstream.example.com"),
-			Overrides: testOverrides,
-		},
-	}
-	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
-	g := NewWithT(t)
-	r := &reconciler{
-		client:                 fakeClient,
-		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
-	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
-	g.Expect(err).ToNot(HaveOccurred())
-
-	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
-		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
-		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
-			configv1.ClusterVersionCapabilityBuild,
-			configv1.ClusterVersionCapabilityCSISnapshot,
-			configv1.ClusterVersionCapabilityCloudControllerManager,
-			configv1.ClusterVersionCapabilityCloudCredential,
-			configv1.ClusterVersionCapabilityConsole,
-			configv1.ClusterVersionCapabilityDeploymentConfig,
-			configv1.ClusterVersionCapabilityImageRegistry,
-			configv1.ClusterVersionCapabilityIngress,
-			configv1.ClusterVersionCapabilityInsights,
-			configv1.ClusterVersionCapabilityMachineAPI,
-			configv1.ClusterVersionCapabilityNodeTuning,
-			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
-			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
-			configv1.ClusterVersionCapabilityStorage,
 			configv1.ClusterVersionCapabilityBaremetal,
 			configv1.ClusterVersionCapabilityMarketplace,
-			configv1.ClusterVersionCapabilityOpenShiftSamples,
+			//configv1.ClusterVersionCapabilityOpenShiftSamples,
 		},
 	}
 	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))

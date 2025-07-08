@@ -250,8 +250,7 @@ func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dock
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
 	}
-	filterOptions := manifest.FilterOptions{}
-	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo, filterOptions.Include)
+	firstManifest, location, err := manifest.FirstManifest(ctx, *ref, repo)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to obtain root manifest for %s: %w", imageRef, err)
 	}
