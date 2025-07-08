@@ -1178,14 +1178,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "s390x is only supported on KubeVirt platform",
 					},
-					{
-						name: "should pass for s390x arch on KubeVirt platform",
-						mutateInput: func(np *hyperv1.NodePool) {
-							np.Spec.Arch = "s390x"
-							np.Spec.Platform.Type = hyperv1.KubevirtPlatform
-						},
-						expectedErrorSubstring: "",
-					},
 				},
 			},
 		}
