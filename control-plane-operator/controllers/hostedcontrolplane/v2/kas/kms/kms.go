@@ -2,14 +2,15 @@ package kms
 
 import (
 	"github.com/openshift/hypershift/support/config"
+
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	"k8s.io/utils/ptr"
 )
 
 type KMSPodConfig struct {
-	Containers     []corev1.Container
-	Volumes        []corev1.Volume
+	Containers []corev1.Container
+	Volumes    []corev1.Volume
 
 	KASContainerMutate func(c *corev1.Container)
 }

@@ -28,6 +28,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/azurekmsactive"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/azurekmsbackup"
 	awsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/aws"
 	azureccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
 	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
@@ -233,6 +235,8 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		konnectivityv2.NewComponent(),
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		azurekmsactive.NewComponent(),
+		azurekmsbackup.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,

@@ -294,3 +294,30 @@ func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
 		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
 }
+
+// IsAzureKMSSeparatePodsEnabled checks if Azure KMS should run in separate pods
+// for the given HostedControlPlane. This consolidates the logic that was duplicated
+// across multiple components.
+func IsAzureKMSSeparatePodsEnabled(hcp *hyperv1.HostedControlPlane) bool {
+	// Only for ARO HCP environments
+	if !IsAroHCP() {
+		return false
+	}
+
+	// Only if Azure KMS is configured
+	if hcp.Spec.SecretEncryption == nil ||
+		hcp.Spec.SecretEncryption.KMS == nil ||
+		hcp.Spec.SecretEncryption.Type != hyperv1.KMS ||
+		hcp.Spec.SecretEncryption.KMS.Provider != hyperv1.AZURE {
+		return false
+	}
+
+	// Only if separate pods annotation is set to "true"
+	if hcp.Annotations != nil {
+		if value, exists := hcp.Annotations[hyperv1.AzureKMSSeparatePodsAnnotation]; exists {
+			return value == "true"
+		}
+	}
+
+	return false
+}

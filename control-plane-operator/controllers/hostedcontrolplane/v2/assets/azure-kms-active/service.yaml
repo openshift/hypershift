@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: azure-kms-active
+  labels:
+    app: azure-kms-active
+    kms-type: azure
+    kms-role: active
+spec:
+  selector:
+    app: azure-kms-active
+    kms-type: azure
+    kms-role: active
+  ports:
+    - name: grpc
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+    - name: health
+      port: 8787
+      targetPort: 8787
+      protocol: TCP
+  type: ClusterIP

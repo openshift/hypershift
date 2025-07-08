@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/secretproviderclass"
@@ -35,6 +36,12 @@ const (
 	azureProviderConfigNamePrefix = "azure"
 
 	encryptedClusterSeedLocation = "/data/cluster-seed"
+
+	// Network ports and service names for separate Azure KMS pods
+	azureActiveKMSNetworkPort = 8443
+	azureBackupKMSNetworkPort = 8444
+	azureActiveKMSServiceName = "azure-kms-active"
+	azureBackupKMSServiceName = "azure-kms-backup"
 )
 
 var (
@@ -61,8 +68,10 @@ var (
 var _ KMSProvider = &azureKMSProvider{}
 
 type azureKMSProvider struct {
-	kmsSpec  *hyperv1.AzureKMSSpec
-	kmsImage string
+	kmsSpec     *hyperv1.AzureKMSSpec
+	kmsImage    string
+	separatePod bool // Flag to indicate if KMS should run in separate pods
+	namespace   string
 }
 
 func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
@@ -70,18 +79,44 @@ func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMS
 		return nil, fmt.Errorf("azure kms metadata not specified")
 	}
 	return &azureKMSProvider{
-		kmsSpec:  kmsSpec,
-		kmsImage: image,
+		kmsSpec:     kmsSpec,
+		kmsImage:    image,
+		separatePod: false, // Default to sidecar architecture
+		namespace:   "",
 	}, nil
+}
+
+// NewAzureKMSProviderSeparatePod creates a new Azure KMS provider for separate pod architecture
+func NewAzureKMSProviderSeparatePod(kmsSpec *hyperv1.AzureKMSSpec, image, namespace string) (*azureKMSProvider, error) {
+	if kmsSpec == nil {
+		return nil, fmt.Errorf("azure kms metadata not specified")
+	}
+	return &azureKMSProvider{
+		kmsSpec:     kmsSpec,
+		kmsImage:    image,
+		separatePod: true,
+		namespace:   namespace,
+	}, nil
+}
+
+// ShouldUseSeparatePods determines if Azure KMS should run in separate pods
+// This can be controlled by an annotation on the HCP or other configuration
+func ShouldUseSeparatePods(hcp *hyperv1.HostedControlPlane) bool {
+	return azureutil.IsAzureKMSSeparatePodsEnabled(hcp)
 }
 
 func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.EncryptionConfiguration, error) {
 	var providerConfiguration []v1.ProviderConfiguration
 
+	// kube-apiserver always connects to Unix sockets regardless of architecture:
+	// - Sidecar mode: Unix socket connects directly to Azure KMS container
+	// - Separate pod mode: Unix socket connects to proxy that forwards to network service
+
 	activeKeyHash, err := util.HashStruct(p.kmsSpec.ActiveKey)
 	if err != nil {
 		return nil, err
 	}
+
 	providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 		KMS: &v1.KMSConfiguration{
 			Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, activeKeyHash),
@@ -90,11 +125,13 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 			Timeout:    &metav1.Duration{Duration: 35 * time.Second},
 		},
 	})
+
 	if p.kmsSpec.BackupKey != nil {
 		backupKeyHash, err := util.HashStruct(p.kmsSpec.BackupKey)
 		if err != nil {
 			return nil, err
 		}
+
 		providerConfiguration = append(providerConfiguration, v1.ProviderConfiguration{
 			KMS: &v1.KMSConfiguration{
 				Name:       fmt.Sprintf("%s-%s", azureProviderConfigNamePrefix, backupKeyHash),
@@ -126,28 +163,61 @@ func (p *azureKMSProvider) GenerateKMSEncryptionConfig(apiVersion string) (*v1.E
 func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	podConfig := &KMSPodConfig{}
 
-	podConfig.Volumes = append(podConfig.Volumes,
-		util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
-		util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
-		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
-		util.BuildVolume(kasVolumeKMSEncryptionClusterSeed(), buildVolumeKMSEncryptionClusterSeed),
-	)
-	podConfig.Containers = append(podConfig.Containers,
-		util.BuildContainer(
-			kasContainerAzureKMSActive(),
-			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
-	)
-	if p.kmsSpec.BackupKey != nil {
+	if p.separatePod {
+		// For separate pods, generate proxy containers that bridge Unix sockets to network services
+		podConfig.Volumes = append(podConfig.Volumes,
+			util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+		)
+
+		// Create proxy for active key
+		activeProxy := NewKMSProxy(
+			azureActiveKMSUnixSocket,
+			getActiveKMSServiceEndpoint(p.namespace),
+		)
+		podConfig.Containers = append(podConfig.Containers,
+			activeProxy.KMSProxyContainer("azure-kms-active-proxy"),
+		)
+
+		// Create proxy for backup key if it exists
+		if p.kmsSpec.BackupKey != nil {
+			backupProxy := NewKMSProxy(
+				azureBackupKMSUnixSocket,
+				getBackupKMSServiceEndpoint(p.namespace),
+			)
+			podConfig.Containers = append(podConfig.Containers,
+				backupProxy.KMSProxyContainer("azure-kms-backup-proxy"),
+			)
+		}
+
+		podConfig.KASContainerMutate = func(c *corev1.Container) {
+			c.VolumeMounts = append(c.VolumeMounts, azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
+		}
+	} else {
+		// For sidecar containers, use the original approach
+		podConfig.Volumes = append(podConfig.Volumes,
+			util.BuildVolume(kasVolumeAzureKMSCredentials(), buildVolumeAzureKMSCredentials),
+			util.BuildVolume(kasVolumeKMSSocket(), buildVolumeKMSSocket),
+			util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
+			util.BuildVolume(kasVolumeKMSEncryptionClusterSeed(), buildVolumeKMSEncryptionClusterSeed),
+		)
 		podConfig.Containers = append(podConfig.Containers,
 			util.BuildContainer(
-				kasContainerAzureKMSBackup(),
-				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
+				kasContainerAzureKMSActive(),
+				p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
 		)
+		if p.kmsSpec.BackupKey != nil {
+			podConfig.Containers = append(podConfig.Containers,
+				util.BuildContainer(
+					kasContainerAzureKMSBackup(),
+					p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
+			)
+		}
+
+		podConfig.KASContainerMutate = func(c *corev1.Container) {
+			c.VolumeMounts = append(c.VolumeMounts, azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
+		}
 	}
 
-	podConfig.KASContainerMutate = func(c *corev1.Container) {
-		c.VolumeMounts = append(c.VolumeMounts, azureKMSVolumeMounts.ContainerMounts(KasMainContainerName)...)
-	}
 	return podConfig, nil
 }
 
@@ -272,4 +342,14 @@ func AdaptAzureClusterSeedSecretProvider(cpContext component.WorkloadContext, se
 	clusterSeedSecretName := fmt.Sprintf("cluster-seed-%s", cpContext.HCP.Name)
 	secretproviderclass.ReconcileAzureKMSClusterSeedSecretProviderClass(secretProvider, cpContext.HCP, clusterSeedSecretName)
 	return nil
+}
+
+// getActiveKMSServiceEndpoint returns the network endpoint for the active Azure KMS service
+func getActiveKMSServiceEndpoint(namespace string) string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local:%d", azureActiveKMSServiceName, namespace, azureActiveKMSNetworkPort)
+}
+
+// getBackupKMSServiceEndpoint returns the network endpoint for the backup Azure KMS service
+func getBackupKMSServiceEndpoint(namespace string) string {
+	return fmt.Sprintf("%s.%s.svc.cluster.local:%d", azureBackupKMSServiceName, namespace, azureBackupKMSNetworkPort)
 }

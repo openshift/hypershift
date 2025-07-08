@@ -74,6 +74,12 @@ const (
 	// AWSKMSProviderImage is an annotation that allows the specification of the AWS kms provider image.
 	// Upstream code located at: https://github.com/kubernetes-sigs/aws-encryption-provider
 	AWSKMSProviderImage = "hypershift.openshift.io/aws-kms-provider-image"
+	// AzureKMSProviderImage is an annotation that allows the specification of the Azure kms provider image.
+	// Upstream code located at: https://github.com/Azure/kubernetes-kms
+	AzureKMSProviderImage = "hypershift.openshift.io/azure-kms-provider-image"
+	// AzureKMSSeparatePodsAnnotation is an annotation that enables running Azure KMS in separate pods for ARO HCP clusters.
+	// When set to "true", the Azure KMS provider will run in dedicated pods instead of as sidecar containers.
+	AzureKMSSeparatePodsAnnotation = "hypershift.openshift.io/azure-kms-separate-pods"
 	// IBMCloudKMSProviderImage is an annotation that allows the specification of the IBM Cloud kms provider image.
 	IBMCloudKMSProviderImage = "hypershift.openshift.io/ibmcloud-kms-provider-image"
 	// PortierisImageAnnotation is an annotation that allows the specification of the portieries component

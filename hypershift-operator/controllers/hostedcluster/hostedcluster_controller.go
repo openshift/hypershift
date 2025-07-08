@@ -2203,6 +2203,8 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KonnectivityServerImageAnnotation,
 		hyperv1.IBMCloudKMSProviderImage,
 		hyperv1.AWSKMSProviderImage,
+		hyperv1.AzureKMSProviderImage,
+		hyperv1.AzureKMSSeparatePodsAnnotation,
 		hyperv1.PortierisImageAnnotation,
 		hyperutil.DebugDeploymentsAnnotation,
 		hyperv1.DisableProfilingAnnotation,
