@@ -77,7 +77,7 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		Complete(r)
 }
 
-func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
 		return nil
@@ -128,14 +128,33 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 
 	namespaces := make([]string, 0, len(hcList.Items))
 	svcsNamespaceToClusterID := make(map[string]string)
+	routes := make([]routev1.Route, 0, len(namespaces))
 	for _, hc := range hcList.Items {
 		hcpNamespace := hc.Namespace + "-" + hc.Name
 		namespaces = append(namespaces, hcpNamespace)
 		svcsNamespaceToClusterID[hcpNamespace] = hc.Spec.ClusterID
+		if hc.Spec.KubeAPIServerDNSName != "" {
+			// If the HostedCluster has a KAS DNS name, inject a route for it.
+			route := routev1.Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver-custom",
+					Namespace: hcpNamespace,
+					Labels: map[string]string{
+						util.HCPRouteLabel: "true",
+					},
+				},
+				Spec: routev1.RouteSpec{
+					Host: hc.Spec.KubeAPIServerDNSName,
+					To: routev1.RouteTargetReference{
+						Name: "kube-apiserver",
+					},
+				},
+			}
+			routes = append(routes, route)
+		}
 	}
 
 	// This enables traffic from through external DNS.
-	routes := make([]routev1.Route, 0, len(namespaces))
 	for _, ns := range namespaces {
 		routeList := &routev1.RouteList{}
 		if err := r.Client.List(ctx, routeList, client.InNamespace(ns)); err != nil {

@@ -106,7 +106,8 @@ func TestGenerateConfig(t *testing.T) {
 							Namespace: "test",
 						},
 						Spec: hyperv1.HostedClusterSpec{
-							ClusterID: "hc1-UUID",
+							ClusterID:            "hc1-UUID",
+							KubeAPIServerDNSName: "kube-apiserver-public-custom.example.com",
 						},
 					},
 					routes: []client.Object{
