@@ -919,7 +919,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 		}
 	}
 
-	if hyperazureutil.IsAroHCP() {
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
