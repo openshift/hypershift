@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work,tmp-dir
         component.hypershift.openshift.io/config-hash: 022a8a3acb8019bf
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -204,6 +204,8 @@ spec:
           requests:
             cpu: 25m
             memory: 150Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
@@ -212,6 +214,8 @@ spec:
           name: kubeconfig
         - mountPath: /etc/kubernetes/config
           name: scheduler-config
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -244,4 +248,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: kube-scheduler-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
 status: {}
