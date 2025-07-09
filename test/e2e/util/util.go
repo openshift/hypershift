@@ -35,6 +35,8 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/route53"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -2556,6 +2558,40 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 		if len(podsWithoutToleration) > 0 {
 			t.Fatalf("expected pods [%s] to have hypershift-e2e-test-toleration", strings.Join(podsWithoutToleration, ", "))
 		}
+	})
+}
+
+func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
+	t.Run("EnsureDefaultSecurityGroupTags", func(t *testing.T) {
+		AtLeast(t, Version420)
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip("This test is only applicable for AWS platform")
+		}
+		g := NewWithT(t)
+
+		day2TagKey := "test-day2-tag"
+		day2TagValue := "test-day2-value"
+
+		// Update the hosted cluster to add a day2 tag
+		err := UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
+			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
+				Key:   day2TagKey,
+				Value: day2TagValue,
+			})
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update hostedcluster with day2 tag")
+
+		// Ensure that day2 tag is correctly applied to the default security group.
+		g.Eventually(func(g Gomega) {
+			sg, err := GetDefaultSecurityGroup(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
+
+			g.Expect(sg.Tags).To(ContainElement(&ec2.Tag{
+				Key:   aws.String(day2TagKey),
+				Value: aws.String(day2TagValue),
+			}))
+		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+
 	})
 }
 
