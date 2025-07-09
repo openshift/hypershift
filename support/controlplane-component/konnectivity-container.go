@@ -3,6 +3,7 @@ package controlplanecomponent
 import (
 	"fmt"
 	"path"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -104,16 +105,20 @@ func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext C
 		})
 	}
 
+	hasTmpDirMount := slices.ContainsFunc(podSpec.Volumes, func(v corev1.Volume) bool {
+		return v.Name == util.PodTmpDirMountName && v.EmptyDir != nil
+	})
+
 	image := cpContext.ReleaseImageProvider.GetImage(util.CPOImageName)
 
 	if opts.Mode == Dual {
 		opts.Mode = HTTPS
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs))
+		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs, hasTmpDirMount))
 
 		opts.Mode = Socks5
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs))
+		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs, hasTmpDirMount))
 	} else {
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs))
+		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(hcp, image, proxyAdditionalCAs, hasTmpDirMount))
 	}
 
 	podSpec.Volumes = append(podSpec.Volumes, opts.buildVolumes(proxyAdditionalCAs)...)
@@ -121,7 +126,7 @@ func (opts KonnectivityContainerOptions) injectKonnectivityContainer(cpContext C
 
 const certsTrustPath = "/etc/pki/tls/certs"
 
-func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, image string, proxyAdditionalCAs []corev1.VolumeProjection) corev1.Container {
+func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, image string, proxyAdditionalCAs []corev1.VolumeProjection, hasTmpDirMount bool) corev1.Container {
 	var proxyConfig *configv1.ProxySpec
 	if hcp.Spec.Configuration != nil {
 		proxyConfig = hcp.Spec.Configuration.Proxy
@@ -210,6 +215,16 @@ func (opts KonnectivityContainerOptions) buildContainer(hcp *hyperv1.HostedContr
 				MountPath: "/etc/konnectivity/proxy-ca",
 			},
 		},
+		SecurityContext: &corev1.SecurityContext{
+			ReadOnlyRootFilesystem: ptr.To(true),
+		},
+	}
+
+	if hasTmpDirMount {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      util.PodTmpDirMountName,
+			MountPath: util.PodTmpDirMountPath,
+		})
 	}
 
 	if len(proxyAdditionalCAs) > 0 {

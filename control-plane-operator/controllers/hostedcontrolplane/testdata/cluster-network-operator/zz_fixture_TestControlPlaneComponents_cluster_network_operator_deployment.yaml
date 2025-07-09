@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs,client-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs,client-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -162,6 +162,8 @@ spec:
           requests:
             cpu: 10m
             memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /configs
@@ -170,6 +172,8 @@ spec:
           name: client-token
         - mountPath: /etc/certificate/ca
           name: ca-bundle
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --service-account-namespace
         - openshift-network-operator
@@ -191,12 +195,16 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
           name: client-token
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --disable-resolver=true
@@ -212,6 +220,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -220,6 +230,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       dnsPolicy: ClusterFirst
       initContainers:
       - command:
@@ -237,8 +249,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/kubeconfig
           name: hosted-etc-kube
       - args:
@@ -357,6 +373,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416

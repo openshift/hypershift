@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: socket-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: socket-dir,tmp-dir
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -98,10 +98,14 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       - args:
@@ -121,10 +125,14 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       - args:
@@ -143,10 +151,14 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       - args:
@@ -160,10 +172,14 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       - args:
@@ -178,11 +194,15 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       - args:
@@ -198,11 +218,15 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
       priorityClassName: hypershift-control-plane
@@ -219,6 +243,8 @@ spec:
       volumes:
       - emptyDir: {}
         name: socket-dir
+      - emptyDir: {}
+        name: tmp-dir
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416

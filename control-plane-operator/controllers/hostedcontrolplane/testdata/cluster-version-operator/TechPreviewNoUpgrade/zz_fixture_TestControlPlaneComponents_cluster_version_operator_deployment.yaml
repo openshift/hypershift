@@ -29,7 +29,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: payload,update-payloads
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: payload,update-payloads,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -103,6 +103,8 @@ spec:
           requests:
             cpu: 20m
             memory: 70Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/openshift/kubeconfig
@@ -113,6 +115,8 @@ spec:
           name: server-crt
         - mountPath: /etc/cvo/updatepayloads
           name: update-payloads
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -124,8 +128,12 @@ spec:
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/kubeconfig
           name: kubeconfig
       - args:
@@ -356,4 +364,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: cvo-server
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

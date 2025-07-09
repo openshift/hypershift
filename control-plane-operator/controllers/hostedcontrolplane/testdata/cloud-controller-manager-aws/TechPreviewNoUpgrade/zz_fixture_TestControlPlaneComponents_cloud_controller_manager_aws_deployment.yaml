@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir,cloud-token
         component.hypershift.openshift.io/config-hash: 6cd2cf9e
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -90,6 +90,8 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/cloud
@@ -100,6 +102,8 @@ spec:
           name: kubeconfig
         - mountPath: /etc/kubernetes/secrets/cloud-provider
           name: cloud-creds
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
       - args:
@@ -118,10 +122,14 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /etc/kubernetes
           name: kubeconfig
       priorityClassName: hypershift-control-plane
@@ -151,6 +159,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: cloud-controller-creds
+      - emptyDir: {}
+        name: tmp-dir
       - emptyDir:
           medium: Memory
         name: cloud-token

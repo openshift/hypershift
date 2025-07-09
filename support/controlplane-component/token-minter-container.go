@@ -3,12 +3,14 @@ package controlplanecomponent
 import (
 	"fmt"
 	"path"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -54,13 +56,17 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	}
 	image := cpContext.ReleaseImageProvider.GetImage("token-minter")
 
+	hasTmpDirMount := slices.ContainsFunc(podSpec.Volumes, func(v corev1.Volume) bool {
+		return v.Name == util.PodTmpDirMountName && v.EmptyDir != nil
+	})
+
 	// we only mint cloud tokens for AWS.
 	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) &&
 		cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform {
 		tokenVolume := opts.buildVolume(string(CloudToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume))
+		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume, hasTmpDirMount))
 
 		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      tokenVolume.Name,
@@ -72,7 +78,7 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 		tokenVolume := opts.buildVolume(string(KubeAPIServerToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume))
+		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume, hasTmpDirMount))
 
 		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
 			Name:      tokenVolume.Name,
@@ -81,7 +87,7 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	}
 }
 
-func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, tokenType TokenType, image string, tokenVolume corev1.Volume) corev1.Container {
+func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, tokenType TokenType, image string, tokenVolume corev1.Volume, hasTmpDirMount bool) corev1.Container {
 	tokenFileMountPath := "/var/run/secrets/openshift/serviceaccount"
 
 	var audience string
@@ -112,12 +118,22 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 				corev1.ResourceMemory: resource.MustParse("30Mi"),
 			},
 		},
+		SecurityContext: &corev1.SecurityContext{
+			ReadOnlyRootFilesystem: ptr.To(true),
+		},
 		VolumeMounts: []corev1.VolumeMount{
 			{
 				Name:      tokenVolume.Name,
 				MountPath: tokenFileMountPath,
 			},
 		},
+	}
+
+	if hasTmpDirMount {
+		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{
+			Name:      util.PodTmpDirMountName,
+			MountPath: util.PodTmpDirMountPath,
+		})
 	}
 
 	if opts.KubeconfigSecretName != "" {
