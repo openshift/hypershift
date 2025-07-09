@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
-
 	component "github.com/openshift/hypershift/support/controlplane-component"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
