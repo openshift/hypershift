@@ -209,3 +209,10 @@ overrides:
     cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-cert-hotfix-416-multi:2d2e6071841bb12ff1f41c457889bb44b6fb1cf7
   # End of OCPBUGS-58837 overrides 4.15 section
   # End of OCPBUGS-58837 overrides
+testing:
+  # Update the image refs below to indicate which images should be used for CPO override
+  # testing. Currently, we only test one latest/previous combination. In the future, we 
+  # may be able to test multiple combinations at a time. To test more than one, update
+  # the referenced images before each e2e test run.
+  latest: quay.io/openshift-release-dev/ocp-release:4.15.53-x86_64
+  previous: quay.io/openshift-release-dev/ocp-release:4.15.52-x86_64
