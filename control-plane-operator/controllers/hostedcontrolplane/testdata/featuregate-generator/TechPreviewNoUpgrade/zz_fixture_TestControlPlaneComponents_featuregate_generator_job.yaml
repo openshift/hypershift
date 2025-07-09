@@ -19,7 +19,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: manifests,work
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: manifests,work,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -74,10 +74,14 @@ spec:
           requests:
             cpu: 30m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /manifests
           name: manifests
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - args:
         - |-
@@ -144,4 +148,6 @@ spec:
         name: manifests
       - emptyDir: {}
         name: work
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

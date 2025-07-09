@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -1420,7 +1421,10 @@ func getExportedMetrics(ctx context.Context, log logr.Logger, c crclient.Client)
 }
 
 func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, Version420)
+
 	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
@@ -1491,10 +1495,20 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 
 			if labelKey == "" || labelValue == "" {
 				// if the Key/Value are empty we assume that the pod is not in the auditedList,
-				// if that's the case the annotation should not exists in that pod.
+				// if that's the case the annotation should not exists in that pod (except for tmp-dir which is in every pod by default).
 				// Then continue to the next pod
-				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
-				continue
+				hasTmpDirAnnotation := false
+				safe2EvictVolumes := strings.Split(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey], ",")
+				safe2EvictVolumes = slices.DeleteFunc(safe2EvictVolumes, func(s string) bool {
+					hasTmpDir := s == util.PodTmpDirMountName
+					hasTmpDirAnnotation = hasTmpDirAnnotation || hasTmpDir
+					return s == "" || hasTmpDir
+				})
+				g.Expect(safe2EvictVolumes).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
+				// if we have a tmpdir annotation, we need to ensure that the volume is defined correctly; done below
+				if !hasTmpDirAnnotation {
+					continue
+				}
 			}
 
 			annotationValue := pod.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
@@ -1504,6 +1518,144 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 				if (volume.EmptyDir != nil && volume.EmptyDir.Medium != corev1.StorageMediumMemory) || volume.HostPath != nil {
 					g.Expect(strings.Contains(annotationValue, volume.Name)).To(BeTrue(), "pod with name %s do not have the right volumes set in the safe-to-evict-local-volume annotation: \nCurrent: %s, Expected to be included in: %s", pod.Name, volume.Name, annotationValue)
 				}
+			}
+		}
+	})
+}
+
+type labelSelector struct {
+	label string
+	value string
+}
+
+// auditedContainersHas checks the given map to see if the container name exists in it; if the map is empty, always return true
+func auditedContainersHas(container corev1.Container, auditedContainers map[string]struct{}) bool {
+	if auditedContainers == nil {
+		return false
+	}
+
+	if len(auditedContainers) == 0 {
+		return true
+	}
+
+	_, has := auditedContainers[container.Name]
+	return has
+}
+
+func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, Version420)
+
+	// By default, we enable readOnlyRootFilesystem in every container.
+	// This testchecks to make sure that every container has this field enabled, unless manually specified in auditedAppContainersNoRORFS
+	t.Run("EnsureReadOnlyRootFilesystem", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
+		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false.
+		// if a labelSelector is given with an empty map, allow all containers to be false
+		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {},
+			{label: "app", value: "azure-disk-csi-driver-operator"}:   {},
+			{label: "app", value: "azure-file-csi-driver-controller"}: {},
+			{label: "app", value: "azure-file-csi-driver-operator"}:   {},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}:    {},
+			{label: "app", value: "aws-ebs-csi-driver-operator"}:      {},
+			{label: "app", value: "multus-admission-controller"}:      {},
+			{label: "app", value: "network-node-identity"}:            {},
+			{label: "app", value: "ovnkube-control-plane"}:            {},
+			{label: "app", value: "cloud-network-config-controller"}:  {},
+		}
+
+		for _, pod := range hcpPods.Items {
+			// skip etcd and feature-gate-generator pods
+			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
+			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
+				continue
+			}
+
+			var auditedContainers map[string]struct{}
+
+			for selector, containers := range auditedAppContainersNoRORFS {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
+			}
+
+			for _, c := range pod.Spec.Containers {
+				isAuditedOff := auditedContainersHas(c, auditedContainers)
+				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
+
+				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
+				g.Expect(isRORFS).ToNot(BeIdenticalTo(isAuditedOff), "container %s in pod %s expects readOnlyRootFilesystem to be %v, it was %v", c.Name, pod.Name, !isAuditedOff, isRORFS)
+			}
+		}
+	})
+
+	// By default, we add an emptyDir pod volume named "tmp-dir" and mount it into every container in the pod at /tmp.
+	// This test checks to make sure that every container has this mount, unless manually specified in auditedAppContainerNoTmpDir.
+	t.Run("EnsureReadOnlyRootFilesystemTmpDirMount", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// a list of applications that are allowed to not have the emptyDir "tmp-dir" mounted.
+		// auditedAppContainerNoTmpDir[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to not have the mount
+		// if a labelSelector is given with an empty map, allow all containers to not have it
+		auditedAppContainerNoTmpDir := map[labelSelector]map[string]struct{}{
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {},
+			{label: "app", value: "azure-disk-csi-driver-operator"}:   {},
+			{label: "app", value: "azure-file-csi-driver-controller"}: {},
+			{label: "app", value: "azure-file-csi-driver-operator"}:   {},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}:    {},
+			{label: "app", value: "aws-ebs-csi-driver-operator"}:      {},
+			{label: "app", value: "multus-admission-controller"}:      {},
+			{label: "app", value: "network-node-identity"}:            {},
+			{label: "app", value: "ovnkube-control-plane"}:            {},
+			{label: "app", value: "cloud-network-config-controller"}:  {},
+			{label: "app", value: "csi-snapshot-controller"}:          {},
+			{label: "app", value: "csi-snapshot-webhook"}:             {},
+			{label: "app", value: "packageserver"}: {
+				"packageserver": {}, // the package server was able to enabled readOnlyRootFilesystem without needing to mount /tmp
+			},
+		}
+
+		for _, pod := range hcpPods.Items {
+			// skip etcd and feature-gate-generator pods
+			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
+			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
+				continue
+			}
+
+			var auditedContainers map[string]struct{}
+
+			for selector, containers := range auditedAppContainerNoTmpDir {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
+			}
+
+			for _, c := range pod.Spec.Containers {
+				if auditedContainersHas(c, auditedContainers) {
+					continue
+				}
+				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
+					return v.MountPath == util.PodTmpDirMountPath
+				})
+				g.Expect(containerHasTmpDir).To(BeTrue(), "container %s in pod %s does not have /tmp mounted, and it is expected to mount it", c.Name, pod.Name)
 			}
 		}
 	})

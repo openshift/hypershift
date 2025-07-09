@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e3b105d444ebc1fdd60b54b1d741638a5a0dd232cbcc341c5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -108,6 +108,8 @@ spec:
           requests:
             cpu: 25m
             memory: 40Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/audit-config
@@ -130,6 +132,8 @@ spec:
           name: serving-cert
         - mountPath: /etc/kubernetes/secrets/session
           name: session-secret
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/run/kubernetes
       - args:
         - -c
@@ -156,10 +160,14 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: logs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --serving-port=8092
@@ -176,6 +184,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -184,6 +194,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --resolve-from-guest-cluster-dns=true
@@ -200,6 +212,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -208,6 +222,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -275,4 +291,6 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

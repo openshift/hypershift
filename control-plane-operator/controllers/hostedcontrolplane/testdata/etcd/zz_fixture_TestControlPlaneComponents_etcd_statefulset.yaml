@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cluster-state
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cluster-state,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -168,6 +168,8 @@ spec:
           requests:
             cpu: 300m
             memory: 600Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           failureThreshold: 18
           httpGet:
@@ -191,6 +193,8 @@ spec:
           name: etcd-ca
         - mountPath: /etc/etcd/clusterstate
           name: cluster-state
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - grpc-proxy
         - start
@@ -217,6 +221,8 @@ spec:
           requests:
             cpu: 40m
             memory: 200Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/peer
@@ -227,6 +233,8 @@ spec:
           name: etcd-ca
         - mountPath: /etc/etcd/tls/etcd-metrics-ca
           name: etcd-metrics-ca
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - readyz
         - --target=https://localhost:2379
@@ -249,6 +257,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/server
@@ -257,6 +267,8 @@ spec:
           name: client-tls
         - mountPath: /etc/etcd/tls/etcd-ca
           name: etcd-ca
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - args:
         - -c
@@ -373,6 +385,8 @@ spec:
         name: etcd-metrics-ca
       - emptyDir: {}
         name: cluster-state
+      - emptyDir: {}
+        name: tmp-dir
   updateStrategy:
     rollingUpdate:
       partition: 0
