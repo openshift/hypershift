@@ -83,6 +83,7 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 
 	podTemplateSpec := c.workloadProvider.PodTemplateSpec(workloadObj)
 	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
+	enforceReadOnlyRootFilesystem(podTemplateSpec.Spec.Containers)
 	err := enforceImagePullPolicy(podTemplateSpec.Spec.Containers)
 	if err != nil {
 		return err
@@ -551,6 +552,15 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 	}
 	return nil
+}
+
+func enforceReadOnlyRootFilesystem(containers []corev1.Container) {
+	for i := range containers {
+		if containers[i].SecurityContext == nil {
+			containers[i].SecurityContext = &corev1.SecurityContext{}
+		}
+		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
+	}
 }
 
 func enforceTerminationMessagePolicy(containers []corev1.Container) {
