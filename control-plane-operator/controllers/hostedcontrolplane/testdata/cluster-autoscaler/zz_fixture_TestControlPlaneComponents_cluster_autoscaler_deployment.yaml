@@ -120,6 +120,8 @@ spec:
           requests:
             cpu: 10m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /mnt/kubeconfig

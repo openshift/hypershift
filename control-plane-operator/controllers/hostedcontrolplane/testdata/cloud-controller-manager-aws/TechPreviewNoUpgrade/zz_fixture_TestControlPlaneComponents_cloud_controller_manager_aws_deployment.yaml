@@ -90,6 +90,8 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/cloud
