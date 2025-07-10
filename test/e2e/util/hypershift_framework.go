@@ -46,6 +46,9 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	ExtOIDCConfig        *ExtOIDCConfig
+	AuthenticationConfig *configv1.AuthenticationSpec
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -127,6 +130,10 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
 			}
+		}
+
+		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
+			ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 		}
 	})
 }
@@ -249,6 +256,37 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		err = h.client.Create(h.ctx, serviceAccountSigningKeySecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
+		//create external oidc secret and configmap
+		if opts.AuthenticationConfig != nil && opts.ExtOIDCConfig != nil {
+			consoleCliSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.ConsoleClientSecretName,
+					Namespace: namespace.Name,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					"clientSecret": opts.ExtOIDCConfig.ConsoleClientSecretValue,
+				},
+			}
+			err := h.client.Create(h.ctx, consoleCliSecret)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
+
+			caData, err := os.ReadFile(opts.ExtOIDCConfig.IssuerCABundleFile)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
+
+			oidcCAConfigmap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.IssuerCAConfigmapName,
+					Namespace: namespace.Name,
+				},
+				Data: map[string]string{
+					"ca-bundle.crt": string(caData),
+				},
+			}
+			err = h.client.Create(h.ctx, oidcCAConfigmap)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
+		}
+
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {
 			if originalBeforeApply != nil {
@@ -273,6 +311,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 								},
 							},
 						},
+					}
+
+					if opts.AuthenticationConfig != nil && opts.ExtOIDCConfig != nil {
+						v.Spec.Configuration.Authentication = opts.AuthenticationConfig
 					}
 				}
 			}

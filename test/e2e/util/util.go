@@ -37,6 +37,7 @@ import (
 	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
+	restclient "k8s.io/client-go/rest"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
@@ -284,6 +285,14 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 		},
 	)
 	return data
+}
+
+func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *restclient.Config {
+	g := NewWithT(t)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest rest config")
+	return guestConfig
 }
 
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
