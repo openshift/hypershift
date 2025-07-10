@@ -22,6 +22,7 @@ import (
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	sharedingressmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -54,6 +55,7 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
@@ -2593,6 +2595,50 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
 
 	})
+}
+
+func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster) {
+	t.Run("EnsureKubeAPIServerAllowedCIDRs", func(t *testing.T) {
+		g := NewWithT(t)
+
+		kubeClient, err := kubernetes.NewForConfig(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// ensure that kube-apiserver is not reachable from anywhere
+		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, "0.0.0.0/32", false)
+		// ensure kube-apiserver is reachable when allowed CIDRs allow access from everywhere
+		// This is useful for testing purposes, as it allows us to access the kube-apiserver from any IP
+		// In a production environment, this should be restricted to specific CIDRs
+		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, "0.0.0.0/0", true)
+	})
+}
+
+func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDR string, shouldBeReachable bool) {
+	err := UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
+		if obj.Spec.Networking.APIServer == nil {
+			obj.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
+		}
+		obj.Spec.Networking.APIServer.AllowedCIDRBlocks = []hyperv1.CIDRBlock{
+			hyperv1.CIDRBlock(allowedCIDR),
+		}
+	})
+	g.Expect(err).To(Not(HaveOccurred()), "failed to update HostedCluster with allowed CIDRs")
+
+	g.Eventually(func(g Gomega) {
+		routerConfigMap := sharedingressmanifests.RouterConfigurationConfigMap()
+		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(routerConfigMap), routerConfigMap)
+		g.Expect(err).To(Not(HaveOccurred()))
+
+		g.Expect(routerConfigMap.Data["haproxy.cfg"]).To(ContainSubstring("_request_allowed src %s", allowedCIDR))
+
+		_, err = guestClient.ServerVersion()
+		if shouldBeReachable {
+			g.Expect(err).ToNot(HaveOccurred(), "kube-apiserver should be reachable")
+		} else {
+			g.Expect(err).To(HaveOccurred(), "kube-apiserver should not be reachable")
+		}
+	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
+
 }
 
 // EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled
