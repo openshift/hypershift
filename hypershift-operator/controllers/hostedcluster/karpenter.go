@@ -20,6 +20,7 @@ import (
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/pkg/tracing"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -35,6 +36,9 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hcluster.Status.KubeConfig == nil {
 		return nil
 	}
+
+	ctx, span := tracing.StartChildSpan(cpContext, "KarpenterOperator", "reconcile")
+	defer span.End()
 
 	// Generate configMap with KubeletConfig to register Nodes with karpenter expected taint.
 	taintConfigName := "set-karpenter-taint"
@@ -63,6 +67,7 @@ spec:
 		return nil
 	})
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to create configmap: %w", err)
 	}
 
@@ -86,20 +91,24 @@ spec:
 
 	err = r.RegistryProvider.Reconcile(cpContext, r.Client)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
 	releaseImage, err := r.RegistryProvider.GetReleaseProvider().Lookup(cpContext, nodePool.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
-	if err := r.reconcileKarpenterUserDataSecret(cpContext, hcluster, releaseImage, nodePool, r.RegistryProvider.GetReleaseProvider(), r.RegistryProvider.GetMetadataProvider()); err != nil {
+	if err := r.reconcileKarpenterUserDataSecret(ctx, hcluster, releaseImage, nodePool, r.RegistryProvider.GetReleaseProvider(), r.RegistryProvider.GetMetadataProvider()); err != nil {
+		span.RecordError(err)
 		return err
 	}
 
@@ -113,6 +122,7 @@ spec:
 	})
 
 	if err := karpenteroperator.Reconcile(cpContext); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile controlplane operator component: %w", err)
 	}
 
@@ -120,6 +130,9 @@ spec:
 }
 
 func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(cpContext context.Context, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, nodePool *hyperv1.NodePool, releaseProvider releaseinfo.Provider, imageMetadataProvider hyperutil.ImageMetadataProvider) error {
+	ctx, span := tracing.StartChildSpan(cpContext, "KarpenterOperator", "reconcileKarpenterUserDataSecret")
+	defer span.End()
+
 	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
 	if !ok {
 		return fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
@@ -132,24 +145,28 @@ func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(cpContext con
 		ReleaseProvider:         releaseProvider,
 		ImageMetadataProvider:   imageMetadataProvider,
 	}
-	haproxyRawConfig, err := haproxy.GenerateHAProxyRawConfig(cpContext, hcluster)
+	haproxyRawConfig, err := haproxy.GenerateHAProxyRawConfig(ctx, hcluster)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
-	configGenerator, err := nodepool.NewConfigGenerator(cpContext, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := nodepool.NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to generate config: %w", err)
 	}
 
-	token, err := nodepool.NewToken(cpContext, configGenerator, &nodepool.CPOCapabilities{
+	token, err := nodepool.NewToken(ctx, configGenerator, &nodepool.CPOCapabilities{
 		DecompressAndDecodeConfig: true,
 	})
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 
-	if err := token.Reconcile(cpContext); err != nil {
+	if err := token.Reconcile(ctx); err != nil {
+		span.RecordError(err)
 		return err
 	}
 

@@ -12,9 +12,14 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/go-logr/logr"
 	errors "github.com/zgalor/weberr"
+)
+
+const (
+	CorrelationIDAnnotation = "aro.correlation_id"
 )
 
 // Without a specific configuration, a noop tracer is used by default.
@@ -94,4 +99,24 @@ func (e noopSpanExporter) ExportSpans(ctx context.Context, spans []tracesdk.Read
 // Shutdown is part of trace.SpanExporter interface.
 func (e noopSpanExporter) Shutdown(ctx context.Context) error {
 	return nil
+}
+
+// StartRootSpan initiates a new parent trace.
+func StartRootSpan(ctx context.Context, tracerName, spanName string) (context.Context, trace.Span) {
+	return otel.GetTracerProvider().
+		Tracer(tracerName).
+		Start(
+			ctx,
+			spanName,
+			trace.WithNewRoot(),
+			trace.WithSpanKind(trace.SpanKindInternal),
+		)
+}
+
+// StartChildSpan creates a new span linked to the parent span from the current context.
+func StartChildSpan(ctx context.Context, tracerName, spanName string) (context.Context, trace.Span) {
+	return trace.SpanFromContext(ctx).
+		TracerProvider().
+		Tracer(tracerName).
+		Start(ctx, spanName)
 }
