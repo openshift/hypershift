@@ -214,5 +214,5 @@ testing:
   # testing. Currently, we only test one latest/previous combination. In the future, we 
   # may be able to test multiple combinations at a time. To test more than one, update
   # the referenced images before each e2e test run.
-  latest: quay.io/openshift-release-dev/ocp-release:4.15.53-x86_64
-  previous: quay.io/openshift-release-dev/ocp-release:4.15.52-x86_64
+  latest: quay.io/openshift-release-dev/ocp-release:4.16.43-x86_64
+  previous: quay.io/openshift-release-dev/ocp-release:4.16.42-x86_64
