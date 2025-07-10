@@ -1,9 +1,6 @@
 package nodepool
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
-	"encoding/base64"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -11,12 +8,15 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
-
-	"golang.org/x/crypto/ssh"
 )
+
+// dummySSHKey is a base64 encoded dummy SSH public key.
+// The CAPI AzureMachineTemplate requires an SSH key to be set, so we provide a dummy one here.
+const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JLN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
@@ -93,21 +93,30 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		}
 	}
 
+	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
+
 	return azureMachineTemplate, nil
 }
 
-func generateSSHPubkey() (string, error) {
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+func (c *CAPI) azureMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
+	spec, err := azureMachineTemplateSpec(c.nodePool)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate private key: %w", err)
+		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)
 	}
 
-	publicRsaKey, err := ssh.NewPublicKey(&privateKey.PublicKey)
+	templateName, err := templateNameGenerator(spec)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate public key: %w", err)
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
 	}
 
-	return base64.StdEncoding.EncodeToString(ssh.MarshalAuthorizedKey(publicRsaKey)), nil
+	template := &capiazure.AzureMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
 }
 
 func failureDomain(nodepool *hyperv1.NodePool) *string {

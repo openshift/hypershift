@@ -105,7 +105,7 @@ func (r *Reconciler) handleNodeDrainRequest(ctx context.Context, node *corev1.No
 
 	if isNodeUnreachable(node) {
 		// When the node is unreachable and some pods are not evicted for as long as this timeout, we ignore them.
-		// This is copied from cluster-api to match the drain behaviour there for machines
+		// This is copied from cluster-api to match the drain behavior there for machines
 		drainer.SkipWaitForDeleteTimeoutSeconds = 60 * 5 // 5 minutes
 	}
 

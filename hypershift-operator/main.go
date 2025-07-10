@@ -35,18 +35,17 @@ import (
 	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
+	hosupportedversion "github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
-	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -90,7 +89,7 @@ func main() {
 		},
 	}
 
-	cmd.Version = version.String()
+	cmd.Version = supportedversion.String()
 
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(NewInitCommand())
@@ -189,7 +188,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
-	log.Info("Starting hypershift-operator-manager", "version", version.String())
+	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "hypershift-operator-manager"
@@ -304,29 +303,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
-	// Populate registry overrides with any ICSP and IDMS from a OpenShift management cluster
-	var imageRegistryOverrides map[string][]string
-	if mgmtClusterCaps.Has(capabilities.CapabilityICSP) || mgmtClusterCaps.Has(capabilities.CapabilityIDMS) {
-		imageRegistryOverrides, err = globalconfig.GetAllImageRegistryMirrors(ctx, apiReadingClient, mgmtClusterCaps.Has(capabilities.CapabilityIDMS), mgmtClusterCaps.Has(capabilities.CapabilityICSP))
-		if err != nil {
-			return fmt.Errorf("failed to populate image registry overrides: %w", err)
-		}
-	}
-
-	releaseProviderWithOpenShiftImageRegistryOverrides := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
-		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
-			Delegate: &releaseinfo.CachedProvider{
-				Inner: &releaseinfo.RegistryClientProvider{},
-				Cache: map[string]*releaseinfo.ReleaseImage{},
-			},
-			RegistryOverrides: opts.RegistryOverrides,
-		},
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
-
-	imageMetaDataProvider := &hyperutil.RegistryClientImageMetadataProvider{
-		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-	}
+	// Create the registry provider for the release and image metadata providers
+	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
 
 	monitoringDashboards := (os.Getenv("MONITORING_DASHBOARDS") == "1")
 	enableCVOManagementClusterMetricsAccess := (os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1")
@@ -343,6 +321,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ManagementClusterCapabilities:           mgmtClusterCaps,
 		HypershiftOperatorImage:                 operatorImage,
 		RegistryOverrides:                       opts.RegistryOverrides,
+		RegistryProvider:                        registryProvider,
 		EnableOCPClusterMonitoring:              opts.EnableOCPClusterMonitoring,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
 		MetricsSet:                              metricsSet,
@@ -367,7 +346,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
 	if opts.CertDir != "" {
-		if err := hostedcluster.SetupWebhookWithManager(mgr, imageMetaDataProvider, log); err != nil {
+		if err := hostedcluster.SetupWebhookWithManager(mgr, registryProvider.MetadataProvider, log); err != nil {
 			return fmt.Errorf("unable to create webhook: %w", err)
 		}
 	}
@@ -406,14 +385,12 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
-		ReleaseProvider:         releaseProviderWithOpenShiftImageRegistryOverrides,
+		ReleaseProvider:         registryProvider.ReleaseProvider,
 		CreateOrUpdateProvider:  createOrUpdate,
 		HypershiftOperatorImage: operatorImage,
-		ImageMetadataProvider: &hyperutil.RegistryClientImageMetadataProvider{
-			OpenShiftImageRegistryOverrides: imageRegistryOverrides,
-		},
-		KubevirtInfraClients: kvinfra.NewKubevirtInfraClientMap(),
-		EC2Client:            ec2Client,
+		ImageMetadataProvider:   registryProvider.MetadataProvider,
+		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
+		EC2Client:               ec2Client,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
 	}
@@ -426,7 +403,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	enableSizeTagging := os.Getenv("ENABLE_SIZE_TAGGING") == "1"
 	if enableSizeTagging {
-		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, releaseProviderWithOpenShiftImageRegistryOverrides, imageMetaDataProvider); err != nil {
+		if err := hostedclustersizing.SetupWithManager(ctx, mgr, operatorImage, registryProvider.ReleaseProvider, registryProvider.MetadataProvider); err != nil {
 			return fmt.Errorf("failed to set up hosted cluster sizing operator: %w", err)
 		}
 	}
@@ -443,7 +420,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+	if err := hosupportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
 		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
@@ -465,7 +442,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if sharedingress.UseSharedIngress() {
 		sharedIngress := sharedingress.SharedIngressReconciler{
-			Namespace: opts.Namespace,
+			Namespace:                     opts.Namespace,
+			ManagementClusterCapabilities: mgmtClusterCaps,
 		}
 		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)

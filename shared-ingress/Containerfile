@@ -1,4 +1,4 @@
-FROM registry.redhat.io/ubi10-beta/ubi:10.0-beta-1741674993
+FROM registry.access.redhat.com/ubi10/ubi:10.0-1747220028
 
 RUN dnf install -y haproxy-3.0.5-4.el10 \
   && dnf clean all

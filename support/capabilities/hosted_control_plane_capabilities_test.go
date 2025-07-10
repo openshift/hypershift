@@ -13,15 +13,24 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 	tests := []struct {
 		name                       string
 		disabledCapabilities       []hyperv1.OptionalCapability
+		enabledCapabilities        []hyperv1.OptionalCapability
 		expectImageRegistryEnabled bool
 	}{
 		{
+			name:                       "returns true when image registry capability is neither disabled nor enabled",
+			enabledCapabilities:        nil,
+			disabledCapabilities:       nil,
+			expectImageRegistryEnabled: true,
+		},
+		{
 			name:                       "returns false when image registry capability is disabled",
+			enabledCapabilities:        nil,
 			disabledCapabilities:       []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
 			expectImageRegistryEnabled: false,
 		},
 		{
 			name:                       "returns true when image registry capability is enabled",
+			enabledCapabilities:        []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
 			disabledCapabilities:       nil,
 			expectImageRegistryEnabled: true,
 		},
@@ -30,6 +39,7 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			caps := &hyperv1.Capabilities{
+				Enabled:  test.enabledCapabilities,
 				Disabled: test.disabledCapabilities,
 			}
 			enabled := IsImageRegistryCapabilityEnabled(caps)
@@ -46,11 +56,59 @@ func TestIsImageRegistryCapabilityEnabled(t *testing.T) {
 func TestCalculateEnabledCapabilities(t *testing.T) {
 	tests := []struct {
 		name                 string
+		enabledCapabilities  []hyperv1.OptionalCapability
 		disabledCapabilities []hyperv1.OptionalCapability
 		expectedCapabilities []configv1.ClusterVersionCapability
 	}{
 		{
-			name:                 "returns default capability set when disabledCapabilities is nil",
+			name:                 "returns default capability set when enabledCapabilities and disabledCapabilities are nil",
+			enabledCapabilities:  nil,
+			disabledCapabilities: nil,
+			expectedCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityCSISnapshot,
+				configv1.ClusterVersionCapabilityCloudControllerManager,
+				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityDeploymentConfig,
+				configv1.ClusterVersionCapabilityImageRegistry,
+				configv1.ClusterVersionCapabilityIngress,
+				configv1.ClusterVersionCapabilityInsights,
+				configv1.ClusterVersionCapabilityMachineAPI,
+				configv1.ClusterVersionCapabilityNodeTuning,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+				configv1.ClusterVersionCapabilityStorage,
+				configv1.ClusterVersionCapabilityMarketplace,
+				configv1.ClusterVersionCapabilityOpenShiftSamples,
+			},
+		},
+		{
+			name:                 "returns default set minus image registry capability when ImageRegistry capability is Disabled",
+			enabledCapabilities:  nil,
+			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+			expectedCapabilities: []configv1.ClusterVersionCapability{
+				configv1.ClusterVersionCapabilityBuild,
+				configv1.ClusterVersionCapabilityCSISnapshot,
+				configv1.ClusterVersionCapabilityCloudControllerManager,
+				configv1.ClusterVersionCapabilityCloudCredential,
+				configv1.ClusterVersionCapabilityConsole,
+				configv1.ClusterVersionCapabilityDeploymentConfig,
+				// configv1.ClusterVersionCapabilityImageRegistry,
+				configv1.ClusterVersionCapabilityIngress,
+				configv1.ClusterVersionCapabilityInsights,
+				configv1.ClusterVersionCapabilityMachineAPI,
+				configv1.ClusterVersionCapabilityNodeTuning,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+				configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+				configv1.ClusterVersionCapabilityStorage,
+				configv1.ClusterVersionCapabilityMarketplace,
+				configv1.ClusterVersionCapabilityOpenShiftSamples,
+			},
+		},
+		{
+			name:                 "returns default set plus baremetal capability when baremetal capability is Enabled",
+			enabledCapabilities:  []hyperv1.OptionalCapability{hyperv1.BaremetalCapability},
 			disabledCapabilities: nil,
 			expectedCapabilities: []configv1.ClusterVersionCapability{
 				configv1.ClusterVersionCapabilityBuild,
@@ -72,28 +130,39 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 				configv1.ClusterVersionCapabilityOpenShiftSamples,
 			},
 		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			caps := &hyperv1.Capabilities{
+				Enabled:  test.enabledCapabilities,
+				Disabled: test.disabledCapabilities,
+			}
+			enabledCapabilities := CalculateEnabledCapabilities(caps)
+			if !reflect.DeepEqual(test.expectedCapabilities, enabledCapabilities) {
+				t.Logf("expected enabled capabilities: %v", test.expectedCapabilities)
+				t.Logf("calculated enabled capabilities: %v", enabledCapabilities)
+				t.Fatalf("expected enabled capabilities differed from calculated enabled capabilities")
+			}
+		})
+	}
+}
+
+func TestHasDisabledCapabilities(t *testing.T) {
+	tests := []struct {
+		name                 string
+		disabledCapabilities []hyperv1.OptionalCapability
+		expectResult         bool
+	}{
 		{
-			name:                 "returns default set minus image registry capability when ImageRegistry capability is Disabled",
-			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
-			expectedCapabilities: []configv1.ClusterVersionCapability{
-				configv1.ClusterVersionCapabilityBuild,
-				configv1.ClusterVersionCapabilityCSISnapshot,
-				configv1.ClusterVersionCapabilityCloudControllerManager,
-				configv1.ClusterVersionCapabilityCloudCredential,
-				configv1.ClusterVersionCapabilityConsole,
-				configv1.ClusterVersionCapabilityDeploymentConfig,
-				// configv1.ClusterVersionCapabilityImageRegistry,
-				configv1.ClusterVersionCapabilityIngress,
-				configv1.ClusterVersionCapabilityInsights,
-				configv1.ClusterVersionCapabilityMachineAPI,
-				configv1.ClusterVersionCapabilityNodeTuning,
-				configv1.ClusterVersionCapabilityOperatorLifecycleManager,
-				configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
-				configv1.ClusterVersionCapabilityStorage,
-				configv1.ClusterVersionCapabilityBaremetal,
-				configv1.ClusterVersionCapabilityMarketplace,
-				configv1.ClusterVersionCapabilityOpenShiftSamples,
-			},
+			name:                 "returns false when none capabilities are disabled",
+			disabledCapabilities: nil,
+			expectResult:         false,
+		},
+		{
+			name:                 "returns true if any capabilities are disabled",
+			disabledCapabilities: []hyperv1.OptionalCapability{hyperv1.OpenShiftSamplesCapability},
+			expectResult:         true,
 		},
 	}
 
@@ -102,11 +171,12 @@ func TestCalculateEnabledCapabilities(t *testing.T) {
 			caps := &hyperv1.Capabilities{
 				Disabled: test.disabledCapabilities,
 			}
-			enabledCapabilities := CalculateEnabledCapabilities(caps)
-			if !reflect.DeepEqual(test.expectedCapabilities, enabledCapabilities) {
-				t.Logf("expected enabled capabilities: %v", test.expectedCapabilities)
-				t.Logf("calculated enabled capabilities: %v", enabledCapabilities)
-				t.Fatalf("expected enabled capabilities differed from calculated enabled capabilities")
+			hasDisabledCapabilities := HasDisabledCapabilities(caps)
+			if test.expectResult && !hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be true, but it wasn't")
+			}
+			if !test.expectResult && hasDisabledCapabilities {
+				t.Fatal("expected HasDisabledCapabilities, to be false, but it wasn't")
 			}
 		})
 	}

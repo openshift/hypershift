@@ -243,13 +243,13 @@ func HashSimple(o interface{}) string {
 }
 
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
-// The struct is first marshalled to JSON before hashing
+// The struct is first marshaled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
 	return HashStructWithJSONMapper(data, nil)
 }
 
 // HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
-// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// The struct is first marshaled to JSON before hashing. You can provide a JSONMapper that transforms the marshaled
 // JSON before computing the hash or nil if no transformation is needed.
 func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)
@@ -403,19 +403,29 @@ func ParseNodeSelector(str string) map[string]string {
 }
 
 func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	// TODO: cewong - re-enable when we fix loadbalancer subnet annotation
-	/*
-		if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-			return
-		}
-		if svc.Annotations == nil {
-			svc.Annotations = make(map[string]string)
-		}
-		subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
-		if ok {
-			svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
-		}
-	*/
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
+	if ok {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
+	}
+}
+
+func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
+	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = make(map[string]string)
+	}
+	selectors, ok := hcp.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation]
+	if ok {
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"] = selectors
+	}
 }
 
 func GetKubeClientSet() (kubeclient.Interface, error) {

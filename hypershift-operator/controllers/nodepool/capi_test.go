@@ -376,8 +376,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	g := NewWithT(t)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
-		Client:                 c,
-		CreateOrUpdateProvider: upsert.New(false),
+		Client: c,
 	}
 
 	infraID := "test"
@@ -505,6 +504,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 			ConfigGenerator: &ConfigGenerator{
 				hostedCluster: hcluster,
 				nodePool:      nodePool,
+				Client:        c,
 				rolloutConfig: &rolloutConfig{
 					releaseImage: &releaseinfo.ReleaseImage{},
 				},
@@ -515,18 +515,18 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		},
 		capiClusterName: "test",
 	}
-	template, mutateTemplate, machineTemplateSpecJSON, err := capi.machineTemplateBuilders()
+	template, err := capi.machineTemplateBuilders(context.Background())
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
+
+	machineTemplateSpec := template.(*capiaws.AWSMachineTemplate).Spec
+	g.Expect(machineTemplateSpec).To(BeEquivalentTo(expectedMachineTemplate.Spec))
 
 	// Validate that template and mutateTemplate are able to produce an expected target template.
-	_, err = r.CreateOrUpdate(context.Background(), r.Client, template, func() error {
-		return mutateTemplate(template)
-	})
+	_, err = upsert.NewApplyProvider(false).ApplyManifest(context.Background(), r.Client, template)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
-	g.Expect(r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)).To(Succeed())
+	g.Expect(r.Client.Get(context.Background(), client.ObjectKeyFromObject(template), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }
@@ -1034,7 +1034,7 @@ func TestCAPIReconcile(t *testing.T) {
 	maxSurge := intstr.FromInt(1)
 	// This is the generated name by machineTemplateBuilders.
 	// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-	awsMachineTemplateName := "test-nodepool-77a60936"
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
 	capiClusterName := "infra-id"
 
 	tests := []struct {
@@ -1398,6 +1398,7 @@ func TestCAPIReconcile(t *testing.T) {
 					CreateOrUpdateProvider: upsert.New(false),
 				},
 				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
 			// Make sure the templates are populates in the control plane namespace

@@ -555,7 +555,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 		cpoManagedDeploymentList := &appsv1.DeploymentList{}
 		if err := r.List(ctx, cpoManagedDeploymentList, client.MatchingLabels{
-			config.ManagedByLabel: "control-plane-operator",
+			component.ManagedByLabel: "control-plane-operator",
 		}, client.InNamespace(hostedControlPlane.Namespace)); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to list managed deployments in namespace %s: %w", hostedControlPlane.Namespace, err)
@@ -880,7 +880,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 		}
 	}
 
-	if hyperazureutil.IsAroHCP() {
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
@@ -2353,7 +2353,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 
 	p, err := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
 	if err != nil {
-		return fmt.Errorf("failed to initialise machine config server parameters config: %w", err)
+		return fmt.Errorf("failed to initialize machine config server parameters config: %w", err)
 	}
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)

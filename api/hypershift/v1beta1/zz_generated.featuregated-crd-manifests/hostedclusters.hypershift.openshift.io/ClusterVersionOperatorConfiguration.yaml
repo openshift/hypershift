@@ -158,17 +158,17 @@ spec:
                 properties:
                   disabled:
                     description: |-
-                      disabled when specified, sets the cluster version baselineCapabilitySet to None
-                      and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-                      This effectively disables that capability on the hosted cluster.
-
-                      When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-                      OpenShift version.
-
+                      disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
                       Once set, this field cannot be changed.
+
+                      Note: Disabling 'openshift-samples','Insights', 'Console' are only supported in OpenShift versions 4.20 and above.
                     items:
                       enum:
                       - ImageRegistry
+                      - openshift-samples
+                      - Insights
+                      - baremetal
+                      - Console
                       type: string
                     maxItems: 25
                     type: array
@@ -177,11 +177,33 @@ spec:
                     - message: Disabled is immutable. Changes might result in unpredictable
                         and disruptive behavior.
                       rule: self == oldSelf
+                  enabled:
+                    description: |-
+                      enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
+                      Once set, this field cannot be changed.
+                    items:
+                      enum:
+                      - ImageRegistry
+                      - openshift-samples
+                      - Insights
+                      - baremetal
+                      - Console
+                      type: string
+                    maxItems: 25
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: Enabled is immutable. Changes might result in unpredictable
+                        and disruptive behavior.
+                      rule: self == oldSelf
                 type: object
                 x-kubernetes-validations:
                 - message: Capabilities is immutable. Changes might result in unpredictable
                     and disruptive behavior.
                   rule: self == oldSelf
+                - message: Capabilities can not be both enabled and disabled at once.
+                  rule: 'has(self.enabled) && has(self.disabled) ? self.enabled.all(e,
+                    !(e in self.disabled)) : true'
               channel:
                 description: |-
                   channel is an identifier for explicitly requesting that a non-default set of updates be applied to this cluster.
@@ -366,6 +388,7 @@ spec:
                                     Exact names trump over wildcard names. Explicit names defined here trump over extracted implicit names.
                                   items:
                                     type: string
+                                  maxItems: 64
                                   type: array
                                   x-kubernetes-list-type: atomic
                                 servingCertificate:
@@ -383,6 +406,7 @@ spec:
                                   - name
                                   type: object
                               type: object
+                            maxItems: 32
                             type: array
                             x-kubernetes-list-type: atomic
                         type: object
@@ -2351,7 +2375,7 @@ spec:
                       items:
                         maxLength: 255
                         type: string
-                      maxItems: 25
+                      maxItems: 255
                       type: array
                       x-kubernetes-list-type: set
                     source:
@@ -3574,7 +3598,6 @@ spec:
                             - controlPlaneOperator
                             - disk
                             - file
-                            - imageRegistry
                             - ingress
                             - managedIdentitiesKeyVault
                             - network
@@ -4756,6 +4779,11 @@ spec:
                 != "") : true'
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
+            - message: APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]
+              rule: '!self.services.exists(s, s.service == ''APIServer'' && has(s.servicePublishingStrategy.loadBalancer)
+                && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration)
+                && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
+                cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
@@ -5291,7 +5319,6 @@ spec:
                       - state
                       - verified
                       type: object
-                    maxItems: 10
                     type: array
                   observedGeneration:
                     description: |-

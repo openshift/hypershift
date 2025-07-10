@@ -280,8 +280,12 @@ const (
 	KubeAPIServerMaximumMutatingRequestsInFlight = "hypershift.openshift.io/kube-apiserver-max-mutating-requests-inflight"
 
 	// AWSLoadBalancerSubnetsAnnotation allows specifying the subnets to use for control plane load balancers
-	// in the AWS platform.
+	// in the AWS platform. These subnets only apply to private load balancers.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
+
+	// AWSLoadBalancerTargetNodesAnnotation allows specifying label selectors to choose target nodes for
+	// control plane load balancers in the AWS platform.
+	AWSLoadBalancerTargetNodesAnnotation = "hypershift.openshift.io/aws-load-balancer-target-node-labels"
 
 	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
 	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
@@ -352,6 +356,12 @@ const (
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
+
+	// HostedClusterRestoredFromBackupAnnotation is set to true when the HostedCluster is restored from a backup using Hypershift
+	// OADP plugin. This annotation is set by the Hypershift OADP plugin during the Backup/Restore process. The annotation will trigger
+	// a process to check if the different components in the DataPlane are working as expected. Checks:
+	// - Validates the monitoring stack is properly working after restoration, if not HCCO will restart the prometheus-k8s pods.
+	HostedClusterRestoredFromBackupAnnotation = "hypershift.openshift.io/restored-from-backup"
 )
 
 // RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
@@ -369,22 +379,36 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal;Console
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
+const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityOpenShiftSamples)
+const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
+const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
+const ConsoleCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityConsole)
 
-// capabilities allows disabling optional components at install time.
+// capabilities allows enabling or disabling optional components at install time.
+// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+// OpenShift version, minus the baremetal capability.
 // Once set, it cannot be changed.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.enabled) && has(self.disabled) ? self.enabled.all(e, !(e in self.disabled)) : true", message="Capabilities can not be both enabled and disabled at once."
 type Capabilities struct {
-	// disabled when specified, sets the cluster version baselineCapabilitySet to None
-	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-	// This effectively disables that capability on the hosted cluster.
-	//
-	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-	// OpenShift version.
-	//
+	// enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
 	// Once set, this field cannot be changed.
+	//
+	// +listType=atomic
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Enabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Enabled []OptionalCapability `json:"enabled,omitempty"`
+
+	// disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+	// Once set, this field cannot be changed.
+	//
+	// Note: Disabling 'openshift-samples','Insights', 'Console' are only supported in OpenShift versions 4.20 and above.
 	//
 	// +listType=atomic
 	// +immutable
@@ -403,6 +427,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
+// +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -758,7 +783,7 @@ type ImageContentSource struct {
 	//
 	// +optional
 	// +immutable
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=255
 	// +listType=set
 	// +kubebuilder:validation:items:MaxLength=255
 	Mirrors []string `json:"mirrors,omitempty"`
@@ -1607,7 +1632,6 @@ type ClusterVersionStatus struct {
 	// is preserved.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
 	// observedGeneration reports which version of the spec is being synced.

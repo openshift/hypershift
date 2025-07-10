@@ -30,7 +30,7 @@ func InterruptableContext(parent context.Context) context.Context {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigs
-		fmt.Println("Received an interrupt, cancelling test context...")
+		fmt.Println("Received an interrupt, canceling test context...")
 		cancel()
 	}()
 	return ctx

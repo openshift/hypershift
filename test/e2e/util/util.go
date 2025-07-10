@@ -22,6 +22,7 @@ import (
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -88,6 +89,32 @@ var expectedKasManagementComponents = []string{
 	"karpenter",
 	"karpenter-operator",
 	"featuregate-generator",
+}
+
+type GuestClients struct {
+	CfgClient  *configv1client.Clientset
+	KubeClient *kubernetes.Clientset
+}
+
+// InitGuestClients initializes the Kubernetes and OpenShift config clients for the guest cluster
+func InitGuestClients(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *GuestClients {
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	guestConfig.QPS = -1
+	guestConfig.Burst = -1
+
+	cfgClient, err := configv1client.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	kubeClient, err := kubernetes.NewForConfig(guestConfig)
+	g.Expect(err).NotTo(HaveOccurred())
+
+	return &GuestClients{
+		CfgClient:  cfgClient,
+		KubeClient: kubeClient,
+	}
 }
 
 func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client crclient.Client, original T, mutate func(obj T)) error {
@@ -882,7 +909,7 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 
 func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
-		AtLeast(t, Version419)
+		AtLeast(t, Version420)
 		testNamespaceName := "e2e-psa-check"
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1055,7 +1082,7 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
-	// Get the component name for each labelled pod and ensure it exists in the components slice
+	// Get the component name for each labeled pod and ensure it exists in the components slice
 	for _, pod := range podList.Items {
 		if pod.Labels[suppconfig.NeedManagementKASAccessLabel] == "" {
 			continue
@@ -1479,10 +1506,14 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
 	AtLeast(t, Version419)
+	serviceDomain := "service.ci.hypershift.devcluster.openshift.com"
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+		serviceDomain = "aks-e2e.hypershift.azure.devcluster.openshift.com"
+	}
 	var (
 		hcKASCustomKubeconfigSecretName string
 		// Using domain name filtered by the external-dns deployment in CI
-		customApiServerHost     = fmt.Sprintf("api-custom-cert-%s.service.ci.hypershift.devcluster.openshift.com", entryHostedCluster.Spec.InfraID)
+		customApiServerHost     = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
 		hcpNamespace            = manifests.HostedControlPlaneNamespace(entryHostedCluster.Namespace, entryHostedCluster.Name)
 		kasCustomCertSecretName = fmt.Sprintf("%s-kas-custom-cert", entryHostedCluster.Name)
 	)
@@ -1927,6 +1958,14 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 				if metricName == hcmetrics.UpgradingDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
 					continue
 				}
+				// Karpenter related metrics
+				if metricName == karpenterassets.KarpenterBuildInfoMetricName || metricName == karpenterassets.KarpenterOperatorInfoMetricName {
+					if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
+						hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
+						continue
+					}
+					query = metricName
+				}
 
 				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
 				if err != nil {
@@ -2085,7 +2124,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -2128,7 +2167,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	validateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -2139,7 +2178,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 }
 
-func validateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	if !hasWorkerNodes {
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
@@ -2521,30 +2560,18 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 }
 
 // EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled
-func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
 	t.Run("EnsureImageRegistryCapabilityDisabled", func(t *testing.T) {
 		AtLeast(t, Version418)
-		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-		// we know we're the only real clients for these test servers, so turn off client-side throttling
-		guestConfig.QPS = -1
-		guestConfig.Burst = -1
 
-		cfgClient, err := configv1client.NewForConfig(guestConfig)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-
-		_, err = cfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "image-registry", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"image-registry\" not found"))
-
-		guestClient, err := kubernetes.NewForConfig(guestConfig)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
 
 		// ensure existing service accounts don't have pull-secrets.
 		EventuallyObject(t, ctx, "Waiting for service account default/default to be provisioned...",
 			func(ctx context.Context) (*corev1.ServiceAccount, error) {
-				defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+				defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
 				return defaultSA, err
 			},
 			[]Predicate[*corev1.ServiceAccount]{
@@ -2555,19 +2582,19 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 			WithInterval(10*time.Second), WithTimeout(2*time.Minute),
 		)
 
-		defaultSA, err := guestClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
+		defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts("default").Get(ctx, "default", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
 		g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
 
 		// create a namespace and ensure no pull-secrets are provisioned to
 		// the newly auto-created service accounts.
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "test-namespace"}}
-		ns, err = guestClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+		ns, err = clients.KubeClient.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't create test namespace")
 
 		EventuallyObject(t, ctx, fmt.Sprintf("Waiting for service account default/%s to be provisioned...", ns.Name),
 			func(ctx context.Context) (*corev1.ServiceAccount, error) {
-				defaultSA, err := guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+				defaultSA, err := clients.KubeClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
 				return defaultSA, err
 			},
 			[]Predicate[*corev1.ServiceAccount]{
@@ -2578,12 +2605,12 @@ func EnsureImageRegistryCapabilityDisabled(ctx context.Context, t *testing.T, g 
 			WithInterval(10*time.Second), WithTimeout(2*time.Minute),
 		)
 
-		defaultSA, err = guestClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
+		defaultSA, err = clients.KubeClient.CoreV1().ServiceAccounts(ns.Name).Get(ctx, "default", metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get default service account")
 		g.Expect(defaultSA.ImagePullSecrets).To(BeNil())
 
 		// ensure image-registry resources are not present
-		_, err = guestClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-image-registry", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-image-registry\" not found"))
 	})
@@ -2610,4 +2637,52 @@ func GenerateCustomCertificate(dnsNames []string, validity time.Duration) ([]byt
 	}
 
 	return certs.CertToPem(crt), certs.PrivateKeyToPem(key), nil
+}
+
+// EnsureOpenshiftSamplesCapabilityDisabled validates the expectations for when OpenShiftSamplesCapability is Disabled
+func EnsureOpenshiftSamplesCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+	t.Run("EnsureOpenshiftSamplesCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "openshift-samples", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"openshift-samples\" not found"))
+
+		// ensure openshift-samples resources are not present
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-cluster-samples-operator", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-cluster-samples-operator\" not found"))
+	})
+}
+
+// EnsureInsightsCapabilityDisabled validates the expectations for when InsightsCapability is Disabled
+func EnsureInsightsCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+	t.Run("EnsureInsightsCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "insights", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"insights\" not found"))
+
+		// ensure insights resources are not present
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-insights", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-insights\" not found"))
+	})
+}
+
+// EnsureConsoleCapabilityDisabled validates the expectations for when ConsoleCapability is Disabled
+func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega, clients *GuestClients) {
+	t.Run("EnsureConsoleCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "console", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"console\" not found"))
+
+		// ensure console resources are not present
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-console", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-console\" not found"))
+	})
 }

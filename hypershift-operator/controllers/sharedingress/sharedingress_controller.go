@@ -9,10 +9,12 @@ import (
 	assets "github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/support/capabilities"
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +34,9 @@ type SharedIngressReconciler struct {
 	Client         client.Client
 	Namespace      string
 	createOrUpdate upsert.CreateOrUpdateFN
+
+	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
+	ManagementClusterCapabilities capabilities.CapabiltyChecker
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
@@ -72,7 +77,7 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		Complete(r)
 }
 
-func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
 		return nil
@@ -123,14 +128,33 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 
 	namespaces := make([]string, 0, len(hcList.Items))
 	svcsNamespaceToClusterID := make(map[string]string)
+	routes := make([]routev1.Route, 0, len(namespaces))
 	for _, hc := range hcList.Items {
 		hcpNamespace := hc.Namespace + "-" + hc.Name
 		namespaces = append(namespaces, hcpNamespace)
 		svcsNamespaceToClusterID[hcpNamespace] = hc.Spec.ClusterID
+		if hc.Spec.KubeAPIServerDNSName != "" {
+			// If the HostedCluster has a KAS DNS name, inject a route for it.
+			route := routev1.Route{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver-custom",
+					Namespace: hcpNamespace,
+					Labels: map[string]string{
+						util.HCPRouteLabel: "true",
+					},
+				},
+				Spec: routev1.RouteSpec{
+					Host: hc.Spec.KubeAPIServerDNSName,
+					To: routev1.RouteTargetReference{
+						Name: "kube-apiserver",
+					},
+				},
+			}
+			routes = append(routes, route)
+		}
 	}
 
 	// This enables traffic from through external DNS.
-	routes := make([]routev1.Route, 0, len(namespaces))
 	for _, ns := range namespaces {
 		routeList := &routev1.RouteList{}
 		if err := r.Client.List(ctx, routeList, client.InNamespace(ns)); err != nil {
@@ -242,7 +266,24 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		log.Log.Info("reconciled etcd pdb", "result", result)
 	}
 
-	// TODO(alberto): set Network policies.
+	// Reconcile KAS Network Policy
+	var managementClusterNetwork *configv1.Network
+	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
+		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
+			return fmt.Errorf("failed to get management cluster network config: %w", err)
+		}
+	}
+
+	networkPolicy := RouterNetworkPolicy()
+	if result, err := r.createOrUpdate(ctx, r.Client, networkPolicy, func() error {
+		ReconcileRouterNetworkPolicy(networkPolicy, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router network policy: %w", err)
+	} else {
+		log.Log.Info("reconciled router network policy", "result", result)
+	}
 
 	return nil
 }

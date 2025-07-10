@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/openshift/hypershift/control-plane-pki-operator/topology"
-	hypershiftversion "github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 
@@ -32,7 +32,7 @@ func NewOperatorCommand(ctx context.Context) *cobra.Command {
 		},
 	}
 
-	cmd.Version = hypershiftversion.GetRevision()
+	cmd.Version = supportedversion.GetRevision()
 	cmd.AddCommand(NewOperator(ctx))
 
 	return cmd
@@ -41,7 +41,7 @@ func NewOperatorCommand(ctx context.Context) *cobra.Command {
 func NewOperator(ctx context.Context) *cobra.Command {
 	cmd := controllercmd.
 		NewControllerCommandConfig("control-plane-pki-operator", version.Info{
-			GitCommit: hypershiftversion.GetRevision(),
+			GitCommit: supportedversion.GetRevision(),
 		}, RunOperator, clock.RealClock{}).
 		WithTopologyDetector(topology.Detector{}).
 		NewCommandWithContext(ctx)

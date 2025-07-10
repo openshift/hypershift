@@ -5,8 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/config"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -143,7 +143,7 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 	templateParameters := []map[string]string{}
 	templateParameters = append(
 		templateParameters,
-		map[string]string{"name": openshiftTemplateParams.HyperShiftImage, "value": fmt.Sprintf("%s:%s", version.HypershiftImageBase, version.HypershiftImageTag)},
+		map[string]string{"name": openshiftTemplateParams.HyperShiftImage, "value": fmt.Sprintf("%s:%s", config.HypershiftImageBase, config.HypershiftImageTag)},
 		map[string]string{"name": openshiftTemplateParams.HypershiftOperatorReplicas, "value": string(opts.HyperShiftOperatorReplicas)},
 		map[string]string{"name": openshiftTemplateParams.Namespace, "value": opts.Namespace},
 	)

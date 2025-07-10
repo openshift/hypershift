@@ -184,7 +184,7 @@ type HostedClusterReconciler struct {
 
 	OperatorNamespace string
 
-	ReconcileMetadataProviders func(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error)
+	RegistryProvider globalconfig.RegistryProvider
 
 	overwriteReconcile   func(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error)
 	now                  func() metav1.Time
@@ -233,8 +233,6 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
-
-	r.ReconcileMetadataProviders = r.ReconcileMetadataProvidersImpl
 
 	return bldr.Complete(r)
 }
@@ -375,12 +373,6 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	return res, err
-}
-
-func (r *HostedClusterReconciler) ReconcileMetadataProvidersImpl(ctx context.Context, imgOverrides map[string]string) (releaseinfo.ProviderWithOpenShiftImageRegistryOverrides, hyperutil.ImageMetadataProvider, error) {
-	releaseProvider, imageMetadataProvider, err := globalconfig.RenconcileMgmtImageRegistryOverrides(ctx, r.ManagementClusterCapabilities, r.Client, imgOverrides)
-
-	return releaseProvider, imageMetadataProvider, err
 }
 
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
@@ -662,10 +654,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the ICSP/IDMS from the management cluster
-	releaseProvider, registryClientImageMetadataProvider, err := r.ReconcileMetadataProviders(ctx, r.RegistryOverrides)
+	err = r.RegistryProvider.Reconcile(ctx, r.Client)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	releaseProvider := r.RegistryProvider.GetReleaseProvider()
+	registryClientImageMetadataProvider := r.RegistryProvider.GetMetadataProvider()
 
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
@@ -830,6 +824,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ValidHostedControlPlaneConfiguration,
 			hyperv1.ValidReleaseInfo,
 			hyperv1.ValidIDPConfiguration,
+			hyperv1.HostedClusterRestoredFromBackup,
 		}
 
 		for _, conditionType := range hcpConditions {
@@ -1346,6 +1341,58 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
+			}
+		}
+	}
+
+	// Set the HostedCluster restored from backup condition
+	{
+		if _, exists := hcluster.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
+			freshCondition := &metav1.Condition{
+				Type:               string(hyperv1.HostedClusterRestoredFromBackup),
+				Reason:             hyperv1.RecoveryFinishedReason,
+				Status:             metav1.ConditionUnknown,
+				ObservedGeneration: hcluster.Generation,
+			}
+
+			if hcp != nil {
+				hostedClusterRestoredFromBackupCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+				if hostedClusterRestoredFromBackupCondition != nil {
+					freshCondition = hostedClusterRestoredFromBackupCondition
+				}
+			}
+
+			oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.HostedClusterRestoredFromBackup))
+
+			// Preserve previous status if we can no longer determine the status
+			if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
+				freshCondition.Status = oldCondition.Status
+			}
+
+			// If the condition is not set, or the status is different, set the condition
+			if oldCondition == nil || oldCondition.Status != freshCondition.Status {
+				freshCondition.ObservedGeneration = hcluster.Generation
+			}
+
+			// If the condition is true, delete the hc annotation. It will be eventually bubbled down to the hcp.
+			if freshCondition.Status == metav1.ConditionTrue {
+				hclusterAnnotations := hcluster.GetAnnotations()
+				delete(hclusterAnnotations, hyperv1.HostedClusterRestoredFromBackupAnnotation)
+				hcluster.SetAnnotations(hclusterAnnotations)
+				_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+					return nil
+				})
+				if err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to remove annotations %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
+				}
+			}
+
+			// Persist status updates
+			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+			if _, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
 	}
@@ -1881,6 +1928,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	imageProvider := imageprovider.New(releaseImage)
 	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
+	imageProvider.ComponentImages()[hyperutil.AvailabilityProberImageName] = utilitiesImage
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
@@ -1925,6 +1973,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile platform specific items
 	switch hcluster.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
+		}
 	case hyperv1.AWSPlatform:
 		// Reconcile the AWS OIDC discovery
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
@@ -1989,7 +2042,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if err := r.reconcileKarpenterOperator(ctx, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
 
@@ -2169,6 +2222,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
 		hyperv1.KubeAPIServerGoAwayChance,
+		hyperv1.HostedClusterRestoredFromBackupAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -2372,6 +2426,28 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		return nil
 	}
 
+	// Fix: Remove existing CAPI provider deployment if it contains outdated labels
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
+	capiProviderDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "capi-provider",
+			Namespace: controlPlaneNamespace.Name,
+		},
+	}
+	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
+		}
+	}
+	if err == nil {
+		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/control-plane-component"] != "capi-provider" {
+			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
+			// Always return an error so we can retry when the cache is updated
+			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
+		}
+	}
+
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
 	if err := capi.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
@@ -2488,6 +2564,64 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role binding: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
+	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
+
+	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "kubevirt-csi-cluster",
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err := createOrUpdate(ctx, r.Client, kubevirtCSIClusterRole, func() error {
+		kubevirtCSIClusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"persistentvolumes"},
+				Verbs:     []string{"get"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role: %w", err)
+	}
+
+	kubevirtCSIClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: kubevirtCSIClusterRole.Name,
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err = createOrUpdate(ctx, r.Client, kubevirtCSIClusterRoleBinding, func() error {
+		kubevirtCSIClusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     kubevirtCSIClusterRole.Name,
+		}
+		kubevirtCSIClusterRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role binding: %w", err)
 	}
 
 	return nil

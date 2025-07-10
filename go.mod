@@ -45,10 +45,10 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20250423170806-6bababe9164e
+	github.com/openshift/api v0.0.0-20250609083529-2b129d95495e
 	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
@@ -86,6 +86,7 @@ require (
 	k8s.io/cli-runtime v0.32.2
 	k8s.io/client-go v0.32.2
 	k8s.io/component-base v0.32.2
+	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.130.1
 	k8s.io/kube-aggregator v0.32.2
 	k8s.io/kube-scheduler v0.32.2
@@ -243,7 +244,6 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
-	k8s.io/klog v1.0.0 // indirect
 	k8s.io/kms v0.32.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/kubelet v0.31.1 // indirect

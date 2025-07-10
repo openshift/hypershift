@@ -20,7 +20,7 @@ STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 
-CODESPELL_VER := 2.3.0
+CODESPELL_VER := 2.4.1
 CODESPELL_BIN := codespell
 CODESPELL_DIST_DIR := codespell_dist
 CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
@@ -59,7 +59,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
 .PHONY: update
-update: workspace-sync api-deps api api-docs deps clients
+update: api-deps workspace-sync deps api api-docs clients
 
 $(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 	# Hack to install kuibe api linter plugin until https://github.com/kubernetes-sigs/kube-api-linter/pull/78 is merged
@@ -78,7 +78,7 @@ lint-fix:
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: generate update staticcheck fmt vet lint cpo-container-sync
+verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --

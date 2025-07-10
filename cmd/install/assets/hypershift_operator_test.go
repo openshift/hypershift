@@ -21,7 +21,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		expectedVolumes      []corev1.Volume
 		expectedArgs         []string
 	}{
-		"empty oidc paramaters result in no volume mounts": {
+		"empty oidc parameters result in no volume mounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
 				Namespace: &corev1.Namespace{
 					ObjectMeta: metav1.ObjectMeta{

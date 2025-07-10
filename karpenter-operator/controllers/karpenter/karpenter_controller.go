@@ -7,13 +7,20 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
+	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
+	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,6 +55,9 @@ type Reconciler struct {
 	Namespace                 string
 	ControlPlaneOperatorImage string
 	KarpenterProviderAWSImage string
+	KarpenterComponent        controlplanecomponent.ControlPlaneComponent
+	ControlPlaneContext       controlplanecomponent.ControlPlaneContext
+	ReleaseProvider           releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
 }
 
@@ -138,6 +148,34 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 		return ctrl.Result{}, err
 	}
+
+	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	imageProvider := imageprovider.New(releaseImage)
+	imageProvider.ComponentImages()["token-minter"] = r.ControlPlaneOperatorImage
+	imageProvider.ComponentImages()[util.AvailabilityProberImageName] = r.ControlPlaneOperatorImage
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:              ctx,
+		Client:               r.ManagementClient,
+		ApplyProvider:        upsert.NewApplyProvider(false),
+		HCP:                  hcp,
+		ReleaseImageProvider: imageProvider,
+	}
+
+	r.ControlPlaneContext = cpContext
+	if r.KarpenterComponent == nil {
+		r.KarpenterComponent = karpenterv2.NewComponent()
+	}
+
 	if hcp.DeletionTimestamp != nil {
 		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
 			nodePoolList := &karpenterv1.NodePoolList{}
@@ -194,7 +232,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
-	if err := r.reconcileKarpenter(ctx, hcp); err != nil {
+	if err := r.KarpenterComponent.Reconcile(r.ControlPlaneContext); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter deployment: %w", err)
 	}
 

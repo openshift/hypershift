@@ -22,8 +22,19 @@ spec:
         - start
         - --config
         - /etc/kubernetes/config/config.yaml
+        - --kubeconfig
+        - /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --namespace=openshift-controller-manager
         command:
         - openshift-controller-manager
+        env:
+          - name: POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: POD_NAMESPACE
+            value: openshift-controller-manager
         image: openshift-controller-manager
         imagePullPolicy: IfNotPresent
         livenessProbe:

@@ -53,7 +53,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						name: "when capabilities.disabled is set to a supported capability it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -64,7 +64,18 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						name: "when capabilities.disabled is set to openshift-samples it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OpenShiftSamplesCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.disabled is set to an invalid capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -72,7 +83,69 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Storage"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.enabled is set to a supported capability it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.BaremetalCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.enabled is set to an invalid capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.enabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Storage"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when the same capability is added to both enabled and disabled, it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Insights"),
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Insights"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Capabilities can not be both enabled and disabled at once.",
 					},
 					{
 						name: "when baseDomain has invalid chars it should fail",
@@ -466,6 +539,64 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					{
+						name: "when servicePublishingStrategy is loadBalancer for kas and the hostname clashes with one of configuration.apiServer.servingCerts.namedCertificates it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.LoadBalancer,
+										LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+											Hostname: "kas.duplicated.hostname.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "127.0.0.1",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956::14",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014",
+										},
+									},
+								},
+							}
+							hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+								APIServer: &configv1.APIServerSpec{
+									ServingCerts: configv1.APIServerServingCerts{
+										NamedCertificates: []configv1.APIServerNamedServingCert{
+											{
+												Names: []string{
+													"anything",
+													"kas.duplicated.hostname.com",
+												},
+											},
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates",
+					},
 					{
 						name: "when servicePublishingStrategy is nodePort and addresses valid hostname, IPv4 and IPv6 it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -1222,6 +1353,9 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
+
+		// ensure KAS DNS name is configured with a KAS Serving cert
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
@@ -1285,10 +1419,18 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			// Disable Console only for versions >= 4.20 due to OCPBUGS-57129 — the Hypershift-specific deployment is missing the capability.openshift.io/name: Console annotation.
+			disabledCaps := []hyperv1.OptionalCapability{
+				hyperv1.ImageRegistryCapability,
+				hyperv1.OpenShiftSamplesCapability,
+				hyperv1.InsightsCapability,
+			}
+			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
+				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability)
+			}
+
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
-				},
+				Disabled: disabledCaps,
 			}
 		}
 	}
@@ -1311,16 +1453,28 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// test oauth with identity provider
 		e2eutil.EnsureOAuthWithIdentityProvider(t, ctx, mgtClient, hostedCluster)
 
-		// ensure image registry component is disabled
-		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, mgtClient, hostedCluster)
+		clients := e2eutil.InitGuestClients(ctx, t, g, mgtClient, hostedCluster)
 
-		// ensure KAS DNS name is configured with a KAS Serving cert
-		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		// ensure image registry component is disabled
+		e2eutil.EnsureImageRegistryCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure openshift-samples component is disabled
+		e2eutil.EnsureOpenshiftSamplesCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure insights component is disabled
+		e2eutil.EnsureInsightsCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure console component is disabled
+		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
 	t.Parallel()
+
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		t.Skip("test not supported on platform Azure")
+	}
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

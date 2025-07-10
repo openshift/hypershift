@@ -78,7 +78,7 @@ func LoadManifestInto(componentName string, fileName string, into client.Object)
 		return nil, nil, err
 	}
 
-	obj, gvk, err := hyperapi.YamlSerializer.Decode(bytes, nil, into)
+	obj, gvk, err := hyperapi.AllMonitoringYamlSerializer.Decode(bytes, nil, into)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to load %s manifest: %v", filePath, err)
 	}

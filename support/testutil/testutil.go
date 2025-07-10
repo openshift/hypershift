@@ -108,7 +108,7 @@ func golden(t *testing.T, opts *options) (string, error) {
 func sanitizeFilename(s string) string {
 	result := strings.Builder{}
 	for _, r := range s {
-		if (r >= 'a' && r < 'z') || (r >= 'A' && r < 'Z') || r == '_' || r == '.' || (r >= '0' && r <= '9') {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || r == '.' || (r >= '0' && r <= '9') {
 			// The thing is documented as returning a nil error so lets just drop it
 			_, _ = result.WriteRune(r)
 			continue

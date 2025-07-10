@@ -26,6 +26,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -113,7 +114,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		validateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
 }
 
@@ -166,6 +167,8 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			HypershiftOperatorInfoName,
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
+			karpenterassets.KarpenterBuildInfoMetricName,
+			karpenterassets.KarpenterOperatorInfoMetricName,
 		}, true)
 	})
 }

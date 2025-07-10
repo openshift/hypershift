@@ -8,30 +8,26 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
-	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/go-logr/logr/testr"
+	"go.uber.org/mock/gomock"
 )
 
 func TestKarpenterDeletion(t *testing.T) {
 	g := NewWithT(t)
-	scheme := runtime.NewScheme()
-	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
-	karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
-	scheme.AddKnownTypes(karpenterGroupVersion, &karpenterv1.NodeClaim{})
-	scheme.AddKnownTypes(karpenterGroupVersion, &karpenterv1.NodeClaimList{})
-	scheme.AddKnownTypes(karpenterGroupVersion, &karpenterv1.NodePool{})
-	scheme.AddKnownTypes(karpenterGroupVersion, &karpenterv1.NodePoolList{})
+	scheme := api.Scheme
 
 	testCases := []struct {
 		name                                string
@@ -146,9 +142,18 @@ func TestKarpenterDeletion(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			mockedProvider := releaseinfo.NewMockProvider(mockCtrl)
+			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(testutils.InitReleaseImageOrDie("4.18.0"), nil).AnyTimes()
 			fakeManagementClient := fake.NewClientBuilder().
 				WithScheme(scheme).
 				WithObjects(tc.hcp).
+				WithObjects(&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "pull-secret",
+					},
+				}).
 				Build()
 
 			fakeGuestClient := fake.NewClientBuilder().
@@ -159,6 +164,7 @@ func TestKarpenterDeletion(t *testing.T) {
 			r := &Reconciler{
 				ManagementClient: fakeManagementClient,
 				GuestClient:      fakeGuestClient,
+				ReleaseProvider:  mockedProvider,
 			}
 
 			ctx := log.IntoContext(context.Background(), testr.New(t))

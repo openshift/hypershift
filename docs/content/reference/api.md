@@ -3497,7 +3497,9 @@ Valid values are ImageID and AzureMarketplace.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>capabilities allows disabling optional components at install time.
+<p>capabilities allows enabling or disabling optional components at install time.
+When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version, minus the baremetal capability.
 Once set, it cannot be changed.</p>
 </p>
 <table>
@@ -3510,6 +3512,21 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
+<code>enabled</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>disabled</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
@@ -3519,12 +3536,9 @@ Once set, it cannot be changed.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
-and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-This effectively disables that capability on the hosted cluster.</p>
-<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-OpenShift version.</p>
-<p>Once set, this field cannot be changed.</p>
+<p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
+<p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo;, &lsquo;Console&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
 </td>
 </tr>
 </tbody>
@@ -3570,7 +3584,7 @@ MarketType
 <em>(Optional)</em>
 <p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
 &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
 When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default value is CapacityBlocks.</p>
 </td>
@@ -4302,6 +4316,12 @@ The grace period is determined by the hypershift.openshift.io/destroy-grace-peri
 an initial deployment or upgrade.
 When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterRestoredFromBackup&#34;</p></td>
+<td><p>HostedClusterRestoredFromBackup indicates that the HostedCluster was restored from backup.
+This condition is set to true when the HostedCluster is restored from backup and the recovery process is complete.
+This condition is used to track the status of the recovery process and to determine if the HostedCluster
+is ready to be used after restoration.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
@@ -4635,6 +4655,7 @@ ManagedIdentity
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
 </td>
 </tr>
@@ -9731,7 +9752,15 @@ ClusterVersionOperatorSpec
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<tbody><tr><td><p>&#34;baremetal&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Console&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Insights&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;openshift-samples&#34;</p></td>
 <td></td>
 </tr></tbody>
 </table>
