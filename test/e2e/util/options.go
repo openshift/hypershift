@@ -76,6 +76,12 @@ type Options struct {
 	HOInstallationOptions HyperShiftOperatorInstallOptions
 	// RunUpgradeTest is set to run HyperShift Operator upgrade test
 	RunUpgradeTest bool
+
+	//external oidc for authentication in spec.configurations
+	EnableExternalOIDC          bool
+	ExternalOIDCCliClientID     string
+	ExternalOIDCConsoleClientID string
+	ExternalOIDCIssuerURL       string
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -211,6 +217,12 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 
 	if len(o.ConfigurableClusterOptions.ClusterCIDR) != 0 {
 		createOption.ClusterCIDR = o.ConfigurableClusterOptions.ClusterCIDR
+	}
+
+	//set external OIDC if enabled
+	if o.EnableExternalOIDC {
+		extOIDCParam := GetExtOIDCParam(o.ExternalOIDCCliClientID, o.ExternalOIDCConsoleClientID, o.ExternalOIDCIssuerURL)
+		createOption.Config = extOIDCParam.GetConfigWithExtOIDC()
 	}
 
 	return createOption
