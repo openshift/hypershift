@@ -46,6 +46,10 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	Config                        *hyperv1.ClusterConfiguration
+	ExternalOIDCConsoleSecret     string
+	ExternalOIDCConsoleSecretName string
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -292,6 +296,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		},
 	}
 
+	if opts.Config != nil {
+		hc.Spec.Configuration = opts.Config
+	}
+
 	// Build options specific to the platform.
 	opts, err = createClusterOpts(h.ctx, h.client, hc, opts)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to generate platform specific cluster options")
@@ -314,6 +322,22 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	if err := h.client.Get(h.ctx, crclient.ObjectKeyFromObject(hc), hc); err != nil {
 		h.Errorf("failed to get cluster that was created, tearing down: %v", err)
 		return hc
+	}
+
+	if opts.Config != nil {
+		//create secret for console secret
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      opts.ExternalOIDCConsoleSecretName,
+				Namespace: namespace.Name,
+			},
+			Type: corev1.SecretTypeOpaque,
+			StringData: map[string]string{
+				"clientSecret": opts.ExternalOIDCConsoleSecret,
+			},
+		}
+		err := h.client.Create(h.ctx, secret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
 	}
 
 	// Everything went well
