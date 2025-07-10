@@ -130,6 +130,14 @@ func TestGenerateConfig(t *testing.T) {
 						},
 						Spec: hyperv1.HostedClusterSpec{
 							ClusterID: "hc2-UUID",
+							Networking: hyperv1.ClusterNetworking{
+								APIServer: &hyperv1.APIServerNetworking{
+									AllowedCIDRBlocks: []hyperv1.CIDRBlock{
+										"1.1.1.1/32",
+										"192.168.1.1/24",
+									},
+								},
+							},
 						},
 					},
 					routes: []client.Object{
