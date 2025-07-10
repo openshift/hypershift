@@ -7,6 +7,13 @@ set -x
 # For Red Hat developers, it is best to create your KV and the managed identities in a resource group that
 # is persistent in your tenant/subscription.
 
+# These SPs are created by default within the persistent RG so they can be reused across HCs.
+# This is preferred to avoid quotas issues.
+if [[ -f "${CP_OUTPUT_FILE}" ]]; then
+    echo "CP_OUTPUT_FILE '${CP_OUTPUT_FILE}' already exists. Exiting early."
+    exit 0
+fi
+
 # Prerequisites.
 PREFIX="${PREFIX:-}"
 SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-}
