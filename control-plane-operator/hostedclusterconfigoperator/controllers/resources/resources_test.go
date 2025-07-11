@@ -1765,6 +1765,53 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			expectOIDCClientSecrets: []string{"console-client-secret"},
 			expectErrors:            false,
 		},
+		"when OAuth is disabled with OIDC provider with a hosted-cluster-sourced annotated client secret, should not copy the client secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterSourcedAnnotation: "true",
+						},
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
 		"when OAuth is disabled but CA configmap is missing, should return error": {
 			inputHCP: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
@@ -2034,6 +2081,19 @@ func TestReconcileAuthOIDC(t *testing.T) {
 						Name:      provider.Issuer.CertificateAuthority.Name,
 					}, caConfigMap)
 					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				}
+			}
+			// Verify that no unexpected client secrets were copied
+			secretList := &corev1.SecretList{}
+			err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace))
+			g.Expect(err).ToNot(HaveOccurred())
+			expectedSecrets := map[string]struct{}{}
+			for _, name := range test.expectOIDCClientSecrets {
+				expectedSecrets[name] = struct{}{}
+			}
+			for _, secret := range secretList.Items {
+				if _, ok := expectedSecrets[secret.Name]; !ok {
+					t.Errorf("unexpected OIDC client secret copied: %s", secret.Name)
 				}
 			}
 		})
