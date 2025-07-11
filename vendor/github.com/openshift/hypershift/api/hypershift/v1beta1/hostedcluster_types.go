@@ -1016,7 +1016,6 @@ type ClusterNetworking struct {
 	// apiServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a hosted cluster node.
 	//
-	// +immutable
 	// +optional
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
@@ -1049,7 +1048,7 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+// +kubebuilder:validation:XValidation:rule="isCIDR(self)",message="must be a valid CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/32)"
 // +kubebuilder:validation:MaxLength=255
 type CIDRBlock string
 
@@ -1080,7 +1079,7 @@ type APIServerNetworking struct {
 	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
 	// If not specified, traffic is allowed from all addresses.
 	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=50
 	// +listType=set
 	// +optional
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
