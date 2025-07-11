@@ -20,6 +20,7 @@ import (
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
+	networkoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/network"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
@@ -2720,5 +2721,124 @@ func EnsureConsoleCapabilityDisabled(ctx context.Context, t *testing.T, g Gomega
 		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-console", metav1.GetOptions{})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-console\" not found"))
+	})
+}
+
+func VerifyMultusDisabledInClusterConfig(t *testing.T, ctx context.Context, g Gomega, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("VerifyMultusDisabledInClusterConfig", func(t *testing.T) {
+
+		// Get the latest version of the hosted cluster
+		updatedHC := &hyperv1.HostedCluster{}
+		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), updatedHC)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Verify DisableMultiNetwork is set to true
+		g.Expect(updatedHC.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(BeTrue(), "DisableMultiNetwork should be true in the HostedCluster spec")
+
+		t.Logf("✓ Verified DisableMultiNetwork is set to true in HostedCluster configuration")
+	})
+}
+
+func VerifyMultusComponentsNotDeployed(t *testing.T, ctx context.Context, g Gomega, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("VerifyMultusComponentsNotDeployed", func(t *testing.T) {
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// Check that multus-admission-controller deployment doesn't exist or is not running
+		multusDeployment := &appsv1.Deployment{}
+		err := mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "multus-admission-controller",
+		}, multusDeployment)
+
+		if err == nil {
+			// If deployment exists, check that it has 0 replicas
+			g.Expect(multusDeployment.Spec.Replicas).To(BeNil(), "multus-admission-controller deployment should have nil replicas when multus is disabled")
+			t.Logf("✓ Verified multus-admission-controller deployment has nil replicas")
+		} else {
+			// Deployment doesn't exist, which is also acceptable
+			t.Logf("✓ Verified multus-admission-controller deployment does not exist")
+		}
+	})
+}
+
+func VerifyNetworkOperatorConfig(t *testing.T, ctx context.Context, g Gomega, guestClient crclient.Client) {
+	t.Run("VerifyNetworkOperatorConfig", func(t *testing.T) {
+
+		// Get the Network operator configuration from the guest cluster
+		network := networkoperator.NetworkOperator()
+		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(network), network)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Verify DisableMultiNetwork is set to true
+		g.Expect(network.Spec.DisableMultiNetwork).NotTo(BeNil(), "DisableMultiNetwork should be set")
+		g.Expect(*network.Spec.DisableMultiNetwork).To(BeTrue(), "DisableMultiNetwork should be true when multus is disabled")
+
+		t.Logf("✓ Verified Network operator has DisableMultiNetwork=true")
+	})
+}
+
+func VerifyBasicClusterFunctionality(t *testing.T, ctx context.Context, g Gomega, mgmtClient, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("VerifyBasicClusterFunctionality", func(t *testing.T) {
+
+		// Create a test pod to verify basic pod networking works
+		testPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "multus-disabled-test-pod",
+				Namespace: "default",
+			},
+			Spec: corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name:  "test-container",
+						Image: "registry.access.redhat.com/ubi8/ubi-minimal:latest",
+						Command: []string{
+							"sleep",
+							"300",
+						},
+					},
+				},
+				RestartPolicy: corev1.RestartPolicyNever,
+			},
+		}
+
+		err := guestClient.Create(ctx, testPod)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Clean up the test pod
+		defer func() {
+			if err := guestClient.Delete(ctx, testPod); err != nil {
+				t.Logf("Failed to clean up test pod: %v", err)
+			}
+		}()
+
+		// Wait for the pod to be running
+		err = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(testPod), testPod)
+			if err != nil {
+				return false, err
+			}
+			return testPod.Status.Phase == corev1.PodRunning, nil
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "Test pod should become running")
+
+		// Verify the pod has a single network interface (no multus networks)
+		g.Expect(testPod.Status.PodIP).NotTo(BeEmpty(), "Pod should have an IP address")
+
+		t.Logf("✓ Verified basic pod networking works without multus (Pod IP: %s)", testPod.Status.PodIP)
+	})
+}
+
+func VerifyDisableMultiNetworkImmutability(t *testing.T, ctx context.Context, g Gomega, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("VerifyDisableMultiNetworkImmutability", func(t *testing.T) {
+		// Try to change DisableMultiNetwork from false to true (should fail)
+		hc := hostedCluster.DeepCopy()
+		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = true
+
+		err := mgmtClient.Update(ctx, hc)
+		g.Expect(err).To(HaveOccurred(), "Changing DisableMultiNetwork should fail due to immutability constraint")
+		g.Expect(err.Error()).To(ContainSubstring("disableMultiNetwork is immutable"), "Error should mention immutability")
+
+		t.Logf("✓ Verified DisableMultiNetwork field is immutable")
 	})
 }

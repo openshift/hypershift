@@ -1433,6 +1433,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
 				Disabled: disabledCaps,
 			}
+			hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+				ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{DisableMultiNetwork: true},
+			}
 		}
 	}
 
@@ -1467,6 +1470,22 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure console component is disabled
 		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
+
+		// Verify multus is disabled in the cluster configuration
+		e2eutil.VerifyMultusDisabledInClusterConfig(t, ctx, g, mgmtClient, hostedCluster)
+
+		// Verify multus components are not deployed in the control plane
+		e2eutil.VerifyMultusComponentsNotDeployed(t, ctx, g, mgmtClient, hostedCluster)
+
+		// Verify the cluster network operator has disabled multus
+		e2eutil.VerifyNetworkOperatorConfig(t, ctx, g, guestClient)
+
+		// Verify basic cluster functionality still works
+		e2eutil.VerifyBasicClusterFunctionality(t, ctx, g, mgmtClient, guestClient, hostedCluster)
+
+		// Verify the immutability of DisableMultiNetwork
+		e2eutil.VerifyDisableMultiNetworkImmutability(t, ctx, g, mgmtClient, hostedCluster)
+
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
