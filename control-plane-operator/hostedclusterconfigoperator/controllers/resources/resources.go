@@ -3,6 +3,7 @@ package resources
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
+	globalpullsecret "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/globalps"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -73,6 +75,7 @@ import (
 	"k8s.io/utils/set"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -98,6 +101,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
 region = %s
 `
+	UserProvidedPullSecretNamespace = "kube-system"
 )
 
 var (
@@ -139,6 +143,10 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
+
+	// Informer and client for secrets of kube-system for data plane
+	kubeSystemSecretInformer cache.Informer
+	kubeSystemSecretClient   client.Client
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -176,6 +184,34 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
 	}
 
+	secretPredicate := predicate.NewPredicateFuncs(func(o client.Object) bool {
+		return o.GetNamespace() == "kube-system"
+	})
+
+	kubeSystemCache, err := cache.New(opts.Manager.GetConfig(), cache.Options{
+		Scheme: opts.Manager.GetScheme(),
+		DefaultNamespaces: map[string]cache.Config{
+			"kube-system": {},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create kube-system cache: %w", err)
+	}
+
+	kubeSystemClient, err := client.New(opts.Manager.GetConfig(), client.Options{
+		Scheme: opts.Manager.GetScheme(),
+		Cache:  &client.CacheOptions{Reader: kubeSystemCache},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create kube-system client: %w", err)
+	}
+
+	// Get the informer for secrets
+	kubeSystemSecretInformer, err := kubeSystemCache.GetInformer(ctx, &corev1.Secret{})
+	if err != nil {
+		return fmt.Errorf("failed to get kube-system secret informer: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
@@ -195,10 +231,17 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
+		kubeSystemSecretInformer:  kubeSystemSecretInformer,
+		kubeSystemSecretClient:    kubeSystemClient,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
+
+	if err := opts.Manager.Add(kubeSystemCache); err != nil {
+		return fmt.Errorf("failed to add kube-system cache: %w", err)
+	}
+
 	resourcesToWatch := []client.Object{
 		&imageregistryv1.Config{},
 		&corev1.ConfigMap{},
@@ -236,8 +279,20 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
+
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
+	}
+
+	// Watch for secrets in kube-system
+	if err := c.Watch(&source.Informer{
+		Informer: kubeSystemSecretInformer,
+		Handler:  eventHandler(),
+		Predicates: []predicate.Predicate{
+			secretPredicate,
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to watch kube-system secrets: %w", err)
 	}
 	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
 	// and mirrors them to the hosted cluster so the operators on the hosted cluster
@@ -753,6 +808,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 		}
+	}
+
+	// Reconcile GlobalPullSecret
+	hccoImage := os.Getenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE")
+	if err := r.reconcileGlobalPullSecret(ctx, hcp, hccoImage); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile global pull secret: %w", err))
 	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
@@ -2860,6 +2921,96 @@ func (r *reconciler) reconcileAzureCloudNodeManager(ctx context.Context, image s
 	}
 
 	return errs
+}
+
+// reconcileGlobalPullSecret reconciles the original pull secret given by HCP and merges it with a new pull secret provided by the user.
+// The new pull secret is only stored in the DataPlane side so, it's not exposed in the API. It lives in the kube-system namespace of the DataPlane.
+// If that PS exists, the HCCO deploys a DaemonSet which mounts the whole Root FS of the node, and merges the new PS with the original one.
+// If the PS doesn't exist, the HCCO doesn't do anything.
+func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane, cpoImage string) error {
+	var (
+		userProvidedPullSecretBytes []byte
+		originalPullSecretBytes     []byte
+		globalPullSecretBytes       []byte
+		err                         error
+	)
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling global pull secret")
+
+	// Get the user provided pull secret
+	exists, userProvidedPullSecret, err := globalpullsecret.UserProvidedPullSecretExists(ctx, r.kubeSystemSecretClient)
+	if err != nil {
+		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
+	}
+
+	// Reconcile the RBAC for the Global Pull Secret
+	if err := globalpullsecret.ReconcileGlobalPullSecretRBAC(ctx, r.uncachedClient, r.CreateOrUpdate, hcp.Namespace); err != nil {
+		return fmt.Errorf("failed to reconcile global pull secret RBAC: %w", err)
+	}
+
+	if !exists {
+		// Early cleanup
+		secret := manifests.GlobalPullSecret()
+		if err := r.uncachedClient.Delete(ctx, secret); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete global pull secret: %w", err)
+			}
+		}
+
+		daemonSet := manifests.GlobalPullSecretDaemonSet()
+		if err := r.uncachedClient.Delete(ctx, daemonSet); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to delete global pull secret daemon set: %w", err)
+			}
+		}
+
+		log.Info("Skipping global pull secret reconciliation")
+		return nil
+	}
+
+	// If the PS doesn't exist, the HCCO doesn't do anything.
+	if userProvidedPullSecret.Data == nil {
+		return nil
+	}
+
+	if userProvidedPullSecretBytes, err = globalpullsecret.ValidateUserProvidedPullSecret(userProvidedPullSecret); err != nil {
+		return fmt.Errorf("failed to validate user provided pull secret: %w", err)
+	}
+
+	log.Info("Valid additional pull secret found in the DataPlane, reconciling global pull secret")
+
+	// Get the original pull secret
+	originalPullSecret := manifests.PullSecret(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
+		return fmt.Errorf("failed to get original pull secret: %w", err)
+	}
+
+	// Asumming hcp pull secret is valid
+	originalPullSecretBytes = originalPullSecret.Data[corev1.DockerConfigJsonKey]
+
+	// Merge the additional pull secret with the original pull secret
+	if globalPullSecretBytes, err = globalpullsecret.MergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes); err != nil {
+		return fmt.Errorf("failed to merge pull secrets: %w", err)
+	}
+
+	// Create secret in the DataPlane
+	secret := manifests.GlobalPullSecret()
+	if _, err := r.CreateOrUpdate(ctx, r.uncachedClient, secret, func() error {
+		secret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: globalPullSecretBytes,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create global pull secret: %w", err)
+	}
+
+	// Use the Global Pull Secret to deploy the DaemonSet in the DataPlane.
+	daemonSet := manifests.GlobalPullSecretDaemonSet()
+	if err := globalpullsecret.ReconcileDaemonSet(ctx, daemonSet, secret.Name, r.uncachedClient, r.CreateOrUpdate, cpoImage); err != nil {
+		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
+	}
+
+	return nil
 }
 
 // imageRegistryPlatformWithPVC returns true if the platform requires a PVC for the image registry.
