@@ -2196,6 +2196,9 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	if IsLessThan(Version417) {
 		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	}
+	if IsLessThan(Version420) {
+		delete(expectedConditions, hyperv1.ControlPlaneUpToDate)
+	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
 	for conditionType, conditionStatus := range expectedConditions {
