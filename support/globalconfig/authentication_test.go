@@ -1,7 +1,6 @@
 package globalconfig
 
 import (
-	"fmt"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -68,7 +67,7 @@ func TestReconcileAuthenticationConfiguration(t *testing.T) {
 				},
 				issuerURL: "https://example.com/issuer",
 			},
-			secretName: fmt.Sprintf("%s-%s", "test-client", postInstallClientSecretSuffix),
+			secretName: "",
 		},
 	}
 
