@@ -249,6 +249,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
+	// virthost.ostest.test.metalkube.org:5000/localimages/local-release-image@sha256:58f1de622e21ad72b6ca1d1cb2faee19ed08afddb1d8cb9a5daab7330c73942d
 	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
 	config, err := util.DecodeAndDecompress(compressedConfig)
 	if err != nil {
