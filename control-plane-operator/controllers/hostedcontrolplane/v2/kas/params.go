@@ -199,6 +199,9 @@ func newKMSImages(hcp *hyperv1.HostedControlPlane) kmsImages {
 	if image, ok := hcp.Annotations[hyperv1.AWSKMSProviderImage]; ok {
 		images.AWSKMS = image
 	}
+	if image, ok := hcp.Annotations[hyperv1.AzureKMSProviderImage]; ok {
+		images.AzureKMS = image
+	}
 	if image, ok := hcp.Annotations[hyperv1.IBMCloudKMSProviderImage]; ok {
 		images.IBMCloudKMS = image
 	}

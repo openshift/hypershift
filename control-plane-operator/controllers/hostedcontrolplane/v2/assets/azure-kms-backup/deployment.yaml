@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-kms-backup
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: azure-kms-backup
+      kms-type: azure
+      kms-role: backup
+  template:
+    metadata:
+      labels:
+        app: azure-kms-backup
+        kms-type: azure
+        kms-role: backup
+    spec:
+      containers:
+        - name: azure-kms-provider
+          args:
+            - --listen-addr=0.0.0.0:8444
+            - --healthz-port=8788
+            - --metrics-addr=8096
+            - --encrypted-cluster-seed-file=/data/cluster-seed
+            - --healthz-path=/healthz
+            - --config-file-path=/etc/kubernetes/azure.json
+            - -v=6
+          ports:
+            - name: grpc
+              containerPort: 8444
+              protocol: TCP
+            - name: health
+              containerPort: 8788
+              protocol: TCP
+          volumeMounts:
+            - name: azure-kms-credentials
+              mountPath: /etc/kubernetes
+              readOnly: true
+            - name: kms-cert
+              mountPath: /var/lib/secrets-store
+              readOnly: true
+            - name: data
+              mountPath: /data
+              readOnly: true
+          resources:
+            requests:
+              memory: "10Mi"
+              cpu: "10m"
+            limits:
+              memory: "50Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              scheme: HTTP
+              port: 8788
+              path: /healthz
+            initialDelaySeconds: 120
+            periodSeconds: 300
+            timeoutSeconds: 160
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              scheme: HTTP
+              port: 8788
+              path: /healthz
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+      volumes:
+        - name: azure-kms-credentials
+          secret:
+            secretName: azure-kms-config
+            items:
+              - key: cloud.conf
+                path: azure.json
+        - name: kms-cert
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: managed-azure-kms
+        - name: data
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: managed-azure-kms-cluster-seed

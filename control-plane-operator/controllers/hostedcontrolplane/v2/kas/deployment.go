@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
@@ -98,6 +99,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryption.Type {
 		case hyperv1.KMS:
+			// For Azure KMS with separate pods enabled, skip adding sidecar containers to KAS
+			// The separate Azure KMS pods will handle KMS operations via network services
+			if azureutil.IsAzureKMSSeparatePodsEnabled(hcp) {
+				// Skip applying KMS config - separate pods will handle KMS
+				break
+			}
 			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp)); err != nil {
 				return err
 			}
