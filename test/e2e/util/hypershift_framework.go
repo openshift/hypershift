@@ -93,7 +93,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 		}
 
 		h.teardown(hostedCluster, opts, artifactDir, false)
-		h.postTeardown(hostedCluster, opts)
+		h.postTeardown(hostedCluster, opts, platform)
 	}()
 
 	// fail safe to guarantee teardown() is always executed.
@@ -159,17 +159,33 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
-		ValidateMetrics(t, context.Background(), hostedCluster, []string{
-			hcmetrics.SilenceAlertsMetricName,
+
+		metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
 			hcmetrics.LimitedSupportEnabledMetricName,
 			hcmetrics.ProxyMetricName,
-			hcmetrics.InvalidAwsCredsMetricName,
 			HypershiftOperatorInfoName,
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
+		}
+		AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName,
 			karpenterassets.KarpenterBuildInfoMetricName,
-			karpenterassets.KarpenterOperatorInfoMetricName,
-		}, true)
+			karpenterassets.KarpenterOperatorInfoMetricName}
+
+		AzureMetrics := []string{
+			hcmetrics.HostedClusterManagedAzureInfoMetricName,
+			/* only Managed Azure ARO at the moment
+			//hcmetrics.HostedClusterAzureInfoMetricName,
+			*/
+		}
+
+		switch platform {
+		case hyperv1.AWSPlatform:
+			metricsToValidate = append(metricsToValidate, AWSMetrics...)
+		case hyperv1.AzurePlatform:
+			metricsToValidate = append(metricsToValidate, AzureMetrics...)
+		}
+
+		ValidateMetrics(t, context.Background(), hostedCluster, metricsToValidate, true)
 	})
 }
 
@@ -192,29 +208,49 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 	})
 }
 
-func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) {
+func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	// don't run if test has already failed
 	if h.Failed() {
 		h.Logf("skipping postTeardown()")
 		return
 	}
 
+	commonMetrics := []string{
+		hcmetrics.WaitingInitialAvailabilityDurationMetricName,
+		hcmetrics.InitialRollingOutDurationMetricName,
+		hcmetrics.UpgradingDurationMetricName,
+		hcmetrics.SilenceAlertsMetricName,
+		hcmetrics.LimitedSupportEnabledMetricName,
+		hcmetrics.ProxyMetricName,
+		hcmetrics.DeletingDurationMetricName,
+		hcmetrics.GuestCloudResourcesDeletingDurationMetricName,
+		npmetrics.InitialRollingOutDurationMetricName,
+		npmetrics.AvailableReplicasMetricName,
+		npmetrics.DeletingDurationMetricName,
+	}
+	metricsToValidate := commonMetrics
+
+	AWSMetrics := []string{
+		hcmetrics.InvalidAwsCredsMetricName,
+		npmetrics.SizeMetricName,
+	}
+
+	AzureMetrics := []string{
+		hcmetrics.HostedClusterManagedAzureInfoMetricName,
+		/* only Managed Azure ARO at the moment
+		//hcmetrics.HostedClusterAzureInfoMetricName,
+		*/
+	}
+
+	switch platform {
+	case hyperv1.AWSPlatform:
+		metricsToValidate = append(metricsToValidate, AWSMetrics...)
+	case hyperv1.AzurePlatform:
+		metricsToValidate = append(metricsToValidate, AzureMetrics...)
+	}
+
 	h.Run("PostTeardown", func(t *testing.T) {
-		ValidateMetrics(t, h.ctx, hostedCluster, []string{
-			hcmetrics.WaitingInitialAvailabilityDurationMetricName,
-			hcmetrics.InitialRollingOutDurationMetricName,
-			hcmetrics.UpgradingDurationMetricName,
-			hcmetrics.SilenceAlertsMetricName,
-			hcmetrics.LimitedSupportEnabledMetricName,
-			hcmetrics.ProxyMetricName,
-			hcmetrics.InvalidAwsCredsMetricName,
-			hcmetrics.DeletingDurationMetricName,
-			hcmetrics.GuestCloudResourcesDeletingDurationMetricName,
-			npmetrics.InitialRollingOutDurationMetricName,
-			npmetrics.SizeMetricName,
-			npmetrics.AvailableReplicasMetricName,
-			npmetrics.DeletingDurationMetricName,
-		}, false)
+		ValidateMetrics(t, h.ctx, hostedCluster, metricsToValidate, false)
 	})
 }
 
