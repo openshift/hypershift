@@ -985,7 +985,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			ClusterID: "test-cluster-id",
 			Capabilities: &hyperv1.Capabilities{
 				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability, hyperv1.InsightsCapability, hyperv1.ConsoleCapability,
+					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability, hyperv1.InsightsCapability, hyperv1.ConsoleCapability, hyperv1.NodeTuningCapability,
 				},
 			},
 		},
@@ -1045,7 +1045,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			configv1.ClusterVersionCapabilityIngress,
 			//configv1.ClusterVersionCapabilityInsights,
 			configv1.ClusterVersionCapabilityMachineAPI,
-			configv1.ClusterVersionCapabilityNodeTuning,
+			//configv1.ClusterVersionCapabilityNodeTuning,
 			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
 			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
 			configv1.ClusterVersionCapabilityStorage,
