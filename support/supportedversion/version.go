@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"runtime/debug"
 	"strings"
 
@@ -22,10 +23,15 @@ import (
 )
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
-const (
-	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
-	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
-)
+const multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
+
+// getMultiArchReleaseURLTemplate returns the release URL template, checking for an environment variable override first
+func getMultiArchReleaseURLTemplate() string {
+	if envURL := os.Getenv("HYPERSHIFT_RELEASE_URL_TEMPLATE"); envURL != "" {
+		return envURL
+	}
+	return multiArchReleaseURLTemplate
+}
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
 // HyperShift operator.
@@ -158,6 +164,17 @@ func getOCPVersion(releaseURL string) (ocpVersion, error) {
 	return version, nil
 }
 
+// LookupDefaultOCPVersion retrieves the default OCP version from multi-arch release streams.
+// It supports two modes of operation:
+//
+//  1. When releaseStream is empty: Uses the default release stream and looks up supported OCP versions
+//     from the HyperShift operator's ConfigMap to find the latest supported version that is not a
+//     release candidate. This ensures compatibility with the current HyperShift operator version.
+//
+//  2. When releaseStream is provided: Uses the specified release stream to retrieve the OCP version
+//     directly from the multi-arch release API.
+//
+// The function defaults to multi-arch release streams for broader architecture support.
 func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client crclient.Client) (ocpVersion, error) {
 	var (
 		version    ocpVersion
@@ -168,11 +185,11 @@ func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client c
 	if len(releaseStream) == 0 {
 		// No release stream was provided, so we will look up the supported OCP versions from the HO and use the latest
 		// release image from the multi-arch release stream that is not a release candidate.
-		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
+		releaseURL = fmt.Sprintf(getMultiArchReleaseURLTemplate(), config.DefaultReleaseStream)
 		version, err = retrieveSupportedOCPVersion(ctx, releaseURL, client)
 	} else {
 		// We look up the release URL based on the user provided release stream.
-		releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
+		releaseURL = fmt.Sprintf(getMultiArchReleaseURLTemplate(), releaseStream)
 		version, err = getOCPVersion(releaseURL)
 	}
 
@@ -256,7 +273,7 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 
 	if supportedVersions == nil {
 		// Fetch the supported versions ConfigMap from the specified namespace
-		supportedVersions := manifests.ConfigMap(namespace)
+		supportedVersions = manifests.ConfigMap(namespace)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
 			return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %v", err)
 		}

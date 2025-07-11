@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +11,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -160,6 +164,42 @@ func TestAsObjects(t *testing.T) {
 
 func TestPrototypeResources(t *testing.T) {
 	g := NewWithT(t)
+	t.Setenv("FAKE_CLIENT", "true")
+
+	// Set up fake client objects for the test
+	supportedVersionsCM := testutil.CreateSupportedVersionsConfigMap()
+	util.SetFakeClientObjects(supportedVersionsCM)
+	defer util.ClearFakeClientObjects()
+
+	// Mock HTTP server that returns release tags
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := `{
+			"name": "4-stable-multi",
+			"tags": [
+				{
+					"name": "4.19.0",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-multi",
+					"downloadURL": "https://example.com/4.19.0"
+				},
+				{
+					"name": "4.18.5", 
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.5-multi",
+					"downloadURL": "https://example.com/4.18.5"
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	}))
+	defer mockServer.Close()
+
+	// Set the environment variable to override the release URL template with the mock server
+	t.Setenv("HYPERSHIFT_RELEASE_URL_TEMPLATE", mockServer.URL+"/api/v1/releasestream/%s/tags")
+
 	opts := &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: &ValidatedCreateOptions{

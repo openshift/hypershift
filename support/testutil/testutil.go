@@ -9,6 +9,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -176,4 +177,20 @@ func MatchExpected(expected any, opts ...cmp.Option) types.GomegaMatcher {
 	return WithTransform(func(actual any) string {
 		return cmp.Diff(actual, expected, opts...)
 	}, BeEmpty())
+
+}
+
+// CreateSupportedVersionsConfigMap creates a ConfigMap with supported OpenShift versions for testing
+func CreateSupportedVersionsConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "supported-versions",
+			Namespace: "test",
+			Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+		},
+		Data: map[string]string{
+			"server-version":     "test-server",
+			"supported-versions": `{"versions":["4.19", "4.18", "4.17", "4.16", "4.15", "4.14"]}`,
+		},
+	}
 }
