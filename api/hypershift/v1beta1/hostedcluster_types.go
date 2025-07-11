@@ -379,7 +379,7 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal;Console
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal;Console;Ingress
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
@@ -387,6 +387,7 @@ const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv
 const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
 const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
 const ConsoleCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityConsole)
+const IngressCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityIngress)
 
 // capabilities allows enabling or disabling optional components at install time.
 // When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
@@ -408,13 +409,14 @@ type Capabilities struct {
 	// disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
 	// Once set, this field cannot be changed.
 	//
-	// Note: Disabling 'openshift-samples','Insights', 'Console' are only supported in OpenShift versions 4.20 and above.
+	// Note: Disabling 'openshift-samples','Insights', 'Console', 'Ingress' are only supported in OpenShift versions 4.20 and above.
 	//
 	// +listType=atomic
 	// +immutable
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	// +kubebuilder:validation:XValidation:rule="!self.exists(cap, cap == 'Ingress') || self.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
 	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 

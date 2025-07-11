@@ -11,6 +11,19 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// IsIngressCapabilityDisabled returns true only when it's in capabilities.Disabled
+func IsIngressCapabilityDisabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.IngressCapability {
+			return true
+		}
+	}
+	return false
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {
