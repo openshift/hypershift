@@ -98,6 +98,11 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.HOInstallationOptions.EnableCIDebugOutput, "e2e.ho-enable-ci-debug-output", false, "Install the HyperShift Operator with extra CI debug output enabled. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
+	//ext OIDC configuration
+	flag.BoolVar(&globalOpts.EnableExternalOIDC, "e2e.enable-external-oidc", false, "enable external OIDC config. This is needed to be true if you set external oidc in hostedcluster.spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCCliClientID, "e2e.external-oidc-cli-client-id", "", "cli client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCConsoleClientID, "e2e.external-oidc-console-client-id", "", "console client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCIssuerURL, "e2e.external-oidc-issuer-url", "", "external OIDC issuer URL. This id is needed if you set external oidc in spec.configuration")
 
 	// AWS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
