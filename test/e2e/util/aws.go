@@ -10,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/kms"
@@ -39,6 +40,23 @@ func GetKMSKeyArn(awsCreds, awsRegion, alias string) (*string, error) {
 	}
 
 	return out.KeyMetadata.Arn, nil
+}
+
+func GetDefaultSecurityGroup(awsCreds, awsRegion, sgID string) (*ec2.SecurityGroup, error) {
+	awsSession := awsutil.NewSession("e2e-ec2", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	ec2Client := ec2.New(awsSession, awsConfig)
+
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
+		GroupIds: []*string{aws.String(sgID)},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get security group: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, fmt.Errorf("no security group found with ID %s", sgID)
+	}
+	return describeSGResult.SecurityGroups[0], nil
 }
 
 func GetS3Client(awsCreds, awsRegion string) *s3.S3 {

@@ -38,10 +38,11 @@ type AWSNodePoolPlatform struct {
 	RootVolume *Volume `json:"rootVolume,omitempty"`
 
 	// resourceTags is an optional list of additional tags to apply to AWS node
-	// instances.
+	// instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
+	// Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
 	//
-	// These will be merged with HostedCluster scoped tags, and HostedCluster tags
-	// take precedence in case of conflicts.
+	// These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 	//
 	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
 	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -253,6 +254,10 @@ type AWSPlatformSpec struct {
 	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
 	// resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
 	// for the user.
+	// Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
+	// These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
+	// Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
