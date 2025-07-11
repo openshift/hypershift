@@ -244,6 +244,8 @@ spec:
           requests:
             cpu: 60m
             memory: 400Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes

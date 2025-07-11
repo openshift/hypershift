@@ -108,6 +108,8 @@ spec:
           requests:
             cpu: 25m
             memory: 40Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/audit-config
@@ -156,6 +158,8 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes

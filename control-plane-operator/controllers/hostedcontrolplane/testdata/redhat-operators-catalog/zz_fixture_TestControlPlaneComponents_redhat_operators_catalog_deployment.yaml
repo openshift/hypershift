@@ -102,6 +102,8 @@ spec:
           requests:
             cpu: 10m
             memory: 420Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           exec:
             command:
