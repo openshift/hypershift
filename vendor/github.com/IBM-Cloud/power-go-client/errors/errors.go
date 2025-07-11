@@ -99,6 +99,13 @@ const GetPIKeyOperationFailed = "failed to Get PI Key %s with error %w"
 const CreatePIKeyOperationFailed = "failed to Create PI Key with error %w"
 const DeletePIKeyOperationFailed = "failed to Delete PI Key %s with error %w"
 
+// start of PI ssh Key Messages
+const GetAllPISSHKeyOperationFailed = "failed to Get PI SSH Keys with error %w"
+const GetPISSHKeyOperationFailed = "failed to Get PI SSH Key %s with error %w"
+const CreatePISSHKeyOperationFailed = "failed to Create PI SSH Key with error %w"
+const DeletePISSHKeyOperationFailed = "failed to Delete PI SSH Key %s with error %w"
+const UpdatePISSHKeyOperationFailed = "failed to Update PI SSH Key %s with error %w"
+
 // start of Volume Groups
 const GetVolumeGroupOperationFailed = "failed to Get volume-group %s for the cloud instance %s with error %w"
 const GetVolumeGroupDetailsOperationFailed = "failed to Get volume-group %s details for the cloud instance %s with error %w"
@@ -121,11 +128,14 @@ const DeleteSPPPlacementGroupOperationFailed = "failed to perform Delete Shared 
 const AddMemberSPPPlacementGroupOperationFailed = "failed to perform Add Member Operation for pool %s and shared processor pool placement group %s with error %w"
 const DeleteMemberSPPPlacementGroupOperationFailed = "failed to perform Delete Member Operation for pool %s and shared processor pool placement group %s with error %w"
 
-// start of workspaces
+// start of Workspaces Messages
 const GetWorkspaceOperationFailed = "failed to perform Get Workspace Operation for id %s with error %w"
 
-// Datacenter
+// start of Datacenter Messages
 const GetDatacenterOperationFailed = "failed to perform Get Datacenter Operation for id %s with error %w"
+
+// start of StorageTier Messages
+const GetAllStorageTiersOperationFailed = "failed to perform get all Storage Tiers Operation for id %s with error %w"
 
 // ErrorTarget ...
 type ErrorTarget struct {

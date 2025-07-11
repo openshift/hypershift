@@ -76,9 +76,11 @@ const (
 	PISAPProfile       = "pi_sap_profile"
 	PISAPProfileMemory = "pi_sap_profile_memory"
 	//#nosec G101
-	PISAPProfileCertified = "pi_sap_profile_certified"
-	PISAPProfileType      = "pi_sap_profile_type"
-	PISAPProfileCores     = "pi_sap_profile_cores"
+	PISAPProfileCertified          = "pi_sap_profile_certified"
+	PISAPProfileType               = "pi_sap_profile_type"
+	PISAPProfileCores              = "pi_sap_profile_cores"
+	PISAPProfileFamilyFilterMapKey = "pi_family_filter"
+	PISAPProfilePrefixFilterMapKey = "pi_prefix_filter"
 
 	// IBM PI Clone Volume
 	PIVolumeCloneStatus  = "pi_volume_clone_status"
@@ -245,4 +247,8 @@ const (
 
 	// Stratos region prefix
 	PIStratosRegionPrefix = "satloc"
+
+	// Standard "not supported" messages
+	NotOnPremSupported  = "operation not supported in on-prem location"
+	NotOffPremSupported = "operation not supported in off-prem location"
 )
