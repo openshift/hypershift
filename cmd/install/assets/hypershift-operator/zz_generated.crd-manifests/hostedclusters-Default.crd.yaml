@@ -118,6 +118,66 @@ spec:
                   autoscaling specifies auto-scaling behavior that applies to all NodePools
                   associated with this HostedCluster.
                 properties:
+                  balancingIgnoredLabels:
+                    description: |-
+                      balancingIgnoredLabels sets "--balancing-ignore-label <label name>" flag on cluster-autoscaler for each listed label.
+                      This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+                      For example, if you have nodes with "topology.ebs.csi.aws.com/zone" label, you can add name of this label here
+                      to prevent cluster autoscaler from splitting nodes into different node groups based on its value.
+
+                      HyperShift automatically appends platform-specific balancing ignore labels:
+                      - AWS: "lifecycle", "k8s.amazonaws.com/eniConfig", "topology.k8s.aws/zone-id"
+                      - Azure: "agentpool", "kubernetes.azure.com/agentpool"
+                      - Common:
+                        - "hypershift.openshift.io/nodePool"
+                        - "topology.ebs.csi.aws.com/zone"
+                        - "topology.disk.csi.azure.com/zone"
+                        - "ibm-cloud.kubernetes.io/worker-id"
+                        - "vpc-block-csi-driver-labels"
+                      These labels are added by default and do not need to be manually specified.
+                    items:
+                      maxLength: 317
+                      type: string
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-validations:
+                    - message: Each balancingIgnoredLabels item must be a valid label
+                        key
+                      rule: self.all(l, l.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$'))
+                  expanders:
+                    description: |-
+                      expanders guide the autoscaler in choosing node groups during scale-out.
+                      Sets the order of expanders for scaling out node groups.
+                      Options include:
+                      * LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+                      * Priority - selects the group with the highest user-defined priority.
+                      * Random - selects a group randomly.
+                      If not specified, `[Priority, LeastWaste]` is the default.
+                      Maximum of 3 expanders can be specified.
+                    items:
+                      description: ExpanderString contains the name of an expander
+                        to be used by the cluster autoscaler.
+                      enum:
+                      - LeastWaste
+                      - Priority
+                      - Random
+                      type: string
+                    maxItems: 3
+                    minItems: 1
+                    type: array
+                  maxFreeDifferenceRatioPercent:
+                    description: |-
+                      maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+                      The value represents a percentage from 0 to 100.
+                      When set to 0, this means node groups must have exactly the same free resources to be considered similar (no difference allowed).
+                      When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
+                      A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
+                      When omitted, the autoscaler defaults to 10%.
+                      This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
                   maxNodeProvisionTime:
                     description: |-
                       maxNodeProvisionTime is the maximum time to wait for node provisioning
@@ -152,7 +212,80 @@ spec:
                       https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption
                     format: int32
                     type: integer
+                  scaleDown:
+                    description: |-
+                      scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
+                      This field is only valid when scaling is set to ScaleUpAndScaleDown.
+                    properties:
+                      delayAfterAddSeconds:
+                        description: |-
+                          delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
+                          It must be between 0 and 86400 (24 hours).
+                          When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+                          When omitted, the autoscaler defaults to 600s (10 minutes).
+                        format: int32
+                        maximum: 86400
+                        minimum: 0
+                        type: integer
+                      delayAfterDeleteSeconds:
+                        description: |-
+                          delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval.
+                          It must be between 0 and 86400 (24 hours).
+                          When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+                          When omitted, the autoscaler defaults to 0s.
+                        format: int32
+                        maximum: 86400
+                        minimum: 0
+                        type: integer
+                      delayAfterFailureSeconds:
+                        description: |-
+                          delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes.
+                          It must be between 0 and 86400 (24 hours).
+                          When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+                          When omitted, the autoscaler defaults to 180s (3 minutes).
+                        format: int32
+                        maximum: 86400
+                        minimum: 0
+                        type: integer
+                      unneededDurationSeconds:
+                        description: |-
+                          unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds.
+                          It must be between 0 and 86400 (24 hours).
+                          When omitted, the autoscaler defaults to 600s (10 minutes).
+                        format: int32
+                        maximum: 86400
+                        minimum: 0
+                        type: integer
+                      utilizationThresholdPercent:
+                        description: |-
+                          utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down.
+                          The value represents a percentage from 0 to 100.
+                          When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+                          When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+                          A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+                          When omitted, the autoscaler defaults to 50%.
+                        format: int32
+                        maximum: 100
+                        minimum: 0
+                        type: integer
+                    type: object
+                  scaling:
+                    default: ScaleUpAndScaleDown
+                    description: |-
+                      scaling defines the scaling behavior for the cluster autoscaler.
+                      ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+                      ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+                      When set to ScaleUpAndScaleDown, the scaleDown field can be used to configure scale down behavior.
+
+                      Note: This field is only supported in OpenShift versions 4.19 and above.
+                    enum:
+                    - ScaleUpOnly
+                    - ScaleUpAndScaleDown
+                    type: string
                 type: object
+                x-kubernetes-validations:
+                - message: scaleDown can only be set when scaling is ScaleUpAndScaleDown
+                  rule: 'self.scaling == ''ScaleUpAndScaleDown'' ? true : !has(self.scaleDown)'
               capabilities:
                 default: {}
                 description: |-
