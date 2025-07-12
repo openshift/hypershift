@@ -87,7 +87,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -136,7 +136,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							storageTmpltOpt("32Gi"),
 							guaranteedResourcesOpt(4, "5Gi"),
 						),
@@ -184,7 +184,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -233,7 +233,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -290,7 +290,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -391,7 +391,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -514,7 +514,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -800,7 +800,7 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -863,7 +863,7 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(5),
 							storageTmpltOpt("32Gi"),
@@ -915,7 +915,7 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
@@ -978,7 +978,7 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(5),
 							storageTmpltOpt("32Gi"),
@@ -1045,7 +1045,7 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(5),
 							storageTmpltOpt("32Gi"),
@@ -1112,9 +1112,60 @@ func TestJsonPatch(t *testing.T) {
 				Template: capikubevirt.KubevirtMachineTemplateResource{
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-						VirtualMachineTemplate: *generateNodeTemplate(
+						VirtualMachineTemplate: *generateNodeTemplate(true,
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(5),
+							storageTmpltOpt("32Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "remove annotation in the nodepool",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+					Annotations: map[string]string{
+						hyperv1.JSONPatchAnnotation: `[{"op": "remove","path": "/spec/template/metadata/annotations/kubevirt.io~1allow-pod-bridge-network-live-migration"}]`,
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(false,
+							memoryTmpltOpt("5Gi"),
+							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
 						),
 					},
@@ -1133,6 +1184,16 @@ func TestJsonPatch(t *testing.T) {
 			bootImage.dvName = bootImageNamePrefix + "12345"
 			result, err := MachineTemplateSpec(tc.nodePool, tc.hcluster, &releaseinfo.ReleaseImage{}, bootImage)
 			g.Expect(err).ToNot(HaveOccurred())
+
+			// Special verification for the annotation removal test
+			if tc.name == "remove annotation in the nodepool" {
+				annotations := result.Template.Spec.VirtualMachineTemplate.Spec.Template.ObjectMeta.Annotations
+				g.Expect(annotations).ToNot(HaveKey("kubevirt.io/allow-pod-bridge-network-live-migration"),
+					"Annotation should be removed by JSON patch")
+				g.Expect(annotations).To(HaveKey("cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"),
+					"Other annotations should remain")
+			}
+
 			g.Expect(result).To(Equal(tc.expected), "Comparison failed\n%v", cmp.Diff(tc.expected, result))
 		})
 	}
@@ -1324,8 +1385,16 @@ func addNetworkOpt(nw kubevirtv1.Network) nodeTemplateOption {
 	}
 }
 
-func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMachineTemplateSpec {
+// generateNodeTemplate creates a template with or without the kubevirt.io/allow-pod-bridge-network-live-migration annotation
+func generateNodeTemplate(withBridgeAnnotation bool, options ...nodeTemplateOption) *capikubevirt.VirtualMachineTemplateSpec {
 	runAlways := kubevirtv1.RunStrategyAlways
+
+	annotations := map[string]string{
+		suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
+	}
+	if withBridgeAnnotation {
+		annotations["kubevirt.io/allow-pod-bridge-network-live-migration"] = ""
+	}
 
 	template := &capikubevirt.VirtualMachineTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1357,17 +1426,13 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 			},
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{
+					Labels:      map[string]string{
 						hyperv1.NodePoolNameLabel: "my-pool",
 						hyperv1.InfraIDLabel:      "1234",
 					},
-					Annotations: map[string]string{
-						suppconfig.PodSafeToEvictLocalVolumesKey:              strings.Join(LocalStorageVolumes, ","),
-						"kubevirt.io/allow-pod-bridge-network-live-migration": "",
-					},
+					Annotations: annotations,
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
 							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
@@ -1389,7 +1454,6 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 							},
 						},
 					},
-
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
 							Disks: []kubevirtv1.Disk{
@@ -1412,7 +1476,6 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 							},
 						},
 					},
-
 					Networks: []kubevirtv1.Network{
 						{
 							Name: "default",
