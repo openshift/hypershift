@@ -13,6 +13,10 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+// Package kubeapilinter is a golangci-lint plugin for the Kube API Linter (KAL).
+// It is built as a module to be used with golangci-lint.
+// See https://golangci-lint.run/plugins/module-plugins/ for more information.
 package kubeapilinter
 
 import (

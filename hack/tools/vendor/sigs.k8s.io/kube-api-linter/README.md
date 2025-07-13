@@ -10,11 +10,11 @@ Kube API Linter is aimed at being an assistant to API review, by catching the me
 
 ## Installation
 
-Kube API Linter ships as a golangci-lint plugin.
+Kube API Linter ships as a golangci-lint plugin, and a golangci-lint module.
 
-### Golangci-lint Plugin
+### Golangci-lint Module
 
-To install the `golangci-lint` plugin, first you must have `golangci-lint` installed.
+To install the `golangci-lint` module, first you must have `golangci-lint` installed.
 If you do not have `golangci-lint` installed, review the `golangci-lint` [install guide][golangci-lint-install].
 
 [golangci-lint-install]: https://golangci-lint.run/welcome/install/
@@ -22,7 +22,7 @@ If you do not have `golangci-lint` installed, review the `golangci-lint` [instal
 You will need to create a `.custom-gcl.yml` file to describe the custom linters you want to run. The following is an example of a `.custom-gcl.yml` file:
 
 ```yaml
-version:  v1.62.0
+version:  v1.64.8
 name: golangci-kube-api-linter
 destination: ./bin
 plugins:
@@ -63,6 +63,23 @@ issues:
         - kubeapilinter
 ```
 
+If you wish to only run selected linters you can do so by specifying the linters you want to enable in the `linters` section:
+
+```yaml
+linters-settings:
+  custom:
+    kubeapilinter:
+      type: "module"
+      settings:
+        linters:
+          disable:
+            - "*"
+          enable:
+            - requiredfields
+            - statusoptional
+            - statussubresource
+```
+
 The settings for Kube API Linter are based on the [GolangCIConfig][golangci-config-struct] struct and allow for finer control over the linter rules.
 
 If you wish to use the Kube API Linter in conjunction with other linters, you can enable the Kube API Linter in the `.golangci.yml` file by ensuring that `kubeapilinter` is in the `linters.enabled` list.
@@ -75,6 +92,37 @@ Where fixes are available within a rule, these can be applied automatically with
 ```shell
 golangci-kube-api-linter run path/to/api/types --fix
 ```
+
+### Golangci-lint Plugin
+
+The Kube API Linter can also be used as a plugin for `golangci-lint`.
+To do this, you will need to install the `golangci-lint` binary and then install the Kube API Linter plugin.
+
+More information about golangci-lint plugins can be found in the [golangci-lint plugin documentation][golangci-lint-plugin-docs].
+
+[golangci-lint-plugin-docs]: https://golangci-lint.run/plugins/go-plugins/
+
+```shell
+go build -buildmode=plugin -o bin/kube-api-linter.so sigs.k8s.io/kube-api-linter/pkg/plugin
+```
+
+This will create a `kube-api-linter.so` file in the `bin` directory.
+
+The `golangci-lint` configuration is similar to the module configuration, however, you will need to specify the plugin path instead.
+
+```yaml
+linters-settings:
+  custom:
+    kubeapilinter:
+      path: "bin/kube-api-linter.so"
+      description: Kube API LInter lints Kube like APIs based on API conventions and best practices.
+      original-url: sigs.k8s.io/kube-api-linter
+      settings:
+        linters: {}
+        lintersConfig: {}
+```
+
+The rest of the configuration is the same as the module configuration, except the standard `golangci-lint` binary is invoked, rather than a custom binary.
 
 #### VSCode integration
 
@@ -163,6 +211,30 @@ The `commentstart` linter can automatically fix comments that do not start with 
 
 When the `json` tag is present, and matches the first word of the field comment in all but casing, the linter will suggest that the comment be updated to match the `json` tag.
 
+## DuplicateMarkers
+
+The duplicatemarkers linter checks for exact duplicates of markers for types and fields.
+This means that something like:
+
+```go
+// +kubebuilder:validation:MaxLength=10
+// +kubebuilder:validation:MaxLength=10
+```
+
+Will be flagged by this linter, while something like:
+
+```go
+// +kubebuilder:validation:MaxLength=10
+// +kubebuilder:validation:MaxLength=11
+```
+
+will not.
+
+### Fixes
+
+The `duplicatemarkers` linter can automatically fix all markers that are exact match to another markers.
+If there are duplicates across fields and their underlying type, the marker on the type will be preferred and the marker on the field will be removed.
+
 ## Integers
 
 The `integers` linter checks for usage of unsupported integer types.
@@ -230,6 +302,42 @@ lintersConfig:
 
 The `nophase` linter checks that the fields in the API types don't contain a 'Phase', or any field which contains 'Phase' as a substring, e.g MachinePhase.
 
+## OptionalFields
+
+The `optionalfields` linter checks that all fields marked as optional adhere to being pointers and having the `omitempty` value in their `json` tag where appropriate.
+
+If you prefer to avoid pointers where possible, the linter can be configured with the `WhenRequired` preference to determine, based on the serialization and valid values for the field, whether the field should be a pointer or not.
+For example, an optional string with a non-zero minimum length does not need to be a pointer, as the zero value is not valid, and it is safe for the Go marshaller to omit the empty value.
+
+In certain use cases, it can be desirable to not omit optional fields from the serialized form of the object.
+In this case, the `omitempty` policy can be set to `Ignore`, and the linter will ensure that the zero value of the object is an acceptable value for the field.
+
+### Configuration
+
+```yaml
+lintersConfig:
+  optionalFields:
+    pointers:
+      preference: Always | WhenRequired # Whether to always require pointers, or only when required. Defaults to `Always`.
+      policy: SuggestFix | Warn # The policy for pointers in optional fields. Defaults to `SuggestFix`.
+    omitempty:
+        policy: SuggestFix | Warn | Ignore # The policy for omitempty in optional fields. Defaults to `SuggestFix`.
+```
+
+### Fixes
+
+The `optionalfields` linter can automatically fix fields that are marked as optional, that are either not pointers or do not have the `omitempty` value in their `json` tag.
+It will suggest to add the pointer to the field, and update the `json` tag to include the `omitempty` value.
+
+If you prefer not to suggest fixes for pointers in optional fields, you can change the `pointers.policy` to `Warn`.
+
+If you prefer not to suggest fixes for `omitempty` in optional fields, you can change the `omitempty.policy` to `Warn` or `Ignore`.
+
+When the `pointers.preference` is set to `WhenRequired`, the linter will suggest to add the pointer to the field only when the field zero value is a valid value for the field.
+When the field zero value is not a valid value for the field, the linter will suggest to remove the pointer from the field.
+
+When the `pointers.preference` is set to `Always`, the linter will always suggest to add the pointer to the field, regardless of the validity of the zero value of the field.
+
 ## OptionalOrRequired
 
 The `optionalorrequired` linter checks that all fields in the API types are either optional or required, and are marked explicitly as such.
@@ -239,6 +347,8 @@ The linter expects to find a comment marker `// +optional` or `// +required` wit
 It also supports the `// +kubebuilder:validation:Optional` and `// +kubebuilder:validation:Required` markers, but will suggest to use the `// +optional` and `// +required` markers instead.
 
 If you prefer to use the Kubebuilder markers instead, you can change the preference in the configuration.
+
+The `optionalorrequired` linter also checks for the presence of optional or required markers on type declarations, and forbids this pattern.
 
 ### Configuration
 
@@ -277,6 +387,20 @@ It will suggest to remove the pointer from the field, and update the `json` tag 
 If you prefer not to suggest fixes for pointers in required fields, you can change the `pointerPolicy` to `Warn`.
 The linter will then only suggest to remove the `omitempty` value from the `json` tag.
 
+## StatusOptional
+
+The `statusoptional` linter checks that all first-level children fields within a status struct are marked as optional.
+
+This is important because status fields should be optional to allow for partial updates and backward compatibility.
+The linter ensures that all direct child fields of any status struct have either the `// +optional` or
+`// +kubebuilder:validation:Optional` marker.
+
+### Fixes
+
+The `statusoptional` linter can automatically fix fields in status structs that are not marked as optional.
+
+It will suggest adding the `// +optional` marker to any status field that is missing it.
+
 ## StatusSubresource
 
 The `statussubresource` linter checks that the status subresource is configured correctly for
@@ -290,6 +414,36 @@ This linter is not enabled by default as it is only applicable to CustomResource
 
 In the case where there is a status field present but no `kubebuilder:subresource:status` marker, the
 linter will suggest adding the comment `// +kubebuilder:subresource:status` above the struct.
+
+## UniqueMarkers
+
+The `uniquemarkers` linter ensures that types and fields do not contain more than a single definition of a marker that should only be present once.
+
+Because this linter has no way of determining which marker definition was intended it does not suggest any fixes 
+
+### Configuration
+It can configured to include a set of custom markers in the analysis by setting:
+```yaml
+lintersConfig:
+  uniqueMarkers:
+    customMarkers:
+      - identifier: custom:SomeCustomMarker
+        attributes:
+          - fruit
+```
+
+For each custom marker, it must specify an `identifier` and optionally some `attributes`.
+As an example, take the marker definition `kubebuilder:validation:XValidation:rule='has(self.foo)',message='should have foo',fieldPath='.foo'`.
+The identifier for the marker is `kubebuilder:validation:XValidation` and its attributes are `rule`, `message`, and `fieldPath`.
+
+When specifying `attributes`, those attributes are included in the uniqueness identification of a marker definition.
+
+Taking the example configuration from above:
+
+- Marker definitions of `custom:SomeCustomMarker:fruit=apple,color=red` and `custom:SomeCustomMarker:fruit=apple,color=green` would violate the uniqueness requirement and be flagged.
+- Marker definitions of `custom:SomeCustomMarker:fruit=apple,color=red` and `custom:SomeCustomMarker:fruit=orange,color=red` would _not_ violate the uniqueness requirement.
+
+Each entry in `customMarkers` must have a unique `identifier`.
 
 # Contributing
 
