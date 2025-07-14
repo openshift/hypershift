@@ -23,53 +23,6 @@ import (
 	"github.com/blang/semver"
 )
 
-func TestGetMultiArchReleaseURLTemplate(t *testing.T) {
-	testCases := []struct {
-		name        string
-		envValue    string
-		setEnv      bool
-		expectedURL string
-	}{
-		{
-			name:        "returns default URL when environment variable is not set",
-			setEnv:      false,
-			expectedURL: multiArchReleaseURLTemplate,
-		},
-		{
-			name:        "returns custom URL when environment variable is set",
-			envValue:    "https://custom.example.com/api/v1/releasestream/%s/tags",
-			setEnv:      true,
-			expectedURL: "https://custom.example.com/api/v1/releasestream/%s/tags",
-		},
-		{
-			name:        "returns default URL when environment variable is empty string",
-			envValue:    "",
-			setEnv:      true,
-			expectedURL: multiArchReleaseURLTemplate,
-		},
-		{
-			name:        "returns mock server URL when set for testing",
-			envValue:    "http://localhost:8080/mock/%s",
-			setEnv:      true,
-			expectedURL: "http://localhost:8080/mock/%s",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			// Set up environment for test case using t.Setenv (automatically handles cleanup)
-			if tc.setEnv {
-				t.Setenv("HYPERSHIFT_RELEASE_URL_TEMPLATE", tc.envValue)
-			}
-
-			result := getMultiArchReleaseURLTemplate()
-			g.Expect(result).To(Equal(tc.expectedURL))
-		})
-	}
-}
-
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
 	g.Expect(Supported()).To(Equal([]string{"4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))

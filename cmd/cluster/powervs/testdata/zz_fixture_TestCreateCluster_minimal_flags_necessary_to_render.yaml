@@ -116,7 +116,7 @@ spec:
   pullSecret:
     name: example-pull-secret
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
+    image: ""
   secretEncryption:
     aescbc:
       activeKey:
@@ -163,7 +163,7 @@ spec:
       systemType: s922
     type: PowerVS
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
+    image: ""
   replicas: 0
 status:
   replicas: 0

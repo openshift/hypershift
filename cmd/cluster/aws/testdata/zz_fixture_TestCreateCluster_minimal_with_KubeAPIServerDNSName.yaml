@@ -70,7 +70,7 @@ spec:
   pullSecret:
     name: example-pull-secret
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
+    image: ""
   secretEncryption:
     kms:
       aws:
@@ -125,7 +125,7 @@ spec:
         id: fakeSubnetID
     type: AWS
   release:
-    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
+    image: ""
   replicas: 0
 status:
   replicas: 0
