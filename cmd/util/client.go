@@ -20,19 +20,6 @@ const (
 	DeleteWithClusterLabelName = "hypershift.openshift.io/safe-to-delete-with-cluster"
 )
 
-// testFakeClientObjects holds objects to be included in fake clients for testing
-var testFakeClientObjects []crclient.Object
-
-// SetFakeClientObjects sets the objects to be included in fake clients for testing
-func SetFakeClientObjects(objects ...crclient.Object) {
-	testFakeClientObjects = objects
-}
-
-// ClearFakeClientObjects clears the test fake client objects
-func ClearFakeClientObjects() {
-	testFakeClientObjects = nil
-}
-
 // GetConfig creates a REST config from current context
 func GetConfig() (*rest.Config, error) {
 	cfg, err := cr.GetConfig()
@@ -47,11 +34,7 @@ func GetConfig() (*rest.Config, error) {
 // GetClient creates a controller-runtime client for Kubernetes
 func GetClient() (crclient.Client, error) {
 	if os.Getenv("FAKE_CLIENT") == "true" {
-		builder := fake.NewClientBuilder().WithScheme(hyperapi.Scheme)
-		if len(testFakeClientObjects) > 0 {
-			builder = builder.WithObjects(testFakeClientObjects...)
-		}
-		return builder.Build(), nil
+		return fake.NewFakeClient(), nil
 	}
 
 	config, err := GetConfig()

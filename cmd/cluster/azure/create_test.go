@@ -3,8 +3,6 @@ package azure
 import (
 	"context"
 	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,12 +11,14 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
@@ -71,46 +71,6 @@ func TestCreateCluster(t *testing.T) {
 	if err := os.WriteFile(pullSecretFile, []byte(`fake`), 0600); err != nil {
 		t.Fatalf("failed to write pullSecret: %v", err)
 	}
-
-	supportedVersionsCM := testutil.CreateSupportedVersionsConfigMap()
-
-	// Set up fake client objects for the test
-	util.SetFakeClientObjects(supportedVersionsCM)
-	defer util.ClearFakeClientObjects()
-
-	// Mock HTTP server that returns release tags
-	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		response := `{
-				"name": "4-stable-multi",
-				"tags": [
-					{
-						"name": "4.19.0",
-						"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-multi",
-						"downloadURL": "https://example.com/4.19.0"
-					},
-					{
-						"name": "4.18.5",
-						"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.5-multi",
-						"downloadURL": "https://example.com/4.18.5"
-					},
-					{
-						"name": "4.18.0",
-						"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.0-multi",
-						"downloadURL": "https://example.com/4.18.0"
-					}
-				]
-			}`
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte(response))
-		if err != nil {
-			t.Fatalf("failed to write response: %v", err)
-		}
-	}))
-	defer mockServer.Close()
-
-	// Set the environment variable to override the release URL template with the mock server
-	t.Setenv("HYPERSHIFT_RELEASE_URL_TEMPLATE", mockServer.URL+"/api/v1/releasestream/%s/tags")
 
 	for _, testCase := range []struct {
 		name string
@@ -209,11 +169,12 @@ func TestCreateCluster(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			log := logr.Logger{}
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts, err := DefaultOptions(nil, log)
+			azureOpts, err := DefaultOptions(fakeClient, log)
 			if err != nil {
 				t.Fatal("failed to create azure options: ", err)
 			}

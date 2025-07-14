@@ -228,7 +228,7 @@ func (r *resources) asObjects() []crclient.Object {
 func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, error) {
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
-	if len(opts.ReleaseImage) == 0 {
+	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
 		client, err := util.GetClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
