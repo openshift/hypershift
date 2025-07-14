@@ -4019,6 +4019,34 @@ APIServerNetworking
 how the APIServer is exposed inside a hosted cluster node.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ovnKubernetesConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfigSpec">
+OVNKubernetesConfigSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ovnKubernetesConfig holds OVN-Kubernetes specific configuration.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ipsecConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IPSecConfigSpec">
+IPSecConfigSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipsecConfig holds IPSec specific configuration.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterVersionOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec }
@@ -6895,6 +6923,36 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 </tr>
 </tbody>
 </table>
+###IPSecConfigSpec { #hypershift.openshift.io/v1beta1.IPSecConfigSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>IPSecConfigSpec defines the desired state for IPSec.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>mode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>Mode defines the desired IPSec configuration.
+Allowed values are &ldquo;Disabled&rdquo; and &ldquo;Full&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ImageContentSource { #hypershift.openshift.io/v1beta1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
@@ -9399,6 +9457,52 @@ the guest cluster.</p>
 the management cluster.</p>
 </td>
 </tr></tbody>
+</table>
+###OVNKubernetesConfigSpec { #hypershift.openshift.io/v1beta1.OVNKubernetesConfigSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>OVNKubernetesConfigSpec contains OVN-Kubernetes specific subnetconfiguration options.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>internalJoinSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>InternalJoinSubnet is the subnet used for the join switch, which connects
+gateway routers to distributed routers.
+Default is 100.64.0.0/16.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalTransitSwitchSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>InternalTransitSwitchSubnet is the subnet used for the transit switch,
+which enables east-west (pod-to-pod) traffic across nodes.
+Default is 100.88.0.0/16.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
 <p>

@@ -17,6 +17,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -143,6 +144,8 @@ const (
 	previouslySyncedRestartDateAnnotation = "hypershift.openshift.io/previous-restart-date"
 	kasServingCertHashAnnotation          = "hypershift.openshift.io/kas-serving-cert-hash"
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
+
+	lastAppliedNetworkingSpecAnnotation = "hypershift.openshift.io/last-applied-networking-spec"
 )
 
 // NoopReconcile is just a default mutation function that does nothing.
@@ -385,6 +388,48 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			hcp = nil
 		}
+	}
+
+	// Check if a network update is already in progress by looking at the status condition.
+	if meta.IsStatusConditionTrue(hcluster.Status.Conditions, "NetworkingUpdateProgressing") {
+		log.Info("Networking update is already in progress, monitoring status")
+		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+	}
+	lastAppliedSpec, err := getLastAppliedNetworkingSpec(hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get last applied networking spec: %w", err)
+	}
+
+	if !reflect.DeepEqual(lastAppliedSpec, hcluster.Spec.Networking) &&
+		hcluster.Annotations["hypershift.openshift.io/acknowledge-networking-disruption"] == "true" {
+		log.Info("Day 2 networking change, starting rollout")
+		meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+			Type:    "NetworkingUpdateProgressing",
+			Status:  "True",
+			Reason:  "RollingUpdate",
+			Message: "Applying new OVN/IPSec configuration; node reboots will occur.",
+		})
+		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update status to progressing: %w", err)
+		}
+
+		if hcp.Annotations == nil {
+			hcp.Annotations = make(map[string]string)
+		}
+		hcp.Annotations["hypershift.openshift.io/network-rollout-required"] = "true"
+		// Update the HCP with the new networking spec and the command annotation.
+		hcp.Spec.Networking = hcluster.Spec.Networking
+		if err := r.Client.Update(ctx, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update HostedControlPlane to trigger rollout: %w", err)
+		}
+		// Store the new spec as the "last applied" to prevent re-triggering.
+		if err := setLastAppliedNetworkingSpec(hcluster, hcluster.Spec.Networking); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to set last-applied-spec annotation: %w", err)
+		}
+		if err := r.Client.Update(ctx, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster with last-applied-spec: %w", err)
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
 	// Bubble up ValidIdentityProvider condition from the hostedControlPlane.
@@ -4728,4 +4773,33 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 	}
 
 	return nil
+}
+
+// setLastAppliedNetworkingSpec marshals the given networking spec to JSON and stores it
+// in an annotation on the HostedCluster object.
+func setLastAppliedNetworkingSpec(hc *hyperv1.HostedCluster, networkingSpec hyperv1.ClusterNetworking) error {
+	specBytes, err := json.Marshal(networkingSpec)
+	if err != nil {
+		return fmt.Errorf("failed to marshal networking spec to JSON: %w", err)
+	}
+	if hc.Annotations == nil {
+		hc.Annotations = make(map[string]string)
+	}
+	hc.Annotations[lastAppliedNetworkingSpecAnnotation] = string(specBytes)
+	return nil
+}
+
+// getLastAppliedNetworkingSpec retrieves and unmarshals the last-applied networking spec
+// from the HostedCluster's annotations. If the annotation doesn't exist (e.g., on a
+// new cluster), it returns nil, indicating no previous state.
+func getLastAppliedNetworkingSpec(hc *hyperv1.HostedCluster) (*hyperv1.ClusterNetworking, error) {
+	specAnnotation, ok := hc.Annotations[lastAppliedNetworkingSpecAnnotation]
+	if !ok {
+		return nil, nil
+	}
+	var lastAppliedSpec hyperv1.ClusterNetworking
+	if err := json.Unmarshal([]byte(specAnnotation), &lastAppliedSpec); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal last applied networking spec from annotation: %w", err)
+	}
+	return &lastAppliedSpec, nil
 }

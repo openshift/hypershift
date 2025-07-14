@@ -1018,6 +1018,14 @@ type ClusterNetworking struct {
 	// +immutable
 	// +optional
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
+
+	// ovnKubernetesConfig holds OVN-Kubernetes specific configuration.
+	// +optional
+	OVNKubernetesConfig *OVNKubernetesConfigSpec `json:"ovnKubernetesConfig,omitempty"`
+
+	// ipsecConfig holds IPSec specific configuration.
+	// +optional
+	IPSecConfig *IPSecConfigSpec `json:"ipsecConfig,omitempty"`
 }
 
 // MachineNetworkEntry is a single IP address block for node IP blocks.
@@ -1742,6 +1750,29 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	ClusterVersionOperator *ClusterVersionOperatorSpec `json:"clusterVersionOperator,omitempty"`
+}
+
+// OVNKubernetesConfigSpec contains OVN-Kubernetes specific subnetconfiguration options.
+type OVNKubernetesConfigSpec struct {
+	// InternalJoinSubnet is the subnet used for the join switch, which connects
+	// gateway routers to distributed routers.
+	// Default is 100.64.0.0/16.
+	// +optional
+	InternalJoinSubnet *string `json:"internalJoinSubnet,omitempty"`
+
+	// InternalTransitSwitchSubnet is the subnet used for the transit switch,
+	// which enables east-west (pod-to-pod) traffic across nodes.
+	// Default is 100.88.0.0/16.
+	// +optional
+	InternalTransitSwitchSubnet *string `json:"internalTransitSwitchSubnet,omitempty"`
+}
+
+// IPSecConfigSpec defines the desired state for IPSec.
+type IPSecConfigSpec struct {
+	// Mode defines the desired IPSec configuration.
+	// Allowed values are "Disabled" and "Full".
+	// +kubebuilder:validation:Enum=Disabled;Full
+	Mode string `json:"mode,omitempty"`
 }
 
 // +genclient

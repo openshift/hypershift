@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"sort"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
@@ -38,6 +40,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
+	"github.com/blang/semver"
 	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
 )
@@ -56,6 +59,9 @@ func DefaultOptions() *RawCreateOptions {
 		FeatureSet:                     string(configv1.Default),
 		EnableClusterCapabilities:      []string{},
 		DisableClusterCapabilities:     []string{},
+		InternalJoinSubnet:             "100.64.0.0/16",
+		InternalTransitSwitchSubnet:    "100.88.0.0/16",
+		IPSecMode:                      "Disabled",
 	}
 }
 
@@ -111,6 +117,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.StringVar(&opts.InternalJoinSubnet, "internal-join-subnet", opts.InternalJoinSubnet, "The CIDR for the OVN-Kubernetes join subnet. Must not overlap with other cluster CIDRs. (Default: 100.64.0.0/16)")
+	flags.StringVar(&opts.InternalTransitSwitchSubnet, "internal-transit-switch-subnet", opts.InternalTransitSwitchSubnet, "The CIDR for the OVN-Kubernetes transit switch subnet. Must not overlap with other cluster CIDRs. (Default: 100.88.0.0/16)")
+	flags.StringVar(&opts.IPSecMode, "ipsec-mode", opts.IPSecMode, "The mode for IPSec encryption. Supported options: Disabled, Full. (Default: Disabled)")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -173,6 +182,9 @@ type RawCreateOptions struct {
 	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	InternalJoinSubnet               string
+	InternalTransitSwitchSubnet      string
+	IPSecMode                        string
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -457,6 +469,26 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	}
 	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
 
+	hasOVNConfig := opts.InternalJoinSubnet != "" || opts.InternalTransitSwitchSubnet != ""
+	hasIPSecConfig := opts.IPSecMode != "" && opts.IPSecMode != "Disabled"
+	if hasOVNConfig {
+		if prototype.Cluster.Spec.Networking.OVNKubernetesConfig == nil {
+			prototype.Cluster.Spec.Networking.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfigSpec{}
+		}
+		if opts.InternalJoinSubnet != "" {
+			prototype.Cluster.Spec.Networking.OVNKubernetesConfig.InternalJoinSubnet = &opts.InternalJoinSubnet
+		}
+		if opts.InternalTransitSwitchSubnet != "" {
+			prototype.Cluster.Spec.Networking.OVNKubernetesConfig.InternalTransitSwitchSubnet = &opts.InternalTransitSwitchSubnet
+		}
+	}
+	if hasIPSecConfig {
+		if prototype.Cluster.Spec.Networking.IPSecConfig == nil {
+			prototype.Cluster.Spec.Networking.IPSecConfig = &hyperv1.IPSecConfigSpec{}
+		}
+		prototype.Cluster.Spec.Networking.IPSecConfig.Mode = opts.IPSecMode
+	}
+
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
 	}
@@ -732,6 +764,61 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
 			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
 		}
+	}
+
+	// Validate new networking features are supported on the release image version (4.16+)
+	if (opts.InternalJoinSubnet != "" && opts.InternalJoinSubnet != "100.64.0.0/16") ||
+		(opts.InternalTransitSwitchSubnet != "" && opts.InternalTransitSwitchSubnet != "100.88.0.0/16") ||
+		(opts.IPSecMode != "" && opts.IPSecMode != "Disabled") {
+		v, err := supportedversion.VersionFromPullSpec(opts.ReleaseImage)
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse release image version: %w", err)
+		}
+		minVersion := semver.MustParse("4.16.0")
+		if v.Major < minVersion.Major || (v.Major == minVersion.Major && v.Minor < minVersion.Minor) {
+			return nil, fmt.Errorf("custom OVN and IPSec configuration is only supported on OCP 4.16+ versions, but received version %s", v)
+		}
+	}
+
+	// Validate IPSec Mode
+	switch opts.IPSecMode {
+	case "Disabled", "Full", "": // Empty will use the default "Disabled"
+	default:
+		return nil, fmt.Errorf("invalid --ipsec-mode: %q. Supported options are Disabled, Full", opts.IPSecMode)
+	}
+
+	// Validate and check for network CIDR overlaps
+	var allCIDRs []hyperutil.CidrEntry
+	cidrsToParse := []struct {
+		cidrStr string
+		path    string
+	}{
+		{opts.InternalJoinSubnet, "--internal-join-subnet"},
+		{opts.InternalTransitSwitchSubnet, "--internal-transit-switch-subnet"},
+	}
+	for _, item := range cidrsToParse {
+		if item.cidrStr != "" {
+			_, parsedCIDR, err := net.ParseCIDR(item.cidrStr)
+			if err != nil {
+				return nil, fmt.Errorf("invalid CIDR format for %s: %w", item.path, err)
+			}
+			allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsedCIDR, Path: field.NewPath(item.path)})
+		}
+	}
+	for _, cidrStr := range opts.ServiceCIDR {
+		_, parsedCIDR, _ := net.ParseCIDR(cidrStr)
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsedCIDR, Path: field.NewPath("--service-cidr")})
+	}
+	for _, cidrStr := range opts.ClusterCIDR {
+		_, parsedCIDR, _ := net.ParseCIDR(cidrStr)
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsedCIDR, Path: field.NewPath("--cluster-cidr")})
+	}
+	for _, cidrStr := range opts.MachineCIDR {
+		_, parsedCIDR, _ := net.ParseCIDR(cidrStr)
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsedCIDR, Path: field.NewPath("--machine-cidr")})
+	}
+	if err := hyperutil.CheckCIDROverlaps(allCIDRs); err != nil {
+		return nil, err
 	}
 
 	return &ValidatedCreateOptions{

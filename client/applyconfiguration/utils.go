@@ -165,6 +165,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):
 		return &hypershiftv1beta1.InPlaceUpgradeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("IPSecConfigSpec"):
+		return &hypershiftv1beta1.IPSecConfigSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterAWSConfig"):
 		return &hypershiftv1beta1.KarpenterAWSConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("KarpenterConfig"):
@@ -247,6 +249,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OVNKubernetesConfigSpec"):
+		return &hypershiftv1beta1.OVNKubernetesConfigSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):

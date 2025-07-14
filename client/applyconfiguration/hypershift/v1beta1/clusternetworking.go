@@ -24,11 +24,13 @@ import (
 // ClusterNetworkingApplyConfiguration represents a declarative configuration of the ClusterNetworking type for use
 // with apply.
 type ClusterNetworkingApplyConfiguration struct {
-	MachineNetwork []MachineNetworkEntryApplyConfiguration `json:"machineNetwork,omitempty"`
-	ClusterNetwork []ClusterNetworkEntryApplyConfiguration `json:"clusterNetwork,omitempty"`
-	ServiceNetwork []ServiceNetworkEntryApplyConfiguration `json:"serviceNetwork,omitempty"`
-	NetworkType    *hypershiftv1beta1.NetworkType          `json:"networkType,omitempty"`
-	APIServer      *APIServerNetworkingApplyConfiguration  `json:"apiServer,omitempty"`
+	MachineNetwork      []MachineNetworkEntryApplyConfiguration    `json:"machineNetwork,omitempty"`
+	ClusterNetwork      []ClusterNetworkEntryApplyConfiguration    `json:"clusterNetwork,omitempty"`
+	ServiceNetwork      []ServiceNetworkEntryApplyConfiguration    `json:"serviceNetwork,omitempty"`
+	NetworkType         *hypershiftv1beta1.NetworkType             `json:"networkType,omitempty"`
+	APIServer           *APIServerNetworkingApplyConfiguration     `json:"apiServer,omitempty"`
+	OVNKubernetesConfig *OVNKubernetesConfigSpecApplyConfiguration `json:"ovnKubernetesConfig,omitempty"`
+	IPSecConfig         *IPSecConfigSpecApplyConfiguration         `json:"ipsecConfig,omitempty"`
 }
 
 // ClusterNetworkingApplyConfiguration constructs a declarative configuration of the ClusterNetworking type for use with
@@ -89,5 +91,21 @@ func (b *ClusterNetworkingApplyConfiguration) WithNetworkType(value hypershiftv1
 // If called multiple times, the APIServer field is set to the value of the last call.
 func (b *ClusterNetworkingApplyConfiguration) WithAPIServer(value *APIServerNetworkingApplyConfiguration) *ClusterNetworkingApplyConfiguration {
 	b.APIServer = value
+	return b
+}
+
+// WithOVNKubernetesConfig sets the OVNKubernetesConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OVNKubernetesConfig field is set to the value of the last call.
+func (b *ClusterNetworkingApplyConfiguration) WithOVNKubernetesConfig(value *OVNKubernetesConfigSpecApplyConfiguration) *ClusterNetworkingApplyConfiguration {
+	b.OVNKubernetesConfig = value
+	return b
+}
+
+// WithIPSecConfig sets the IPSecConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IPSecConfig field is set to the value of the last call.
+func (b *ClusterNetworkingApplyConfiguration) WithIPSecConfig(value *IPSecConfigSpecApplyConfiguration) *ClusterNetworkingApplyConfiguration {
+	b.IPSecConfig = value
 	return b
 }

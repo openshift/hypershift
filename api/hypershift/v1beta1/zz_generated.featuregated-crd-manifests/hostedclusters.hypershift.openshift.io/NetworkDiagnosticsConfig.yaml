@@ -2707,6 +2707,18 @@ spec:
                     - message: clusterNetwork is immutable and cannot be modified
                         once set.
                       rule: self == oldSelf
+                  ipsecConfig:
+                    description: ipsecConfig holds IPSec specific configuration.
+                    properties:
+                      mode:
+                        description: |-
+                          Mode defines the desired IPSec configuration.
+                          Allowed values are "Disabled" and "Full".
+                        enum:
+                        - Disabled
+                        - Full
+                        type: string
+                    type: object
                   machineNetwork:
                     description: |-
                       machineNetwork is the list of IP address pools for machines.
@@ -2750,6 +2762,23 @@ spec:
                     - OVNKubernetes
                     - Other
                     type: string
+                  ovnKubernetesConfig:
+                    description: ovnKubernetesConfig holds OVN-Kubernetes specific
+                      configuration.
+                    properties:
+                      internalJoinSubnet:
+                        description: |-
+                          InternalJoinSubnet is the subnet used for the join switch, which connects
+                          gateway routers to distributed routers.
+                          Default is 100.64.0.0/16.
+                        type: string
+                      internalTransitSwitchSubnet:
+                        description: |-
+                          InternalTransitSwitchSubnet is the subnet used for the transit switch,
+                          which enables east-west (pod-to-pod) traffic across nodes.
+                          Default is 100.88.0.0/16.
+                        type: string
+                    type: object
                   serviceNetwork:
                     default:
                     - cidr: 172.31.0.0/16
