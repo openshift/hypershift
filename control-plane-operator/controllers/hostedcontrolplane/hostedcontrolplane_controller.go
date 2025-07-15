@@ -1551,12 +1551,12 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service
-	if serviceStrategy.Type == hyperv1.Route && hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+	if serviceStrategy.Type == hyperv1.Route {
 		if util.IsPublicHCP(hcp) {
 			svc = manifests.RouterPublicService(hcp.Namespace)
 		} else {
