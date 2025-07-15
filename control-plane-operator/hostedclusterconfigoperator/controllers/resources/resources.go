@@ -102,7 +102,7 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
 region = %s
 `
-	UserProvidedPullSecretNamespace = "kube-system"
+	AdditionalPullSecretNamespace = "kube-system"
 )
 
 var (
@@ -111,6 +111,8 @@ var (
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
 	deleteCVORemovedResourcesOnce   sync.Once
+
+	recoverBeforeShutdown = true
 )
 
 const azureCCMScript = `
@@ -144,10 +146,7 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
-
-	// Informer and client for secrets of kube-system for data plane
-	kubeSystemSecretInformer cache.Informer
-	kubeSystemSecretClient   client.Client
+	kubeSystemSecretClient    client.Client
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -232,7 +231,6 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		kubeSystemSecretInformer:  kubeSystemSecretInformer,
 		kubeSystemSecretClient:    kubeSystemClient,
 	}})
 	if err != nil {
@@ -830,6 +828,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	hccoImage := os.Getenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE")
 	if err := r.reconcileGlobalPullSecret(ctx, hcp, hccoImage); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile global pull secret: %w", err))
+		if strings.Contains(err.Error(), "global pull secret syncer signaled to shutdown") {
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, errors.NewAggregate(errs)
+		}
 	}
 
 	return ctrl.Result{}, errors.NewAggregate(errs)
@@ -3002,7 +3003,7 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 	log.Info("Reconciling global pull secret")
 
 	// Get the user provided pull secret
-	exists, userProvidedPullSecret, err := globalpullsecret.UserProvidedPullSecretExists(ctx, r.kubeSystemSecretClient)
+	exists, additionalPullSecret, err := globalpullsecret.AdditionalPullSecretExists(ctx, r.kubeSystemSecretClient)
 	if err != nil {
 		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
 	}
@@ -3014,6 +3015,32 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 
 	if !exists {
 		// Early cleanup
+		if recoverBeforeShutdown {
+			// Recover the original pull secret
+			log.Info("Recovering original pull secret")
+			originalPullSecret := manifests.PullSecret(hcp.Namespace)
+			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
+				return fmt.Errorf("failed to get original pull secret: %w", err)
+			}
+			originalPullSecretBytes = originalPullSecret.Data[corev1.DockerConfigJsonKey]
+
+			// Create secret in the DataPlane
+			secret := manifests.GlobalPullSecret()
+			if _, err := r.CreateOrUpdate(ctx, r.uncachedClient, secret, func() error {
+				secret.Data = map[string][]byte{
+					corev1.DockerConfigJsonKey: originalPullSecretBytes,
+				}
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to create global pull secret: %w", err)
+			}
+			log.Info("Original pull secret recovered, global pull secret syncer signaled to shutdown")
+			recoverBeforeShutdown = false
+
+			return fmt.Errorf("original pull secret recovered, global pull secret syncer signaled to shutdown")
+		}
+
+		// Delete the global pull secret and the daemon set
 		secret := manifests.GlobalPullSecret()
 		if err := r.uncachedClient.Delete(ctx, secret); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -3033,15 +3060,16 @@ func (r *reconciler) reconcileGlobalPullSecret(ctx context.Context, hcp *hyperv1
 	}
 
 	// If the PS doesn't exist, the HCCO doesn't do anything.
-	if userProvidedPullSecret.Data == nil {
+	if additionalPullSecret.Data == nil {
 		return nil
 	}
 
-	if userProvidedPullSecretBytes, err = globalpullsecret.ValidateUserProvidedPullSecret(userProvidedPullSecret); err != nil {
+	if userProvidedPullSecretBytes, err = globalpullsecret.ValidateAdditionalPullSecret(additionalPullSecret); err != nil {
 		return fmt.Errorf("failed to validate user provided pull secret: %w", err)
 	}
 
 	log.Info("Valid additional pull secret found in the DataPlane, reconciling global pull secret")
+	recoverBeforeShutdown = true
 
 	// Get the original pull secret
 	originalPullSecret := manifests.PullSecret(hcp.Namespace)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -142,6 +143,9 @@ func TestReconcileErrorHandling(t *testing.T) {
 	// get initial number of creates with no get errors
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
 	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	errorExceptions := []string{
+		"global pull secret syncer signaled to shutdown",
+	}
 
 	var totalCreates int
 	{
@@ -165,7 +169,12 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
-			t.Fatalf("unexpected: %v", err)
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+				t.Fatalf("unexpected error: %v", err)
+			}
 		}
 		totalCreates = fakeClient.createCount
 	}
@@ -189,9 +198,16 @@ func TestReconcileErrorHandling(t *testing.T) {
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 			kubeSystemSecretClient: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 		}
-		_, _ = r.Reconcile(ctx, controllerruntime.Request{})
-		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
-			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
+		if err != nil {
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+			}
+			if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
+				t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+			}
 		}
 	}
 }

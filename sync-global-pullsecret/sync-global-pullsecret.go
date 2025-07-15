@@ -29,20 +29,16 @@ import (
 type syncGlobalPullSecretOptions struct {
 	kubeletConfigJsonPath string
 	globalPSSecretName    string
-	checkInterval         time.Duration
 }
 
 const (
 	defaultKubeletConfigJsonPath     = "/var/lib/kubelet/config.json"
 	defaultGlobalPSSecretName        = "global-pull-secret"
-	defaultCheckInterval             = 30 * time.Second
 	defaultGlobalPullSecretNamespace = "kube-system"
 	dbusRestartUnitMode              = "replace"
 	kubeletServiceUnit               = "kubelet.service"
-)
 
-// systemd job completion state as documented in go-systemd/dbus
-const (
+	// systemd job completion state as documented in go-systemd/dbus
 	systemdJobDone = "done" // Job completed successfully
 )
 
@@ -75,9 +71,7 @@ func NewRunCommand() *cobra.Command {
 
 	opts := syncGlobalPullSecretOptions{
 		kubeletConfigJsonPath: defaultKubeletConfigJsonPath,
-		checkInterval:         defaultCheckInterval,
 	}
-	cmd.Flags().DurationVar(&opts.checkInterval, "check-interval", opts.checkInterval, "The interval at which the file is checked for changes.")
 	cmd.Flags().StringVar(&opts.globalPSSecretName, "global-pull-secret-name", defaultGlobalPSSecretName, "The name of the global pullSecret secret in the DataPlane.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		setupLog := ctrl.Log.WithName("global-pullsecret")
@@ -169,7 +163,6 @@ func (r *GlobalPullSecretReconciler) Reconcile(ctx context.Context, req reconcil
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// Check and fix the file
 	if err := r.checkAndFixFile(ctx, globalPullSecret); err != nil {
 		log.Error(err, "Failed to check and fix file")
 		return reconcile.Result{}, err

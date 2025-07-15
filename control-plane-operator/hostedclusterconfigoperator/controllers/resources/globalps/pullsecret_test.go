@@ -20,7 +20,7 @@ var (
 	oldAuth   = base64.StdEncoding.EncodeToString([]byte("olduser:oldpass"))
 )
 
-func TestValidateUserProvidedPullSecret(t *testing.T) {
+func TestValidateAdditionalPullSecret(t *testing.T) {
 	tests := []struct {
 		name    string
 		secret  *corev1.Secret
@@ -67,7 +67,7 @@ func TestValidateUserProvidedPullSecret(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			_, err := ValidateUserProvidedPullSecret(tt.secret)
+			_, err := ValidateAdditionalPullSecret(tt.secret)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -125,6 +125,20 @@ func TestMergePullSecrets(t *testing.T) {
 			additionalSecret: []byte(`invalid json`),
 			wantErr:          true,
 		},
+		{
+			name:             "empty additional secret, invalid JSON",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			additionalSecret: []byte{},
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			wantErr:          true,
+		},
+		{
+			name:             "empty additional secret with valid JSON",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
+			additionalSecret: []byte(`{"auths":{}}`),
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
+			wantErr:          false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -157,7 +171,7 @@ func composePullSecretBytes(auths map[string]string) []byte {
 	return authsBytes
 }
 
-func TestUserProvidedPullSecretExists(t *testing.T) {
+func TestAdditionalPullSecretExists(t *testing.T) {
 	pullSecret := composePullSecretBytes(map[string]string{"quay.io": validAuth})
 	tests := []struct {
 		name           string
@@ -250,7 +264,7 @@ func TestUserProvidedPullSecretExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			fakeClient := fake.NewClientBuilder().WithObjects(tt.objects...).Build()
-			exists, secret, err := UserProvidedPullSecretExists(context.Background(), fakeClient)
+			exists, secret, err := AdditionalPullSecretExists(context.Background(), fakeClient)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(exists).To(Equal(tt.expectedExists))
 
