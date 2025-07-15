@@ -184,6 +184,8 @@ func eventuallyDaemonSetRollsOut(t *testing.T, ctx context.Context, client crcli
 				want, got := expectedCount, len(readyPods)
 				return want == got, fmt.Sprintf("expected %d Pods, got %d", want, got), nil
 			},
-		}, nil, e2eutil.WithTimeout(timeout),
+		}, nil,
+		e2eutil.WithTimeout(timeout),
+		e2eutil.WithInterval(5*time.Second), // Reduce polling frequency from 1s to 5s
 	)
 }

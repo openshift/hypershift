@@ -418,7 +418,8 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 			}),
 		},
 		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
-		WithTimeout(1*time.Minute),
+		WithTimeout(5*time.Minute),   // Increased from 1 minute
+		WithInterval(10*time.Second), // Increased from 1 second to reduce API calls
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
@@ -432,7 +433,8 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionFalse,
 			}),
 		},
-		WithTimeout(20*time.Minute),
+		WithTimeout(25*time.Minute),
+		WithInterval(15*time.Second), // Increased from 1 second to reduce API calls
 	)
 }
 
@@ -511,6 +513,7 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 			}),
 		}, options.predicates...),
 		WithTimeout(waitTimeout),
+		WithInterval(3*time.Second), // Reduce polling frequency from 1s to 3s for node readiness
 	)
 	return nodes.Items
 }
