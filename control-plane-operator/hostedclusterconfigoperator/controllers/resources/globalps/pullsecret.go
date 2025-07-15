@@ -70,7 +70,6 @@ func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							Args: []string{
 								"sync-global-pullsecret",
 								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
-								"--check-interval=10s",
 							},
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: ptr.To(true),
@@ -133,7 +132,7 @@ func ReconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 	return nil
 }
 
-func ValidateUserProvidedPullSecret(pullSecret *corev1.Secret) ([]byte, error) {
+func ValidateAdditionalPullSecret(pullSecret *corev1.Secret) ([]byte, error) {
 	var dockerConfigJSON credentialprovider.DockerConfigJSON
 
 	// Validate that the pull secret contains the dockerConfigJson key
@@ -208,7 +207,7 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 		return fmt.Errorf("failed to get logger: %w", err)
 	}
 
-	exists, _, err := UserProvidedPullSecretExists(ctx, c)
+	exists, _, err := AdditionalPullSecretExists(ctx, c)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
@@ -218,7 +217,6 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 	log.Info("Reconciling global pull secret RBAC", "exists", exists)
 
 	if !exists {
-		log.Info("Removing global pull secret RBAC resources", "exists", exists)
 		sa := manifests.GlobalPullSecretServiceAccount()
 		if err := c.Delete(ctx, sa); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -293,13 +291,13 @@ func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, creat
 	return nil
 }
 
-func UserProvidedPullSecretExists(ctx context.Context, c crclient.Client) (bool, *corev1.Secret, error) {
-	userProvidedPullSecret := manifests.UserProvidedPullSecret()
-	if err := c.Get(ctx, crclient.ObjectKeyFromObject(userProvidedPullSecret), userProvidedPullSecret); err != nil {
+func AdditionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *corev1.Secret, error) {
+	additionalPullSecret := manifests.AdditionalPullSecret()
+	if err := c.Get(ctx, crclient.ObjectKeyFromObject(additionalPullSecret), additionalPullSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil, nil
 		}
 		return false, nil, err
 	}
-	return true, userProvidedPullSecret, nil
+	return true, additionalPullSecret, nil
 }

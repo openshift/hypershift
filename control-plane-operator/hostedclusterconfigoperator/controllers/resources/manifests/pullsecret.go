@@ -27,7 +27,7 @@ func PullSecretTargetNamespaces() []string {
 	}
 }
 
-func UserProvidedPullSecret() *corev1.Secret {
+func AdditionalPullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "additional-pull-secret",
