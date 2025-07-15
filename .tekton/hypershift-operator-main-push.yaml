@@ -10,7 +10,7 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "main"
-      && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE)$'))
+      && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\.json)$'))
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: hypershift-operator
