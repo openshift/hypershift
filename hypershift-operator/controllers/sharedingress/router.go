@@ -26,10 +26,9 @@ import (
 )
 
 const (
-	routerConfigKey     = "haproxy.cfg"
-	routerConfigHashKey = "hypershift.openshift.io/config-hash"
-	KASSVCLBPort        = 6443
-	ExternalDNSLBPort   = 443
+	routerConfigKey   = "haproxy.cfg"
+	KASSVCLBPort      = 6443
+	ExternalDNSLBPort = 443
 )
 
 func hcpRouterLabels() map[string]string {
@@ -163,13 +162,11 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: hcpRouterLabels(),
-				Annotations: map[string]string{
-					routerConfigHashKey: util.ComputeHash(configMap.Data[routerConfigKey]),
-				},
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
 					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain()),
+					util.BuildContainer(hcpRouterContainerReloader(), buildHCPRouterContainerReloader()),
 				},
 				Volumes: []corev1.Volume{
 					{
@@ -178,6 +175,12 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.
 							ConfigMap: &corev1.ConfigMapVolumeSource{
 								LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterConfigurationConfigMap("").Name},
 							},
+						},
+					},
+					{
+						Name: "runtime-socket",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
 					},
 				},
@@ -218,10 +221,12 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 		}
 
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
-		// TODO: get the image from the payload once available https://issues.redhat.com/browse/HOSTEDCP-1819
 		c.Image = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:d443537f72ec48b2078d24de9852c3369c68c60c06ac82d51c472b2144d41309"
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
+			"-db",
+			"-W",
+			"-S", "/var/run/haproxy/admin.sock", // run in masster-worker mode and bind to the admin socket to enable hot reloads.
 		}
 		c.LivenessProbe = &corev1.Probe{
 			InitialDelaySeconds: 50,
@@ -251,11 +256,77 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 				},
 			},
 		}
-		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-			Name:      "config",
-			MountPath: "/usr/local/etc/haproxy/haproxy.cfg",
-			SubPath:   "haproxy.cfg",
-		})
+		c.VolumeMounts = append(c.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "config",
+				MountPath: "/usr/local/etc/haproxy",
+				ReadOnly:  true,
+			}, corev1.VolumeMount{
+				Name:      "runtime-socket",
+				MountPath: "/var/run/haproxy",
+			},
+		)
+	}
+}
+
+func hcpRouterContainerReloader() *corev1.Container {
+	return &corev1.Container{
+		Name: "reloader",
+	}
+}
+
+const (
+	// TODO: make  socat available in the container image
+	reloaderScript = `
+yum install -y socat 
+echo "Reloader sidecar is running. Monitoring configuration...";
+CONFIG_FILE="/usr/local/etc/haproxy/haproxy.cfg";
+
+LAST_SUM=$(md5sum $CONFIG_FILE | awk '{print $1}');
+echo "Initial checksum: $LAST_SUM";
+
+while true; do
+  sleep 5;
+  NEW_SUM=$(md5sum $CONFIG_FILE | awk '{print $1}');
+  
+  if [ "$LAST_SUM" != "$NEW_SUM" ]; then
+    echo "❗️ Checksum change detected.";
+    
+    echo "🔎 Validating new configuration...";
+    haproxy -c -f $CONFIG_FILE
+    if [ $? -ne 0 ]; then
+	  echo "❌ ERROR: New configuration is invalid. Reload aborted."
+	  continue
+    fi
+    
+    echo "reload" | socat stdio /var/run/haproxy/admin.sock;
+    echo "✅ Reload command sent successfully."
+    LAST_SUM=$NEW_SUM;
+  fi
+done
+`
+)
+
+func buildHCPRouterContainerReloader() func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Command = []string{
+			"/bin/sh", "-c",
+		}
+		c.Args = []string{
+			reloaderScript,
+		}
+		c.Image = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:d443537f72ec48b2078d24de9852c3369c68c60c06ac82d51c472b2144d41309"
+
+		c.VolumeMounts = append(c.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "config",
+				MountPath: "/usr/local/etc/haproxy",
+				ReadOnly:  true,
+			}, corev1.VolumeMount{
+				Name:      "runtime-socket",
+				MountPath: "/var/run/haproxy",
+			},
+		)
 	}
 }
 
