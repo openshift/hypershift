@@ -1,10 +1,9 @@
 # Create an Azure Hosted Cluster on AKS
 ## General
 This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup. 
-Azure HostedClusters on AKS are supported from OCP 4.18.0+.
+Azure HostedClusters on AKS are supported from OCP 4.19.0+.
 
-There are also automated scripts - located in the [/contrib/managed-azure folder in the HyperShift repo](https://github.com/openshift/hypershift/tree/main/contrib/managed-azure) -
-to set up the AKS cluster, to set up external DNS, install the HyperShift Operator, and create an Azure HostedCluster.
+This guide provides both automated script-based setup and manual step-by-step instructions. The automated scripts are located in the [/contrib/managed-azure folder in the HyperShift repo](https://github.com/openshift/hypershift/tree/main/contrib/managed-azure) and can significantly simplify the setup process.
 
 ## Prerequisites
 - Azure CLI
@@ -15,63 +14,70 @@ to set up the AKS cluster, to set up external DNS, install the HyperShift Operat
   - The ccoctl tool provides various commands to assist with the creating and maintenance of cloud credentials from outside
     a cluster. More information on the tool can be found [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md).
 
-## Variables
-Set the following variables according to your environment.
+## Automated Setup (Recommended)
+
+For the quickest setup, you can use the automated scripts. First, create your configuration:
+
+### Quick Start with Automation Scripts
+
+1. **Create your user configuration file**:
+   ```sh
+   cat <<EOF > user-vars.sh
+   # User variables.
+   export PREFIX="YOUR-management"
+   export PULL_SECRET="/path/to/pull-secret.txt"
+   export HYPERSHIFT_BINARY_PATH="/path/to/hypershift/bin/"
+   export HYPERSHIFT_IMAGE="quay.io/hypershift/hypershift-operator:latest"
+   export RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:4.20.0-ec.3-multi"
+   export LOCATION="eastus"
+   export AZURE_CREDS="/path/to/azure-creds.json"
+   # Azure storage account names must be between 3 and 24 characters in length and may contain numbers and lowercase letters only.
+   export OIDC_ISSUER_NAME="YOURmanagement"
+   EOF
+   ```
+
+2. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
+
+3. **Run the complete automated setup**:
+   ```sh
+   ../contrib/managed-azure/setup_all.sh
+   ```
+   
+   View the script: [setup_all.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_all.sh)
+
+!!! warning "Important: One-Time Setup Components"
+    
+    The setup_MIv3_kv.sh script creates service principals and managed identities that should be **reused across multiple clusters** to avoid quota issues. After running the complete setup once, comment out the setup_MIv3_kv.sh line in setup_all.sh for future cluster deployments.
+
+!!! tip
+    You can comment out individual steps in setup_all.sh to run only specific parts of the setup process.
+
+The automated setup runs these scripts in sequence:
+
+- [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh) - Sets up control plane identities and Key Vault
+- [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh) - Creates the AKS management cluster  
+- [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh) - Configures DNS zones and external DNS
+- [setup_install_ho_on_aks.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_install_ho_on_aks.sh) - Installs the HyperShift operator
+- [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh) - Sets up OIDC issuer for workload identity
+- [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh) - Creates data plane managed identities
+- [create_basic_hosted_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/create_basic_hosted_cluster.sh) - Creates the hosted cluster
+
+## Manual Setup (Step-by-Step)
+
+If you prefer to understand each step or need to customize the process, follow these manual steps:
+
+## Configuration Notes
 
 !!! tip
 
-    Some of the variables set here, e.g. `PERSISTENT_RG_NAME`, `DNS_RECORD_NAME`, and other DNS related variables, are 
-    given as examples for the HyperShift development team, before proceeding please ensure that the variables are set 
-    according to your environment.
+    For most users, the automated scripts handle all variable configuration automatically. The variables you need to set are defined in your `user-vars.sh` file as shown in the Quick Start section above.
 
-```sh
-PERSONAL_SP_NAME=<NAME_OF_PERSONAL_SP>
-LOCATION="eastus"
-PULL_SECRET=<PATH_TO_PULLSECRET>
-PERSISTENT_RG_NAME="os4-common"
-SP_AKS_CREDS=<PATH_TO_AKS_CREDS>
-RELEASE_IMAGE=<OCP_PAYLOAD_RELEASE_IMAGE>
-AKS_CP_MI_NAME=<MANAGED_IDENTITY_NAME_FOR_AKS_CLUSTER>
-AKS_KUBELET_MI_NAME=<KUBELET_MANAGED_IDENTITY_NAME_FOR_AKS_CLUSTER>
-KV_NAME=<KV_NAME>
-AZURE_DISK_SP_NAME="azure-disk-$PERSONAL_SP_NAME"
-AZURE_FILE_SP_NAME="azure-file-$PERSONAL_SP_NAME"
-NODEPOOL_MGMT="nodepool-mgmt-$PERSONAL_SP_NAME"
-CLOUD_PROVIDER_SP_NAME="cloud-provider-$PERSONAL_SP_NAME"
-CNCC_NAME="cncc-$PERSONAL_SP_NAME"
-CONTROL_PLANE_SP_NAME="cpo-$PERSONAL_SP_NAME"
-IMAGE_REGISTRY_SP_NAME="ciro-$PERSONAL_SP_NAME"
-INGRESS_SP_NAME="ingress-$PERSONAL_SP_NAME"
-CP_OUTPUT_FILE=<output file for control plane service principals>
-DP_OUTPUT_FILE=<output file for data plane managed identities>
-AKS_CLUSTER_RG_NAME=<AKS_CLUSTER_RG_NAME>
-DNS_RECORD_NAME=<DNS_RECORD_NAME>
-EXTERNAL_DNS_SP_NAME=<EXTERNAL_DNS_SP_NAME>
-EXTERNAL_DNS_CREDS=<PATH_TO_FILE_WITH_DNS_CREDS>
-DNS_ZONE_NAME="$DNS_RECORD_NAME.hypershift.azure.devcluster.openshift.com"
-PARENT_DNS_ZONE="hypershift.azure.devcluster.openshift.com"
-PARENT_DNS_RG="os4-common"
-HC_NAME=<HC_NAME>
-AKS_CLUSTER_NAME=<AKS_CLUSTER_NAME>
-AZURE_DISK_MI_NAME=<AZURE_DISK_MI_NAME>
-AZURE_FILE_MI_NAME=<AZURE_FILE_MI_NAME>
-IMAGE_REGISTRY_MI_NAME=<IMAGE_REGISTRY_MI_NAME>
-```
+    The `PARENT_DNS_ZONE` value may be different for different teams. Check the `os4-common` resource group associated with your subscription for pre-existing DNS zones. If there are multiple DNS zones, the parent DNS zone is typically the common suffix among them (e.g., `hypershift.azure.devcluster.openshift.com`).
 
-You can look up `USER_ACCOUNT_ID` by searching for your account in azure portal's search box and selecting Microsoft
-Entra ID.You can use value of `Object ID` as shown in azure portal.
-
-
-Value of `$PARENT_DNS_ZONE` may be different for different teams. Check `os4-common` resource group associated with your
-subscription-id for pre-existing DNS zones.  If there are multiple DNS zones more than likely the parent DNS zone is the
-common suffix among them.
-
-## Steps
-Note: Steps 1-8 set up the environment so that, if created in a persistent group, they can be reused for creation of
-clusters in the future. Reusing these helps with reducing the managed identity quota, which has previously caused issues
-for the HyperShift team's Azure tenant. We should reuse MIs and SPs wherever possible.
+## Manual Steps
 
 ### 1. Retrieve User Account Details
+**Goal**: Get your Azure subscription and tenant information for authentication setup.
 
 ```sh
 ACCOUNT_DETAILS=$(az account show --query '{subscriptionId: id, tenantId: tenantId}' -o json)
@@ -80,6 +86,7 @@ TENANT_ID=$(echo "$ACCOUNT_DETAILS" | jq -r '.tenantId')
 ```
 
 ### 2. Create Service Principal for Authentication
+**Goal**: Create a service principal that will be used by the HyperShift CLI to create cluster infrastructure.
 
 ```sh
 SP_DETAILS=$(az ad sp create-for-rbac --name "$PERSONAL_SP_NAME" --role Contributor --scopes "/subscriptions/$SUBSCRIPTION_ID" -o json)
@@ -103,406 +110,114 @@ EOF
 
     In most cases, you'll need to submit a DPTP request to have this done.
 
-### 3. Create Managed Identities for AKS Cluster Creation
+### 3. Control Plane Identity and Key Vault Setup
+**Goal**: Set up managed identities, key vault, and service principals required for the control plane components. This includes creating certificate-based authentication for various OpenShift services and storing credentials securely.
 
-```sh
-az identity create --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME
-az identity create --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME
-```
-
-```shell
-export AKS_CP_MI_ID=$(az identity show --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
-export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
-```
-
-### 4. Create Key Vault for Certificate Storage
-
-```sh
-export USER_ACCOUNT_ID=$(az ad signed-in-user show | jq -r .id)
-az keyvault create --name $KV_NAME --resource-group $PERSISTENT_RG_NAME --location $LOCATION --enable-rbac-authorization
-az role assignment create --assignee ${USER_ACCOUNT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PERSISTENT_RG_NAME}/providers/Microsoft.KeyVault/vaults/${KV_NAME} --role "Key Vault Administrator"
-```
-
-### 5. Create Service Principals for the Control Plane Components
-
-```sh
-cloudProvider=$(az ad sp create-for-rbac --name "${CLOUD_PROVIDER_SP_NAME}" --create-cert --cert "${CLOUD_PROVIDER_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CLOUD_PROVIDER_SP_NAME}'}" -o json)
-controlPlaneOperator=$(az ad sp create-for-rbac --name "${CONTROL_PLANE_SP_NAME}" --create-cert --cert "${CONTROL_PLANE_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CONTROL_PLANE_SP_NAME}'}" -o json)
-disk=$(az ad sp create-for-rbac --name "${AZURE_DISK_SP_NAME}" --create-cert --cert "${AZURE_DISK_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${AZURE_DISK_SP_NAME}'}" -o json)
-file=$(az ad sp create-for-rbac --name "${AZURE_FILE_SP_NAME}" --create-cert --cert "${AZURE_FILE_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${AZURE_FILE_SP_NAME}'}" -o json)
-imageRegistry=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --create-cert --cert "${IMAGE_REGISTRY_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${IMAGE_REGISTRY_SP_NAME}'}" -o json)
-ingress=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${INGRESS_SP_NAME}'}" -o json)
-network=$(az ad sp create-for-rbac --name "${CNCC_NAME}" --create-cert --cert "${CNCC_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CNCC_NAME}'}" -o json)
-nodePoolManagement=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${NODEPOOL_MGMT}'}" -o json)
-```
-
-### 6. Save Service Principal and Key Vault Details
-#### Set Names
-
-```sh
-CERT_NAMES=(
-    "${AZURE_DISK_SP_NAME}"
-    "${AZURE_FILE_SP_NAME}"
-    "${IMAGE_REGISTRY_SP_NAME}"
-    "${CLOUD_PROVIDER_SP_NAME}"
-    "${CNCC_NAME}"
-    "${CONTROL_PLANE_SP_NAME}"
-    "${INGRESS_SP_NAME}"
-    "${NODEPOOL_MGMT}"
-)
-```
-
-#### Create Secret JSON Files
-
-```sh
-for CERT_NAME in "${CERT_NAMES[@]}"; do
-    echo "Processing certificate: $CERT_NAME"
+!!! warning "One-Time Setup Only"
     
-    CERT_DETAILS=$(az keyvault secret show --vault-name $KV_NAME --name $CERT_NAME --query "{value: value, notBefore: attributes.notBefore, expires: attributes.expires}" -o json)
-    CLIENT_SECRET=$(echo $CERT_DETAILS | jq -r '.value')
-    NOT_BEFORE=$(echo $CERT_DETAILS | jq -r '.notBefore')
-    NOT_AFTER=$(echo $CERT_DETAILS | jq -r '.expires')
-    SP_DETAILS=$(az ad sp list --display-name $CERT_NAME --query "[0].{client_id: appId, tenant_id: appOwnerOrganizationId}" -o json)
-    CLIENT_ID=$(echo $SP_DETAILS | jq -r '.client_id')
-    TENANT_ID=$(echo $SP_DETAILS | jq -r '.tenant_id')
+    This step creates service principals and managed identities that should be **reused across multiple clusters** to avoid Azure quota limits. Only run this step once per environment. For subsequent clusters, comment out setup_MIv3_kv.sh in setup_all.sh.
 
-    if [[ -z "$CLIENT_ID" || -z "$TENANT_ID" ]]; then
-        echo "Error: Could not retrieve client ID or tenant ID for certificate: $CERT_NAME"
-        continue
-    fi
+**Automated Script**: [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh)
 
-    JSON_FILE="${CERT_NAME}.json"
-    echo "{
-        \"authentication_endpoint\": \"https://login.microsoftonline.com/\",
-        \"client_id\": \"$CLIENT_ID\",
-        \"client_secret\": \"$CLIENT_SECRET\",
-        \"tenant_id\": \"$TENANT_ID\",
-        \"not_before\": \"$NOT_BEFORE\",
-        \"not_after\": \"$NOT_AFTER\"
-    }" > $JSON_FILE
+This script handles:
 
-    echo "Created JSON file: $JSON_FILE"
-done
-```
+- Creating managed identities for AKS cluster components
+- Setting up Azure Key Vault with proper RBAC authorization
+- Creating service principals for control plane services (cloud provider, disk, file, image registry, etc.)
+- Generating and storing certificate JSON in Key Vault
+- Creating a JSON credential file for the service principals
 
-#### Add Secrets to Key Vault
+### 4. DNS Configuration Setup
+**Goal**: Create DNS zones and configure external DNS for cluster ingress and API access.
 
-```sh
-for CERT_NAME in "${CERT_NAMES[@]}"; do
-    echo "Processing certificate: $CERT_NAME"
-    JSON_FILE="${CERT_NAME}.json"
+**Automated Script**: [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh)
 
-    az keyvault secret set --name "${CERT_NAME}-json" --vault-name $KV_NAME --file $JSON_FILE
-done
-```
-These secrets are uploaded to the Key Vault, which are used by the control plane pods SecretProviderClasses to mount volumes (certificates) to there pods for authentication with specific Resource Groups. 
-Note: This step sets up your Azure environment to give access to the SecretProviderClasses to mount the certificates onto the pods through the nested credentials object files in the file system of the pods (MIv3), as opposed to giving the SecretProviderClasses direct access to the certificates in the key vault (MIv2).
+This script handles:
 
-#### Create Managed Identities File
-```sh
-cat <<EOF > "${CP_OUTPUT_FILE}"
-{
-    "cloudProvider": {
-        "certificateName": "${CLOUD_PROVIDER_SP_NAME}",
-        "clientID": "$(echo "$cloudProvider" | jq -r '.clientID')",
-        "credentialsSecretName": "${CLOUD_PROVIDER_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "controlPlaneOperator": {
-        "certificateName": "${CONTROL_PLANE_SP_NAME}",
-        "clientID": "$(echo "$controlPlaneOperator" | jq -r '.clientID')",
-        "credentialsSecretName": "${CONTROL_PLANE_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "disk": {
-        "certificateName": "${AZURE_DISK_SP_NAME}",
-        "clientID": "$(echo "$disk" | jq -r '.clientID')",
-        "credentialsSecretName": "${AZURE_DISK_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "file": {
-        "certificateName": "${AZURE_FILE_SP_NAME}",
-        "clientID": "$(echo "$file" | jq -r '.clientID')",
-        "credentialsSecretName": "${AZURE_FILE_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "imageRegistry": {
-        "certificateName": "${IMAGE_REGISTRY_SP_NAME}",
-        "clientID": "$(echo "$imageRegistry" | jq -r '.clientID')",
-        "credentialsSecretName": "${IMAGE_REGISTRY_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "ingress": {
-        "certificateName": "${INGRESS_SP_NAME}",
-        "clientID": "$(echo "$ingress" | jq -r '.clientID')",
-        "credentialsSecretName": "${INGRESS_SP_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "managedIdentitiesKeyVault": {
-        "name": "${KV_NAME}",
-        "tenantID": "$(az account show --query tenantId -o tsv)"
-    },
-    "network": {
-        "certificateName": "${CNCC_NAME}",
-        "clientID": "$(echo "$network" | jq -r '.clientID')",
-        "credentialsSecretName": "${CNCC_NAME}-json",
-        "objectEncoding": "utf-8"
-    },
-    "nodePoolManagement": {
-        "certificateName": "${NODEPOOL_MGMT}",
-        "clientID": "$(echo "$nodePoolManagement" | jq -r '.clientID')",
-        "credentialsSecretName": "${NODEPOOL_MGMT}-json",
-        "objectEncoding": "utf-8"
-    }
-}
-EOF
-```
+- Creating a DNS zone for your cluster
+- Configuring name server delegation to the parent DNS zone
+- Creating a service principal for external DNS management
+- Setting up proper DNS permissions and role assignments
 
-### 7. Create and Save Managed Identities for the Data Plane Component
-```shell
-AZURE_DISK_CLIENT_ID=$(az identity create --name $AZURE_DISK_MI_NAME --resource-group $PERSISTENT_RG_NAME --query clientId -o tsv)
-AZURE_FILE_CLIENT_ID=$(az identity create --name $AZURE_FILE_MI_NAME --resource-group $PERSISTENT_RG_NAME --query clientId -o tsv)
-IMAGE_REGISTRY_CLIENT_ID=$(az identity create --name $IMAGE_REGISTRY_MI_NAME --resource-group $PERSISTENT_RG_NAME --query clientId -o tsv)
+### 5. AKS Management Cluster Creation
+**Goal**: Create and configure the AKS cluster that will host the HyperShift operator and manage hosted clusters.
 
-cat <<EOF > "${DP_OUTPUT_FILE}"
-{
-  "imageRegistryMSIClientID": ${IMAGE_REGISTRY_CLIENT_ID},
-  "diskMSIClientID": ${AZURE_DISK_CLIENT_ID},
-  "fileMSIClientID": ${AZURE_FILE_CLIENT_ID}
-}
-EOF
-```
+**Automated Script**: [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh)
 
-### 8. DNS Setup
-#### Create DNS Zone
+This script handles:
 
-```sh
-az network dns zone create --resource-group $PERSISTENT_RG_NAME --name $DNS_ZONE_NAME
-```
+- Creating a resource group for the AKS cluster
+- Creating managed identities for AKS cluster and kubelet
+- Creating the AKS cluster with required features (Key Vault secrets provider, FIPS, autoscaling, etc.)
+- Configuring kubeconfig access
+- Setting up role assignments for the Key Vault secrets provider
 
-#### Delete Any Existing Record Set
+### 6. HyperShift Operator Installation
+**Goal**: Install the HyperShift operator on the AKS management cluster with proper external DNS and Azure integration.
 
-```sh
-az network dns record-set ns delete --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --name $DNS_RECORD_NAME -y
-```
+**Automated Script**: [setup_install_ho_on_aks.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_install_ho_on_aks.sh)
 
-#### Get Name Servers for DNS Zone
+This script handles:
 
-```sh
-name_servers=$(az network dns zone show --resource-group $PERSISTENT_RG_NAME --name $DNS_ZONE_NAME --query nameServers --output tsv)
-ns_array=()
-while IFS= read -r ns; do
-    ns_array+=("$ns")
-done <<< "$name_servers"
-```
+- Installing required CRDs (ServiceMonitors, PrometheusRules, PodMonitors, Routes)
+- Installing the HyperShift operator with Azure-specific configuration
+- Configuring external DNS integration
+- Setting up managed service configuration for ARO-HCP
 
-#### Add Name Servers to Parent DNS Zone
+### 7. OIDC Provider Setup
+**Goal**: Create RSA keys and OIDC issuer for workload identity authentication.
 
-```sh
-for ns in "${ns_array[@]}"; do
-    az network dns record-set ns add-record --resource-group $PARENT_DNS_RG --zone-name $PARENT_DNS_ZONE --record-set-name $DNS_RECORD_NAME --nsdname "$ns"
-done
-```
+**Automated Script**: [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh)
 
-#### Create Service Principal for DNS
+This script handles:
 
-```sh
-DNS_SP=$(az ad sp create-for-rbac --name $EXTERNAL_DNS_SP_NAME)
-EXTERNAL_DNS_SP_APP_ID=$(echo "$DNS_SP" | jq -r '.appId')
-EXTERNAL_DNS_SP_PASSWORD=$(echo "$DNS_SP" | jq -r '.password')
-```
+- Creating RSA key pairs for service account token signing
+- Setting up the OIDC issuer URL in Azure storage
+- Configuring the issuer for workload identity federation
 
-#### Assign Rights to Service Principal
+### 8. Data Plane Identity Configuration
+**Goal**: Create managed identities for data plane components and configure federated identity credentials for workload identity.
 
-```sh
-DNS_ID=$(az network dns zone show --name ${DNS_ZONE_NAME} --resource-group ${PERSISTENT_RG_NAME} --query "id" --output tsv)
-az role assignment create --role "Reader" --assignee "${EXTERNAL_DNS_SP_APP_ID}" --scope "${DNS_ID}"
-az role assignment create --role "Contributor" --assignee "${EXTERNAL_DNS_SP_APP_ID}" --scope "${DNS_ID}"
-```
+**Automated Script**: [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh)
 
-!!! tip
+This script handles:
 
-    If your DNS Zone is not in the same resource group where the parent DNS zone is located, you will need to add
-    these same role assignments to the resource group where the parent DNS zone is located.
+- Creating managed identities for Azure Disk CSI, Azure File CSI, and Image Registry
+- Setting up federated identity credentials linking these identities to specific service accounts
+- Generating the data plane identities configuration file
 
-#### Create DNS Credentials for AKS
+### 9. Hosted Cluster Creation
+**Goal**: Create the actual hosted OpenShift cluster using all the previously configured infrastructure.
 
-```sh
-cat <<EOF > $EXTERNAL_DNS_CREDS
-{
-"tenantId": "$(az account show --query tenantId -o tsv)",
-"subscriptionId": "$(az account show --query id -o tsv)",
-"resourceGroup": "$PERSISTENT_RG_NAME",
-"aadClientId": "$EXTERNAL_DNS_SP_APP_ID",
-"aadClientSecret": "$EXTERNAL_DNS_SP_PASSWORD"
-}
-EOF
-```
+**Automated Script**: [create_basic_hosted_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/create_basic_hosted_cluster.sh)
 
-### 9. Create Resource Group for AKS Cluster
+This script handles:
 
-```sh
-az group create --name $AKS_CLUSTER_RG_NAME --location eastus
-```
+- Creating the hosted cluster with all required Azure integrations
+- Configuring networking (VNet, subnets, NSGs)
+- Setting up marketplace image references
+- Applying FIPS configuration and security settings
+- Enabling workload identity and managed identity integration
 
-### 10. Create AKS Cluster
-
-```sh
-az aks create \
-    --resource-group $AKS_CLUSTER_RG_NAME \
-    --name $AKS_CLUSTER_NAME \
-    --replicas 3 \
-    --generate-ssh-keys \
-    --load-balancer-sku standard \
-    --os-sku AzureLinux \
-    --node-vm-size Standard_D4s_v4 \
-    --enable-addons azure-keyvault-secrets-provider \
-    --enable-fips-image \
-    --enable-cluster-autoscaler \
-    --min-count 2 \
-    --max-count 6 \
-    --enable-secret-rotation \
-    --rotation-poll-interval 1m \
-    --kubernetes-version 1.31.1 \
-    --assign-identity $AKS_CP_MI_ID \
-    --assign-kubelet-identity $AKS_KUBELET_MI_ID
-```
-
-### 11. Export Kubeconfig
-
-```sh
-az aks get-credentials --resource-group $AKS_CLUSTER_RG_NAME --name $AKS_CLUSTER_NAME --overwrite-existing
-export AZURE_KEY_VAULT_AUTHORIZED_USER_ID=$(az aks show -n $AKS_CLUSTER_NAME -g $AKS_CLUSTER_RG_NAME | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -r)
-export AZURE_KEY_VAULT_AUTHORIZED_OBJECT_ID=$(az aks show -n $AKS_CLUSTER_NAME -g $AKS_CLUSTER_RG_NAME | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.objectId -r)
-```
-
-### 12. Assign Role to Secret Provider
-
-```sh
-az role assignment create --assignee-object-id $AZURE_KEY_VAULT_AUTHORIZED_OBJECT_ID --role "Key Vault Secrets User" --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PERSISTENT_RG_NAME} --assignee-principal-type ServicePrincipal
-```
-
-### 13. Create External DNS Secret Config File
-
-```sh
-kubectl delete secret azure-config-file --namespace "default" --ignore-not-found
-kubectl create secret generic azure-config-file --namespace "default" --from-file $EXTERNAL_DNS_CREDS
-```
-
-### 14. Install HyperShift Operator
-
-```sh
-oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-oc apply -f https://raw.githubusercontent.com/openshift/api/6bababe9164ea6c78274fd79c94a3f951f8d5ab2/route/v1/zz_generated.crd-manifests/routes.crd.yaml
-
-hypershift install \
-    --enable-conversion-webhook=false \
-    --external-dns-provider=azure \
-    --external-dns-credentials $EXTERNAL_DNS_CREDS \
-    --pull-secret $PULL_SECRET \
-    --external-dns-domain-filter $DNS_ZONE_NAME \
-    --managed-service ARO-HCP \
-    --aro-hcp-key-vault-users-client-id $AZURE_KEY_VAULT_AUTHORIZED_USER_ID \
-    --tech-preview-no-upgrade
-```
-
-### 15. Create RSA keys
-Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-rsa-keys-1)
-to run this command. It should look something like this:
-```shell
-% ./ccoctl azure create-key-pair
-2024/11/14 12:57:29 Generating RSA keypair
-2024/11/14 12:57:30 Writing private key to /Users/username/cloud-credential-operator/serviceaccount-signer.private
-2024/11/14 12:57:30 Writing public key to /Users/username/cloud-credential-operator/serviceaccount-signer.public
-2024/11/14 12:57:30 Copying signing key for use by installer
-```
-
-Save the public and private key path off as you will need it in the next steps. We will refer to them as
-`SA_TOKEN_ISSUER_PUBLIC_KEY_PATH` and `SA_TOKEN_ISSUER_PRIVATE_KEY_PATH` in the rest of this guide.
-
-### 16. Create the OIDC Issuer URL and ServiceAccount Keys
-Follow the instructions [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#creating-openid-connect-issuer) to run this command.
-
-!!! note 
-
-    The NAME provided in the ccoctl tool below can only be alphanumerical characters and must be between 3 and 24 
-    characters in length.
-
-    If you are using `os4-common` for the PERSISTENT_RG_NAME, this is in the `centralus` region.
-
-```shell
-NAME="wiodic"
-PERSISTENT_RG_LOCATION="centralus"
-
-./ccoctl azure create-oidc-issuer \
---oidc-resource-group-name $PERSISTENT_RG_NAME \
---tenant-id $TENANT_ID \
---region ${PERSISTENT_RG_LOCATION} \
---name $NAME \
---subscription-id $SUBSCRIPTION_ID \
---public-key-file $SA_TOKEN_ISSUER_PUBLIC_KEY_PATH
-```
-
-Save your Issuer URL off as you will need it in the next step, let's call it `OIDC_ISSUER_URL`.
-
-### 17. Create Federated Identities for Workload Identities
-
-```shell
-az identity federated-credential create --name "${AZURE_DISK_MI_NAME}"-fed-id \
---identity-name "${AZURE_DISK_MI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
---issuer "${OIDC_ISSUER_URL}" \
---subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
---audience openshift
-
-az identity federated-credential create --name "${AZURE_FILE_MI_NAME}"-fed-id \
---identity-name "${AZURE_FILE_MI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
---issuer "${OIDC_ISSUER_URL}" \
---subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
---audience openshift
-
-az identity federated-credential create --name "${IMAGE_REGISTRY_MI_NAME}"-fed-id \
---identity-name "${IMAGE_REGISTRY_MI_NAME}" \
---resource-group "${PERSISTENT_RG_NAME}" \
---issuer "${OIDC_ISSUER_URL}" \
---subject system:serviceaccount:openshift-image-registry:registry \
---audience openshift
-```
-
-### 18. Create Hosted Cluster
-
-```sh
-hypershift create cluster azure \
---name $HC_NAME \
---azure-creds $SP_AKS_CREDS \
---location eastus \
---node-pool-replicas 2 \
---base-domain $PARENT_DNS_ZONE \
---pull-secret $PULL_SECRET \
---generate-ssh \
---release-image $RELEASE_IMAGE \
---external-dns-domain $DNS_ZONE_NAME \
---annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
---fips=true \
---marketplace-publisher azureopenshift \
---marketplace-offer aro4 \
---marketplace-sku aro_417 \
---marketplace-version 417.94.20240701 \
---assign-service-principal-roles \
---dns-zone-rg-name $PERSISTENT_RG_NAME \
---oidc-issuer-url "${OIDC_ISSUER_URL}" \
---sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
---managed-identities-file $CP_OUTPUT_FILE \
---data-plane-identities-file $DP_OUTPUT_FILE
-```
-
-### 19. Deleting the Azure Hosted Cluster
+### 10. Deleting the Azure Hosted Cluster
 You can delete the cluster by using the following command:
 ```shell
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
---name $HC_NAME \
---azure-creds $SP_AKS_CREDS
+--name $CLUSTER_NAME \
+--azure-creds $AZURE_CREDS
 ```
+
+!!! tip
+    If you used the automated scripts, `CLUSTER_NAME` is set to `"${PREFIX}-hc"` and `AZURE_CREDS` matches your `user-vars.sh` configuration.
+
+## Troubleshooting
+
+If you encounter issues with the automated scripts:
+
+1. **Check prerequisites**: Ensure all required tools are installed and configured
+2. **Verify permissions**: Confirm your service principal has the required permissions
+3. **Review logs**: The scripts use `set -x` for detailed logging
+4. **Partial execution**: You can comment out completed steps in `setup_all.sh` to resume from a specific point
+5. **Manual verification**: Use the Azure portal to verify resources were created correctly
+
+For additional help, reach out to #project-hypershift on Red Hat Slack.
