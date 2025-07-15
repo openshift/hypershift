@@ -47,7 +47,7 @@ For the quickest setup, you can use the automated scripts. First, create your co
 
 !!! warning "Important: One-Time Setup Components"
     
-    The setup_MIv3_kv.sh script creates service principals and managed identities that should be **reused across multiple clusters** to avoid quota issues. After running the complete setup once, comment out the setup_MIv3_kv.sh line in setup_all.sh for future cluster deployments.
+    Three scripts create resources that should be **reused across multiple clusters** to avoid quota issues: setup_MIv3_kv.sh (service principals and Key Vault), setup_oidc_provider.sh (OIDC issuer), and setup_dataplane_identities.sh (data plane identities). After running the complete setup once, comment out these three scripts in setup_all.sh for future cluster deployments.
 
 !!! tip
     You can comment out individual steps in setup_all.sh to run only specific parts of the setup process.
@@ -113,9 +113,9 @@ EOF
 ### 3. Control Plane Identity and Key Vault Setup
 **Goal**: Set up managed identities, key vault, and service principals required for the control plane components. This includes creating certificate-based authentication for various OpenShift services and storing credentials securely.
 
-!!! warning "One-Time Setup Only"
+!!! warning "One-Time Setup Only (Steps 3-5)"
     
-    This step creates service principals and managed identities that should be **reused across multiple clusters** to avoid Azure quota limits. Only run this step once per environment. For subsequent clusters, comment out setup_MIv3_kv.sh in setup_all.sh.
+    Steps 3-5 create resources that should be **reused across multiple clusters** to avoid Azure quota limits: service principals and Key Vault (setup_MIv3_kv.sh), OIDC issuer (setup_oidc_provider.sh), and data plane identities (setup_dataplane_identities.sh). Only run these steps once per environment. For subsequent clusters, comment out all three one-time setup scripts in setup_all.sh.
 
 **Automated Script**: [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh)
 
@@ -127,19 +127,29 @@ This script handles:
 - Generating and storing certificate JSON in Key Vault
 - Creating a JSON credential file for the service principals
 
-### 4. DNS Configuration Setup
-**Goal**: Create DNS zones and configure external DNS for cluster ingress and API access.
+### 4. OIDC Provider Setup
+**Goal**: Create RSA keys and OIDC issuer for workload identity authentication.
 
-**Automated Script**: [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh)
+**Automated Script**: [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh)
 
 This script handles:
 
-- Creating a DNS zone for your cluster
-- Configuring name server delegation to the parent DNS zone
-- Creating a service principal for external DNS management
-- Setting up proper DNS permissions and role assignments
+- Creating RSA key pairs for service account token signing
+- Setting up the OIDC issuer URL in Azure storage
+- Configuring the issuer for workload identity federation
 
-### 5. AKS Management Cluster Creation
+### 5. Data Plane Identity Configuration
+**Goal**: Create managed identities for data plane components and configure federated identity credentials for workload identity.
+
+**Automated Script**: [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh)
+
+This script handles:
+
+- Creating managed identities for Azure Disk CSI, Azure File CSI, and Image Registry
+- Setting up federated identity credentials linking these identities to specific service accounts
+- Generating the data plane identities configuration file
+
+### 6. AKS Management Cluster Creation
 **Goal**: Create and configure the AKS cluster that will host the HyperShift operator and manage hosted clusters.
 
 **Automated Script**: [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh)
@@ -152,7 +162,19 @@ This script handles:
 - Configuring kubeconfig access
 - Setting up role assignments for the Key Vault secrets provider
 
-### 6. HyperShift Operator Installation
+### 7. DNS Configuration Setup
+**Goal**: Create DNS zones and configure external DNS for cluster ingress and API access.
+
+**Automated Script**: [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh)
+
+This script handles:
+
+- Creating a DNS zone for your cluster
+- Configuring name server delegation to the parent DNS zone
+- Creating a service principal for external DNS management
+- Setting up proper DNS permissions and role assignments
+
+### 8. HyperShift Operator Installation
 **Goal**: Install the HyperShift operator on the AKS management cluster with proper external DNS and Azure integration.
 
 **Automated Script**: [setup_install_ho_on_aks.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_install_ho_on_aks.sh)
@@ -163,28 +185,6 @@ This script handles:
 - Installing the HyperShift operator with Azure-specific configuration
 - Configuring external DNS integration
 - Setting up managed service configuration for ARO-HCP
-
-### 7. OIDC Provider Setup
-**Goal**: Create RSA keys and OIDC issuer for workload identity authentication.
-
-**Automated Script**: [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh)
-
-This script handles:
-
-- Creating RSA key pairs for service account token signing
-- Setting up the OIDC issuer URL in Azure storage
-- Configuring the issuer for workload identity federation
-
-### 8. Data Plane Identity Configuration
-**Goal**: Create managed identities for data plane components and configure federated identity credentials for workload identity.
-
-**Automated Script**: [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh)
-
-This script handles:
-
-- Creating managed identities for Azure Disk CSI, Azure File CSI, and Image Registry
-- Setting up federated identity credentials linking these identities to specific service accounts
-- Generating the data plane identities configuration file
 
 ### 9. Hosted Cluster Creation
 **Goal**: Create the actual hosted OpenShift cluster using all the previously configured infrastructure.
