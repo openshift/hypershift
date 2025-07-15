@@ -24,19 +24,18 @@ import (
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
-	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	markershelper "sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
 
 const (
 	name = "requiredfields"
-
-	requiredMarker            = "required"
-	kubebuilderRequiredMarker = "kubebuilder:validation:Required"
 )
 
 func init() {
-	markers.DefaultRegistry().Register(requiredMarker, kubebuilderRequiredMarker)
+	markershelper.DefaultRegistry().Register(markers.RequiredMarker, markers.KubebuilderRequiredMarker)
 }
 
 type analyzer struct {
@@ -59,27 +58,26 @@ func newAnalyzer(cfg config.RequiredFieldsConfig) *analysis.Analyzer {
 	}
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
+func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
+	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers) {
 		a.checkField(pass, field, markersAccess.FieldMarkers(field), jsonTagInfo)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarkers markers.MarkerSet, fieldTagInfo extractjsontags.FieldTagInfo) {
-	if field == nil || len(field.Names) == 0 {
+func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarkers markershelper.MarkerSet, fieldTagInfo extractjsontags.FieldTagInfo) {
+	fieldName := utils.FieldName(field)
+	if fieldName == "" {
 		return
 	}
 
-	fieldName := field.Names[0].Name
-
-	if !fieldMarkers.Has(requiredMarker) && !fieldMarkers.Has(kubebuilderRequiredMarker) {
+	if !fieldMarkers.Has(markers.RequiredMarker) && !fieldMarkers.Has(markers.KubebuilderRequiredMarker) {
 		// The field is not marked required, so we don't need to check it.
 		return
 	}
