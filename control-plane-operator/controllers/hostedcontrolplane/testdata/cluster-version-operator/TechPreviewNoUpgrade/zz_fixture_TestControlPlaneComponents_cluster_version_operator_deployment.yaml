@@ -103,6 +103,8 @@ spec:
           requests:
             cpu: 20m
             memory: 70Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/openshift/kubeconfig

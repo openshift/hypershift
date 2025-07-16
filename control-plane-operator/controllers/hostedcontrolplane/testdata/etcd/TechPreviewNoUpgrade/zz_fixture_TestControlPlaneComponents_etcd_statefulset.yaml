@@ -168,6 +168,8 @@ spec:
           requests:
             cpu: 300m
             memory: 600Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           failureThreshold: 18
           httpGet:
@@ -217,6 +219,8 @@ spec:
           requests:
             cpu: 40m
             memory: 200Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/peer
@@ -249,6 +253,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/etcd/tls/server

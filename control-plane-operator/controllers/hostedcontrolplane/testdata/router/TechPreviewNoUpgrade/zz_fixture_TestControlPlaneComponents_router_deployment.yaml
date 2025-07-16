@@ -110,6 +110,7 @@ spec:
           capabilities:
             add:
             - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /usr/local/etc/haproxy/haproxy.cfg

@@ -98,6 +98,8 @@ spec:
           requests:
             cpu: 10m
             memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
