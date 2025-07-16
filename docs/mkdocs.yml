@@ -104,7 +104,7 @@ nav:
         - how-to/aws/troubleshooting/debug-nodes.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
-    - how-to/azure/create-azure-cluster_on_aks.md
+    - how-to/azure/create-azure-cluster-on-aks.md
     - how-to/azure/create-azure-cluster-with-options.md
     - how-to/azure/scheduler.md
     - 'Troubleshooting':
