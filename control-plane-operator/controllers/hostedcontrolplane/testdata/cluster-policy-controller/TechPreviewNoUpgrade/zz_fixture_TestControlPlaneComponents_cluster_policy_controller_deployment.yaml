@@ -96,6 +96,8 @@ spec:
           requests:
             cpu: 10m
             memory: 200Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/client-ca

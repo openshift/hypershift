@@ -123,6 +123,8 @@ spec:
           requests:
             cpu: 60m
             memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/cluster-signer-ca

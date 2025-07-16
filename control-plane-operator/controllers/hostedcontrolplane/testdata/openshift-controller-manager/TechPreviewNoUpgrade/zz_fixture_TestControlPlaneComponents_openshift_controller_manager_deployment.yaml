@@ -124,6 +124,8 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
