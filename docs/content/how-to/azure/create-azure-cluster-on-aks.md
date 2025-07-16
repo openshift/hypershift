@@ -39,6 +39,13 @@ For the quickest setup, you can use the automated scripts. First, create your co
 2. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
 
 3. **Run the complete automated setup**:
+   
+   For your **first cluster** (includes one-time resource setup):
+   ```sh
+   ../contrib/managed-azure/setup_all.sh --first-time
+   ```
+   
+   For **additional clusters** (reuses existing resources):
    ```sh
    ../contrib/managed-azure/setup_all.sh
    ```
@@ -47,10 +54,10 @@ For the quickest setup, you can use the automated scripts. First, create your co
 
 !!! warning "Important: One-Time Setup Components"
     
-    Three scripts create resources that should be **reused across multiple clusters** to avoid quota issues: setup_MIv3_kv.sh (service principals and Key Vault), setup_oidc_provider.sh (OIDC issuer), and setup_dataplane_identities.sh (data plane identities). After running the complete setup once, comment out these three scripts in setup_all.sh for future cluster deployments.
+    Three scripts create resources that should be **reused across multiple clusters** to avoid quota issues: setup_MIv3_kv.sh (service principals and Key Vault), setup_oidc_provider.sh (OIDC issuer), and setup_dataplane_identities.sh (data plane identities). Use the `--first-time` flag only for your first cluster setup. For subsequent clusters, run the script without this flag to skip the one-time setup and reuse existing resources.
 
 !!! tip
-    You can comment out individual steps in setup_all.sh to run only specific parts of the setup process.
+    The `--first-time` flag automatically handles the one-time setup resources. If you need to run individual scripts for troubleshooting, you can execute them directly from the contrib/managed-azure folder.
 
 The automated setup runs these scripts in sequence:
 
@@ -115,7 +122,7 @@ EOF
 
 !!! warning "One-Time Setup Only (Steps 3-5)"
     
-    Steps 3-5 create resources that should be **reused across multiple clusters** to avoid Azure quota limits: service principals and Key Vault (setup_MIv3_kv.sh), OIDC issuer (setup_oidc_provider.sh), and data plane identities (setup_dataplane_identities.sh). Only run these steps once per environment. For subsequent clusters, comment out all three one-time setup scripts in setup_all.sh.
+    Steps 3-5 create resources that should be **reused across multiple clusters** to avoid Azure quota limits: service principals and Key Vault (setup_MIv3_kv.sh), OIDC issuer (setup_oidc_provider.sh), and data plane identities (setup_dataplane_identities.sh). Only run these steps once per environment. For subsequent clusters, use `setup_all.sh` without the `--first-time` flag to skip these one-time setup steps.
 
 **Automated Script**: [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh)
 
@@ -217,7 +224,7 @@ If you encounter issues with the automated scripts:
 1. **Check prerequisites**: Ensure all required tools are installed and configured
 2. **Verify permissions**: Confirm your service principal has the required permissions
 3. **Review logs**: The scripts use `set -x` for detailed logging
-4. **Partial execution**: You can comment out completed steps in `setup_all.sh` to resume from a specific point
+4. **Partial execution**: Run individual scripts directly from the contrib/managed-azure folder if you need to resume from a specific point
 5. **Manual verification**: Use the Azure portal to verify resources were created correctly
 
 For additional help, reach out to #project-hypershift on Red Hat Slack.

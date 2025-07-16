@@ -5,10 +5,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 source "${SCRIPT_DIR}/vars.sh"
 
-# One-time setup scripts (comment out these three after first run to reuse resources)
-"${SCRIPT_DIR}/setup_MIv3_kv.sh"
-"${SCRIPT_DIR}/setup_oidc_provider.sh"
-"${SCRIPT_DIR}/setup_dataplane_identities.sh"
+# One-time setup scripts (only run when --first-time flag is provided)
+if [[ "$1" == "--first-time" ]]; then
+  "${SCRIPT_DIR}/setup_MIv3_kv.sh"
+  "${SCRIPT_DIR}/setup_oidc_provider.sh"
+  "${SCRIPT_DIR}/setup_dataplane_identities.sh"
+fi
 
 # Per-cluster setup scripts
 "${SCRIPT_DIR}/setup_aks_cluster.sh"
