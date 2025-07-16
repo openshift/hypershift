@@ -495,6 +495,9 @@ func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluste
 		}
 	}
 
+	// Clear the annotations map so that decoding will not leave stale keys
+	tmplt.Spec.Template.ObjectMeta.Annotations = nil
+
 	buff = bytes.NewBuffer(templateBytes)
 	enc := json.NewDecoder(buff)
 
