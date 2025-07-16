@@ -125,6 +125,8 @@ spec:
           requests:
             cpu: 100m
             memory: 200Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           failureThreshold: 30
           httpGet:
@@ -184,6 +186,8 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/openshift-apiserver
