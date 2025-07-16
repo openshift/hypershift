@@ -96,6 +96,8 @@ const (
 	ManagedAzureIngressSecretStoreVolumeName              = "ingress-cert"
 	ManagedAzureKMSSecretProviderClassName                = "managed-azure-kms"
 	ManagedAzureKMSSecretStoreVolumeName                  = "kms-cert"
+	ManagedAzureKMSClusterSeedSecretProviderClassName     = "managed-azure-kms-cluster-seed"
+	ManagedAzureKMSClusterSeedSecretStoreVolumeName       = "kms-cluster-seed-data"
 	ManagedAzureNetworkSecretStoreProviderClassName       = "managed-azure-network"
 	ManagedAzureNodePoolMgmtSecretProviderClassName       = "managed-azure-nodepool-management"
 	ManagedAzureNodePoolMgmtSecretStoreVolumeName         = "nodepool-management-cert"
