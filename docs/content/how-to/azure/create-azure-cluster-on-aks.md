@@ -38,7 +38,7 @@ For the quickest setup, you can use the automated scripts. First, create your co
 
 2. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
 
-3. **Run the complete automated setup**:
+3. **Run the complete automated setup** (authentication is automatic):
    
    For your **first cluster** (includes one-time resource setup):
    ```sh
@@ -52,12 +52,16 @@ For the quickest setup, you can use the automated scripts. First, create your co
    
    View the script: [setup_all.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_all.sh)
 
+!!! note "Automatic Authentication"
+    
+    The setup script automatically logs you into Azure if you're not already authenticated. No separate login step is required!
+
 !!! warning "Important: One-Time Setup Components"
     
     Three scripts create resources that should be **reused across multiple clusters** to avoid quota issues: setup_MIv3_kv.sh (service principals and Key Vault), setup_oidc_provider.sh (OIDC issuer), and setup_dataplane_identities.sh (data plane identities). Use the `--first-time` flag only for your first cluster setup. For subsequent clusters, run the script without this flag to skip the one-time setup and reuse existing resources.
 
 !!! tip
-    The `--first-time` flag automatically handles the one-time setup resources. If you need to run individual scripts for troubleshooting, you can execute them directly from the contrib/managed-azure folder.
+    The `--first-time` flag automatically handles the one-time setup resources. If you need to run individual scripts for troubleshooting, you can execute them directly from the contrib/managed-azure folder. For manual Azure authentication, a `login.sh` script is also available.
 
 The automated setup runs these scripts in sequence:
 
