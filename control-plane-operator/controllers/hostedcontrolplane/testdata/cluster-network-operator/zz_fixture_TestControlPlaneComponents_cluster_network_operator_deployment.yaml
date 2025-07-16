@@ -162,6 +162,8 @@ spec:
           requests:
             cpu: 10m
             memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /configs
@@ -191,6 +193,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/client-token
