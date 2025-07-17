@@ -33,3 +33,19 @@ type ClusterVersionOperatorSpec struct {
 	// +kubebuilder:default=Normal
 	OperatorLogLevel LogLevel `json:"operatorLogLevel,omitempty"`
 }
+
+type ClusterNetworkOperatorSpec struct {
+	// disableMultiNetwork when set to true disables the Multus CNI plugin and related components
+	// in the hosted cluster. This prevents the installation of multus daemon sets in the
+	// guest cluster and the multus-admission-controller in the management cluster.
+	// Default is false (Multus is enabled).
+	// This field is immutable.
+	// This field can only be set to true when NetworkType is "Other". Setting it to true
+	// with any other NetworkType will result in a validation error during cluster creation.
+	//
+	// +optional
+	// +kubebuilder:default:=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="disableMultiNetwork is immutable"
+	// +immutable
+	DisableMultiNetwork *bool `json:"disableMultiNetwork,omitempty"` // nolint:kubeapilinter
+}
