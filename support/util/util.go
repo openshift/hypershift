@@ -21,7 +21,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
-	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 
@@ -34,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	"github.com/blang/semver"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
@@ -610,32 +608,35 @@ func GetPullSecretBytes(ctx context.Context, c client.Client, hc *hyperv1.Hosted
 //
 // If no image can be found according to these rules, an error is returned.
 func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster, releaseProvider releaseinfo.Provider, hypershiftOperatorImage string, pullSecret []byte) (string, error) {
-	if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
-		return val, nil
-	}
-	releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
-	if err != nil {
-		return "", err
-	}
-	version, err := semver.Parse(releaseInfo.Version())
-	if err != nil {
-		return "", err
-	}
-	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
-		if overrideImage != "" {
-			return overrideImage, nil
-		}
-	}
+	// if val, ok := hc.Annotations[hyperv1.ControlPlaneOperatorImageAnnotation]; ok {
+	// 	return val, nil
+	// }
+	// releaseInfo, err := releaseProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
+	// if err != nil {
+	// 	return "", err
+	// }
+	// version, err := semver.Parse(releaseInfo.Version())
+	// if err != nil {
+	// 	return "", err
+	// }
+	// if controlplaneoperatoroverrides.IsOverridesEnabled() {
+	// 	overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+	// 	if overrideImage != "" {
+	// 		return overrideImage, nil
+	// 	}
+	// }
 
-	if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
-		return hypershiftImage, nil
-	}
+	// if hypershiftImage, exists := releaseInfo.ComponentImages()["hypershift"]; exists {
+	// 	return hypershiftImage, nil
+	// }
 
-	if version.Minor < 9 {
-		return "", fmt.Errorf("unsupported release image with version %s", version.String())
-	}
-	return hypershiftOperatorImage, nil
+	// if version.Minor < 9 {
+	// 	return "", fmt.Errorf("unsupported release image with version %s", version.String())
+	// }
+	// return hypershiftOperatorImage, nil
+
+	// always return latest CPO image from main.
+	return "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-main@sha256:1bcbda8c538eea1caf7007eb48e54749e7e8557251e61df4a885da52f8191940", nil
 }
 
 // GetControlPlaneOperatorImageLabels resolves the appropriate control plane
