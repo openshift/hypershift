@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e3b105d444ebc1fdd60b54b1d741638a5a0dd232cbcc341c5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -132,6 +132,8 @@ spec:
           name: serving-cert
         - mountPath: /etc/kubernetes/secrets/session
           name: session-secret
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/run/kubernetes
       - args:
         - -c
@@ -164,6 +166,8 @@ spec:
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: logs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --serving-port=8092
@@ -272,6 +276,8 @@ spec:
           defaultMode: 420
           name: oauth-openshift-audit
         name: audit-config
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416

@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b5c825c12fe7e69167e8dfeddc
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -176,6 +176,8 @@ spec:
           name: server-private-crt
         - mountPath: /etc/kubernetes/secrets/svcacct-key
           name: svcacct-key
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/log/kube-apiserver
       - command:
         - /usr/bin/control-plane-operator
@@ -200,6 +202,8 @@ spec:
           name: bootstrap-manifests
         - mountPath: /var/secrets/localhost-kubeconfig
           name: localhost-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --logtostderr=true
         - --log-file-max-size=0
@@ -274,6 +278,8 @@ spec:
           name: konnectivity-ca
         - mountPath: /etc/konnectivity/server
           name: server-certs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - -c
         - |
@@ -305,6 +311,8 @@ spec:
         volumeMounts:
         - mountPath: /var/log/kube-apiserver
           name: logs
+        - mountPath: /tmp
+          name: tmp-dir
       - command:
         - /usr/bin/aws-pod-identity-webhook
         - --annotation-prefix=eks.amazonaws.com
@@ -331,6 +339,8 @@ spec:
           name: aws-pod-identity-webhook-serving-certs
         - mountPath: /var/run/app/kubeconfig
           name: aws-pod-identity-webhook-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - args:
         - -c
@@ -566,4 +576,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: aws-pod-identity-webhook-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

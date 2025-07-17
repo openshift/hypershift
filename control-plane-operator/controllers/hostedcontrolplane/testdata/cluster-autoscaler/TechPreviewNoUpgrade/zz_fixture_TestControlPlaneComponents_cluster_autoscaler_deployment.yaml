@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -126,6 +127,8 @@ spec:
         volumeMounts:
         - mountPath: /mnt/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -161,4 +164,6 @@ spec:
           - key: value
             path: target-kubeconfig
           secretName: -kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

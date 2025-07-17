@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir,cloud-token
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -102,6 +102,8 @@ spec:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
@@ -182,6 +184,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416
