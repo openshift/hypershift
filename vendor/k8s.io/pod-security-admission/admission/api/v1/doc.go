@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -19,5 +19,5 @@ limitations under the License.
 // +k8s:defaulter-gen=TypeMeta
 // +groupName=pod-security.admission.config.k8s.io
 
-// Package v1beta1 contains PodSecurity admission configuration file types
-package v1beta1 // import "k8s.io/pod-security-admission/admission/api/v1beta1"
+// Package v1 contains PodSecurity admission configuration file types
+package v1 // import "k8s.io/pod-security-admission/admission/api/v1"
