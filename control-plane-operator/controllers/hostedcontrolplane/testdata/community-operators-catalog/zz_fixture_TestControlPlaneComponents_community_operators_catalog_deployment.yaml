@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         alpha.image.policy.openshift.io/resolve-names: '*'
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: utilities,catalog-content
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: utilities,catalog-content,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -118,6 +118,8 @@ spec:
         volumeMounts:
         - mountPath: /extracted-catalog
           name: catalog-content
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - args:
         - /bin/copy-content
@@ -166,4 +168,6 @@ spec:
         name: utilities
       - emptyDir: {}
         name: catalog-content
+      - emptyDir: {}
+        name: tmp-dir
 status: {}
