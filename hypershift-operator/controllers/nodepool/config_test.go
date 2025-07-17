@@ -1436,7 +1436,7 @@ status:
 				cg.haproxyRawConfig = haproxyIgnititionConfig
 			}
 
-			got, err := cg.generateMCORawConfig(context.Background())
+			got, err := cg.generateMCORawConfig(context.Background(), hc.Spec.Capabilities)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				if tc.missingCoreConfig {
