@@ -83,7 +83,7 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 
 	podTemplateSpec := c.workloadProvider.PodTemplateSpec(workloadObj)
 	enforceVolumesDefaultMode(&podTemplateSpec.Spec)
-	enforceReadOnlyRootFilesystem(podTemplateSpec.Spec.Containers)
+	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec)
 	err := enforceImagePullPolicy(podTemplateSpec.Spec.Containers)
 	if err != nil {
 		return err
@@ -554,12 +554,26 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 	return nil
 }
 
-func enforceReadOnlyRootFilesystem(containers []corev1.Container) {
-	for i := range containers {
-		if containers[i].SecurityContext == nil {
-			containers[i].SecurityContext = &corev1.SecurityContext{}
+func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
+	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+		Name: "tmp-dir",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+	for i := range podSpec.Containers {
+		if podSpec.Containers[i].SecurityContext == nil {
+			podSpec.Containers[i].SecurityContext = &corev1.SecurityContext{}
 		}
-		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
+		if !slices.ContainsFunc(podSpec.Containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
+			return vm.MountPath == "/tmp"
+		}) {
+			podSpec.Containers[i].VolumeMounts = append(podSpec.Containers[i].VolumeMounts, corev1.VolumeMount{
+				Name:      "tmp-dir",
+				MountPath: "/tmp",
+			})
+		}
+		podSpec.Containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
 	}
 }
 
