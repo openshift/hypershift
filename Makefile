@@ -25,6 +25,11 @@ CODESPELL_BIN := codespell
 CODESPELL_DIST_DIR := codespell_dist
 CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
 
+GITLINT_VER := 0.19.1
+GITLINT_DIST_DIR := gitlint_dist
+GITLINT_BIN := gitlint
+GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)
+
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
@@ -78,7 +83,7 @@ lint-fix:
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync
+verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync gitlint
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -350,6 +355,10 @@ run-operator-locally-aws-dev:
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum"
 
+.PHONY: gitlint
+gitlint: $(GITLINT)
+	gitlint --commits main..HEAD
+
 .PHONY: cpo-container-sync
 cpo-container-sync:
 	@echo "Syncing CPO container images"
@@ -378,3 +387,13 @@ $(CODESPELL): ## Build codespell from tools folder.
 	 	pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
 		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
 		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
+
+gitlint : $(GITLINT) ## Install local copy of gitlint
+
+$(GITLINT): $(TOOLS_DIR)/go.mod
+	mkdir -p $(TOOLS_BIN_DIR); \
+	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
+	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin; \
+	pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
+	mv $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/gitlint $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
+	rm -r $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin;

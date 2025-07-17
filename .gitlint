@@ -1,0 +1,8 @@
+# gitlint documentation is found here - https://jorisroovers.com/gitlint/latest/
+# conventional commit documentation is found here - https://www.conventionalcommits.org/en/v1.0.0/
+
+[general]
+contrib=contrib-title-conventional-commits
+
+[contrib-title-conventional-commits]
+types = fix,feat,chore,docs,style,refactor,perf,test,revert,ci,build
