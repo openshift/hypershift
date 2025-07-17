@@ -1,6 +1,6 @@
 FROM registry.access.redhat.com/ubi10/ubi:10.0-1747220028
 
-RUN dnf install -y haproxy-3.0.5-4.el10 \
+RUN dnf install -y haproxy-3.0.5-4.el10 socat-1.7.4.4-8.el10 \
   && dnf clean all
 
 ENTRYPOINT [ "/usr/sbin/haproxy" ]
