@@ -4,6 +4,7 @@ contentOrigin:
       baseurl: https://cdn-ubi.redhat.com/content/public/ubi/dist/ubi10/10/${basearch}/appstream/os/
 packages:
   - haproxy
+  - socat
 context:
   containerfile: Containerfile
 arches:

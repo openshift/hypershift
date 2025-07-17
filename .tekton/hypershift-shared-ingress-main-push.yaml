@@ -32,6 +32,8 @@ spec:
     - linux/arm64
   - name: dockerfile
     value: /shared-ingress/Containerfile
+  - name: hermetic
+    value: "true"
   pipelineSpec:
     description: |
       This pipeline is ideal for building multi-arch container images from a Containerfile while maintaining trust after pipeline customization.
