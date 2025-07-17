@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,oas-trust-anchor
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,oas-trust-anchor,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e41f50a7352ebd36a829b997b
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -160,6 +160,8 @@ spec:
           name: serving-cert
         - mountPath: /var/log/openshift-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/log/openshift-apiserver
       - args:
         - -c
@@ -192,6 +194,8 @@ spec:
         volumeMounts:
         - mountPath: /var/log/openshift-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         command:
@@ -307,6 +311,8 @@ spec:
           - key: .dockerconfigjson
             path: config.json
           secretName: pull-secret
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416

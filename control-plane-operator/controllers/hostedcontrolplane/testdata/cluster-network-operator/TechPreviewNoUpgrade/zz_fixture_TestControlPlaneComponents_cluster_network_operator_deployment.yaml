@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs,client-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: configs,client-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -172,6 +172,8 @@ spec:
           name: client-token
         - mountPath: /etc/certificate/ca
           name: ca-bundle
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --service-account-namespace
         - openshift-network-operator
@@ -201,6 +203,8 @@ spec:
           name: client-token
         - mountPath: /etc/kubernetes
           name: hosted-etc-kube
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --disable-resolver=true
@@ -361,6 +365,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
