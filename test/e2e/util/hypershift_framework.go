@@ -46,6 +46,8 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	Config *hyperv1.ClusterConfiguration
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -290,6 +292,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 				Type: platform,
 			},
 		},
+	}
+
+	if opts.Config != nil {
+		hc.Spec.Configuration = opts.Config
 	}
 
 	// Build options specific to the platform.
