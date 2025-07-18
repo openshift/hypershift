@@ -25,6 +25,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 07a80c5e
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -84,6 +85,8 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/cloud
@@ -93,6 +96,8 @@ spec:
         - mountPath: /mnt/certs
           name: cloud-provider-cert
           readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -118,4 +123,6 @@ spec:
           volumeAttributes:
             secretProviderClass: managed-azure-cloud-provider
         name: cloud-provider-cert
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

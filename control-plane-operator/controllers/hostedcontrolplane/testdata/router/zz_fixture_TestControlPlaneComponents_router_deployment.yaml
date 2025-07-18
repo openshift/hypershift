@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 417672c4
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -110,11 +111,14 @@ spec:
           capabilities:
             add:
             - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /usr/local/etc/haproxy/haproxy.cfg
           name: config
           subPath: haproxy.cfg
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-api-critical
       tolerations:
       - effect: NoSchedule
@@ -130,4 +134,6 @@ spec:
           defaultMode: 420
           name: router
         name: config
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

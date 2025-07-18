@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: a53d18cd
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -82,6 +83,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -89,6 +92,8 @@ spec:
           name: kubeconfig
         - mountPath: /var/run/configmaps/config
           name: config
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -124,4 +129,6 @@ spec:
           name: machine-approver-config
           optional: true
         name: config
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

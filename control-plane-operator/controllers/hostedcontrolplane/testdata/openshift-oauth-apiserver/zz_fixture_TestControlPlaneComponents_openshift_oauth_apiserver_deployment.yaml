@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e52ebd36a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -142,6 +142,8 @@ spec:
           requests:
             cpu: 150m
             memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/certs/aggregator-client-ca
@@ -160,6 +162,8 @@ spec:
           name: serving-cert
         - mountPath: /var/log/openshift-oauth-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/log/openshift-oauth-apiserver
       - args:
         - -c
@@ -186,10 +190,14 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/openshift-oauth-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --resolve-from-guest-cluster-dns=true
@@ -266,6 +274,8 @@ spec:
           defaultMode: 420
           name: client-ca
         name: client-ca
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416

@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: df52ebc7
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -124,6 +125,8 @@ spec:
           requests:
             cpu: 100m
             memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -135,6 +138,8 @@ spec:
           name: kubeconfig
         - mountPath: /etc/kubernetes/certs
           name: serving-cert
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -162,4 +167,6 @@ spec:
           defaultMode: 420
           name: client-ca
         name: client-ca
+      - emptyDir: {}
+        name: tmp-dir
 status: {}
