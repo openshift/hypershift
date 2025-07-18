@@ -28,7 +28,7 @@ CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
 GITLINT_VER := 0.19.1
 GITLINT_DIST_DIR := gitlint_dist
 GITLINT_BIN := gitlint
-GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)
+GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -83,7 +83,7 @@ lint-fix:
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync gitlint
+verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync run-gitlint
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -355,9 +355,21 @@ run-operator-locally-aws-dev:
 verify-codespell: codespell ## Verify codespell.
 	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum"
 
-.PHONY: gitlint
-gitlint: $(GITLINT)
-	gitlint --commits main..HEAD
+.PHONY: run-gitlint
+run-gitlint: $(GITLINT)
+ifdef PULL_BASE_SHA
+	@echo "Linting commits from $(PULL_BASE_SHA) to HEAD (CI: PR targeting $(PULL_BASE_REF))"
+	@$(GITLINT) --commits $(PULL_BASE_SHA)..HEAD
+else
+	$(eval MERGE_BASE := $(shell \
+		git merge-base HEAD origin/HEAD 2>/dev/null || \
+		git merge-base HEAD origin/main 2>/dev/null || \
+		git merge-base HEAD origin/master 2>/dev/null || \
+		echo "HEAD~1" \
+	))
+	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
+	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
+endif
 
 .PHONY: cpo-container-sync
 cpo-container-sync:
@@ -378,7 +390,6 @@ karpenter-upstream-e2e:
 
 ##@ codespell
 codespell : $(CODESPELL) ## Build a local copy of codespell.
-
 $(CODESPELL): ## Build codespell from tools folder.
 		mkdir -p $(TOOLS_BIN_DIR); \
 		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
@@ -390,11 +401,9 @@ $(CODESPELL): ## Build codespell from tools folder.
 
 ##@ gitlint
 gitlint : $(GITLINT) ## Install local copy of gitlint
-
 $(GITLINT): $(TOOLS_DIR)/go.mod
 	mkdir -p $(TOOLS_BIN_DIR); \
 	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
-	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin; \
 	pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
-	mv $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/gitlint $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
-	rm -r $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin;
+	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
+	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;
