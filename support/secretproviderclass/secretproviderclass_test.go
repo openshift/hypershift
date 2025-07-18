@@ -73,8 +73,6 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 	}
 
 	managedIdentity := hyperv1.ManagedIdentity{
-		ClientID:              "client-id",
-		CertificateName:       "certificate-name",
 		CredentialsSecretName: "credentials-name",
 		ObjectEncoding:        "utf-8",
 	}
@@ -82,11 +80,10 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 	testCases := []struct {
 		name                string
 		secretProviderClass *secretsstorev1.SecretProviderClass
-		isMIv3              bool
 		expected            *secretsstorev1.SecretProviderClass
 	}{
 		{
-			name: "when isMIv3 is true, expect the objects field to contain the CredentialsSecretName value",
+			name: "expect the objects field to contain the CredentialsSecretName value",
 			secretProviderClass: &secretsstorev1.SecretProviderClass{
 				Spec: secretsstorev1.SecretProviderClassSpec{
 					Provider: "azure",
@@ -100,7 +97,6 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 					},
 				},
 			},
-			isMIv3: true,
 			expected: &secretsstorev1.SecretProviderClass{
 				Spec: secretsstorev1.SecretProviderClassSpec{
 					Provider: "azure",
@@ -116,79 +112,13 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "when isMIv3 is not passed in, expect the objects field to contain the CertificateName value",
-			secretProviderClass: &secretsstorev1.SecretProviderClass{
-				Spec: secretsstorev1.SecretProviderClassSpec{
-					Provider: "azure",
-					Parameters: map[string]string{
-						"usePodIdentity":         "false",
-						"useVMManagedIdentity":   "true",
-						"userAssignedIdentityID": "user-assigned-identity-id",
-						"keyvaultName":           "key-vault-name",
-						"tenantId":               "tenant-id",
-						"objects":                "object-name:object-encoding",
-					},
-				},
-			},
-			expected: &secretsstorev1.SecretProviderClass{
-				Spec: secretsstorev1.SecretProviderClassSpec{
-					Provider: "azure",
-					Parameters: map[string]string{
-						"usePodIdentity":         "false",
-						"useVMManagedIdentity":   "true",
-						"userAssignedIdentityID": "key-vault-user",
-						"keyvaultName":           "key-vault-name",
-						"tenantId":               "tenant-id",
-						"objects":                "\narray:\n  - |\n    objectName: certificate-name\n    objectEncoding: utf-8\n    objectType: secret\n",
-					},
-					SecretObjects: nil,
-				},
-			},
-		},
-		{
-			name: "when isMIv3 is false, expect the objects field to contain the CertificateName value",
-			secretProviderClass: &secretsstorev1.SecretProviderClass{
-				Spec: secretsstorev1.SecretProviderClassSpec{
-					Provider: "azure",
-					Parameters: map[string]string{
-						"usePodIdentity":         "false",
-						"useVMManagedIdentity":   "true",
-						"userAssignedIdentityID": "user-assigned-identity-id",
-						"keyvaultName":           "key-vault-name",
-						"tenantId":               "tenant-id",
-						"objects":                "object-name:object-encoding",
-					},
-				},
-			},
-			isMIv3: false,
-			expected: &secretsstorev1.SecretProviderClass{
-				Spec: secretsstorev1.SecretProviderClassSpec{
-					Provider: "azure",
-					Parameters: map[string]string{
-						"usePodIdentity":         "false",
-						"useVMManagedIdentity":   "true",
-						"userAssignedIdentityID": "key-vault-user",
-						"keyvaultName":           "key-vault-name",
-						"tenantId":               "tenant-id",
-						"objects":                "\narray:\n  - |\n    objectName: certificate-name\n    objectEncoding: utf-8\n    objectType: secret\n",
-					},
-					SecretObjects: nil,
-				},
-			},
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			_ = os.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "key-vault-user")
-			if tc.name == "when isMIv3 is not passed in, expect the objects field to contain the CertificateName value" {
-				ReconcileManagedAzureSecretProviderClass(tc.secretProviderClass, hcp, managedIdentity)
-			} else {
-				ReconcileManagedAzureSecretProviderClass(tc.secretProviderClass, hcp, managedIdentity, tc.isMIv3)
-			}
-
+			ReconcileManagedAzureSecretProviderClass(tc.secretProviderClass, hcp, managedIdentity)
 			g.Expect(tc.secretProviderClass.Spec).To(Equal(tc.expected.Spec))
 		})
 	}
