@@ -33,6 +33,7 @@ type CreateIAMOptions struct {
 	PublicZoneID                    string
 	PrivateZoneID                   string
 	LocalZoneID                     string
+	BaseDomain                      string
 	InfraID                         string
 	IssuerURL                       string
 	OutputFile                      string
@@ -45,6 +46,7 @@ type CreateIAMOptions struct {
 
 	additionalIAMTags      []*iam.Tag
 	CreateKarpenterRoleARN bool
+	UseROSAManagedPolicies bool
 }
 
 type CreateIAMOutput struct {
@@ -191,7 +193,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	results, err := o.CreateOIDCResources(iamClient, logger, sharedVPC)
+	results, err := o.CreateOIDCResources(ctx, iamClient, logger, sharedVPC)
 	if err != nil {
 		return nil, err
 	}
@@ -207,10 +209,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		if o.PrivateZonesInClusterAccount {
 			route53RoleClient = iamClient
 		}
-		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
+		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(ctx, route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
 			return nil, err
 		}
-		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
+		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(ctx, vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
 			return nil, err
 		}
 	}
