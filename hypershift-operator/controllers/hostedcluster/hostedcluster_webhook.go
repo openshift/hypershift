@@ -3,6 +3,8 @@ package hostedcluster
 import (
 	"context"
 	"fmt"
+	"net"
+	"reflect"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
@@ -10,14 +12,17 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/blang/semver"
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
 )
@@ -156,6 +161,9 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 	if !ok {
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
 	}
+	if err := validateNetworking(hc); err != nil {
+		return nil, err
+	}
 
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
@@ -174,6 +182,22 @@ func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC
 	hcOld, ok := oldHC.(*hyperv1.HostedCluster)
 	if !ok {
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", oldHC)
+	}
+
+	if !reflect.DeepEqual(hcOld.Spec.Networking, hc.Spec.Networking) {
+		ackAnnotation := "hypershift.openshift.io/acknowledge-networking-disruption"
+		if val, ok := hc.Annotations[ackAnnotation]; !ok || val != "true" {
+			return nil, apierrors.NewForbidden(hyperv1.Resource("hostedcluster"), hc.Name,
+				fmt.Errorf("modifying networking on a running cluster is a highly disruptive action. To proceed, you must set the 'hypershift.openshift.io/acknowledge-networking-disruption: \"true\"' annotation"))
+		}
+		delete(hc.Annotations, ackAnnotation)
+		if meta.IsStatusConditionTrue(hc.Status.Conditions, string(hyperv1.ClusterVersionProgressing)) {
+			return nil, apierrors.NewInvalid(hyperv1.GroupVersion.WithKind("HostedCluster").GroupKind(), hc.Name,
+				field.ErrorList{field.Forbidden(field.NewPath("spec", "networking"), "networking configuration cannot be changed while a cluster upgrade is in progress.")})
+		}
+	}
+	if err := validateNetworking(hc); err != nil {
+		return nil, err
 	}
 
 	switch hc.Spec.Platform.Type {
@@ -299,5 +323,53 @@ func validateJsonAnnotation(annotations map[string]string) error {
 		}
 	}
 
+	return nil
+}
+
+func validateNetworking(hc *hyperv1.HostedCluster) error {
+	networkingPath := field.NewPath("spec", "networking")
+	// Version Gate Check
+	hasNewNetConfig := hc.Spec.Networking.OVNKubernetesConfig != nil || hc.Spec.Networking.IPSecConfig != nil
+	if hasNewNetConfig {
+		v, err := supportedversion.VersionFromPullSpec(hc.Spec.Release.Image)
+		if err != nil {
+			return fmt.Errorf("cannot parse release image version: %w", err)
+		}
+		minVersionForFeature := semver.MustParse("4.16.0")
+		if v.LT(minVersionForFeature) {
+			return fmt.Errorf("custom OVN and IPSec configuration is only supported on OCP 4.16+ versions")
+		}
+	}
+	// Collect all defined CIDRs for overlap validation.
+	var allCIDRs []hyperutil.CidrEntry
+	for i, netEntry := range hc.Spec.Networking.ClusterNetwork {
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: (*net.IPNet)(&netEntry.CIDR), Path: networkingPath.Child("clusterNetwork").Index(i)})
+	}
+	for i, netEntry := range hc.Spec.Networking.ServiceNetwork {
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: (*net.IPNet)(&netEntry.CIDR), Path: networkingPath.Child("serviceNetwork").Index(i)})
+	}
+	for i, netEntry := range hc.Spec.Networking.MachineNetwork {
+		allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: (*net.IPNet)(&netEntry.CIDR), Path: networkingPath.Child("machineNetwork").Index(i)})
+	}
+	if hc.Spec.Networking.OVNKubernetesConfig != nil {
+		ovnPath := networkingPath.Child("ovnKubernetesConfig")
+		if hc.Spec.Networking.OVNKubernetesConfig.InternalJoinSubnet != nil {
+			_, parsed, err := net.ParseCIDR(*hc.Spec.Networking.OVNKubernetesConfig.InternalJoinSubnet)
+			if err != nil {
+				return fmt.Errorf("invalid CIDR format for internalJoinSubnet: %w", err)
+			}
+			allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsed, Path: ovnPath.Child("internalJoinSubnet")})
+		}
+		if hc.Spec.Networking.OVNKubernetesConfig.InternalTransitSwitchSubnet != nil {
+			_, parsed, err := net.ParseCIDR(*hc.Spec.Networking.OVNKubernetesConfig.InternalTransitSwitchSubnet)
+			if err != nil {
+				return fmt.Errorf("invalid CIDR format for internalTransitSwitchSubnet: %w", err)
+			}
+			allCIDRs = append(allCIDRs, hyperutil.CidrEntry{Cidr: parsed, Path: ovnPath.Child("internalTransitSwitchSubnet")})
+		}
+	}
+	if err := hyperutil.CheckCIDROverlaps(allCIDRs); err != nil {
+		return err
+	}
 	return nil
 }

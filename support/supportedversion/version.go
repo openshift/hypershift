@@ -353,3 +353,18 @@ func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client 
 
 	return ocpVersion{}, fmt.Errorf("failed to find the latest supported OCP version in the release stream %s", releaseURL)
 }
+
+// VersionFromPullSpec parses a semver version from a release image pull spec string.
+// e.g., "quay.io/openshift-release-dev/ocp-release:4.16.0-ec.2-x86_64" -> "4.16.0-ec.2"
+func VersionFromPullSpec(pullSpec string) (*semver.Version, error) {
+	lastColon := strings.LastIndex(pullSpec, ":")
+	if lastColon == -1 {
+		return nil, fmt.Errorf("invalid pull spec, missing tag: %s", pullSpec)
+	}
+	tag := pullSpec[lastColon+1:]
+	version, err := semver.ParseTolerant(tag)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse version from tag %q: %w", tag, err)
+	}
+	return &version, nil
+}
