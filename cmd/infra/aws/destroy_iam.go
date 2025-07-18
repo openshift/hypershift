@@ -176,6 +176,16 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
 func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string, includeAssumePolicy bool) error {
 	roleName := fmt.Sprintf("%s-%s", o.InfraID, name)
+	role, err := existingRole(client, roleName)
+	if err != nil {
+		return fmt.Errorf("cannot check for existing role: %w", err)
+	}
+
+	if role == nil {
+		o.Log.Info("Role already deleted!", "role", roleName)
+		return nil
+	}
+
 	policyNames := []string{
 		roleName,
 	}
@@ -202,22 +212,32 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string,
 		}
 	}
 
-	_, err := client.DeleteRole(&iam.DeleteRoleInput{
+	attachedPolicies, err := client.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-				o.Log.Error(aerr, "Error deleting role", "role", roleName)
-				return aerr
-			}
-		} else {
-			o.Log.Error(err, "Error deleting role", "role", roleName)
-			return err
-		}
-	} else {
-		o.Log.Info("Deleted role", "role", roleName)
+		return fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
 	}
+
+	for _, policy := range attachedPolicies.AttachedPolicies {
+		_, err = client.DetachRolePolicy(&iam.DetachRolePolicyInput{
+			PolicyArn: policy.PolicyArn,
+			RoleName:  aws.String(roleName),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
+		}
+		o.Log.Info("Detached role policy", "role", roleName, "policy", *policy.PolicyArn)
+	}
+
+	_, err = client.DeleteRole(&iam.DeleteRoleInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete role %s: %w", roleName, err)
+	}
+	o.Log.Info("Deleted role", "role", roleName)
+
 	return nil
 }
 
@@ -275,6 +295,41 @@ func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI)
 		}
 		o.Log.Info("Deleted role", "role", roleName)
 	}
+
+	// when using ROSA managed policies to create iam, the worker role name will have ROSAWorkerRoleNameSuffix suffix.
+	roleName = fmt.Sprintf("%s-%s", profileName, ROSAWorkerRoleNameSuffix)
+	role, err = existingRole(client, roleName)
+	if err != nil {
+		return fmt.Errorf("cannot check for existing role: %w", err)
+	}
+	if role != nil {
+		attachedPolicies, err := client.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+			RoleName: aws.String(roleName),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
+		}
+
+		for _, policy := range attachedPolicies.AttachedPolicies {
+			_, err = client.DetachRolePolicy(&iam.DetachRolePolicyInput{
+				PolicyArn: policy.PolicyArn,
+				RoleName:  aws.String(roleName),
+			})
+			if err != nil {
+				return fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
+			}
+			o.Log.Info("Detached role policy", "role", roleName, "policy", *policy.PolicyArn)
+		}
+
+		_, err = client.DeleteRole(&iam.DeleteRoleInput{
+			RoleName: aws.String(roleName),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to delete role %s: %w", roleName, err)
+		}
+		o.Log.Info("Deleted role", "role", roleName)
+	}
+
 	return nil
 }
 
