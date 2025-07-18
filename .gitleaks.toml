@@ -1,0 +1,7 @@
+[allowlist]
+  description = "E2E FalsePositive leaks"
+  paths = []
+  regexes = [
+    # Ignore lines containing the text bellow
+    '''additionalPullSecretReadOnlyE2EData''',
+  ]
