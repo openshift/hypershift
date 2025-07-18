@@ -2565,11 +2565,12 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 
 func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
 	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
-	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name))
+	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(hcpns)
 
 	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubevirt-csi-cluster",
+			Name: fmt.Sprintf("%s-kubevirt-csi-cluster", hcpns),
 			Labels: map[string]string{
 				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
 				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
