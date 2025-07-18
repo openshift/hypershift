@@ -422,11 +422,11 @@ type AzurePlatformSpec struct {
 	// +immutable
 	SecurityGroupID string `json:"securityGroupID"`
 
-	// managedIdentities contains the managed identities needed for HCP control plane and data plane components that
-	// authenticate with Azure's API.
+	// azureAuthenticationConfig is the type of Azure authentication configuration to use to authenticate with Azure's 
+	// Cloud API.
 	//
 	// +required
-	ManagedIdentities AzureResourceManagedIdentities `json:"managedIdentities"`
+	AzureAuthenticationConfig AzureAuthenticationConfiguration `json:"azureAuthenticationConfig"`
 
 	// tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.
 	//
@@ -478,6 +478,49 @@ type AzureResourceManagedIdentities struct {
 	//
 	// +required
 	DataPlane DataPlaneManagedIdentities `json:"dataPlane"`
+}
+type AzureWorkloadIdentities struct {
+	// ciroClientID is the client ID of a federated managed identity, associated with cluster-image-operator, used in 
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CIROClientID string `json:"ciroClientID"`
+
+	// cioClientID is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CIOClientID string `json:"cioClientID"`
+	
+	// csoFileClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+	// used in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CSOFileClientID string `json:"csoFileClientID"`
+	
+	// csoDiskClientID is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+	// used in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	CSODiskClientID string `json:"csoDiskClientID"`
+	
+	// capzClientID is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+	// in workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."	
+	// +kubebuilder:validation:MaxLength=255
+	CAPZClientID string `json:"capzClientID"`
+	
+	// azureCPClientID is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+	// workload identity authentication.
+	// +required
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the client ID of a managed identity must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12."
+	// +kubebuilder:validation:MaxLength=255
+	AzureCPClientID string `json:"azureCPClientID"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
@@ -635,4 +678,42 @@ type AzureKMSKey struct {
 	// +kubebuilder:validation:MaxLength=255
 	// +required
 	KeyVersion string `json:"keyVersion"`
+}
+
+// azureAuthenticationConfiguration is a discriminated union type that contains the Azure authentication configuration 
+// for a Hosted Cluster. This configuration is used to determine how the Hosted Cluster authenticates with Azure's API, 
+// either with managed identities or workload identities.
+//
+// +union
+type AzureAuthenticationConfiguration struct {
+	// azureAuthenticationConfigType is the type of identity configuration used in the Hosted Cluster. This field is 
+	// used to determine which identity configuration is being used. Valid values are "ManagedIdentities" and 
+	// "WorkloadIdentities".
+	// 
+	// "ManagedIdentities" means that the Hosted Cluster is using managed identities to authenticate with Azure's API. 
+	// This is only valid for managed Azure, also known as ARO HCP.
+	//
+	// "WorkloadIdentities" means that the Hosted Cluster is using workload identities to authenticate with Azure's API. 
+	// This is only valid for self-managed Azure.
+	// 
+	// unionDiscriminator
+	// +kubebuilder:validation:Enum=ManagedIdentities;WorkloadIdentities	
+	// +required
+	AzureAuthenticationConfigType string `json:"azureAuthenticationConfigType"`
+
+	// managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+	// authenticate with Azure's API.
+	// 
+	// These are required for managed Azure, also known as ARO HCP.
+	//
+	// +optional
+	ManagedIdentities *AzureResourceManagedIdentities `json:"managedIdentities,omitempty"`
+
+	// workloadIdentities is a slice of objects containing a component and a client ID of a federated managed identity
+	// used in workload identity authentication. These are used to authenticate with Azure cloud on both the control 
+	// plane and data plane.
+	//
+	// These are required for self-managed Azure.
+	// +optional
+	WorkloadIdentities *AzureWorkloadIdentities `json:"workloadIdentities,omitempty"`
 }

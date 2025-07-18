@@ -30,7 +30,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		// MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH and mount it as a volume in the image registry pod in the path.
 		if azureutil.IsAroHCP() {
 			c.Env = append(c.Env,
-				azureutil.CreateEnvVarsForAzureManagedIdentity(cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName)...)
+				azureutil.CreateEnvVarsForAzureManagedIdentity(cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName)...)
 
 			c.VolumeMounts = append(c.VolumeMounts,
 				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureImageRegistrySecretStoreVolumeName),

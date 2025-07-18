@@ -8,7 +8,7 @@ import (
 )
 
 func adaptAzureSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress
+	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress
 	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, managedIdentity)
 	return nil
 }
