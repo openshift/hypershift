@@ -598,12 +598,12 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyCleanupWebhook := func(g *WithT, c client.Client) {
+	verifyCleanupWebhook := func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
 		wh := manifests.ResourceCreationBlockerWebhook()
 		err := c.Get(context.Background(), client.ObjectKeyFromObject(wh), wh)
 		g.Expect(err).ToNot(HaveOccurred())
 		expected := manifests.ResourceCreationBlockerWebhook()
-		reconcileCreationBlockerWebhook(expected)
+		reconcileCreationBlockerWebhook(expected, hcp)
 		g.Expect(wh.Webhooks).To(BeEquivalentTo(expected.Webhooks))
 	}
 
@@ -868,7 +868,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			}
 			_, err := r.destroyCloudResources(context.Background(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
-			verifyCleanupWebhook(g, guestClient)
+			verifyCleanupWebhook(g, guestClient, fakeHCP)
 			if test.verify != nil {
 				test.verify(g, guestClient, uncachedClient)
 			}
@@ -985,7 +985,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			ClusterID: "test-cluster-id",
 			Capabilities: &hyperv1.Capabilities{
 				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability, hyperv1.InsightsCapability, hyperv1.ConsoleCapability, hyperv1.NodeTuningCapability,
+					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability, hyperv1.InsightsCapability, hyperv1.ConsoleCapability, hyperv1.NodeTuningCapability, hyperv1.IngressCapability,
 				},
 			},
 		},
@@ -1042,7 +1042,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			//configv1.ClusterVersionCapabilityConsole,
 			configv1.ClusterVersionCapabilityDeploymentConfig,
 			// configv1.ClusterVersionCapabilityImageRegistry,
-			configv1.ClusterVersionCapabilityIngress,
+			//configv1.ClusterVersionCapabilityIngress,
 			//configv1.ClusterVersionCapabilityInsights,
 			configv1.ClusterVersionCapabilityMachineAPI,
 			//configv1.ClusterVersionCapabilityNodeTuning,
