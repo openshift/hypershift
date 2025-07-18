@@ -376,7 +376,7 @@ karpenter-upstream-e2e:
 ## Tooling Binaries
 ## --------------------------------------
 
-##@ Tooling Binaries:
+##@ codespell
 codespell : $(CODESPELL) ## Build a local copy of codespell.
 
 $(CODESPELL): ## Build codespell from tools folder.
@@ -388,6 +388,7 @@ $(CODESPELL): ## Build codespell from tools folder.
 		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
 		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
 
+##@ gitlint
 gitlint : $(GITLINT) ## Install local copy of gitlint
 
 $(GITLINT): $(TOOLS_DIR)/go.mod
