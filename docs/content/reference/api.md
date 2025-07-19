@@ -3785,6 +3785,21 @@ If not specified, <code>[Priority, LeastWaste]</code> is the default.
 Maximum of 3 expanders can be specified.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>extraArgs</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>extraArgs allows users to specify additional command line arguments for the cluster autoscaler.
+These arguments will be appended to the autoscaler&rsquo;s command line.
+This field is useful for passing custom flags that are not directly supported by the API.
+Arguments should be space-separated (e.g., &ldquo;&ndash;custom-flag=value &ndash;another-flag &ndash;third-flag=123&rdquo;).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterConfiguration { #hypershift.openshift.io/v1beta1.ClusterConfiguration }
