@@ -10,7 +10,7 @@ metadata:
       event == "push"
       && target_branch.matches("refs/tags/v0.1.*")
       && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\.json)$'))
-  creationTimestamp: null
+  creationTimestamp:
   labels:
     appstudio.openshift.io/application: hypershift-operator
     appstudio.openshift.io/component: hypershift-operator-main
@@ -40,7 +40,7 @@ spec:
             - name: name
               value: show-sbom
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-show-sbom:0.1@sha256:1fa4b71e0e0ca51da1cb769a2e20bbf186235e36b03cd97998e042e6e15a0c67
+              value: quay.io/redhat-appstudio-tekton-catalog/task-show-sbom:0.1@sha256:9ad5b3434427f03c4d105b646a35a506589dd9eb4620c76579659ac3358b6e6a
             - name: kind
               value: task
           resolver: bundles
@@ -75,15 +75,11 @@ spec:
         name: output-image
         type: string
       - default: .
-        description:
-          Path to the source code of an application's component from where
-          to build image.
+        description: Path to the source code of an application's component from where to build image.
         name: path-context
         type: string
       - default: Dockerfile
-        description:
-          Path to the Dockerfile inside the context specified by parameter
-          path-context
+        description: Path to the Dockerfile inside the context specified by parameter path-context
         name: dockerfile
         type: string
       - default: "false"
@@ -111,9 +107,7 @@ spec:
         name: java
         type: string
       - default: ""
-        description:
-          Image tag expiration time, time values could be something like
-          1h, 2d, 3w for hours, days, and weeks, respectively.
+        description: Image tag expiration time, time values could be something like 1h, 2d, 3w for hours, days, and weeks, respectively.
         name: image-expires-after
     results:
       - description: ""
@@ -148,7 +142,7 @@ spec:
             - name: name
               value: init
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:ecec49de014d480e85a01b4351d7e20d9d9df44788758796da785e5be6da8881
+              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:6f2c677333af4fab7058bd5b54ed57f05be9373ab3285fefeba696bf8a494770
             - name: kind
               value: task
           resolver: bundles
@@ -274,7 +268,7 @@ spec:
             - name: name
               value: prefetch-dependencies
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:c5e7c270abceeab6764e0d15380fbf83311536606fb12b3542fbb1965d8b1df7
+              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:5f9c86243c8f150b93d94beb37d76b69373c6ab29622ec0a112138a2cc4a8732
             - name: kind
               value: task
           resolver: bundles
@@ -309,7 +303,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:d8b81c27dd50e936c8140ef8225d814954f0b4fc11c1c23a0e5841af0a0cd168
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:4d3ef86f723123af67463a2f4b8371496ef69bf9315ac6d6d955bf7ee5f33907
             - name: kind
               value: task
           resolver: bundles
@@ -346,7 +340,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:a6afd7071e514dc3a43fa24a2eaeb862c844057b3d97cbe84007bf70f23e4802
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:fd227e4ddde2aafb481e1dba2863b884deb237d820122576da27203bb6b20e68
             - name: kind
               value: task
           resolver: bundles
@@ -383,7 +377,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:a6afd7071e514dc3a43fa24a2eaeb862c844057b3d97cbe84007bf70f23e4802
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:fd227e4ddde2aafb481e1dba2863b884deb237d820122576da27203bb6b20e68
             - name: kind
               value: task
           resolver: bundles
@@ -395,7 +389,6 @@ spec:
         workspaces:
           - name: source
             workspace: workspace-s390x
-
       - name: build-container-ppc64le
         params:
           - name: IMAGE
@@ -421,7 +414,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:a6afd7071e514dc3a43fa24a2eaeb862c844057b3d97cbe84007bf70f23e4802
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:fd227e4ddde2aafb481e1dba2863b884deb237d820122576da27203bb6b20e68
             - name: kind
               value: task
           resolver: bundles
@@ -455,7 +448,7 @@ spec:
             - name: name
               value: build-image-manifest
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:bb2042f91b9b3f162fd3bcc2d3516dc8650128a6c8d60a590a8168e86b64ada0
+              value: quay.io/redhat-appstudio-tekton-catalog/task-build-image-manifest:0.1@sha256:57610a522bba485ba90f811244f40c493297697c5f93059b5c994dfa2175cbd2
             - name: kind
               value: task
           resolver: bundles
@@ -466,12 +459,14 @@ spec:
               - "true"
       - name: apply-tags
         params:
-          - name: IMAGE
-            value: $(tasks.build-container.results.IMAGE_URL
           - name: ADDITIONAL_TAGS
             value:
               - |-
                 {{ target_branch.split("/")[2] }}
+          - name: IMAGE_URL
+            value: $(tasks.build-container.results.IMAGE_URL)
+          - name: IMAGE_DIGEST
+            value: $(tasks.build-container.results.IMAGE_DIGEST)
         runAfter:
           - build-container
         taskRef:
@@ -479,7 +474,7 @@ spec:
             - name: name
               value: apply-tags
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.1@sha256:1c6f673fe100a49f58aaef62580c8adf0c397790964f4e7bac7fcd3f4d07c92e
+              value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:517a51e260c0b59654a9d7b842e1ab07d76bce15ca7ce9c8fd2489a19be6463d
             - name: kind
               value: task
           resolver: bundles
@@ -516,7 +511,7 @@ spec:
             - name: name
               value: clair-scan
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:cbb4a7c9f6d5591b74047a580f5199a91228a810df1c854e03ff049824b8a348
+              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:00593742ff42a413c1946d8f835fad7eb510a81e2abd006be85ee0c9fc6ea4f3
             - name: kind
               value: task
           resolver: bundles
@@ -533,7 +528,7 @@ spec:
             - name: name
               value: sast-snyk-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.4@sha256:eebe43b3223cbf7d1b6c95c8575c5bcbfd6fe6fb85261b1ad8cd018dff3f5f27
+              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.4@sha256:316e2b9219d039ef3701340f900b47a421a61b4ef8d1d3a2b520ff2aae1275b4
             - name: kind
               value: task
           resolver: bundles
@@ -563,7 +558,7 @@ spec:
             - name: name
               value: clamav-scan
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:9cab95ac9e833d77a63c079893258b73b8d5a298d93aaf9bdd6722471bc2f338
+              value: quay.io/konflux-ci/tekton-catalog/task-clamav-scan:0.2@sha256:7749146f7e4fe530846f1b15c9366178ec9f44776ef1922a60d3e7e2b8c6426b
             - name: kind
               value: task
           resolver: bundles
@@ -602,7 +597,7 @@ spec:
     - name: workspace
       volumeClaimTemplate:
         metadata:
-          creationTimestamp: null
+          creationTimestamp:
         spec:
           accessModes:
             - ReadWriteOnce
@@ -613,7 +608,7 @@ spec:
     - name: workspace-arm64
       volumeClaimTemplate:
         metadata:
-          creationTimestamp: null
+          creationTimestamp:
         spec:
           accessModes:
             - ReadWriteOnce
@@ -624,7 +619,7 @@ spec:
     - name: workspace-s390x
       volumeClaimTemplate:
         metadata:
-          creationTimestamp: null
+          creationTimestamp:
         spec:
           accessModes:
             - ReadWriteOnce
@@ -635,7 +630,7 @@ spec:
     - name: workspace-ppc64le
       volumeClaimTemplate:
         metadata:
-          creationTimestamp: null
+          creationTimestamp:
         spec:
           accessModes:
             - ReadWriteOnce
