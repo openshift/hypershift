@@ -1443,6 +1443,15 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
+
+	// extraArgs allows users to specify additional command line arguments for the cluster autoscaler.
+	// These arguments will be appended to the autoscaler's command line.
+	// This field is useful for passing custom flags that are not directly supported by the API.
+	// Arguments should be space-separated (e.g., "--custom-flag=value --another-flag --third-flag=123").
+	//
+	// +kubebuilder:validation:MaxLength=1024
+	// +optional
+	ExtraArgs string `json:"extraArgs,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance

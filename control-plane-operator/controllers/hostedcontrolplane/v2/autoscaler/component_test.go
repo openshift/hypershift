@@ -200,6 +200,26 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 			expectedReplicas: 1,
 		},
+		{
+			name: "when ExtraArgs is set, container has extra arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				ExtraArgs: "--cordon-node-before-terminating=true    --daemonset-eviction-for-empty-nodes=false --ok-total-unready-count=100",
+			},
+			ExpectedArgs: []string{
+				"--cordon-node-before-terminating=true",
+				"--daemonset-eviction-for-empty-nodes=false",
+				"--ok-total-unready-count=100",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when ExtraArgs is empty, no extra arguments are added",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				ExtraArgs: "",
+			},
+			ExpectedArgs:     []string{},
+			expectedReplicas: 1,
+		},
 	}
 
 	for _, tc := range testCases {
