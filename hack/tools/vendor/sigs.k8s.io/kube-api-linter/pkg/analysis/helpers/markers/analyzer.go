@@ -113,7 +113,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(newMarkers()),
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -239,8 +239,8 @@ func extractExpressions(expressions string) map[string]string {
 
 	// split expression string on commas (,) to handle multiple expressions
 	// in a single marker
-	chainedExpressions := strings.Split(expressions, ",")
-	for _, chainedExpression := range chainedExpressions {
+	chainedExpressions := strings.SplitSeq(expressions, ",")
+	for chainedExpression := range chainedExpressions {
 		exps := strings.SplitN(chainedExpression, "=", 2)
 		if len(exps) < 2 {
 			continue
@@ -383,6 +383,13 @@ func (ms MarkerSet) HasWithExpressions(identifier string, expressions map[string
 	}
 
 	return false
+}
+
+// Get returns the markers associated with the given identifier.
+// If no markers are found, an empty slice is returned.
+// The returned slice may contain multiple markers with the same identifier.
+func (ms MarkerSet) Get(identifier string) []Marker {
+	return ms[identifier]
 }
 
 // UnsortedList returns a list of the markers, in no particular order.

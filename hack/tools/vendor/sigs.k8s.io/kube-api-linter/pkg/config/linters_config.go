@@ -26,11 +26,20 @@ type LintersConfig struct {
 	// nomaps contains configuration for the nomaps linter.
 	NoMaps NoMapsConfig `json:"nomaps"`
 
+	// optionalFields contains configuration for the optionalfields linter.
+	OptionalFields OptionalFieldsConfig `json:"optionalFields"`
+
 	// optionalOrRequired contains configuration for the optionalorrequired linter.
 	OptionalOrRequired OptionalOrRequiredConfig `json:"optionalOrRequired"`
 
 	// requiredFields contains configuration for the requiredfields linter.
 	RequiredFields RequiredFieldsConfig `json:"requiredFields"`
+
+	// statusOptional contains configuration for the statusoptional linter.
+	StatusOptional StatusOptionalConfig `json:"statusOptional"`
+
+	// uniqueMarkers contains configuration for the uniquemarkers linter.
+	UniqueMarkers UniqueMarkersConfig `json:"uniqueMarkers"`
 }
 
 // ConditionsFirstField is the policy for the conditions linter.
@@ -139,6 +148,84 @@ type NoMapsConfig struct {
 	Policy NoMapsPolicy `json:"policy"`
 }
 
+// OptionalFieldsConfig is the configuration for the optionalfields linter.
+type OptionalFieldsConfig struct {
+	// pointers is the policy for pointers in optional fields.
+	// This defines how the linter should handle optional fields, and whether they should be pointers or not.
+	// By default, all fields will be expected to be pointers, and the linter will suggest fixes if they are not.
+	Pointers OptionalFieldsPointers `json:"pointers"`
+
+	// omitempty is the policy for the `omitempty` tag within the json tag for fields.
+	// This defines how the linter should handle optional fields, and whether they should have the omitempty tag or not.
+	// By default, all fields will be expected to have the `omitempty` tag.
+	OmitEmpty OptionalFieldsOmitEmpty `json:"omitempty"`
+}
+
+// OptionalFieldsPointers is the configuration for pointers in optional fields.
+type OptionalFieldsPointers struct {
+	// preference determines whether the linter should prefer pointers for all optional fields,
+	// or only for optional fields where validation or serialization requires a pointer.
+	// Valid values are "Always" and "WhenRequired".
+	// When set to "Always", the linter will prefer pointers for all optional fields.
+	// When set to "WhenRequired", the linter will prefer pointers for optional fields where validation or serialization requires a pointer.
+	// The "WhenRequired" option requires bounds on strings and numerical values to be able to acurately determine the correct pointer vs non-pointer decision.
+	// When otherwise not specified, the default value is "Always".
+	Preference OptionalFieldsPointerPreference `json:"preference"`
+	// policy is the policy for the pointer preferences for optional fields.
+	// Valid values are "SuggestFix" and "Warn".
+	// When set to "SuggestFix", the linter will emit a warning if the pointer preference is not followed and suggest a fix.
+	// When set to "Warn", the linter will emit a warning if the pointer preference is not followed.
+	// When otherwise not specified, the default value is "SuggestFix".
+	Policy OptionalFieldsPointerPolicy `json:"policy"`
+}
+
+// OptionalFieldsOmitEmpty is the configuration for the `omitempty` tag on optional fields.
+type OptionalFieldsOmitEmpty struct {
+	// policy determines whether the linter should require omitempty for all optional fields.
+	// Valid values are "SuggestFix" and "Ignore".
+	// When set to "SuggestFix", the linter will suggest adding the `omitempty` tag when an optional field does not have it.
+	// When set to "Warn", the linter will emit a warning if the field does not have the `omitempty` tag.
+	// When set to "Ignore", and optional field missing the `omitempty` tag will be ignored.
+	// Note, when set to "Ignore", and a field does not have the `omitempty` tag, this may affect whether the field should be a pointer or not.
+	Policy OptionalFieldsOmitEmptyPolicy `json:"policy"`
+}
+
+// OptionalFieldsPointerPreference is the preference for pointers in optional fields.
+type OptionalFieldsPointerPreference string
+
+const (
+	// OptionalFieldsPointerPreferenceAlways indicates that the linter should prefer pointers for all optional fields.
+	OptionalFieldsPointerPreferenceAlways OptionalFieldsPointerPreference = "Always"
+
+	// OptionalFieldsPointerPreferenceWhenRequired indicates that the linter should prefer pointers for optional fields where validation or serialization requires a pointer.
+	OptionalFieldsPointerPreferenceWhenRequired OptionalFieldsPointerPreference = "WhenRequired"
+)
+
+// OptionalFieldsPointerPolicy is the policy for pointers in optional fields.
+type OptionalFieldsPointerPolicy string
+
+const (
+	// OptionalFieldsPointerPolicySuggestFix indicates that the linter will emit a warning if the pointer preference is not followed and suggest a fix.
+	OptionalFieldsPointerPolicySuggestFix OptionalFieldsPointerPolicy = "SuggestFix"
+
+	// OptionalFieldsPointerPolicyWarn indicates that the linter will emit a warning if the pointer preference is not followed.
+	OptionalFieldsPointerPolicyWarn OptionalFieldsPointerPolicy = "Warn"
+)
+
+// OptionalFieldsOmitEmptyPolicy is the policy for the omitempty tag on optional fields.
+type OptionalFieldsOmitEmptyPolicy string
+
+const (
+	// OptionalFieldsOmitEmptyPolicySuggestFix indicates that the linter will emit a warning if the field does not have omitempty, and suggest a fix.
+	OptionalFieldsOmitEmptyPolicySuggestFix OptionalFieldsOmitEmptyPolicy = "SuggestFix"
+
+	// OptionalFieldsOmitEmptyPolicyWarn indicates that the linter will emit a warning if the field does not have omitempty.
+	OptionalFieldsOmitEmptyPolicyWarn OptionalFieldsOmitEmptyPolicy = "Warn"
+
+	// OptionalFieldsOmitEmptyPolicyIgnore indicates that the linter will ignore any field missing the omitempty tag.
+	OptionalFieldsOmitEmptyPolicyIgnore OptionalFieldsOmitEmptyPolicy = "Ignore"
+)
+
 // OptionalOrRequiredConfig contains configuration for the optionalorrequired linter.
 type OptionalOrRequiredConfig struct {
 	// preferredOptionalMarker is the preferred marker to use for optional fields.
@@ -171,4 +258,38 @@ type RequiredFieldsConfig struct {
 	// When set to "SuggestFix", the linter will emit a warning if a required field is a pointer and suggest a fix.
 	// When otherwise not specified, the default value is "SuggestFix".
 	PointerPolicy RequiredFieldPointerPolicy `json:"pointerPolicy"`
+}
+
+// StatusOptionalConfig contains configuration for the statusoptional linter.
+type StatusOptionalConfig struct {
+	// preferredOptionalMarker is the preferred marker to use for optional fields.
+	// If this field is not set, the default value is "optional".
+	// Valid values are "optional", "kubebuilder:validation:Optional" and "k8s:optional".
+	PreferredOptionalMarker string `json:"preferredOptionalMarker"`
+}
+
+// UniqueMarkersConfig contains the configuration for the uniquemarkers linter.
+type UniqueMarkersConfig struct {
+	// customMarkers is the set of custom marker/attribute combinations that
+	// should not appear more than once on a type/field.
+	// Entries must have unique identifiers.
+	// Entries must start and end with alpha characters and must consist of only alpha characters and colons (':').
+	CustomMarkers []UniqueMarker `json:"customMarkers"`
+}
+
+// UniqueMarker represents an instance of a marker that should
+// be unique for a field/type. A marker consists
+// of an identifier and attributes that can be used
+// to dictate uniqueness.
+type UniqueMarker struct {
+	// identifier configures the marker identifier that should be unique.
+	// Some common examples are "kubebuilder:validation:Enum" and "kubebuilder:validation:XValidation".
+	Identifier string `json:"identifier"`
+	// attributes configures the attributes that should be considered
+	// as part of the uniqueness evaluation.
+	// If an attribute in this list is not found in a marker definition,
+	// it is interpreted as the empty value.
+	//
+	// Entries must be unique.
+	Attributes []string `json:"attributes"`
 }

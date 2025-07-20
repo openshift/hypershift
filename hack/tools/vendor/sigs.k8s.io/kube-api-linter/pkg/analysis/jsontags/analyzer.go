@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 	"sigs.k8s.io/kube-api-linter/pkg/config"
 
 	"golang.org/x/tools/go/analysis"
@@ -61,7 +62,7 @@ func newAnalyzer(cfg config.JSONTagsConfig) (*analysis.Analyzer, error) {
 	}, nil
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
+func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -75,12 +76,12 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.FieldTagInfo) {
-	var prefix string
-	if len(field.Names) > 0 && field.Names[0] != nil {
-		prefix = fmt.Sprintf("field %s", field.Names[0].Name)
-	} else if ident, ok := field.Type.(*ast.Ident); ok {
-		prefix = fmt.Sprintf("embedded field %s", ident.Name)
+	prefix := "field %s"
+	if len(field.Names) == 0 || field.Names[0] == nil {
+		prefix = "embedded field %s"
 	}
+
+	prefix = fmt.Sprintf(prefix, utils.FieldName(field))
 
 	if tagInfo.Missing {
 		pass.Reportf(field.Pos(), "%s is missing json tag", prefix)
