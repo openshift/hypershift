@@ -135,12 +135,13 @@ func traverseArrayIndices(context Context, matchingNode *CandidateNode, indicesT
 		}
 	}
 
-	if matchingNode.Kind == AliasNode {
+	switch matchingNode.Kind {
+	case AliasNode:
 		matchingNode = matchingNode.Alias
 		return traverseArrayIndices(context, matchingNode, indicesToTraverse, prefs)
-	} else if matchingNode.Kind == SequenceNode {
+	case SequenceNode:
 		return traverseArrayWithIndices(matchingNode, indicesToTraverse, prefs)
-	} else if matchingNode.Kind == MappingNode {
+	case MappingNode:
 		return traverseMapWithIndices(context, matchingNode, indicesToTraverse, prefs)
 	}
 	log.Debugf("OperatorArrayTraverse skipping %v as its a %v", matchingNode, matchingNode.Tag)
@@ -264,7 +265,7 @@ func doTraverseMap(newMatches *orderedmap.OrderedMap, node *CandidateNode, wante
 	// if we don't find a match directly on this node first.
 
 	var contents = node.Content
-	for index := 0; index < len(contents); index = index + 2 {
+	for index := 0; index+1 < len(contents); index = index + 2 {
 		key := contents[index]
 		value := contents[index+1]
 
