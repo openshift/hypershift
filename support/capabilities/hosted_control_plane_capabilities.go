@@ -24,6 +24,19 @@ func IsNodeTuningCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return true
 }
 
+// IsIngressCapabilityEnabled returns true if the Ingress capability is enabled, or false if disabled.
+func IsIngressCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.IngressCapability {
+			return false
+		}
+	}
+	return true
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {

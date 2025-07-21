@@ -2811,3 +2811,86 @@ func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, clien
 		t.Log("NodeTuning capability disabled validation completed successfully")
 	})
 }
+
+// EnsureIngressCapabilityDisabled validates the expectations for when IngressCapability is Disabled
+func EnsureIngressCapabilityDisabled(ctx context.Context, t *testing.T, clients *GuestClients, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureIngressCapabilityDisabled", func(t *testing.T) {
+		AtLeast(t, Version420)
+		g := NewWithT(t)
+
+		// Check guest cluster - ingress cluster operator should not exist
+		_, err := clients.CfgClient.ConfigV1().ClusterOperators().Get(ctx, "ingress", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("clusteroperators.config.openshift.io \"ingress\" not found"))
+
+		// Check guest cluster - openshift-ingress-operator namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress-operator", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress-operator\" not found"))
+
+		// Check guest cluster - openshift-ingress namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress\" not found"))
+
+		// Check guest cluster - openshift-ingress-canary namespace should not exist
+		_, err = clients.KubeClient.CoreV1().Namespaces().Get(ctx, "openshift-ingress-canary", metav1.GetOptions{})
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("namespaces \"openshift-ingress-canary\" not found"))
+
+		// Check management cluster - no ingress-operator deployment in HCP namespace
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		var deploymentList appsv1.DeploymentList
+		err = mgmtClient.List(ctx, &deploymentList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": "ingress-operator"})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(deploymentList.Items).To(BeEmpty(), "expected no ingress-operator deployment in management cluster HCP namespace")
+
+		// Check management cluster - no ingress-operator pods in HCP namespace
+		var podList corev1.PodList
+		err = mgmtClient.List(ctx, &podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels{"app": "ingress-operator"})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(podList.Items).To(BeEmpty(), "expected no ingress-operator pods in management cluster HCP namespace")
+
+		// Check guest cluster - no IngressController resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/operator.openshift.io/v1/ingresscontrollers").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected IngressController API to not be available when ingress capability is disabled")
+
+		// Check guest cluster - no DNSRecord resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/ingress.operator.openshift.io/v1/dnsrecords").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected DNSRecord API to not be available when ingress capability is disabled")
+
+		// Check guest cluster - no GatewayClass resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/gateway.networking.k8s.io/v1/gatewayclasses").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected GatewayClass API to not be available when ingress capability is disabled")
+
+		// Check guest cluster - no Gateway resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/gateway.networking.k8s.io/v1/gateways").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected Gateway API to not be available when ingress capability is disabled")
+
+		// Check guest cluster - no HTTPRoute resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/gateway.networking.k8s.io/v1/httproutes").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected HTTPRoute API to not be available when ingress capability is disabled")
+
+		// Check guest cluster - no ReferenceGrant resources should exist
+		_, err = clients.KubeClient.RESTClient().Get().
+			AbsPath("/apis/gateway.networking.k8s.io/v1beta1/referencegrants").
+			DoRaw(ctx)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("the server could not find the requested resource"), "expected ReferenceGrant API to not be available when ingress capability is disabled")
+	})
+}

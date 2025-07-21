@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	resourcemanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -30,19 +32,22 @@ type syncDesc struct {
 	destKey     string
 }
 
-func configMapsToSync(ns string) map[string]syncDesc {
-	return map[string]syncDesc{
+func configMapsToSync(ns string, hcp *hyperv1.HostedControlPlane) map[string]syncDesc {
+	m := map[string]syncDesc{
 		"service-ca": {
 			destination: manifests.ServiceServingCA(ns),
 			sourceKey:   "ca-bundle.crt",
 			destKey:     "service-ca.crt",
 		},
-		"default-ingress-cert": {
+	}
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		m["default-ingress-cert"] = syncDesc{
 			destination: manifests.IngressObservedDefaultIngressCertCA(ns),
 			sourceKey:   "ca-bundle.crt",
 			destKey:     "ca.crt",
-		},
+		}
 	}
+	return m
 }
 
 // ManagedCAObserver watches 2 CA configmaps in the target cluster:
@@ -79,7 +84,12 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
-	configMaps := configMapsToSync(r.namespace)
+	hcp := resourcemanifests.HostedControlPlane(r.namespace, r.hcpName)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.namespace, r.hcpName, err)
+	}
+
+	configMaps := configMapsToSync(r.namespace, hcp)
 	if _, found := configMaps[req.Name]; !found {
 		return ctrl.Result{}, nil
 	}
@@ -87,10 +97,6 @@ func (r *ManagedCAObserver) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	log := r.log.WithValues("configmap", req.NamespacedName)
 	log.Info("syncing configmap")
 
-	hcp := resourcemanifests.HostedControlPlane(r.namespace, r.hcpName)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get hosted control plane %s/%s: %w", r.namespace, r.hcpName, err)
-	}
 	ownerRef := config.OwnerRefFrom(hcp)
 
 	sourceCM, err := r.cmLister.ConfigMaps(req.Namespace).Get(req.Name)

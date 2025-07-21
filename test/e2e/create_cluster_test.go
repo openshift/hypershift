@@ -148,6 +148,57 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "Capabilities can not be both enabled and disabled at once.",
 					},
 					{
+						name: "when Ingress capability is disabled but Console capability is enabled, it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.ConsoleCapability,
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "Ingress capability can only be disabled if Console capability is also disabled",
+					},
+					{
+						name: "when both Ingress and Console capabilities are disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+									hyperv1.ConsoleCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when neither Ingress nor Console capability is disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when Ingress capability is enabled but Console capability is disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ConsoleCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
 						name: "when baseDomain has invalid chars it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.DNS.BaseDomain = "@foo"
@@ -1510,7 +1561,8 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
-			// Disable Console only for versions >= 4.20 due to OCPBUGS-57129 — the Hypershift-specific deployment is missing the capability.openshift.io/name: Console annotation.
+			// Disable Console only for versions >= 4.20 due to OCPBUGS-57129 — the HyperShift-specific deployment is missing the capability.openshift.io/name: Console annotation.
+			// Additionally, due to OCPBUGS-58422, we currently allow disabling Ingress only if Console is also disabled, so Ingress is also disabled for versions >= 4.20.
 			disabledCaps := []hyperv1.OptionalCapability{
 				hyperv1.ImageRegistryCapability,
 				hyperv1.OpenShiftSamplesCapability,
@@ -1518,7 +1570,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 				hyperv1.NodeTuningCapability,
 			}
 			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
-				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability)
+				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability, hyperv1.IngressCapability)
 			}
 
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
@@ -1561,6 +1613,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure NodeTuning component is disabled
 		e2eutil.EnsureNodeTuningCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+
+		// ensure ingress component is disabled
+		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 

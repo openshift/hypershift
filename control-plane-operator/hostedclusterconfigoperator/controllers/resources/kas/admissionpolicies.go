@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 
@@ -92,11 +93,15 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 		"featuregates",
 		"images",
 		"imagecontentpolicies",
-		"ingresses",
 		"proxies",
 		"schedulers",
 		"networks",
 		"oauths",
+	}
+
+	//Only include "ingresses" in the policy if the ingress capability is enabled.
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		configResources = append(configResources, "ingresses")
 	}
 
 	if hcp.Spec.OLMCatalogPlacement == hyperv1.ManagementOLMCatalogPlacement {

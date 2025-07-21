@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
@@ -65,19 +66,22 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 func (r *reconciler) findKubevirtPassthroughServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) ([]corev1.Service, error) {
 	kubevirtPassthroughServices := []corev1.Service{}
 
-	// Manifests for infra/mgmt cluster passthrough service
-	cpService := hcpmanifests.IngressDefaultIngressPassthroughService(kubevirtInfraNamespace(hcp))
+	// Add ingress passthrough service only if IngressCapability is enabled
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Manifests for infra/mgmt cluster passthrough service
+		cpService := hcpmanifests.IngressDefaultIngressPassthroughService(kubevirtInfraNamespace(hcp))
 
-	cpService.Name = fmt.Sprintf("%s-%s",
-		hcpmanifests.IngressDefaultIngressPassthroughServiceName,
-		hcp.Spec.Platform.Kubevirt.GenerateID)
+		cpService.Name = fmt.Sprintf("%s-%s",
+			hcpmanifests.IngressDefaultIngressPassthroughServiceName,
+			hcp.Spec.Platform.Kubevirt.GenerateID)
 
-	err := r.kubevirtInfraClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get default ingress passthrough Service: %w", err)
-	}
-	if !apierrors.IsNotFound(err) {
-		kubevirtPassthroughServices = append(kubevirtPassthroughServices, *cpService)
+		err := r.kubevirtInfraClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get default ingress passthrough Service: %w", err)
+		}
+		if !apierrors.IsNotFound(err) {
+			kubevirtPassthroughServices = append(kubevirtPassthroughServices, *cpService)
+		}
 	}
 
 	kccmServiceList := &corev1.ServiceList{}
