@@ -256,7 +256,7 @@ func GetSupportedOCPVersions(ctx context.Context, namespace string, client crcli
 
 	if supportedVersions == nil {
 		// Fetch the supported versions ConfigMap from the specified namespace
-		supportedVersions := manifests.ConfigMap(namespace)
+		supportedVersions = manifests.ConfigMap(namespace)
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(supportedVersions), supportedVersions); err != nil {
 			return SupportedVersions{}, "", fmt.Errorf("failed to find supported versions on the server: %v", err)
 		}
