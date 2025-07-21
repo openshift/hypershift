@@ -256,7 +256,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 
 	if sharedingress.UseSharedIngress() {
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
-		haProxyImage = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:d443537f72ec48b2078d24de9852c3369c68c60c06ac82d51c472b2144d41309"
+		haProxyImage = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:e03b49dd7dd2f28c67726b31ca140ce2145fb17e4bd305b74f98ac704567c8e5"
 	}
 
 	filesToAdd := []fileToAdd{
