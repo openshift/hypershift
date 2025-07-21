@@ -65,11 +65,11 @@ type backendDesc struct {
 	AllowedCIDRs string
 }
 type ExternalDNSBackendDesc struct {
-	Name                 string
-	HostName             string
-	DestinationServiceIP string
-	DestinationPort      int32
-	AllowedCIDRs         string
+	Name         string
+	HostName     string
+	SVCIP        string
+	SVCPort      int32
+	AllowedCIDRs string
 }
 
 func generateRouterConfig(ctx context.Context, client crclient.Client) (string, error) {
@@ -174,39 +174,39 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 		switch route.Name {
 		case manifests.KubeAPIServerExternalPublicRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-apiserver",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svc.Spec.ClusterIP,
-				DestinationPort:      config.KASSVCPort,
-				AllowedCIDRs:         allowedCIDRs})
+				Name:         route.Namespace + "-apiserver",
+				HostName:     route.Spec.Host,
+				SVCIP:        svc.Spec.ClusterIP,
+				SVCPort:      config.KASSVCPort,
+				AllowedCIDRs: allowedCIDRs})
 		case ignitionserver.Route("").Name:
 			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-ignition",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svc.Spec.ClusterIP,
-				DestinationPort:      443})
+				Name:     route.Namespace + "-ignition",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  443})
 		case manifests.KonnectivityServerRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-konnectivity",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svc.Spec.ClusterIP,
-				DestinationPort:      8091})
+				Name:     route.Namespace + "-konnectivity",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  8091})
 		case manifests.OauthServerExternalPublicRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-oauth",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svc.Spec.ClusterIP,
-				DestinationPort:      6443})
+				Name:     route.Namespace + "-oauth",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  6443})
 		}
 	}
 
 	if hc.Spec.KubeAPIServerDNSName != "" {
 		externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
-			Name:                 hcpNamespace + "-apiserver-custom",
-			HostName:             hc.Spec.KubeAPIServerDNSName,
-			DestinationServiceIP: kasService.Spec.ClusterIP,
-			DestinationPort:      config.KASSVCPort,
-			AllowedCIDRs:         allowedCIDRs})
+			Name:         hcpNamespace + "-apiserver-custom",
+			HostName:     hc.Spec.KubeAPIServerDNSName,
+			SVCIP:        kasService.Spec.ClusterIP,
+			SVCPort:      config.KASSVCPort,
+			AllowedCIDRs: allowedCIDRs})
 	}
 
 	return backends, externalDNSBackends, nil

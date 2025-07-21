@@ -78,7 +78,7 @@ backend {{ .Name }}
 # Backends support any traffic coming from external DNS.
 {{- range .ExternalDNSBackends }}
 backend {{ .Name }}
-  server {{ .Name }} {{ .DestinationServiceIP }}:{{.DestinationPort}}
+  server {{ .Name }} {{ .SVCIP }}:{{.SVCPort}}
 {{- end}}
 
 backend no-match
