@@ -139,9 +139,6 @@ func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, [
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "kube-apiserver-custom",
 					Namespace: hcpNamespace,
-					Labels: map[string]string{
-						util.HCPRouteLabel: "true",
-					},
 				},
 				Spec: routev1.RouteSpec{
 					Host: hc.Spec.KubeAPIServerDNSName,
