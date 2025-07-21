@@ -200,14 +200,14 @@ func MergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	return globalPullSecretBytes, nil
 }
 
-func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {
+func ReconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, cacheClient crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, namespace string) error {
 	// Remove the RBAC resources if the user provided pull secret is not present
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get logger: %w", err)
 	}
 
-	exists, _, err := AdditionalPullSecretExists(ctx, c)
+	exists, _, err := AdditionalPullSecretExists(ctx, cacheClient)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
