@@ -1,7 +1,6 @@
 package haproxy
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -280,7 +279,7 @@ kind: Config`
 				Client:       fake.NewClientBuilder().WithObjects(tc.other...).Build(),
 				HAProxyImage: "some-image",
 			}
-			cfg, err := r.reconcileHAProxyIgnitionConfig(context.Background(),
+			cfg, err := r.reconcileHAProxyIgnitionConfig(t.Context(),
 				tc.hc,
 				"cpo-image",
 			)

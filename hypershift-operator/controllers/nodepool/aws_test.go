@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -454,7 +453,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			}
 
 			// Execute the function under test
-			result, err := c.awsMachineTemplate(context.Background(), mockTemplateNameGenerator)
+			result, err := c.awsMachineTemplate(t.Context(), mockTemplateNameGenerator)
 
 			// Assertions
 			if err != nil {
@@ -542,7 +541,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 			reconciler := &NodePoolReconciler{
 				Client: fakeClient,
 			}
-			err := reconciler.validateAWSPlatformConfig(context.Background(), nodePool, hostedcluster, tc.oldCondition)
+			err := reconciler.validateAWSPlatformConfig(t.Context(), nodePool, hostedcluster, tc.oldCondition)
 			if tc.expectedError == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

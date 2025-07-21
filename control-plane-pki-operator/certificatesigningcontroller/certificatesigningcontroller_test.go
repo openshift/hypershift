@@ -360,7 +360,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 				certTTL: 12 * time.Hour,
 			}
 
-			cfg, _, validationErr, err := c.processCertificateSigningRequest(context.Background(), testCase.name, fakeClock.Now)
+			cfg, _, validationErr, err := c.processCertificateSigningRequest(t.Context(), testCase.name, fakeClock.Now)
 			if testCase.expectedErr && err == nil {
 				t.Errorf("expected an error but got none")
 			} else if !testCase.expectedErr && err != nil {

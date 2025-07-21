@@ -1,7 +1,6 @@
 package kas
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -1039,7 +1038,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 			}
 
 			err := adaptAuthConfig(controlplanecomponent.WorkloadContext{
-				Context: context.TODO(),
+				Context: t.Context(),
 				Client:  tc.client,
 				HCP:     hcp,
 			}, cm)

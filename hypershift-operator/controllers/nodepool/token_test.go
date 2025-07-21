@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -281,7 +280,7 @@ func TestNewToken(t *testing.T) {
 				tc.configGenerator.Client = fakeClient
 			}
 
-			token, err := NewToken(context.Background(), tc.configGenerator, tc.cpoCapabilities)
+			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -431,7 +430,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
 			tc.token.Client = fakeClient
 
-			err := tc.token.cleanupOutdated(context.Background())
+			err := tc.token.cleanupOutdated(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -441,12 +440,12 @@ func TestTokenCleanupOutdated(t *testing.T) {
 
 			// user data secret should be deleted.
 			got := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(userdataSecret), got)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(userdataSecret), got)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
 			// token secret if exists it should be have an expiration time.
 			got = &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(tokenSecret), got)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(tokenSecret), got)
 			if err != nil {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				return
@@ -506,7 +505,7 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			c := fake.NewClientBuilder().WithObjects(tc.inputSecret).Build()
-			err := setExpirationTimestampOnToken(context.Background(), c, tc.inputSecret, fakeClock.Now)
+			err := setExpirationTimestampOnToken(t.Context(), c, tc.inputSecret, fakeClock.Now)
 			g.Expect(err).To(Not(HaveOccurred()))
 			actualSecretData := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -514,7 +513,7 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 					Namespace: fakeNamespace,
 				},
 			}
-			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(actualSecretData), actualSecretData)
+			err = c.Get(t.Context(), crclient.ObjectKeyFromObject(actualSecretData), actualSecretData)
 			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(actualSecretData.Annotations).To(testutil.MatchExpected(map[string]string{
 				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: tc.expectedTimestamp,
@@ -637,14 +636,14 @@ func TestTokenReconcile(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
 			tc.configGenerator.Client = fakeClient
 
-			token, err := NewToken(context.Background(), tc.configGenerator, tc.cpoCapabilities)
+			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
 			g.Expect(err).To(Not(HaveOccurred()))
 
-			err = token.Reconcile(context.Background())
+			err = token.Reconcile(t.Context())
 			g.Expect(err).ToNot(HaveOccurred())
 
 			gotTokenSecret := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Validate the token secret has all the expected annotations.
@@ -687,7 +686,7 @@ func TestTokenReconcile(t *testing.T) {
 			// Validate the user data secret has all the expected annotations.
 			// Start Generation Here
 			gotUserDataSecret := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserDataSecret)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserDataSecret)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Validate the user data secret has all the expected annotations.
@@ -992,7 +991,7 @@ func TestGetIgnitionCACert(t *testing.T) {
 				},
 			}
 
-			caCert, err := token.getIgnitionCACert(context.Background())
+			caCert, err := token.getIgnitionCACert(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedError))

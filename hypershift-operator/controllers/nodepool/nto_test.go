@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -461,7 +460,7 @@ status: {}
 				Client: fake.NewClientBuilder().WithObjects(tc.tuningConfig...).Build(),
 			}
 
-			td, pp, ppName, err := r.getTuningConfig(context.Background(), tc.nodePool)
+			td, pp, ppName, err := r.getTuningConfig(t.Context(), tc.nodePool)
 
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
@@ -716,7 +715,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 				Client:                 fake.NewClientBuilder().WithObjects(tc.existingConfigsInHcpNs...).Build(),
 				CreateOrUpdateProvider: upsert.New(true),
 			}
-			err := r.reconcileMirroredConfigs(context.Background(), logr.Discard(), tc.configsToBeMirrored, tc.controlPlaneNamespace, tc.nodePool)
+			err := r.reconcileMirroredConfigs(t.Context(), logr.Discard(), tc.configsToBeMirrored, tc.controlPlaneNamespace, tc.nodePool)
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred())
 				return
@@ -724,7 +723,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			for _, config := range tc.expectedMirroredConfigs {
 				cm := &corev1.ConfigMap{}
-				err := r.Get(context.Background(), client.ObjectKeyFromObject(&config), cm)
+				err := r.Get(t.Context(), client.ObjectKeyFromObject(&config), cm)
 				g.Expect(err).ToNot(HaveOccurred())
 				if diff := cmp.Diff(cm, &config, cmpopts.IgnoreFields(metav1.ObjectMeta{}, "ResourceVersion")); diff != "" {
 					t.Errorf("actual mirrored config differs from expected: %s", diff)
@@ -733,7 +732,7 @@ func TestReconcileMirroredConfigs(t *testing.T) {
 			}
 			for _, config := range tc.configsForDeletion {
 				cm := &corev1.ConfigMap{}
-				err := r.Get(context.Background(), client.ObjectKeyFromObject(&config), cm)
+				err := r.Get(t.Context(), client.ObjectKeyFromObject(&config), cm)
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 		})
@@ -952,7 +951,7 @@ func TestSetPerformanceProfileStatus(t *testing.T) {
 				hyperv1.NodePoolPerformanceProfileTuningDegradedConditionType,
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// In case performance profile is applied, a config map holding the performance profile status is generated
 			// by NTO should exist on the hosted control plane namespace.

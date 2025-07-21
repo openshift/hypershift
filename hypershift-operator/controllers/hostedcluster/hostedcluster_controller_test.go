@@ -205,7 +205,7 @@ func TestHasBeenAvailable(t *testing.T) {
 			clock := clocktesting.NewFakeClock(tc.timestamp)
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+				Lookup(t.Context(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 			r := &HostedClusterReconciler{
 				Client:                        client,
 				Clock:                         clock,
@@ -221,7 +221,7 @@ func TestHasBeenAvailable(t *testing.T) {
 				now: func() metav1.Time { return reconcilerNow },
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
 			if err != nil {
 				t.Fatalf("error on %s reconciliation: %v", hcluster.Name, err)
@@ -1199,12 +1199,12 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				CertRotationScale: 24 * time.Hour,
 			}
 
-			if err := r.reconcileAWSResourceTags(context.Background(), cluster); err != nil {
+			if err := r.reconcileAWSResourceTags(t.Context(), cluster); err != nil {
 				t.Fatalf("reconcileAWSResourceTags failed: %v", err)
 			}
 
 			reconciledCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "123"}}
-			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(reconciledCluster), reconciledCluster); err != nil {
+			if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(reconciledCluster), reconciledCluster); err != nil {
 				t.Fatalf("failed to get cluster after reconcilding it: %v", err)
 			}
 
@@ -1608,7 +1608,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				o.EncodeTime = zapcore.RFC3339TimeEncoder
 			})))
 
-			ctx := context.WithValue(context.Background(), registryclient.DeserializeFuncName, deserializeFunc)
+			ctx := context.WithValue(t.Context(), registryclient.DeserializeFuncName, deserializeFunc)
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hostedCluster.Namespace, Name: testCase.hostedCluster.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
@@ -1806,7 +1806,7 @@ func TestReconcileCLISecrets(t *testing.T) {
 		t.Run(tc.name, func(tt *testing.T) {
 			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secrets...).Build()
 			r := &HostedClusterReconciler{Client: cli}
-			ctx := context.Background()
+			ctx := t.Context()
 			err := r.reconcileCLISecrets(ctx, createOrUpdate, hc)
 			if err != nil {
 				tt.Fatalf("should not return error but returned %q", err.Error())
@@ -2064,7 +2064,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(r.Client, tc.infraKubeVirtVersion, tc.infraK8sVersion)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
@@ -2468,7 +2468,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
 			actual := r.validateReleaseImage(ctx, tc.hostedCluster, r.RegistryProvider.GetReleaseProvider())
@@ -2537,10 +2537,10 @@ func TestPauseHostedControlPlane(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
-			err := pauseHostedControlPlane(context.Background(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
+			err := pauseHostedControlPlane(t.Context(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
 			g.Expect(err).ToNot(HaveOccurred())
 			finalHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
-			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
+			err = c.Get(t.Context(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
 			if tc.expectedHostedControlPlaneObject != nil {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
@@ -2594,10 +2594,10 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID
 			previousClusterID := test.hc.Spec.ClusterID
-			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
+			err := r.defaultClusterIDsIfNeeded(t.Context(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(test.hc), resultHC)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
@@ -2829,11 +2829,11 @@ func TestIsUpgradeable(t *testing.T) {
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(t.Context(), test.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
@@ -2973,7 +2973,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				now: func() metav1.Time { return reconcilerNow },
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 
 			var actualErrString string
 			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}); err != nil {
@@ -3232,11 +3232,11 @@ func TestIsProgressing(t *testing.T) {
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(t.Context(), tt.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
@@ -4084,7 +4084,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				Build()}
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+				Lookup(t.Context(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 
 			r := &HostedClusterReconciler{
 				Client:            client,
@@ -4105,13 +4105,13 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				now: metav1.Now,
 			}
 
-			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {
+			if _, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {
 				tt.Fatalf("Reconcile failed: %v", err)
 			}
 
 			if testCase.secretExpected {
 				secList := &corev1.SecretList{}
-				err := client.List(context.Background(), secList)
+				err := client.List(t.Context(), secList)
 				if err != nil {
 					tt.Fatalf("should create etcd encryptiuon key secret, but no secret found")
 				}
@@ -4137,7 +4137,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				},
 			}
 
-			err := client.Get(context.Background(), crclient.ObjectKeyFromObject(hcFromTest), hcFromTest)
+			err := client.Get(t.Context(), crclient.ObjectKeyFromObject(hcFromTest), hcFromTest)
 			if err != nil {
 				tt.Fatalf("should read the hosted cluster but got error; %v", err)
 			}
@@ -4198,7 +4198,7 @@ func TestReconcileComponents(t *testing.T) {
 	}
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:                context.Background(),
+		Context:                t.Context(),
 		ReleaseImageProvider:   testutil.FakeImageProvider(),
 		HCP:                    hcp,
 		ApplyProvider:          upsert.NewApplyProvider(true),
@@ -4251,7 +4251,7 @@ func TestReconcileComponents(t *testing.T) {
 				Namespace: hcp.Namespace,
 			},
 		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+		if err := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			t.Fatalf("failed to get deployment: %v", err)
 		}
 
@@ -4268,7 +4268,7 @@ func TestReconcileComponents(t *testing.T) {
 				Namespace: hcp.Namespace,
 			},
 		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+		if err := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
 			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
 		}
 

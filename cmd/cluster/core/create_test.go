@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,7 +20,7 @@ import (
 )
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fakeKubeClient := fakekubeclient.NewSimpleClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
@@ -173,7 +172,7 @@ func TestPrototypeResources(t *testing.T) {
 			},
 		},
 	}
-	resources, err := prototypeResources(context.Background(), opts)
+	resources, err := prototypeResources(t.Context(), opts)
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
 		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
@@ -184,7 +183,7 @@ func TestPrototypeResources(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	g := NewWithT(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	tempDir := t.TempDir()
 
 	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")

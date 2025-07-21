@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -156,8 +155,7 @@ func TestGetImageRegistryCABundle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.objects...).Build()
-			ctx := context.Background()
-			cert, err := getImageRegistryCABundle(ctx, client)
+			cert, err := getImageRegistryCABundle(t.Context(), client)
 			if tc.expectedError {
 				g.Expect(err).NotTo(BeNil())
 			}

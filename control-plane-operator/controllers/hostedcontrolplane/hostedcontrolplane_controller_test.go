@@ -143,13 +143,13 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().Build()
 			r := &HostedControlPlaneReconciler{
 				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(context.TODO()),
+				Log:    ctrl.LoggerFrom(t.Context()),
 			}
-			err := r.reconcileKubeadminPassword(context.Background(), tc.hcp, tc.hcp.Spec.Configuration != nil && tc.hcp.Spec.Configuration.OAuth != nil, controllerutil.CreateOrUpdate)
+			err := r.reconcileKubeadminPassword(t.Context(), tc.hcp, tc.hcp.Spec.Configuration != nil && tc.hcp.Spec.Configuration.OAuth != nil, controllerutil.CreateOrUpdate)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			actualSecret := common.KubeadminPasswordSecret(targetNamespace)
-			err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(actualSecret), actualSecret)
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(actualSecret), actualSecret)
 			if tc.expectedOutputSecret != nil {
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(actualSecret.Data).To(HaveKey("password"))
@@ -443,7 +443,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 				},
 			}
 
-			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			r := &HostedControlPlaneReconciler{
@@ -653,10 +653,10 @@ func TestEtcdRestoredCondition(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithLists(podList).Build()
 			r := &HostedControlPlaneReconciler{
 				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(context.TODO()),
+				Log:    ctrl.LoggerFrom(t.Context()),
 			}
 
-			conditionPtr := r.etcdRestoredCondition(context.Background(), tc.sts)
+			conditionPtr := r.etcdRestoredCondition(t.Context(), tc.sts)
 			g.Expect(conditionPtr).ToNot(BeNil())
 			g.Expect(*conditionPtr).To(Equal(tc.expectedCondition))
 		})
@@ -853,7 +853,7 @@ func TestEventHandling(t *testing.T) {
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 
-	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	if _, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)}); err != nil {
 		t.Fatalf("reconciliation failed: %v", err)
@@ -881,7 +881,7 @@ func TestEventHandling(t *testing.T) {
 			}
 
 			fakeQueue := &createTrackingWorkqueue{}
-			handler.Create(context.Background(), event.CreateEvent{Object: createdObject}, fakeQueue)
+			handler.Create(t.Context(), event.CreateEvent{Object: createdObject}, fakeQueue)
 
 			if len(fakeQueue.items) != 1 || fakeQueue.items[0].Namespace != hcp.Namespace || fakeQueue.items[0].Name != hcp.Name {
 				t.Errorf("object %+v didn't correctly create event", createdObject)
@@ -932,7 +932,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		ec2Client: &fakeEC2Client{},
 	}
 	r.setup(controllerutil.CreateOrUpdate)
-	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	result, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(hcp)})
 	if err != nil {
@@ -1056,7 +1056,7 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 				}
 			}
 
-			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingObjects, hcp)...).Build()
 
 			r := HostedControlPlaneReconciler{
@@ -1083,7 +1083,7 @@ func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
-	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	tests := []struct {
 		name                 string
@@ -1118,7 +1118,7 @@ func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 }
 
 func TestIncludeServingCertificates(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	hcp := sampleHCP(t)
 	rootCA := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1307,7 +1307,7 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 			existing := []client.Object{}
 			if tc.svc != nil {
 				existing = append(existing, tc.svc)
@@ -1416,7 +1416,7 @@ func TestControlPlaneComponents(t *testing.T) {
 	}
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:                  context.Background(),
+		Context:                  t.Context(),
 		ReleaseImageProvider:     testutil.FakeImageProvider(),
 		UserReleaseImageProvider: testutil.FakeImageProvider(),
 		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{

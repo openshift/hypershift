@@ -1,7 +1,6 @@
 package registry
 
 import (
-	"context"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestReconcileRegistryConfigValidatingAdmissionPolicies(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	hcp := &hyperv1.HostedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
