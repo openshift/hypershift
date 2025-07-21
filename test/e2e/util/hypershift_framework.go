@@ -47,7 +47,7 @@ type PlatformAgnosticOptions struct {
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
 
-	Config                        *hyperv1.ClusterConfiguration
+	Config                        *configv1.AuthenticationSpec
 	ExternalOIDCConsoleSecret     string
 	ExternalOIDCConsoleSecretName string
 }
@@ -278,6 +278,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 							},
 						},
 					}
+
+					if opts.Config != nil {
+						v.Spec.Configuration.Authentication = opts.Config
+					}
 				}
 			}
 		}
@@ -294,10 +298,6 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 				Type: platform,
 			},
 		},
-	}
-
-	if opts.Config != nil {
-		hc.Spec.Configuration = opts.Config
 	}
 
 	// Build options specific to the platform.

@@ -7,6 +7,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -38,8 +39,10 @@ func TestExternalOIDC(t *testing.T) {
 			g.Expect(hostedCluster.Spec.Configuration).NotTo(BeNil())
 			g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
 			g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())
-			t.Logf("%s\n", hostedCluster.String())
+			t.Logf("%+v", hostedCluster)
+			t.Log("begin to sleep the cluster")
+			time.Sleep(time.Minute * 10)
 		})
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "externaloidc", globalOpts.ServiceAccountSigningKey)
 
 }
