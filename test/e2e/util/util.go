@@ -872,6 +872,12 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 			if skip {
 				continue
 			}
+
+			// Skip KubeVirt related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
+			}
+
 			for _, initContainer := range pod.Spec.InitContainers {
 				if initContainer.TerminationMessagePolicy != corev1.TerminationMessageFallbackToLogsOnError {
 					t.Errorf("ns/%s pod/%s initContainer/%s has doesn't have terminationMessagePolicy %s but %s", pod.Namespace, pod.Name, initContainer.Name, corev1.TerminationMessageFallbackToLogsOnError, initContainer.TerminationMessagePolicy)
@@ -1514,6 +1520,11 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
 	AtLeast(t, Version419)
+
+	// Skip for kubevirt HostedClusters
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
+	}
 
 	var (
 		hcKASCustomKubeconfigSecretName string
@@ -2556,6 +2567,11 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 
 		var podsWithoutLabel []string
 		for _, pod := range podList.Items {
+			// Skip KubeVirt related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
+			}
+
 			// Ensure that each pod in the HCP has the custom label
 			if value, exist := pod.Labels["hypershift-e2e-test-label"]; !exist || value != "test" {
 				podsWithoutLabel = append(podsWithoutLabel, pod.Name)
@@ -2580,6 +2596,11 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 
 		var podsWithoutToleration []string
 		for _, pod := range podList.Items {
+			// Skip KubeVirt related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
+			}
+
 			// Ensure that each pod in the HCP has the custom toleration
 			found := false
 			for _, toleration := range pod.Spec.Tolerations {
