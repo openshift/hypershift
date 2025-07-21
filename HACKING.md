@@ -182,3 +182,5 @@ $ go work vendor
 ```
 
 Now when running vscode, open the workspace directory to work with hypershift code.
+
+Add hack for new pr task for copilot
