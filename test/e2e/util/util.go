@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -1469,10 +1470,22 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 
 			if labelKey == "" || labelValue == "" {
 				// if the Key/Value are empty we assume that the pod is not in the auditedList,
-				// if that's the case the annotation should not exists in that pod.
+				// if that's the case the annotation should not exists in that pod (except for tmp-dir which is in every pod by default).
 				// Then continue to the next pod
-				g.Expect(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
-				continue
+				hasTmpDir := false
+				safe2EvictVolumes := strings.Split(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey], ",")
+				safe2EvictVolumes = slices.DeleteFunc(safe2EvictVolumes, func(s string) bool {
+					if s == "" {
+						return true
+					}
+					hasTmpDir = s == "tmp-dir"
+					return hasTmpDir
+				})
+				g.Expect(safe2EvictVolumes).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
+				// if we have a tmpdir mount, we need to check to make sure the pod has the correct annotations; done below
+				if !hasTmpDir {
+					continue
+				}
 			}
 
 			annotationValue := pod.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
