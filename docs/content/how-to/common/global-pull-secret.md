@@ -94,17 +94,18 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Deployment Process
 - A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
-- RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet
+- RBAC resources (ServiceAccount, ClusterRole, ClusterRoleBinding) are created for the DaemonSet
+- We use ClusterRole and ClusterRolebinding in order to restore the original pull-secret located in `openshift-config` namespace
 - A DaemonSet named `global-pull-secret-syncer` is deployed to all nodes
 
 ### Node-Level Synchronization
-- Each DaemonSet pod runs a controller that watches the `global-pull-secret`
+- Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
 - When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
 ### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes all related resources
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the globalPullSecret secret
 - The DaemonSet is deleted from all nodes
 - RBAC resources (ServiceAccount, Role, RoleBinding) are cleaned up by the HCCO
 
@@ -135,78 +136,99 @@ The implementation consists of several key components working together:
 
 ```mermaid
 graph TB
-    subgraph "Management Cluster"
-        HC[HostedCluster Admin]
-        HC -->|1 - Creates| APS[additional-pull-secret<br/>in kube-system namespace]
-    end
+    %% User Input
+    User[User creates additional-pull-secret] --> |kube-system namespace| AdditionalPS[additional-pull-secret Secret]
 
-    subgraph "DataPlane Hosted Cluster"
-        subgraph "kube-system namespace"
-            APS[additional-pull-secret]
-            GPS[global-pull-secret]
-            SA[global-pull-secret-syncer<br/>ServiceAccount]
-            ROLE[global-pull-secret-syncer<br/>Role]
-            RB[global-pull-secret-syncer<br/>RoleBinding]
-            DS[global-pull-secret-syncer<br/>DaemonSet]
-        end
+    %% HCCO Controller
+    HCCO[Hosted Cluster Config Operator] --> |Watches kube-system secrets| GlobalPSController[Global Pull Secret Controller]
+    GlobalPSController --> |Validates| AdditionalPS
+    GlobalPSController --> |Gets original| OriginalPS[Original pull-secret from HCP]
 
-        subgraph "Node Level"
-            KUBELET[Kubelet Service]
-            CONFIG[var-lib-kubelet-config.json]
-            DBUS[var-run-dbus]
-        end
-    end
+    %% Secret Processing
+    AdditionalPS --> |Validates format| ValidatePS[Validate Additional Pull Secret]
+    OriginalPS --> |Extracts data| OriginalPSData[Original Pull Secret Data]
+    ValidatePS --> |Extracts data| AdditionalPSData[Additional Pull Secret Data]
 
-    subgraph "Control Plane"
-        HCP[HostedControlPlane]
-        HCCO[Hosted Cluster Config Operator]
-        CPO[Control Plane Operator]
-    end
+    %% Merge Process
+    OriginalPSData --> MergeSecrets[Merge Pull Secrets]
+    AdditionalPSData --> MergeSecrets
+    MergeSecrets --> |Creates merged JSON| GlobalPSData[Global Pull Secret Data]
 
-    subgraph "Components"
-        GPS_CONTROLLER[Global Pull Secret Controller]
-        SYNC_CMD[sync-global-pullsecret command]
-    end
+    %% Secret Creation
+    GlobalPSData --> |Creates in kube-system| GlobalPSSecret[global-pull-secret Secret]
 
-    %% Flow connections
-    HC -->|2 - Triggers| HCCO
-    HCCO -->|3 - Watches| APS
-    HCCO -->|4 - Creates| GPS
-    HCCO -->|5 - Creates| SA
-    HCCO -->|6 - Creates| ROLE
-    HCCO -->|7 - Creates| RB
-    HCCO -->|8 - Creates| DS
+    %% RBAC Setup
+    GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
+    RBACSetup --> ServiceAccount[global-pull-secret-syncer ServiceAccount]
+    RBACSetup --> ClusterRole[global-pull-secret-syncer ClusterRole]
+    RBACSetup --> ClusterRoleBinding[global-pull-secret-syncer ClusterRoleBinding]
 
-    DS -->|9 - Runs on each node| SYNC_CMD
-    SYNC_CMD -->|10 - Watches| GPS
-    SYNC_CMD -->|11 - Updates| CONFIG
-    SYNC_CMD -->|12 - Restarts via| DBUS
-    DBUS -->|13 - Restarts| KUBELET
+    %% DaemonSet Deployment
+    GlobalPSController --> |Deploys DaemonSet| DaemonSet[global-pull-secret-syncer DaemonSet]
+    DaemonSet --> |Runs on each node| DaemonSetPod[DaemonSet Pod]
 
-    %% Component relationships
-    HCCO -.->|Uses| GPS_CONTROLLER
-    GPS_CONTROLLER -.->|Implements| SYNC_CMD
+    %% DaemonSet Pod Details
+    DaemonSetPod --> |Mounts host paths| HostMounts[Host Path Mounts]
+    HostMounts --> KubeletPath["/var/lib/kubelet"]
+    HostMounts --> DbusPath["/var/run/dbus"]
+
+    %% Container Execution
+    DaemonSetPod --> |Runs command| Container[control-plane-operator Container]
+    Container --> |Executes| SyncCommand[sync-global-pullsecret command]
+
+    %% Sync Process
+    SyncCommand --> |Watches global-pull-secret| SyncController[Global Pull Secret Reconciler]
+    SyncController --> |Reads secret| ReadGlobalPS[Read global-pull-secret]
+    SyncController --> |Reads original| ReadOriginalPS[Read original pull-secret]
+
+    %% File Update Process
+    ReadGlobalPS --> |Gets data| GlobalPSBytes[Global Pull Secret Bytes]
+    ReadOriginalPS --> |Gets data| OriginalPSBytes[Original Pull Secret Bytes]
+
+    %% Decision Logic
+    GlobalPSBytes --> |If exists| UseGlobalPS[Use Global Pull Secret]
+    OriginalPSBytes --> |If not exists| UseOriginalPS[Use Original Pull Secret]
+
+    %% File Update
+    UseGlobalPS --> |Updates file| UpdateKubeletConfig["Update /var/lib/kubelet/config.json"]
+    UseOriginalPS --> |Updates file| UpdateKubeletConfig
+
+    %% Kubelet Restart
+    UpdateKubeletConfig --> |Restarts kubelet| RestartKubelet[Restart kubelet.service via systemd]
+    RestartKubelet --> |Via dbus| DbusConnection[DBus Connection]
+
+    %% Error Handling
+    UpdateKubeletConfig --> |If restart fails| RollbackProcess[Rollback Process]
+    RollbackProcess --> |Restore original| RestoreOriginal[Restore Original File Content]
+
+    %% Cleanup Process
+    GlobalPSController --> |If additional PS deleted| CleanupProcess[Cleanup Process]
+    CleanupProcess --> |Deletes global PS| DeleteGlobalPS[Delete global-pull-secret]
+    CleanupProcess --> |Removes DaemonSet| RemoveDaemonSet[Remove DaemonSet]
 
     %% Styling
-    classDef userAction fill:#e1f5fe
-    classDef operator fill:#f3e5f5
-    classDef resource fill:#e8f5e8
-    classDef component fill:#fff3e0
-    classDef system fill:#fce4ec
+    classDef userInput fill:#e1f5fe
+    classDef controller fill:#f3e5f5
+    classDef secret fill:#e8f5e8
+    classDef process fill:#fff3e0
+    classDef daemonSet fill:#fce4ec
+    classDef fileSystem fill:#f1f8e9
 
-    class HC userAction
-    class HCCO,CPO operator
-    class APS,GPS,SA,ROLE,RB,DS resource
-    class GPS_CONTROLLER,SYNC_CMD component
-    class KUBELET,CONFIG,DBUS system
+    class User,AdditionalPS userInput
+    class HCCO,GlobalPSController,SyncController controller
+    class OriginalPS,GlobalPSSecret,ServiceAccount,ClusterRole,ClusterRoleBinding secret
+    class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
+    class DaemonSet,DaemonSetPod,Container daemonSet
+    class KubeletPath,DbusPath fileSystem
 ```
 
 ### Key Features
 
 - **Security**: Only watches the `kube-system` namespace and specific secrets
 - **Robustness**: Includes automatic rollback in case of failures
-- **Efficiency**: Only updates when there are actual changes
-- **Self-cleaning**: Removes resources when no longer needed
+- **Efficiency**
+  - Only updates when there are actual changes
+  - The globalPullSecret implementation has their own controller so it cannot interfere with the HCCO reonciliation
 - **Minimal privileges**: Specific RBAC for only the required resources
 
 ### Error Handling
@@ -215,6 +237,6 @@ The system includes comprehensive error handling:
 
 - **Validation errors**: Invalid DockerConfigJSON format is caught early
 - **Restart failures**: If kubelet restart fails after 3 attempts, the file is rolled back
-- **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes all related resources (DaemonSet, RBAC resources)
+- **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
