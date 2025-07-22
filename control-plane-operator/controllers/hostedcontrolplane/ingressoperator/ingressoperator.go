@@ -67,7 +67,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 		Platform:                platform,
 	}
 	if azureutil.IsAroHCP() {
-		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName
+		p.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.CredentialsSecretName
 	}
 
 	if hcp.Spec.Configuration != nil {

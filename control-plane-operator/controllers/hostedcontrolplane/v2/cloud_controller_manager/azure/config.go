@@ -51,7 +51,9 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 }
 
 func adaptSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
-	secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider)
+	if azureutil.IsAroHCP() {
+		secretproviderclass.ReconcileManagedAzureSecretProviderClass(secretProvider, cpContext.HCP, cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider)
+	}
 	return nil
 }
 
@@ -95,7 +97,9 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	if withCredentials {
-		azureConfig.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.CredentialsSecretName
+		if azureutil.IsAroHCP() {
+			azureConfig.AADMSIDataPlaneIdentityPath = config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.CredentialsSecretName
+		}
 	}
 
 	return azureConfig, nil

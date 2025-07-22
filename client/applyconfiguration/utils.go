@@ -89,6 +89,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSSharedVPCApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPCRolesRef"):
 		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureAuthenticationConfiguration"):
+		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
@@ -105,6 +107,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentities"):
+		return &hypershiftv1beta1.AzureWorkloadIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Capabilities"):
 		return &hypershiftv1beta1.CapabilitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CapacityReservationOptions"):
@@ -301,6 +305,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("WorkloadIdentity"):
+		return &hypershiftv1beta1.WorkloadIdentityApplyConfiguration{}
 
 		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDevice"):

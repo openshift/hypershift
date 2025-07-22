@@ -148,7 +148,7 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 	}
 
 	if azureutil.IsAroHCP() {
-		params.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName
+		params.AzureCredentialsFilepath = hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.CredentialsSecretName
 	}
 
 	params.deploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
