@@ -10,10 +10,6 @@ func HCPOAuthEnabled(hcp *hyperv1.HostedControlPlane) bool {
 	return oauthEnabled(hcp.Spec.Configuration)
 }
 
-func HCOAuthEnabled(hc *hyperv1.HostedCluster) bool {
-	return oauthEnabled(hc.Spec.Configuration)
-}
-
 func ConfigOAuthEnabled(authentication *configv1.AuthenticationSpec) bool {
 	if authentication != nil &&
 		authentication.Type == configv1.AuthenticationTypeOIDC {
