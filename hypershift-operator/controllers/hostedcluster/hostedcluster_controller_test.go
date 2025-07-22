@@ -1216,8 +1216,6 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
-
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
@@ -1263,8 +1261,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 
 	testCases := []struct {
-		platform      string
-		hostedCluster *hyperv1.HostedCluster
+		platform         string
+		hostedCluster    *hyperv1.HostedCluster
+		isManagedService bool
 	}{
 		{
 			platform: "agent",
@@ -1408,57 +1407,107 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
 							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
 							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
-							ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
-								ControlPlane: hyperv1.ControlPlaneManagedIdentities{
-									ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
-										Name:     "test-keyvault",
-										TenantID: "12345678-1234-1234-1234-123456789abc",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "WorkloadIdentities",
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+								},
+								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+									ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+										ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+											Name:     "test-keyvault",
+											TenantID: "12345678-1234-1234-1234-123456789abc",
+										},
+										CloudProvider: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										NodePoolManagement: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										ControlPlaneOperator: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										ImageRegistry: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Ingress: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Network: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Disk: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										File: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
 									},
-									CloudProvider: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									NodePoolManagement: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									ControlPlaneOperator: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									ImageRegistry: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Ingress: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Network: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Disk: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									File: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
+									DataPlane: hyperv1.DataPlaneManagedIdentities{
+										ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
+										DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+										FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
 									},
 								},
-								DataPlane: hyperv1.DataPlaneManagedIdentities{
-									ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
-									DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
-									FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+							},
+							TenantID: "12345678-1234-1234-1234-123456789abc",
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage,
+					},
+				},
+			},
+			isManagedService: true,
+		},
+		{
+			platform: "azure",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "self-managed-azure",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud:             "AzurePublicCloud",
+							Location:          "eastus",
+							ResourceGroupName: "test-resource-group",
+							VnetID:            "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet",
+							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
+							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "WorkloadIdentities",
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 								},
 							},
 							TenantID: "12345678-1234-1234-1234-123456789abc",
@@ -1575,6 +1624,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
+			if testCase.isManagedService {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
+			}
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 			r := &HostedClusterReconciler{
 				Client:            client,
@@ -1615,10 +1668,6 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			}
 
 			t.Setenv("PLATFORMS_INSTALLED", testCase.platform)
-
-			if strings.EqualFold(testCase.platform, string(hyperv1.AzurePlatform)) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			}
 
 			watchedResources := sets.New[string]()
 			for _, resource := range r.managedResources() {

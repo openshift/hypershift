@@ -23,15 +23,15 @@ array:
 // Key Vault setup, and the certificate name it needs to pull from the Key Vault.
 //
 // https://learn.microsoft.com/en-us/azure/aks/csi-secrets-store-identity-access?tabs=azure-portal&pivots=access-with-a-user-assigned-managed-identity
-func ReconcileManagedAzureSecretProviderClass(secretProviderClass *secretsstorev1.SecretProviderClass, hcp *hyperv1.HostedControlPlane, managedIdentity hyperv1.ManagedIdentity, isMIv3 ...bool) {
+func ReconcileManagedAzureSecretProviderClass(secretProviderClass *secretsstorev1.SecretProviderClass, hcp *hyperv1.HostedControlPlane, managedIdentity hyperv1.ManagedIdentity) {
 	secretProviderClass.Spec = secretsstorev1.SecretProviderClassSpec{
 		Provider: "azure",
 		Parameters: map[string]string{
 			"usePodIdentity":         "false",
 			"useVMManagedIdentity":   "true",
 			"userAssignedIdentityID": azureutil.GetKeyVaultAuthorizedUser(),
-			"keyvaultName":           hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
-			"tenantId":               hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+			"keyvaultName":           hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+			"tenantId":               hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
 			"objects":                formatSecretProviderClassObject(managedIdentity.CredentialsSecretName, string(managedIdentity.ObjectEncoding)),
 		},
 	}

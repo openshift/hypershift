@@ -21,13 +21,17 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		c.Args = append(c.Args,
 			fmt.Sprintf("--cluster-name=%s", cpContext.HCP.Spec.InfraID),
 		)
-		c.VolumeMounts = append(c.VolumeMounts,
-			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName),
-		)
+		if azureutil.IsAroHCP() {
+			c.VolumeMounts = append(c.VolumeMounts,
+				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName),
+			)
+		}
 	})
 
-	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-		azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
-	)
+	if azureutil.IsAroHCP() {
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
+		)
+	}
 	return nil
 }

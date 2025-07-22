@@ -204,10 +204,6 @@ func (o *Options) ApplyDefaults() {
 	default:
 		o.HyperShiftOperatorReplicas = 1
 	}
-
-	if o.ExternalDNSProvider == string(assets.AzureExternalDNSProvider) {
-		o.ManagedService = hyperv1.AroHCP
-	}
 }
 
 func NewCommand() *cobra.Command {

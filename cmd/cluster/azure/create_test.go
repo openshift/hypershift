@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
@@ -57,6 +58,7 @@ func TestCreateCluster(t *testing.T) {
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
+		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal infra: %v", err)

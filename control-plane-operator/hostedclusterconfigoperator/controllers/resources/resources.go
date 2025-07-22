@@ -1637,7 +1637,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 
 		azureDiskCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, azureDiskCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.DiskMSIClientID)
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.DiskMSIClientID)
 			azureDiskCSISecret.Data = secretData
 			return nil
 		}); err != nil {
@@ -1647,7 +1647,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 			imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
 			if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
-				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
+				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
 				imageRegistrySecret.Data = secretData
 				return nil
 			}); err != nil {
@@ -1657,7 +1657,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 
 		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, azureFileCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.FileMSIClientID)
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.FileMSIClientID)
 			azureFileCSISecret.Data = secretData
 			return nil
 		}); err != nil {
