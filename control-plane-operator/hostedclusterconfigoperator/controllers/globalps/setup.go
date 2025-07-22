@@ -3,6 +3,7 @@ package globalps
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 
@@ -59,11 +60,17 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create uncached client: %w", err)
 	}
 
+	hccoImage := os.Getenv("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE")
+	if hccoImage == "" {
+		return fmt.Errorf("HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE is not set")
+	}
+
 	r := &Reconciler{
 		cpClient:               opts.CPCluster.GetClient(),
 		hcUncachedClient:       uncachedClient,
 		kubeSystemSecretClient: kubeSystemClient,
 		hcpNamespace:           opts.Namespace,
+		hccoImage:              hccoImage,
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 	}
 

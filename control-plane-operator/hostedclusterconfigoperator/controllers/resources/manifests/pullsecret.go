@@ -8,11 +8,9 @@ import (
 )
 
 const (
-	GlobalPullSecretDSName       = "global-pull-secret-syncer"
-	GlobalPullSecretNamespace    = "kube-system"
-	NodePullSecretPath           = "/var/lib/kubelet/config.json"
-	GlobalPullSecretFinalizer    = "hypershift.openshift.io/global-pull-secret-finalizer"
-	OriginalPullSecretAnnotation = "hypershift.openshift.io/gps-original-pull-secret"
+	GlobalPullSecretDSName    = "global-pull-secret-syncer"
+	GlobalPullSecretNamespace = "kube-system"
+	NodePullSecretPath        = "/var/lib/kubelet/config.json"
 )
 
 func PullSecret(ns string) *corev1.Secret {
@@ -59,7 +57,7 @@ func GlobalPullSecret() *corev1.Secret {
 	}
 }
 
-func GlobalPullSecretServiceAccount() *corev1.ServiceAccount {
+func GlobalPullSecretSyncerServiceAccount() *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "global-pull-secret-syncer",
@@ -68,18 +66,20 @@ func GlobalPullSecretServiceAccount() *corev1.ServiceAccount {
 	}
 }
 
-func GlobalPullSecretRole() *rbacv1.ClusterRole {
-	return &rbacv1.ClusterRole{
+func GlobalPullSecretSyncerRole(ns string) *rbacv1.Role {
+	return &rbacv1.Role{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "global-pull-secret-syncer",
+			Name:      "global-pull-secret-syncer",
+			Namespace: ns,
 		},
 	}
 }
 
-func GlobalPullSecretRoleBinding() *rbacv1.ClusterRoleBinding {
-	return &rbacv1.ClusterRoleBinding{
+func GlobalPullSecretSyncerRoleBinding(ns string) *rbacv1.RoleBinding {
+	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "global-pull-secret-syncer",
+			Name:      "global-pull-secret-syncer",
+			Namespace: ns,
 		},
 	}
 }

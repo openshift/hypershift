@@ -99,7 +99,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
 region = %s
 `
-	AdditionalPullSecretNamespace = "kube-system"
 )
 
 var (

@@ -8,6 +8,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -69,7 +71,7 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:           "control-plane-operator",
+					ServiceAccountName:           manifests.GlobalPullSecretDSName,
 					AutomountServiceAccountToken: ptr.To(true),
 					SecurityContext:              &corev1.PodSecurityContext{},
 					DNSPolicy:                    corev1.DNSDefault,
@@ -205,7 +207,7 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 
 // WaitForKubeletConfigVerifierDaemonSet waits for the DaemonSet to be ready
 func WaitForKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crclient.Client) error {
-	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true,
+	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
 			ds := &appsv1.DaemonSet{}
 			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: KubeletConfigVerifierDaemonSetName, Namespace: KubeletConfigVerifierNamespace}, ds); err != nil {

@@ -67,7 +67,7 @@ func TestValidateAdditionalPullSecret(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			_, err := ValidateAdditionalPullSecret(tt.secret)
+			_, err := validateAdditionalPullSecret(tt.secret)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -144,7 +144,7 @@ func TestMergePullSecrets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result, err := MergePullSecrets(context.Background(), tt.originalSecret, tt.additionalSecret)
+			result, err := mergePullSecrets(context.Background(), tt.originalSecret, tt.additionalSecret)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -264,7 +264,7 @@ func TestAdditionalPullSecretExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 			fakeClient := fake.NewClientBuilder().WithObjects(tt.objects...).Build()
-			exists, secret, err := AdditionalPullSecretExists(context.Background(), fakeClient)
+			exists, secret, err := additionalPullSecretExists(context.Background(), fakeClient)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(exists).To(Equal(tt.expectedExists))
 

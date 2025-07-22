@@ -68,7 +68,6 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"machine":                machine.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
-	globalps.ControllerName:  globalps.Setup,
 }
 
 type HostedClusterConfigOperator struct {
@@ -283,6 +282,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
+	if o.platformType == string(hyperv1.AzurePlatform) {
+		controllersToRun[globalps.ControllerName] = globalps.Setup
+	}
+
 	for _, controllerName := range o.Controllers {
 		if setup, registered := controllerFuncs[controllerName]; !registered {
 			return fmt.Errorf("requested to run unknown controller %q", controllerName)

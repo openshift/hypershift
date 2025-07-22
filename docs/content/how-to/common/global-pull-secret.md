@@ -94,8 +94,8 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Deployment Process
 - A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
-- RBAC resources (ServiceAccount, ClusterRole, ClusterRoleBinding) are created for the DaemonSet
-- We use ClusterRole and ClusterRolebinding in order to restore the original pull-secret located in `openshift-config` namespace
+- RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
+- We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
 - A DaemonSet named `global-pull-secret-syncer` is deployed to all nodes
 
 ### Node-Level Synchronization
@@ -107,7 +107,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 ### Automatic Cleanup
 - If you delete the `additional-pull-secret`, the HCCO automatically removes the globalPullSecret secret
 - The DaemonSet is deleted from all nodes
-- RBAC resources (ServiceAccount, Role, RoleBinding) are cleaned up by the HCCO
+- RBAC resources (ServiceAccount, Role, RoleBinding) in both namespaces are cleaned up by the HCCO
 
 ## Implementation details
 
@@ -123,7 +123,8 @@ The implementation consists of several key components working together:
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
    - Runs as a DaemonSet on each node
-   - Watches for changes to the `global-pull-secret`
+   - Watches for changes to the `global-pull-secret` in `kube-system` namespace
+   - Accesses the original `pull-secret` in `openshift-config` namespace
    - Updates the kubelet configuration file
    - Manages kubelet service restarts via DBus
 
@@ -160,8 +161,10 @@ graph TB
     %% RBAC Setup
     GlobalPSController --> |Creates RBAC| RBACSetup[Setup RBAC Resources]
     RBACSetup --> ServiceAccount[global-pull-secret-syncer ServiceAccount]
-    RBACSetup --> ClusterRole[global-pull-secret-syncer ClusterRole]
-    RBACSetup --> ClusterRoleBinding[global-pull-secret-syncer ClusterRoleBinding]
+    RBACSetup --> KubeSystemRole[global-pull-secret-syncer Role in kube-system]
+    RBACSetup --> KubeSystemRoleBinding[global-pull-secret-syncer RoleBinding in kube-system]
+    RBACSetup --> OpenshiftConfigRole[global-pull-secret-syncer Role in openshift-config]
+    RBACSetup --> OpenshiftConfigRoleBinding[global-pull-secret-syncer RoleBinding in openshift-config]
 
     %% DaemonSet Deployment
     GlobalPSController --> |Deploys DaemonSet| DaemonSet[global-pull-secret-syncer DaemonSet]
@@ -216,7 +219,7 @@ graph TB
 
     class User,AdditionalPS userInput
     class HCCO,GlobalPSController,SyncController controller
-    class OriginalPS,GlobalPSSecret,ServiceAccount,ClusterRole,ClusterRoleBinding secret
+    class OriginalPS,GlobalPSSecret,ServiceAccount,KubeSystemRole,KubeSystemRoleBinding,OpenshiftConfigRole,OpenshiftConfigRoleBinding secret
     class ValidatePS,MergeSecrets,RBACSetup,UpdateKubeletConfig,RestartKubelet process
     class DaemonSet,DaemonSetPod,Container daemonSet
     class KubeletPath,DbusPath fileSystem
@@ -224,12 +227,12 @@ graph TB
 
 ### Key Features
 
-- **Security**: Only watches the `kube-system` namespace and specific secrets
+- **Security**: Only watches specific secrets in `kube-system` and `openshift-config` namespaces
 - **Robustness**: Includes automatic rollback in case of failures
 - **Efficiency**
   - Only updates when there are actual changes
   - The globalPullSecret implementation has their own controller so it cannot interfere with the HCCO reonciliation
-- **Minimal privileges**: Specific RBAC for only the required resources
+- **Minimal privileges**: Specific RBAC for only the required resources in each namespace
 
 ### Error Handling
 

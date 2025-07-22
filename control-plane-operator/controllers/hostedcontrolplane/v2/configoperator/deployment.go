@@ -26,10 +26,13 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
 	}
+	hccoImage := cpContext.ReleaseImageProvider.GetImage(hostedClusterConfigOperatorImage)
+	if hccoImage == "" {
+		return fmt.Errorf("hosted-cluster-config-operator image is not set")
+	}
 	kubeVersion := versions["kubernetes"]
 	hcp := cpContext.HCP
 	openShiftVersion := cpContext.ReleaseImageProvider.Version()
-	hccoImage := cpContext.ReleaseImageProvider.GetImage(hostedClusterConfigOperatorImage)
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Command = append(c.Command,
