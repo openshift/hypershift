@@ -32,6 +32,7 @@ INGRESS_SP_NAME="ingress-$PREFIX"
 CNCC_SP_NAME="cncc-$PREFIX"
 
 NODEPOOL_MGMT="nodepool-mgmt-$PREFIX"
+VELERO_SP_NAME="velero-$PREFIX"
 CP_OUTPUT_FILE=${CP_OUTPUT_FILE:-}
 
 # Create Key Vault
@@ -48,6 +49,8 @@ imageRegistry=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --cr
 ingress=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${INGRESS_SP_NAME}'}" -o json)
 network=$(az ad sp create-for-rbac --name "${CNCC_SP_NAME}" --create-cert --cert "${CNCC_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CNCC_SP_NAME}'}" -o json)
 nodePoolManagement=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${NODEPOOL_MGMT}'}" -o json)
+velero=$(az ad sp create-for-rbac --name "${VELERO_SP_NAME}" --create-cert --cert "${VELERO_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${VELERO_SP_NAME}'}" -o json)
+
 
 # Set Names
 CERT_NAMES=(
@@ -59,12 +62,13 @@ CERT_NAMES=(
     "${CONTROL_PLANE_SP_NAME}"
     "${INGRESS_SP_NAME}"
     "${NODEPOOL_MGMT}"
+    "${VELERO_SP_NAME}"
 )
 
 # Create Secret JSON Files
 for CERT_NAME in "${CERT_NAMES[@]}"; do
     echo "Processing certificate: $CERT_NAME"
-    
+
     CERT_DETAILS=$(az keyvault secret show --vault-name $KV_NAME --name $CERT_NAME --query "{value: value, notBefore: attributes.notBefore, expires: attributes.expires}" -o json)
     CLIENT_SECRET=$(echo $CERT_DETAILS | jq -r '.value')
     NOT_BEFORE=$(echo $CERT_DETAILS | jq -r '.notBefore')
@@ -152,6 +156,12 @@ cat <<EOF > "${CP_OUTPUT_FILE}"
         "certificateName": "${NODEPOOL_MGMT}",
         "clientID": "$(echo "$nodePoolManagement" | jq -r '.clientID')",
         "credentialsSecretName": "${NODEPOOL_MGMT}-json",
+        "objectEncoding": "utf-8"
+    },
+    "velero": {
+        "certificateName": "${VELERO_SP_NAME}",
+        "clientID": "$(echo "$velero" | jq -r '.clientID')",
+        "credentialsSecretName": "${VELERO_SP_NAME}-json",
         "objectEncoding": "utf-8"
     }
 }

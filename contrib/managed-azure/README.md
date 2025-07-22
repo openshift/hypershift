@@ -23,10 +23,10 @@ cat <<EOF > ./azure-creds.json
 ```
 
 !!! warning
-      
-    In order for your Hypershift cluster to create properly, the Microsoft Graph `Application.ReadWrite.OwnedBy` 
-    permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the 
-    subscription level. 
+
+    In order for your Hypershift cluster to be created properly, the Microsoft Graph `Application.ReadWrite.OwnedBy`
+    permission must be added to your Service Principal and it also must be assigned to User Access Administrator at the
+    subscription level.
 
     In most cases, you'll need to submit a DPTP request to have this done.
 
@@ -62,3 +62,18 @@ Run it
 
 
 You can comment out steps from setup_all.sh to run only what you want.
+
+## Microsoft Velero Extension
+
+We already include the managed identity/service principal related with Velero, so you just need to execute these commands:
+
+```
+../contrib/managed-azure/setup_backup_extension.sh --setup-backup-requirements --deploy-backup-extension
+```
+
+or in separate steps:
+
+```
+../contrib/managed-azure/setup_backup_extension.sh --setup-backup-requirements
+../contrib/managed-azure/setup_backup_extension.sh --deploy-backup-extension
+```
