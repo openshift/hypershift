@@ -1721,51 +1721,6 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		}, 2*time.Minute, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
 	})
 
-	// Check if the DaemonSet is deleted in the DataPlane
-	t.Run("Check if the DaemonSet is deleted in the DataPlane", func(t *testing.T) {
-		g.Eventually(func() error {
-			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}
-			return fmt.Errorf("DaemonSet is still present")
-		}, 2*time.Minute, 5*time.Second).Should(Succeed(), "DaemonSet is still present")
-	})
-
-	// Check if the additional RBAC is deleted in the DataPlane
-	t.Run("Check if the additional RBAC is deleted in the DataPlane", func(t *testing.T) {
-		g.Eventually(func() error {
-			role := hccomanifests.GlobalPullSecretRole()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}
-
-			roleBinding := hccomanifests.GlobalPullSecretRoleBinding()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}
-
-			serviceAccount := hccomanifests.GlobalPullSecretServiceAccount()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
-				if !apierrors.IsNotFound(err) {
-					return err
-				}
-				return nil
-			}
-
-			return nil
-		}, 2*time.Minute, 5*time.Second).Should(Succeed(), "RBAC is not present")
-	})
-
 	// Check if the config.json is updated in all of the nodes
 	t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
 		VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage)

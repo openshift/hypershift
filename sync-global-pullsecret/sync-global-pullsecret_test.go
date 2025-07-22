@@ -135,7 +135,8 @@ func TestCheckAndFixFile(t *testing.T) {
 
 			// Create reconciler for testing
 			reconciler := &GlobalPullSecretReconciler{
-				Client:                fakeClient,
+				cachedClient:          fakeClient,
+				uncachedClient:        fakeClient,
 				kubeletConfigJsonPath: testFilePath,
 				globalPSSecretName:    "test-pull-secret",
 				globalPSSecretNS:      "kube-system",

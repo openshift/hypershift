@@ -108,8 +108,6 @@ var (
 	// only once.
 	deleteDNSOperatorDeploymentOnce sync.Once
 	deleteCVORemovedResourcesOnce   sync.Once
-
-	recoverBeforeShutdown = true
 )
 
 const azureCCMScript = `

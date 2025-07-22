@@ -8,7 +8,11 @@ import (
 )
 
 const (
-	GlobalPullSecretNamespace = "kube-system"
+	GlobalPullSecretDSName       = "global-pull-secret-syncer"
+	GlobalPullSecretNamespace    = "kube-system"
+	NodePullSecretPath           = "/var/lib/kubelet/config.json"
+	GlobalPullSecretFinalizer    = "hypershift.openshift.io/global-pull-secret-finalizer"
+	OriginalPullSecretAnnotation = "hypershift.openshift.io/gps-original-pull-secret"
 )
 
 func PullSecret(ns string) *corev1.Secret {
@@ -64,20 +68,18 @@ func GlobalPullSecretServiceAccount() *corev1.ServiceAccount {
 	}
 }
 
-func GlobalPullSecretRole() *rbacv1.Role {
-	return &rbacv1.Role{
+func GlobalPullSecretRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "global-pull-secret-syncer",
-			Namespace: GlobalPullSecretNamespace,
+			Name: "global-pull-secret-syncer",
 		},
 	}
 }
 
-func GlobalPullSecretRoleBinding() *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
+func GlobalPullSecretRoleBinding() *rbacv1.ClusterRoleBinding {
+	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "global-pull-secret-syncer",
-			Namespace: GlobalPullSecretNamespace,
+			Name: "global-pull-secret-syncer",
 		},
 	}
 }
