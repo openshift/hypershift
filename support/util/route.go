@@ -61,22 +61,6 @@ func ShortenName(base, suffix string, maxLength int) string {
 	return fmt.Sprintf("%s-%s-%s", prefix, hash(base), suffix)
 }
 
-// max returns the greater of its 2 inputs
-func max(a, b int) int {
-	if b > a {
-		return b
-	}
-	return a
-}
-
-// min returns the lesser of its 2 inputs
-func min(a, b int) int {
-	if b < a {
-		return b
-	}
-	return a
-}
-
 // hash calculates the hexadecimal representation (8-chars)
 // of the hash of the passed in string using the FNV-a algorithm
 func hash(s string) string {
