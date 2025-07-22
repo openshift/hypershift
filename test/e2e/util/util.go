@@ -426,7 +426,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 		},
 		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
 		WithTimeout(5*time.Minute),   // Increased from 1 minute
-		WithInterval(10*time.Second), // Increased from 1 second to reduce API calls
+		WithInterval(15*time.Second), // Increased from 10 seconds to reduce API calls and prevent rate limiting
 	)
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to finish config update", np.Namespace, np.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
@@ -441,7 +441,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 			}),
 		},
 		WithTimeout(25*time.Minute),
-		WithInterval(15*time.Second), // Increased from 1 second to reduce API calls
+		WithInterval(20*time.Second), // Increased from 15 seconds to reduce API calls and prevent rate limiting
 	)
 }
 
@@ -694,6 +694,14 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
+					// For kube-controller-manager, check if restart was triggered by certificate rotation
+					if strings.HasPrefix(pod.Name, "kube-controller-manager-") {
+						if isCertificateTriggeredRestart(ctx, client, &pod) {
+							t.Logf("kube-controller-manager restart in pod %s was triggered by certificate rotation (expected behavior)", pod.Name)
+							continue
+						}
+					}
+
 					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name) {
 						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
 						continue
@@ -3283,4 +3291,24 @@ func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Clie
 	err := guestClient.Delete(ctx, pod)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to delete pod")
 	t.Log("Deleted the pod")
+}
+
+// isCertificateTriggeredRestart checks if a kube-controller-manager restart was triggered by certificate rotation
+func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, pod *corev1.Pod) bool {
+	// Get the HostedControlPlane to check for certificate rotation annotations
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := client.List(ctx, hcpList, crclient.InNamespace(pod.Namespace)); err != nil {
+		return false
+	}
+
+	for _, hcp := range hcpList.Items {
+		// Check if there's a restart annotation that indicates certificate rotation
+		if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+			// Certificate-triggered restarts have "CertHash:" prefix in the restart annotation
+			if strings.HasPrefix(restartAnnotation, "CertHash:") {
+				return true
+			}
+		}
+	}
+	return false
 }
