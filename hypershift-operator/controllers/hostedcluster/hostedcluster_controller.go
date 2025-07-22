@@ -50,6 +50,7 @@ import (
 	etcdrecoverymanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/etcdrecovery"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/pkg/tracing"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -376,10 +377,14 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 }
 
 func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Request, log logr.Logger, hcluster *hyperv1.HostedCluster) (ctrl.Result, error) {
+	ctx, span := tracing.StartRootSpan(ctx, "HostedCluster", "reconcile")
+	defer span.End()
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	err := r.Client.Get(ctx, client.ObjectKeyFromObject(hcp), hcp)
 	if err != nil {
+		span.RecordError(err)
 		if !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcontrolplane: %w", err)
 		} else {
@@ -415,6 +420,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 			// Persist status updates
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
 		}
@@ -442,6 +448,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -459,6 +466,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				delete(annotations, key)
 				obj.SetAnnotations(annotations)
 				if err := r.Update(ctx, obj); err != nil {
+					span.RecordError(err)
 					return err
 				}
 				return nil
@@ -470,16 +478,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			for _, secret := range secretList.Items {
 				if err := deleteReferencedResourceAnnotation(&secret); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
 				}
 			}
 
 			var configmapList corev1.ConfigMapList
 			if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
 			}
 			for _, configmap := range configmapList.Items {
 				if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
 				}
 			}
@@ -508,6 +519,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -519,6 +531,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if gracePeriodString := hcluster.Annotations[hyperv1.HCDestroyGracePeriodAnnotation]; len(gracePeriodString) > 0 {
 		hcDestroyGracePeriod, err = time.ParseDuration(gracePeriodString)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to parse %s annotation: %w", hyperv1.HCDestroyGracePeriodAnnotation, err)
 		}
 	}
@@ -535,6 +548,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// Keep trying to delete until we know it's safe to finalize.
 			completed, err := r.delete(ctx, hcluster)
 			if err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster: %w", err)
 			}
 			if !completed {
@@ -550,19 +564,23 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})}
 		var crs rbacv1.ClusterRoleList
 		if err := r.List(ctx, &crs, selector); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to list cluster roles: %w", err)
 		}
 		if len(crs.Items) > 0 {
 			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRole{}, selector); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster roles: %w", err)
 			}
 		}
 		var crbs rbacv1.ClusterRoleBindingList
 		if err := r.List(ctx, &crbs, selector); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to list cluster role bindings: %w", err)
 		}
 		if len(crbs.Items) > 0 {
 			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
 			}
 		}
@@ -580,6 +598,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
@@ -597,6 +616,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
 			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
 		}
@@ -611,6 +631,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile converted AWS roles.
 	if hcluster.Spec.Platform.AWS != nil {
 		if err := r.dereferenceAWSRoles(ctx, hcluster.Name, &hcluster.Spec.Platform.AWS.RolesRef, hcluster.Namespace); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, err
 		}
 	}
@@ -619,6 +640,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			secretName := strings.TrimPrefix(hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN, "arn-from-secret::")
 			arn, err := r.getARNFromSecret(ctx, hcluster.Name, secretName, hcluster.Namespace)
 			if err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to get ARN from secret %s/%s: %w", hcluster.Namespace, secretName, err)
 			}
 			hcluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN = arn
@@ -629,6 +651,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile platform defaults
 	if err := r.reconcilePlatformDefaultSettings(ctx, hcluster, createOrUpdate, log); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
@@ -645,6 +668,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		kubeConfigSecret := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeConfigSecret), kubeConfigSecret)
 		if err != nil {
+			span.RecordError(err)
 			if !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeconfig secret: %w", err)
 			}
@@ -656,6 +680,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the ICSP/IDMS from the management cluster
 	err = r.RegistryProvider.Reconcile(ctx, r.Client)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 	releaseProvider := r.RegistryProvider.GetReleaseProvider()
@@ -663,15 +688,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	pullSecretBytes, err := hyperutil.GetPullSecretBytes(ctx, r.Client, hcluster)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
 	controlPlaneOperatorImage, err := hyperutil.GetControlPlaneOperatorImage(ctx, hcluster, releaseProvider, r.HypershiftOperatorImage, pullSecretBytes)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImage: %w", err)
 	}
 	controlPlaneOperatorImageLabels, err := hyperutil.GetControlPlaneOperatorImageLabels(ctx, hcluster, controlPlaneOperatorImage, pullSecretBytes, registryClientImageMetadataProvider)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to get controlPlaneOperatorImageLabels: %w", err)
 	}
 
@@ -682,6 +710,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			CustomKubeconfigSecret := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
 			err := r.Client.Get(ctx, client.ObjectKeyFromObject(CustomKubeconfigSecret), CustomKubeconfigSecret)
 			if err != nil {
+				span.RecordError(err)
 				if !apierrors.IsNotFound(err) {
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile external kubeconfig secret: %w", err)
 				}
@@ -700,6 +729,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			kubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
 			err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret)
 			if err != nil {
+				span.RecordError(err)
 				if !apierrors.IsNotFound(err) {
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile kubeadmin password secret: %w", err)
 				}
@@ -810,6 +840,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 		}
 		if err := r.syncKVLiveMigratableCondition(ctx, hcluster); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to update condition: %w", err)
 		}
 	}
@@ -891,6 +922,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				},
 			}
 			if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret), unmanagedEtcdTLSClientSecret); err != nil {
+				span.RecordError(err)
 				if apierrors.IsNotFound(err) {
 					unmanagedEtcdTLSClientSecret = nil
 				} else {
@@ -923,6 +955,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hcluster.Annotations[hcmetrics.HasBeenAvailableAnnotation] = "true"
 
 			if err := r.Patch(ctx, hcluster, client.MergeFromWithOptions(original)); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("cannot patch hosted cluster with has been available annotation: %w", err)
 			}
 		}
@@ -998,6 +1031,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			} else {
 				ignitionServerRoute := ignitionserver.Route(controlPlaneNamespace.GetName())
 				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionServerRoute), ignitionServerRoute); err != nil {
+					span.RecordError(err)
 					if !apierrors.IsNotFound(err) {
 						return ctrl.Result{}, fmt.Errorf("failed to get ignitionServerRoute: %w", err)
 					}
@@ -1015,6 +1049,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			ignitionService := ignitionserver.ProxyService(controlPlaneNamespace.GetName())
 			if err = r.Client.Get(ctx, client.ObjectKeyFromObject(ignitionService), ignitionService); err != nil {
+				span.RecordError(err)
 				if !apierrors.IsNotFound(err) {
 					return ctrl.Result{}, fmt.Errorf("failed to get ignition proxy service: %w", err)
 				} else {
@@ -1063,6 +1098,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// Check to ensure the deployment exists and is available.
 		deployment := ignitionserver.Deployment(controlPlaneNamespace.Name)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+			span.RecordError(err)
 			if apierrors.IsNotFound(err) {
 				newCondition = metav1.Condition{
 					Type:    string(hyperv1.IgnitionEndpointAvailable),
@@ -1141,6 +1177,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		condition.Reason = hyperv1.PayloadArchNotFoundReason
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
@@ -1148,6 +1185,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	releaseImage, err := r.lookupReleaseImage(ctx, hcluster, releaseProvider)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
 	}
 	// Set Progressing condition
@@ -1162,6 +1200,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		refWithDigest := func() (string, error) {
 			_, ref, err := registryClientImageMetadataProvider.GetDigest(ctx, hcluster.Spec.Release.Image, pullSecretBytes)
 			if err != nil {
+				span.RecordError(err)
 				return "", err
 			}
 			return ref.String(), nil
@@ -1183,6 +1222,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		span.RecordError(err)
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -1195,6 +1235,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if !controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
 		controllerutil.AddFinalizer(hcluster, HostedClusterFinalizer)
 		if err := r.Update(ctx, hcluster); err != nil {
+			span.RecordError(err)
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true}, nil
 			}
@@ -1205,9 +1246,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
 	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, err
 		}
 		if err := pauseCAPICluster(ctx, r.Client, hcp); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
@@ -1215,15 +1258,18 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
 	if err = r.reconcileCLISecrets(ctx, createOrUpdate, hcluster); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile the CLI secrets: %w", err)
 	}
 
 	// Set the infraID as Tag on all created AWS
 	if err := r.reconcileAWSResourceTags(ctx, hcluster); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
@@ -1308,17 +1354,20 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		return nil
 	})
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
 	}
 
 	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile Platform specifics.
 	{
 		if err := p.ReconcileCredentials(ctx, r.Client, createOrUpdate, hcluster, controlPlaneNamespace.Name); err != nil {
+			span.RecordError(err)
 			meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
 				Type:               string(hyperv1.PlatformCredentialsFound),
 				Status:             metav1.ConditionFalse,
@@ -1340,6 +1389,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            "Required platform credentials are found",
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
 			}
 		}
@@ -1437,9 +1487,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			var src corev1.Secret
 			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name}, &src); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to get active aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.ActiveKey.Name, err)
 			}
 			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 			}
 			if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
@@ -1462,14 +1514,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return nil
 			})
 			if err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc active key: %w", err)
 			}
 			if hcluster.Spec.SecretEncryption.AESCBC.BackupKey != nil && len(hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name) > 0 {
 				var src corev1.Secret
 				if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name}, &src); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to get backup aescbc secret %s: %w", hcluster.Spec.SecretEncryption.AESCBC.BackupKey.Name, err)
 				}
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
 				if _, ok := src.Data[hyperv1.AESCBCKeySecretKey]; !ok {
@@ -1492,6 +1547,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					return nil
 				})
 				if err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed reconciling aescbc backup key: %w", err)
 				}
 			}
@@ -1504,6 +1560,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			if err := p.ReconcileSecretEncryption(ctx, r.Client, createOrUpdate,
 				hcluster,
 				controlPlaneNamespace.Name); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, err
 			}
 		default:
@@ -1519,9 +1576,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if hcluster.Spec.AuditWebhook != nil && len(hcluster.Spec.AuditWebhook.Name) > 0 {
 			var src corev1.Secret
 			if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.GetNamespace(), Name: hcluster.Spec.AuditWebhook.Name}, &src); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to get audit webhook config %s: %w", hcluster.Spec.AuditWebhook.Name, err)
 			}
 			if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 			}
 			configData, ok := src.Data[hyperv1.AuditWebhookKubeconfigKey]
@@ -1544,6 +1603,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				return nil
 			})
 			if err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed reconciling audit webhook secret: %w", err)
 			}
 		}
@@ -1555,9 +1615,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.Secret
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.SSHKey.Name}, &src)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster SSHKey secret %s: %w", hcluster.Spec.SSHKey.Name, err)
 		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		dest := controlplaneoperator.SSHKey(controlPlaneNamespace.Name)
@@ -1574,6 +1636,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane SSHKey secret: %w", err)
 		}
 	}
@@ -1584,9 +1647,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		var src corev1.ConfigMap
 		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
 		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		dest := controlplaneoperator.UserCABundle(controlPlaneNamespace.Name)
@@ -1602,6 +1667,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
 		}
 	}
@@ -1622,9 +1688,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			},
 		}
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(unmanagedEtcdTLSClientSecret), unmanagedEtcdTLSClientSecret); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to get unmanaged etcd tls secret: %w", err)
 		}
 		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, unmanagedEtcdTLSClientSecret); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 		}
 		hostedControlPlaneEtcdClientSecret := &corev1.Secret{
@@ -1641,6 +1709,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hostedControlPlaneEtcdClientSecret.Type = corev1.SecretTypeOpaque
 			return nil
 		}); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed reconciling etcd client secret: %w", err)
 		} else {
 			log.Info("reconciled etcd client mtls secret to control plane namespace", "result", result)
@@ -1654,6 +1723,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
 		var err error
 		if requeueAfter, err = r.reconcileETCDMemberRecovery(ctx, hcluster, createOrUpdate); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to perform etcd member recovery: %w", err)
 		}
 	}
@@ -1665,9 +1735,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			for _, configMapRef := range configMapRefs {
 				sourceCM := &corev1.ConfigMap{}
 				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: configMapRef}, sourceCM); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced configmap %s/%s: %w", hcluster.Namespace, configMapRef, err)
 				}
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceCM); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
 				destCM := &corev1.ConfigMap{}
@@ -1681,6 +1753,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					destCM.Immutable = sourceCM.Immutable
 					return nil
 				}); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile referenced config map %s/%s: %w", destCM.Namespace, destCM.Name, err)
 				}
 			}
@@ -1688,9 +1761,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			for _, secretRef := range secretRefs {
 				sourceSecret := &corev1.Secret{}
 				if err := r.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: secretRef}, sourceSecret); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to get referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
 				}
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
 				destSecret := &corev1.Secret{}
@@ -1704,6 +1779,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					destSecret.Type = sourceSecret.Type
 					return nil
 				}); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile secret %s/%s: %w", destSecret.Namespace, destSecret.Name, err)
 				}
 			}
@@ -1714,12 +1790,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	var releaseImageVersion semver.Version
 	releaseImageVersion, err = semver.Parse(releaseImage.Version())
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to parse release image version: %w", err)
 	}
 
 	// Reconcile the HostedControlPlane
 	isAutoscalingNeeded, err := r.isAutoscalingNeeded(ctx, hcluster)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to determine if autoscaler is needed: %w", err)
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
@@ -1732,6 +1810,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
 	})
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
 	}
 
@@ -1741,16 +1820,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		controlPlaneNamespace.Name,
 		hcp.Status.ControlPlaneEndpoint)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
 	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, err
 	}
 
 	// Reconcile cluster prometheus RBAC resources if enabled
 	if r.EnableOCPClusterMonitoring {
 		if err := r.reconcileClusterPrometheusRBAC(ctx, createOrUpdate, hcp.Namespace); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile RBAC for OCP cluster prometheus: %w", err)
 		}
 	}
@@ -1763,6 +1845,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
 		})
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
 		}
 	}
@@ -1770,6 +1853,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the monitoring dashboard if configured
 	if r.MonitoringDashboards {
 		if err := r.reconcileMonitoringDashboard(ctx, createOrUpdate, hcluster); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile monitoring dashboard: %w", err)
 		}
 	}
@@ -1784,6 +1868,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 		}
 		dest := manifests.KubeConfigSecret(hcluster.Namespace, hcluster.Name)
@@ -1808,6 +1893,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
 		}
 	}
@@ -1824,6 +1910,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 				err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
 				if err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
 				}
 				dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
@@ -1848,6 +1935,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					return nil
 				})
 				if err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
 				}
 			}
@@ -1861,6 +1949,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					},
 				}
 				if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, customKubeconfig); err != nil {
+					span.RecordError(err)
 					return ctrl.Result{}, fmt.Errorf("failed to delete custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(customKubeconfig), err)
 				}
 				hcluster.Status.CustomKubeconfig = nil
@@ -1878,6 +1967,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to get controlplane kubeadmin password secret %q: %w", client.ObjectKeyFromObject(src), err)
 		}
 		dest := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
@@ -1896,16 +1986,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return nil
 		})
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster kubeconfig secret: %w", err)
 		}
 	} else {
 		KubeadminPasswordSecret := manifests.KubeadminPasswordSecret(hcluster.Namespace, hcluster.Name)
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(KubeadminPasswordSecret), KubeadminPasswordSecret); err != nil {
+			span.RecordError(err)
 			if !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster kubeadmin password secret %q: %w", client.ObjectKeyFromObject(KubeadminPasswordSecret), err)
 			}
 		} else {
 			if err := r.Client.Delete(ctx, KubeadminPasswordSecret); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to delete hostedcluster kubeadmin password secret %q: %w", client.ObjectKeyFromObject(KubeadminPasswordSecret), err)
 			}
 		}
@@ -1913,16 +2006,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	defaultIngressDomain, err := r.defaultIngressDomain(ctx)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to determine default ingress domain: %w", err)
 	}
 
 	// Reconcile SRE metrics config
 	if err := r.reconcileSREMetricsConfig(ctx, createOrUpdate, hcp); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile SRE metrics config: %w", err)
 	}
 
 	_, err = r.reconcileOpenShiftTrustedCAs(ctx, hcp)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile OpenShift trusted CAs: %w", err)
 	}
 
@@ -1944,17 +2040,20 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile the control plane operator
 	err = r.reconcileControlPlaneOperator(cpContext, createOrUpdate, hcluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain, cpoHasUtilities, r.CertRotationScale, releaseImageVersion, releaseProvider)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator: %w", err)
 	}
 
 	// Reconcile the CAPI manager components
 	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
 	if err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
 
 	// Reconcile the CAPI provider components
 	if err = r.reconcileCAPIProvider(cpContext, hcluster, hcp, p); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi provider: %w", err)
 	}
 
@@ -1962,12 +2061,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// Reconcile the control plane PKI operator RBAC - the CPO does not have rights to do this itself
 		err = r.reconcileControlPlanePKIOperatorRBAC(ctx, createOrUpdate, hcluster)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane PKI operator RBAC: %w", err)
 		}
 	}
 
 	// Reconcile the network policies
 	if err = r.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
 	}
 
@@ -1976,6 +2077,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	case hyperv1.KubevirtPlatform:
 		err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
 		if err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
 		}
 	case hyperv1.AWSPlatform:
@@ -1989,6 +2091,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            err.Error(),
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS OIDC documents: %s, failed to update status: %w", err, statusErr)
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
@@ -2001,6 +2104,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Message:            "OIDC configuration is valid",
 		})
 		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
@@ -2010,6 +2114,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator)
 			return nil
 		}); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
 		}
 
@@ -2019,6 +2124,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement)
 			return nil
 		}); err != nil {
+			span.RecordError(err)
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
 		}
 
@@ -2029,6 +2135,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
 				return nil
 			}); err != nil {
+				span.RecordError(err)
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
 			}
 
@@ -2036,6 +2143,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, hcp, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+		span.RecordError(err)
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
 
@@ -2371,9 +2479,13 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
 func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	_, span := tracing.StartChildSpan(cpContext, "HostedCluster", "reconcileCAPIManager")
+	defer span.End()
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
@@ -2385,6 +2497,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 		return reconcileCAPIManagerClusterRole(capiManagerClusterRole)
 	})
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile capi manager cluster role: %w", err)
 	}
 
@@ -2394,12 +2507,14 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 		return reconcileCAPIManagerClusterRoleBinding(capiManagerClusterRoleBinding, capiManagerClusterRole, capiManagerServiceAccount)
 	})
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile capi manager cluster role binding: %w", err)
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile capi manager component: %w", err)
 	}
 
@@ -2410,12 +2525,17 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 // components for a given platform.
 func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplanecomponent.ControlPlaneContext, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, p platform.Platform,
 ) error {
+	_, span := tracing.StartChildSpan(cpContext, "KarpenterOperator", "reconcileKarpenterUserDataSecret")
+	defer span.End()
+
 	capiProviderDeploymentSpec, err := p.CAPIProviderDeploymentSpec(hcluster, hcp)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to get capi provider deployment spec: %w", err)
 	}
 
 	if capiProviderDeploymentSpec == nil {
+		span.RecordError(err)
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
 	}
@@ -2444,6 +2564,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
 	if err := capi.Reconcile(cpContext); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
 	}
 
@@ -2453,9 +2574,13 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 // reconcileControlPlaneOperator orchestrates reconciliation of the control plane
 // operator components.
 func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneOperatorImage, utilitiesImage, defaultIngressDomain string, cpoHasUtilities bool, certRotationScale time.Duration, releaseVersion semver.Version, releaseProvider releaseinfo.ProviderWithOpenShiftImageRegistryOverrides) error {
+	_, span := tracing.StartChildSpan(cpContext, "HostedCluster", "reconcileControlPlaneOperator")
+	defer span.End()
+
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to get control plane namespace: %w", err)
 	}
 
@@ -2469,6 +2594,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 			return reconcileControlPlaneOperatorIngressRole(controlPlaneOperatorIngressRole)
 		})
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile controlplane operator ingress role: %w", err)
 		}
 
@@ -2478,6 +2604,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 			return reconcileControlPlaneOperatorIngressRoleBinding(controlPlaneOperatorIngressRoleBinding, controlPlaneOperatorIngressRole, controlPlaneOperatorServiceAccount)
 		})
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile controlplane operator ingress rolebinding: %w", err)
 		}
 
@@ -2487,6 +2614,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 			return reconcilecontrolPlaneOperatorIngressOperatorRole(controlPlaneOperatorIngressOperatorRole)
 		})
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile controlplane operator ingress operator role: %w", err)
 		}
 
@@ -2496,6 +2624,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 			return reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(controlPlaneOperatorIngressOperatorRoleBinding, controlPlaneOperatorIngressOperatorRole, controlPlaneOperatorServiceAccount)
 		})
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile controlplane operator ingress operator rolebinding: %w", err)
 		}
 	}
@@ -2514,6 +2643,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(cpContext contro
 	})
 
 	if err := cpo.Reconcile(cpContext); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile controlplane operator component: %w", err)
 	}
 
@@ -2625,6 +2755,9 @@ func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Co
 // reconcileOpenShiftTrustedCAs checks for the existence of /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem, if it exists,
 // creates a new ConfigMap to be mounted in the CPO deployment utilizing the file
 func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Context, hostedControlPlane *hyperv1.HostedControlPlane) (bool, error) {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileOpenShiftTrustedCAs")
+	defer span.End()
+
 	trustedCABundle := new(bytes.Buffer)
 	var trustCABundleFile []byte
 
@@ -2632,10 +2765,12 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	if err == nil {
 		trustCABundleFile, err = os.ReadFile(r.OpenShiftTrustedCAFilePath)
 		if err != nil {
+			span.RecordError(err)
 			return false, fmt.Errorf("unable to read trust bundle file: %w", err)
 		}
 	}
 	if err != nil {
+		span.RecordError(err)
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
 		}
@@ -2644,6 +2779,7 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	}
 
 	if _, err = trustedCABundle.Write(trustCABundleFile); err != nil {
+		span.RecordError(err)
 		return false, fmt.Errorf("unable to write trust bundle to buffer: %w", err)
 	}
 
@@ -2651,6 +2787,7 @@ func (r *HostedClusterReconciler) reconcileOpenShiftTrustedCAs(ctx context.Conte
 	openShiftTrustedCABundleConfigMapForCPO := manifests.OpenShiftTrustedCABundleForNamespace(hostedControlPlane.Namespace)
 	openShiftTrustedCABundleConfigMapForCPO.Data["ca-bundle.crt"] = trustedCABundle.String()
 	if _, err = controllerutil.CreateOrUpdate(ctx, r.Client, openShiftTrustedCABundleConfigMapForCPO, NoopReconcile); err != nil {
+		span.RecordError(err)
 		return false, fmt.Errorf("failed to create openshift-config-managed-trusted-ca-bundle for CPO deployment %T: %w", trustedCABundle.String(), err)
 	}
 
@@ -2669,6 +2806,9 @@ func servicePublishingStrategyByType(hcp *hyperv1.HostedCluster, svcType hyperv1
 // reconcileCLISecrets makes sure the secrets that were created by the cli, and are safe to be deleted with the
 // hosted cluster, has an owner reference of the hosted cluster.
 func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileCLISecrets")
+	defer span.End()
+
 	log := ctrl.LoggerFrom(ctx)
 	secrets := &corev1.SecretList{}
 	err := r.List(ctx, secrets, client.InNamespace(hcluster.Namespace), client.MatchingLabels{
@@ -2676,6 +2816,8 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 		util.AutoInfraLabelName:         hcluster.Spec.InfraID,
 	})
 	if err != nil {
+		span.RecordError(err)
+
 		return fmt.Errorf("failed to retrieve cli created secrets: %v", err)
 	}
 
@@ -2686,6 +2828,8 @@ func (r *HostedClusterReconciler) reconcileCLISecrets(ctx context.Context, creat
 			return nil
 		})
 		if err != nil {
+			span.RecordError(err)
+
 			return fmt.Errorf("failed to set '%s' secret's owner reference: %v", secret.Name, err)
 		}
 		if res == controllerutil.OperationResultUpdated {
@@ -4137,6 +4281,9 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 }
 
 func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileAWSResourceTags")
+	defer span.End()
+
 	if hcluster.Spec.Platform.AWS == nil {
 		return nil
 	}
@@ -4165,6 +4312,7 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	}
 
 	if err := r.Client.Update(ctx, hcluster); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to update AWS resource tags: %w", err)
 	}
 
@@ -4212,11 +4360,16 @@ func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hclus
 }
 
 func (r *HostedClusterReconciler) syncKVLiveMigratableCondition(ctx context.Context, hcluster *hyperv1.HostedCluster) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "syncKVLiveMigratableCondition")
+	defer span.End()
+
 	if hcluster.Spec.Platform.Type != hyperv1.KubevirtPlatform {
 		return nil
 	}
 	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
 	if err != nil {
+		span.RecordError(err)
+
 		return fmt.Errorf("failed to get node pools by cluster name for cluster %q: %w", hcluster.Name, err)
 	}
 	var nonMigratableNodePools []string
@@ -4350,8 +4503,12 @@ func validateClusterID(hc *hyperv1.HostedCluster) error {
 }
 
 func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.Context, hc *hyperv1.HostedCluster, targetNamespace string, createOrUpdate upsert.CreateOrUpdateFN) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileServiceAccountSigningKey")
+	defer span.End()
+
 	privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
 	if err != nil {
+		span.RecordError(err)
 		return err
 	}
 	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
@@ -4558,6 +4715,9 @@ func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx c
 }
 
 func (r *HostedClusterReconciler) reconcilePlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcilePlatformDefaultSettings")
+	defer span.End()
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return r.reconcileKubevirtPlatformDefaultSettings(ctx, hc, createOrUpdate, logger)
@@ -4566,6 +4726,9 @@ func (r *HostedClusterReconciler) reconcilePlatformDefaultSettings(ctx context.C
 }
 
 func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, hcName, name, namespace string) (string, error) {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "getARNFromSecret")
+	defer span.End()
+
 	creds := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -4573,23 +4736,33 @@ func (r *HostedClusterReconciler) getARNFromSecret(ctx context.Context, hcName, 
 		},
 	}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(creds), creds); err != nil {
+		span.RecordError(err)
+
 		return "", fmt.Errorf("failed to get secret: %w", err)
 	}
 	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcName, creds); err != nil {
+		span.RecordError(err)
+
 		return "", fmt.Errorf("failed to set referenced resource annotation: %w", err)
 	}
 	credContent, err := ini.Load(creds.Data["credentials"])
 	if err != nil {
+		span.RecordError(err)
+
 		return "", fmt.Errorf("cannot parse credentials: %w", err)
 	}
 	return credContent.Section("default").Key("role_arn").String(), nil
 }
 
 func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, hcName string, rolesRef *hyperv1.AWSRolesRef, ns string) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "dereferenceAWSRoles")
+	defer span.End()
+
 	if strings.HasPrefix(rolesRef.NodePoolManagementARN, "arn-from-secret::") {
 		secretName := strings.TrimPrefix(rolesRef.NodePoolManagementARN, "arn-from-secret::")
 		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
 		rolesRef.NodePoolManagementARN = arn
@@ -4599,6 +4772,7 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, hcNam
 		secretName := strings.TrimPrefix(rolesRef.ControlPlaneOperatorARN, "arn-from-secret::")
 		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
 		rolesRef.ControlPlaneOperatorARN = arn
@@ -4608,6 +4782,7 @@ func (r *HostedClusterReconciler) dereferenceAWSRoles(ctx context.Context, hcNam
 		secretName := strings.TrimPrefix(rolesRef.KubeCloudControllerARN, "arn-from-secret::")
 		arn, err := r.getARNFromSecret(ctx, hcName, secretName, ns)
 		if err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to get ARN from secret %s/%s: %w", ns, secretName, err)
 		}
 		rolesRef.KubeCloudControllerARN = arn
@@ -4665,6 +4840,9 @@ func (r *HostedClusterReconciler) reconcileMonitoringDashboard(ctx context.Conte
 // reconcileSREMetricsConfig loads the SRE metrics configuration (avoids parsing if the content is the same)
 // and ensures that it is synced to the hosted control plane
 func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileSREMetricsConfig")
+	defer span.End()
+
 	log := ctrl.LoggerFrom(ctx)
 	if r.MetricsSet != metrics.MetricsSetSRE {
 		return nil
@@ -4672,6 +4850,7 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 	log.Info("Reconciling SRE metrics configuration")
 	cm := metrics.SREMetricsSetConfigurationConfigMap(r.OperatorNamespace)
 	if err := r.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+		span.RecordError(err)
 		if apierrors.IsNotFound(err) {
 			log.Info("SRE configuration does not exist")
 			return nil
@@ -4682,6 +4861,7 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 	if currentMetricsSetConfigHash != r.SREConfigHash {
 		// Only load a new config if configuration content has changed
 		if err := metrics.LoadSREMetricsSetConfigurationFromConfigMap(cm); err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to load SRE configuration: %w", err)
 		}
 		r.SREConfigHash = currentMetricsSetConfigHash
@@ -4693,6 +4873,7 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 		destinationCM.Data = cm.Data
 		return nil
 	}); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to update hosted cluster SRE metrics configuration: %w", err)
 	}
 	return nil

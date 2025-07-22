@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/networkpolicy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	"github.com/openshift/hypershift/pkg/tracing"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -34,6 +35,9 @@ const (
 )
 
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+	ctx, span := tracing.StartChildSpan(ctx, "HostedCluster", "reconcileNetworkPolicies")
+	defer span.End()
+
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	// Reconcile openshift-ingress Network Policy
@@ -41,6 +45,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileOpenshiftIngressNetworkPolicy(policy)
 	}); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
 	}
 
@@ -49,6 +54,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileSameNamespaceNetworkPolicy(policy)
 	}); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile same namespace network policy: %w", err)
 	}
 
@@ -57,6 +63,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if r.ManagementClusterCapabilities.Has(capabilities.CapabilityNetworks) {
 		managementClusterNetwork = &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(managementClusterNetwork), managementClusterNetwork); err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to get management cluster network config: %w", err)
 		}
 	}
@@ -64,12 +71,14 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileKASNetworkPolicy(policy, hcluster, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork)
 	}); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 	}
 
 	// Reconcile management KAS network policy
 	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to get management cluster network config: %w", err)
 	}
 
@@ -79,6 +88,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
 		}); err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile kube-apiserver network policy: %w", err)
 		}
 
@@ -88,6 +98,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 				return reconcileMetricsServerNetworkPolicy(policy)
 			}); err != nil {
+				span.RecordError(err)
 				return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
 			}
 		}
@@ -100,6 +111,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcileSharedIngressNetworkPolicy(policy, hcluster)
 		}); err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile sharedingress network policy: %w", err)
 		}
 	}
@@ -109,6 +121,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 		return reconcileOpenshiftMonitoringNetworkPolicy(policy, hcluster)
 	}); err != nil {
+		span.RecordError(err)
 		return fmt.Errorf("failed to reconcile monitoring network policy: %w", err)
 	}
 
@@ -121,6 +134,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcilePrivateRouterNetworkPolicy(policy, hcluster, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS), managementClusterNetwork, ingressOnly)
 		}); err != nil {
+			span.RecordError(err)
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
 	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
@@ -130,6 +144,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
 			}); err != nil {
+				span.RecordError(err)
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
 		}
@@ -144,6 +159,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 					return reconcileNodePortOauthNetworkPolicy(policy, hcluster)
 				}); err != nil {
+					span.RecordError(err)
 					return fmt.Errorf("failed to reconcile oauth server nodeport network policy: %w", err)
 				}
 			}
@@ -154,6 +170,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 					return reconcileNodePortIgnitionNetworkPolicy(policy, hcluster)
 				}); err != nil {
+					span.RecordError(err)
 					return fmt.Errorf("failed to reconcile ignition nodeport network policy: %w", err)
 				}
 				// Reconcile nodeport-ignition-proxy Network Policy
@@ -161,6 +178,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 					return reconcileNodePortIgnitionProxyNetworkPolicy(policy, hcluster)
 				}); err != nil {
+					span.RecordError(err)
 					return fmt.Errorf("failed to reconcile ignition proxy nodeport network policy: %w", err)
 				}
 			}
@@ -171,6 +189,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 					return reconcileNodePortKonnectivityNetworkPolicy(policy, hcluster)
 				}); err != nil {
+					span.RecordError(err)
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
 
@@ -179,6 +198,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 					return reconcileNodePortKonnectivityKASNetworkPolicy(policy, hcluster)
 				}); err != nil {
+					span.RecordError(err)
 					return fmt.Errorf("failed to reconcile konnectivity nodeport network policy: %w", err)
 				}
 
