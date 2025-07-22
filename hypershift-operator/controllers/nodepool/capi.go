@@ -739,7 +739,7 @@ func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, erro
 		}
 		// using HashStruct(specJSON) ensures a rolling upgrade is triggered
 		// by creating a new template with a different name if any field changes.
-		return getName(c.nodePool.GetName(), supportutil.HashSimple(specJSON),
+		return supportutil.ShortenName(c.nodePool.GetName(), supportutil.HashSimple(specJSON),
 			validation.DNS1123SubdomainMaxLength), nil
 	}
 
@@ -782,7 +782,7 @@ func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, erro
 func generateMachineTemplateName(nodePool *hyperv1.NodePool, machineTemplateSpecJSON []byte) string {
 	// using HashStruct(machineTemplateSpecJSON) ensures a rolling upgrade is triggered
 	// by creating a new template with a different name if any field changes.
-	return getName(nodePool.GetName(), supportutil.HashSimple(machineTemplateSpecJSON),
+	return supportutil.ShortenName(nodePool.GetName(), supportutil.HashSimple(machineTemplateSpecJSON),
 		validation.DNS1123SubdomainMaxLength)
 }
 
@@ -1064,53 +1064,7 @@ func (c *CAPI) machineHealthCheck() *capiv1.MachineHealthCheck {
 
 // TODO (alberto) drop this deterministic naming logic and get the name for child MachineDeployment from the status/annotation/label?
 func generateName(infraName, clusterName, suffix string) string {
-	return getName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
-}
-
-// getName returns a name given a base ("deployment-5") and a suffix ("deploy")
-// It will first attempt to join them with a dash. If the resulting name is longer
-// than maxLength: if the suffix is too long, it will truncate the base name and add
-// an 8-character hash of the [base]-[suffix] string.  If the suffix is not too long,
-// it will truncate the base, add the hash of the base and return [base]-[hash]-[suffix]
-func getName(base, suffix string, maxLength int) string {
-	if maxLength <= 0 {
-		return ""
-	}
-	name := fmt.Sprintf("%s-%s", base, suffix)
-	if len(name) <= maxLength {
-		return name
-	}
-
-	// length of -hash-
-	baseLength := maxLength - 10 - len(suffix)
-
-	// if the suffix is too long, ignore it
-	if baseLength < 1 {
-		prefix := base[0:min(len(base), max(0, maxLength-9))]
-		// Calculate hash on initial base-suffix string
-		shortName := fmt.Sprintf("%s-%s", prefix, supportutil.HashSimple(name))
-		return shortName[:min(maxLength, len(shortName))]
-	}
-
-	prefix := base[0:baseLength]
-	// Calculate hash on initial base-suffix string
-	return fmt.Sprintf("%s-%s-%s", prefix, supportutil.HashSimple(base), suffix)
-}
-
-// max returns the greater of its 2 inputs
-func max(a, b int) int {
-	if b > a {
-		return b
-	}
-	return a
-}
-
-// min returns the lesser of its 2 inputs
-func min(a, b int) int {
-	if b < a {
-		return b
-	}
-	return a
+	return supportutil.ShortenName(fmt.Sprintf("%s-%s", infraName, clusterName), suffix, 43)
 }
 
 func (c *CAPI) listMachineTemplates() ([]client.Object, error) {

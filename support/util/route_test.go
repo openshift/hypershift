@@ -51,6 +51,11 @@ func TestShortenName(t *testing.T) {
 				suffix:   "",
 				expected: longName[:kvalidation.DNS1123SubdomainMaxLength-10] + "-" + hash(longName) + "-",
 			},
+			{
+				base: "infraID-clusterName",
+				suffix: "nodePoolName",
+				expected: "infraID-clusterName-nodePoolName",
+			},
 		}
 
 		for j, test := range tests {

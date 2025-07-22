@@ -263,7 +263,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 		if err != nil {
 			return "", err
 		}
-		return getName("test-prefix", supportutil.HashSimple(specJSON),
+		return supportutil.ShortenName("test-prefix", supportutil.HashSimple(specJSON),
 			validation.DNS1123SubdomainMaxLength), nil
 	}
 
