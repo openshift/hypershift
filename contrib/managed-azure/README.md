@@ -60,6 +60,20 @@ Run it
 ../contrib/managed-azure/setup_all.sh
 ```
 
+### First-time Setup
+
+When setting up your first cluster, use the `--first-time` flag to create the one-time setup resources that should be reused across multiple clusters to avoid Azure quota issues:
+
+```
+../contrib/managed-azure/setup_all.sh --first-time
+```
+
+The `--first-time` flag automatically handles the creation of:
+- Service principals and Key Vault ([setup_MIv3_kv.sh](./setup_MIv3_kv.sh))
+- OIDC issuer ([setup_oidc_provider.sh](./setup_oidc_provider.sh))
+- Data plane identities ([setup_dataplane_identities.sh](./setup_dataplane_identities.sh))
+
+For subsequent clusters, run the script without this flag to skip the one-time setup and reuse existing resources.
 
 You can comment out steps from setup_all.sh to run only what you want.
 

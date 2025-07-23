@@ -20,8 +20,6 @@ az group create \
 --name ${AKS_RG} \
 --location ${LOCATION}
 
-az identity create --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME
-az identity create --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME
 export AKS_CP_MI_ID=$(az identity show --name $AKS_CP_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 export AKS_KUBELET_MI_ID=$(az identity show --name $AKS_KUBELET_MI_NAME --resource-group $PERSISTENT_RG_NAME --query id -o tsv)
 
