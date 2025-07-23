@@ -851,7 +851,7 @@ func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Con
 
 func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, Version419)
 		var podList corev1.PodList
 		if err := client.List(ctx, &podList, &crclient.ListOptions{Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)}); err != nil {
 			t.Fatalf("failed to list pods in cluster: %v", err)
