@@ -1150,9 +1150,11 @@ This value is immutable.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer.
 If not specified, traffic is allowed from all addresses.
-This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
+This field is enforced for ARO (Azure Red Hat OpenShift) via the shared-ingress HAProxy.
+For platforms other than ARO, the enforcement depends on whether the underlying cloud provider supports the Service LoadBalancerSourceRanges field.
+If the platform does not support LoadBalancerSourceRanges, this field may have no effect.</p>
 </td>
 </tr>
 </tbody>

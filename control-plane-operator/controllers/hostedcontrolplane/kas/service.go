@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
@@ -90,8 +91,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
 	}
-	svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
 	svc.Spec.Ports[0] = portSpec
+
+	if !azureutil.IsAroHCP() {
+		svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
+	}
 	return nil
 }
 
