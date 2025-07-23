@@ -134,7 +134,6 @@ type ConfigurableClusterOptions struct {
 	OpenStackNodeFlavor                   string
 	OpenStackNodeImageName                string
 	OpenStackDNSNameservers               stringSliceVar
-	PowerVSCloudConnection                string
 	PowerVSCloudInstanceID                string
 	PowerVSMemory                         int
 	PowerVSPER                            bool
