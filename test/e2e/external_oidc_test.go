@@ -21,8 +21,8 @@ func TestExternalOIDC(t *testing.T) {
 		t.Skipf("Only tested when CI sets TECH_PREVIEW_NO_UPGRADE=true and the Hypershift Operator is installed with --tech-preview-no-upgrade")
 	}
 
-	if !globalOpts.EnableExternalOIDC {
-		t.Skipf("skip external OIDC test if e2e e2e.enable-external-oidc is false")
+	if globalOpts.ExternalOIDCProvider == "" {
+		t.Skipf("skip external OIDC test if e2e.external-oidc-provider is not provided")
 	}
 
 	t.Parallel()
@@ -35,7 +35,7 @@ func TestExternalOIDC(t *testing.T) {
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("Check external OIDC spec", func(t *testing.T) {
 			g := NewWithT(t)
-			t.Logf("begin to run external OIDC cases")
+			t.Logf("begin to test external OIDC %s", globalOpts.ExternalOIDCProvider)
 			g.Expect(hostedCluster.Spec.Configuration).NotTo(BeNil())
 			g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
 			g.Expect(hostedCluster.Spec.Configuration.Authentication.OIDCProviders).NotTo(BeEmpty())

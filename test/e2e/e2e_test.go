@@ -100,11 +100,12 @@ func TestMain(m *testing.M) {
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
 
 	//ext OIDC configuration
-	flag.BoolVar(&globalOpts.EnableExternalOIDC, "e2e.enable-external-oidc", false, "enable external OIDC config. This is needed to be true if you set external oidc in hostedcluster.spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCProvider, "e2e.external-oidc-provider", "", "if not null, enable external OIDC config with provider. supported value: keycloak, azure")
 	flag.StringVar(&globalOpts.ExternalOIDCCliClientID, "e2e.external-oidc-cli-client-id", "", "cli client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
 	flag.StringVar(&globalOpts.ExternalOIDCConsoleClientID, "e2e.external-oidc-console-client-id", "", "console client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
 	flag.StringVar(&globalOpts.ExternalOIDCIssuerURL, "e2e.external-oidc-issuer-url", "", "external OIDC issuer URL. This id is needed if you set external oidc in spec.configuration")
 	flag.StringVar(&globalOpts.ExternalOIDCConsoleSecret, "e2e.external-oidc-console-secret", "", "external OIDC console secret. This is needed if you set external oidc in spec.configuration for the console")
+	flag.StringVar(&globalOpts.ExternalOIDCCABundleFile, "e2e.external-oidc-ca-bundle-file", "", "external OIDC issuer issuerCertificateAuthority")
 
 	// AWS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")

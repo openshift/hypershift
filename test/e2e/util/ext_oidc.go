@@ -5,24 +5,34 @@ import (
 )
 
 type ConfigWithExtOIDCParam struct {
-	OIDCProviderName        string
-	CliClientID             string
-	ConsoleClientID         string
-	IssuerURL               string
-	GroupPrefix             string
-	UserPrefix              string
-	ConsoleClientSecretName string
+	ExternalOIDCProvider     string
+	OIDCProviderName         string
+	CliClientID              string
+	ConsoleClientID          string
+	IssuerURL                string
+	GroupPrefix              string
+	UserPrefix               string
+	ConsoleClientSecretName  string
+	ConsoleClientSecretValue string
+
+	//for oidcProviders.issuer.issuerCertificateAuthority
+	IssuerCAConfigmapName string
+	issuerCABundleFile    string
 }
 
-func GetExtOIDCParam(cliClientID, consoleClientID, issuerURL string) *ConfigWithExtOIDCParam {
+func GetExtOIDCParam(provider, cliClientID, consoleClientID, issuerURL, consoleSecret, issuerCABundleFile string) *ConfigWithExtOIDCParam {
 	return &ConfigWithExtOIDCParam{
-		OIDCProviderName:        "microsoft-entra-id",
-		CliClientID:             cliClientID,
-		ConsoleClientID:         consoleClientID,
-		IssuerURL:               issuerURL,
-		GroupPrefix:             "oidc-groups-test:",
-		UserPrefix:              "oidc-user-test:",
-		ConsoleClientSecretName: "console-secret",
+		ExternalOIDCProvider:     provider,
+		OIDCProviderName:         "microsoft-entra-id",
+		CliClientID:              cliClientID,
+		ConsoleClientID:          consoleClientID,
+		IssuerURL:                issuerURL,
+		GroupPrefix:              "oidc-groups-test:",
+		UserPrefix:               "oidc-user-test:",
+		ConsoleClientSecretName:  "console-secret",
+		ConsoleClientSecretValue: consoleSecret,
+		IssuerCAConfigmapName:    "oidc-ca",
+		issuerCABundleFile:       issuerCABundleFile,
 	}
 }
 
@@ -38,6 +48,9 @@ func (config *ConfigWithExtOIDCParam) GetConfigWithExtOIDC() *configv1.Authentic
 						configv1.TokenAudience(config.ConsoleClientID),
 					},
 					URL: config.IssuerURL,
+					CertificateAuthority: configv1.ConfigMapNameReference{
+						Name: config.IssuerCAConfigmapName,
+					},
 				},
 				OIDCClients: []configv1.OIDCClientConfig{
 					{

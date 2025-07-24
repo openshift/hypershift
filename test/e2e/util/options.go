@@ -78,11 +78,12 @@ type Options struct {
 	RunUpgradeTest bool
 
 	//external oidc for authentication in spec.configurations
-	EnableExternalOIDC          bool
+	ExternalOIDCProvider        string
 	ExternalOIDCCliClientID     string
 	ExternalOIDCConsoleClientID string
 	ExternalOIDCIssuerURL       string
 	ExternalOIDCConsoleSecret   string
+	ExternalOIDCCABundleFile    string
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -221,11 +222,10 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 	}
 
 	//set external OIDC if enabled
-	if o.EnableExternalOIDC {
-		extOIDCParam := GetExtOIDCParam(o.ExternalOIDCCliClientID, o.ExternalOIDCConsoleClientID, o.ExternalOIDCIssuerURL)
-		createOption.Config = extOIDCParam.GetConfigWithExtOIDC()
-		createOption.ExternalOIDCConsoleSecret = o.ExternalOIDCConsoleSecret
-		createOption.ExternalOIDCConsoleSecretName = extOIDCParam.ConsoleClientSecretName
+	if o.ExternalOIDCProvider != "" {
+		extOIDCParam := GetExtOIDCParam(o.ExternalOIDCProvider, o.ExternalOIDCCliClientID, o.ExternalOIDCConsoleClientID, o.ExternalOIDCIssuerURL, o.ExternalOIDCConsoleSecret, o.ExternalOIDCCABundleFile)
+		createOption.AuthenticationConfig = extOIDCParam.GetConfigWithExtOIDC()
+		createOption.ExtOIDCParam = extOIDCParam
 	}
 
 	return createOption
