@@ -8,13 +8,13 @@ status: {}
 ---
 apiVersion: v1
 data:
-  .dockerconfigjson: null
+  .dockerconfigjson: ZmFrZQ==
 kind: Secret
 metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: bryans-cluster-pull-secret
+  name: example-pull-secret
   namespace: clusters
 ---
 apiVersion: v1
@@ -24,18 +24,18 @@ data:
 kind: Secret
 metadata:
   creationTimestamp: null
-  name: bryans-cluster-cloud-credentials
+  name: example-cloud-credentials
   namespace: clusters
 ---
 apiVersion: v1
 data:
-  key: FYHY8RFxHaJUPFFWuo2z9iWCO01hcj3fqHMMWMeEHHw=
+  key: RtBxtzupSh9bkzEqKY5VZOOLLDVYsAKqPIYkEMK7R1A=
 kind: Secret
 metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
-  name: bryans-cluster-etcd-encryption-key
+  name: example-etcd-encryption-key
   namespace: clusters
 type: Opaque
 ---
@@ -43,10 +43,11 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
   creationTimestamp: null
-  name: bryans-cluster
+  name: example
   namespace: clusters
 spec:
   autoscaling: {}
+  capabilities: {}
   configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:
@@ -76,23 +77,31 @@ spec:
         managedIdentities:
           controlPlane:
             cloudProvider:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             controlPlaneOperator:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             disk:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             file:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             imageRegistry:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             ingress:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             managedIdentitiesKeyVault:
               name: ""
               tenantID: ""
             network:
+              credentialsSecretName: ""
               objectEncoding: utf-8
             nodePoolManagement:
+              credentialsSecretName: ""
               objectEncoding: utf-8
           dataPlane:
             diskMSIClientID: ""
@@ -107,13 +116,13 @@ spec:
       vnetID: fakeVNetID
     type: Azure
   pullSecret:
-    name: bryans-cluster-pull-secret
+    name: example-pull-secret
   release:
-    image: fake-release-image
+    image: ""
   secretEncryption:
     aescbc:
       activeKey:
-        name: bryans-cluster-etcd-encryption-key
+        name: example-etcd-encryption-key
     type: aescbc
   services:
   - service: APIServer
@@ -138,11 +147,11 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
   creationTimestamp: null
-  name: bryans-cluster
+  name: example-1
   namespace: clusters
 spec:
   arch: amd64
-  clusterName: bryans-cluster
+  clusterName: example
   management:
     autoRepair: false
     upgradeType: Replace
@@ -150,19 +159,51 @@ spec:
   nodeVolumeDetachTimeout: 0s
   platform:
     azure:
+      availabilityZone: "1"
       image:
         imageID: fakeBootImageID
         type: ImageID
       osDisk:
-        diskStorageAccountType: Standard_LRS
-        persistence: Ephemeral
+        diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
-      vmSize: Standard_DS2_v2
+      vmSize: Standard_D4s_v3
     type: Azure
   release:
-    image: fake-release-image
-  replicas: 312
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: example-2
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    azure:
+      availabilityZone: "2"
+      image:
+        imageID: fakeBootImageID
+        type: ImageID
+      osDisk:
+        diskStorageAccountType: Premium_LRS
+        sizeGiB: 120
+      subnetID: fakeSubnetID
+      vmSize: Standard_D4s_v3
+    type: Azure
+  release:
+    image: ""
+  replicas: 0
 status:
   replicas: 0
 ---

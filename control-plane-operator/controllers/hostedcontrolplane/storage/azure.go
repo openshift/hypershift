@@ -30,7 +30,7 @@ func initializeAzureCSIControllerConfig(hcp *hyperv1.HostedControlPlane, tenantI
 // ReconcileAzureDiskCSISecret reconciles the configuration for the secret as expected by azure-disk-csi-controller
 func ReconcileAzureDiskCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, tenantID string) error {
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
-	config.AADMSIDataPlaneIdentityPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.CredentialsSecretName)
+	config.AADMSIDataPlaneIdentityPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.CredentialsSecretName)
 
 	serializedConfig, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -47,7 +47,7 @@ func ReconcileAzureDiskCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedContr
 // ReconcileAzureFileCSISecret reconciles the configuration for the secret as expected by azure-file-csi-controller
 func ReconcileAzureFileCSISecret(secret *corev1.Secret, hcp *hyperv1.HostedControlPlane, tenantID string) error {
 	config := initializeAzureCSIControllerConfig(hcp, tenantID)
-	config.AADMSIDataPlaneIdentityPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.CredentialsSecretName)
+	config.AADMSIDataPlaneIdentityPath = path.Join(hypershiftconfig.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.CredentialsSecretName)
 
 	var getVnetNameAndResourceGroupErr error
 	// aro hcp csi nfs protocol provision volumes needs the vnetName/vnetResourceGroup config

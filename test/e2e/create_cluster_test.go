@@ -925,6 +925,157 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when Azure authentication configuration is not properly configured it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when azureAuthenticationConfigType is ManagedIdentities but managedIdentities field is missing it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "ManagedIdentities",
+									// Missing managedIdentities field
+								},
+							}
+						},
+						expectedErrorSubstring: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is WorkloadIdentities but workloadIdentities field is missing it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "WorkloadIdentities",
+									// Missing workloadIdentities field
+								},
+							}
+						},
+						expectedErrorSubstring: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is ManagedIdentities but workloadIdentities field is present it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "ManagedIdentities",
+									WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+										ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+									},
+									// Missing managedIdentities field but has workloadIdentities
+								},
+							}
+						},
+						expectedErrorSubstring: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is WorkloadIdentities but managedIdentities field is present it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "WorkloadIdentities",
+									ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+										ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+											ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+												Name:     "test-kv",
+												TenantID: "87654321-4321-8765-2109-876543210987",
+											},
+											CloudProvider: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "cp-secret",
+											},
+											NodePoolManagement: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "npm-secret",
+											},
+											ControlPlaneOperator: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "cpo-secret",
+											},
+											ImageRegistry: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "ir-secret",
+											},
+											Ingress: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "ingress-secret",
+											},
+											Network: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "network-secret",
+											},
+											Disk: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "disk-secret",
+											},
+											File: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "file-secret",
+											},
+										},
+										DataPlane: hyperv1.DataPlaneManagedIdentities{
+											ImageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012",
+											DiskMSIClientID:          "12345678-1234-5678-9012-123456789012",
+											FileMSIClientID:          "12345678-1234-5678-9012-123456789012",
+										},
+									},
+									// Missing workloadIdentities field but has managedIdentities
+								},
+							}
+						},
+						expectedErrorSubstring: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {

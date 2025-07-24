@@ -59,11 +59,14 @@ func TestReconcileManagedAzureSecretProviderClass(t *testing.T) {
 		Spec: hyperv1.HostedControlPlaneSpec{
 			Platform: hyperv1.PlatformSpec{
 				Azure: &hyperv1.AzurePlatformSpec{
-					ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
-						ControlPlane: hyperv1.ControlPlaneManagedIdentities{
-							ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
-								Name:     "key-vault-name",
-								TenantID: "tenant-id",
+					AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+						AzureAuthenticationConfigType: "ManagedIdentities",
+						ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+							ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+								ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+									Name:     "key-vault-name",
+									TenantID: "tenant-id",
+								},
 							},
 						},
 					},
