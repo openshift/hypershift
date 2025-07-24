@@ -1,7 +1,6 @@
 package controlplanecomponent
 
 import (
-	"context"
 	"crypto/x509/pkix"
 	"fmt"
 	"reflect"
@@ -87,7 +86,7 @@ func TestReconcile(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			cpContext := ControlPlaneContext{
-				Context:                  context.Background(),
+				Context:                  t.Context(),
 				ApplyProvider:            upsert.NewApplyProvider(false),
 				ReleaseImageProvider:     testutil.FakeImageProvider(),
 				UserReleaseImageProvider: testutil.FakeImageProvider(),
@@ -123,7 +122,7 @@ func TestReconcile(t *testing.T) {
 				},
 			}
 
-			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(got), got)
+			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(got), got)
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// builtin reconciliation must pass the following validations:
@@ -253,7 +252,7 @@ func TestReconcile(t *testing.T) {
 					Namespace: testComponentNamespace,
 				},
 			}
-			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret)
+			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(kubeconfigSecret), kubeconfigSecret)
 			g.Expect(err).NotTo(HaveOccurred(), "kubeconfig secret does not exist")
 
 			// validate service account was created and has the expected annotations and pull secret.
@@ -263,7 +262,7 @@ func TestReconcile(t *testing.T) {
 					Namespace: testComponentNamespace,
 				},
 			}
-			err = cpContext.Client.Get(context.Background(), client.ObjectKeyFromObject(sa), sa)
+			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(sa), sa)
 			g.Expect(err).NotTo(HaveOccurred(), "sa does not exist")
 
 			g.Expect(sa.ImagePullSecrets).To(HaveLen(1))

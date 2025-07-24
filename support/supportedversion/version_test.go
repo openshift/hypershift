@@ -1,7 +1,6 @@
 package supportedversion
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -301,7 +300,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 			}
 
 			// Execute the function
-			supportedVersions, serverVersion, err := GetSupportedOCPVersions(context.Background(), namespace, fakeClient, tc.cm)
+			supportedVersions, serverVersion, err := GetSupportedOCPVersions(t.Context(), namespace, fakeClient, tc.cm)
 
 			// Assert results
 			if tc.expectErr {
@@ -442,7 +441,7 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
 			}
 
-			version, err := retrieveSupportedOCPVersion(context.Background(), tc.releaseURL, fakeClient)
+			version, err := retrieveSupportedOCPVersion(t.Context(), tc.releaseURL, fakeClient)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {

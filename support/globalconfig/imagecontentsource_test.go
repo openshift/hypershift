@@ -1,7 +1,6 @@
 package globalconfig
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -22,7 +21,7 @@ import (
 )
 
 func TestGetAllImageRegistryMirrors(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	g := NewGomegaWithT(t)
 	testsCases := []struct {
 		name              string
@@ -183,7 +182,7 @@ func createFakeIDMS() *configv1.ImageDigestMirrorSetList {
 }
 
 func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	g := NewGomegaWithT(t)
 
 	// Define test cases

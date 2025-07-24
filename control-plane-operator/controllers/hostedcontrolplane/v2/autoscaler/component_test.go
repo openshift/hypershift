@@ -1,7 +1,6 @@
 package autoscaler
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -69,7 +68,7 @@ func TestPredicate(t *testing.T) {
 			client := clientBuilder.Build()
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: context.Background(),
+				Context: t.Context(),
 				Client:  client,
 				HCP:     hcp,
 			}
@@ -208,7 +207,7 @@ func TestAdaptDeployment(t *testing.T) {
 			hcp.Spec.Autoscaling = tc.AutoscalerOptions
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: context.Background(),
+				Context: t.Context(),
 				HCP:     hcp,
 			}
 
@@ -250,7 +249,7 @@ func TestAdaptDeploymentWithClusterAutoscalerImage(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 
 	err = adaptDeployment(controlplanecomponent.WorkloadContext{
-		Context: context.Background(),
+		Context: t.Context(),
 		HCP:     hcp,
 	}, deployment)
 	g.Expect(err).ToNot(HaveOccurred())

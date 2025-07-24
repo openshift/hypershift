@@ -157,7 +157,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, err := r.Reconcile(t.Context(), controllerruntime.Request{})
 		if err != nil {
 			t.Fatalf("unexpected: %v", err)
 		}
@@ -181,7 +181,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		_, _ = r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, _ = r.Reconcile(t.Context(), controllerruntime.Request{})
 		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
 			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
 		}
@@ -195,7 +195,7 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService := manifests.OLMPackageServerControlPlaneService(hcp.Namespace)
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	ctx := context.Background()
+	ctx := t.Context()
 	pullSecret := fakePullSecret()
 
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
@@ -489,20 +489,20 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				hcpName:                testHCPName,
 				hcpNamespace:           testNamespace,
 			}
-			err := r.reconcileKubeadminPasswordHashSecret(context.Background(), test.inputHCP)
+			err := r.reconcileKubeadminPasswordHashSecret(t.Context(), test.inputHCP)
 			g.Expect(err).To(BeNil())
 			if test.expectKubeadminPasswordHashSecretToExist {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(err).To(BeNil())
 				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(errors.IsNotFound(err)).To(BeTrue())
 			}
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
-			err = r.cpClient.Get(context.TODO(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
+			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
 		})
 	}
@@ -559,15 +559,15 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				hcpName:                testHCPName,
 				hcpNamespace:           testNamespace,
 			}
-			err := r.reconcileUserCertCABundle(context.Background(), test.inputHCP)
+			err := r.reconcileUserCertCABundle(t.Context(), test.inputHCP)
 			g.Expect(err).To(BeNil())
 			guestUserCABundle := manifests.UserCABundle()
 			if test.expectUserCAConfigMap {
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
 				g.Expect(err).To(BeNil())
 				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
 			} else {
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
 				g.Expect(errors.IsNotFound(err)).To(BeTrue())
 			}
 		})
@@ -600,7 +600,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyCleanupWebhook := func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
 		wh := manifests.ResourceCreationBlockerWebhook()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(wh), wh)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(wh), wh)
 		g.Expect(err).ToNot(HaveOccurred())
 		expected := manifests.ResourceCreationBlockerWebhook()
 		reconcileCreationBlockerWebhook(expected, hcp)
@@ -616,7 +616,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyImageRegistryConfig := func(g *WithT, c, _ client.Client) {
 		config := manifests.Registry()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(config), config)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(config), config)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(config.Spec.ManagementState).To(Equal(operatorv1.Removed))
 	}
@@ -632,7 +632,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyIngressControllersRemoved := func(g *WithT, c, _ client.Client) {
 		ingressControllers := &operatorv1.IngressControllerList{}
-		err := c.List(context.Background(), ingressControllers)
+		err := c.List(t.Context(), ingressControllers)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(ingressControllers.Items)).To(Equal(0))
 	}
@@ -676,7 +676,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyServiceLoadBalancersRemoved := func(g *WithT, c client.Client) {
 		services := &corev1.ServiceList{}
-		err := c.List(context.Background(), services)
+		err := c.List(t.Context(), services)
 		g.Expect(err).ToNot(HaveOccurred())
 		for _, svc := range services.Items {
 			g.Expect(svc.Spec.Type).ToNot(Equal(corev1.ServiceTypeLoadBalancer))
@@ -685,13 +685,13 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyServiceLoadBalancersOwnedByIngressControllerExists := func(name string, g *WithT, c client.Client) {
 		service := serviceLoadBalancerOwnedByIngressController(name)
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(service), service)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
 
 	verifyServiceExists := func(name string, g *WithT, c client.Client) {
 		service := clusterIPService(name)
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(service), service)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
 
@@ -735,21 +735,21 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyPVCsRemoved := func(g *WithT, c client.Client) {
 		pvcs := &corev1.PersistentVolumeClaimList{}
-		err := c.List(context.Background(), pvcs)
+		err := c.List(t.Context(), pvcs)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(pvcs.Items)).To(Equal(0))
 	}
 
 	verifyPodsRemoved := func(g *WithT, c client.Client) {
 		pods := &corev1.PodList{}
-		err := c.List(context.Background(), pods)
+		err := c.List(t.Context(), pods)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(pods.Items)).To(Equal(0))
 	}
 
 	verifyDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(hcp), hcp)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
@@ -757,7 +757,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyNotDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(hcp), hcp)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
@@ -866,7 +866,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
-			_, err := r.destroyCloudResources(context.Background(), fakeHCP)
+			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
 			verifyCleanupWebhook(g, guestClient, fakeHCP)
 			if test.verify != nil {
@@ -947,9 +947,9 @@ func TestReconcileClusterVersion(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp)
 	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(clusterVersion.Spec.ClusterID).To(Equal(configv1.ClusterID("test-cluster-id")))
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
@@ -1027,9 +1027,9 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp)
 	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
@@ -1104,9 +1104,9 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp)
 	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
@@ -1164,11 +1164,11 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				client:                 fakeClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
-			err := r.reconcileImageContentPolicyType(context.Background(), tc.hcp)
+			err := r.reconcileImageContentPolicyType(t.Context(), tc.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			idms := globalconfig.ImageDigestMirrorSet()
-			err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
 			g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 
 			// Same number of ICS and IDMS
@@ -1184,10 +1184,10 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				origHCP := tc.hcp.DeepCopy()
 				origHCP.Spec.ImageContentSources = nil
 
-				err = r.reconcileImageContentPolicyType(context.Background(), origHCP)
+				err = r.reconcileImageContentPolicyType(t.Context(), origHCP)
 				g.Expect(err).ToNot(HaveOccurred())
 				idms := globalconfig.ImageDigestMirrorSet()
-				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+				err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
 				g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 				g.Expect(len(origHCP.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
 				compareICSAndIDMS(g, origHCP.Spec.ImageContentSources, idms)
@@ -1245,17 +1245,17 @@ func TestReconcileKASEndpoints(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
-			err := r.reconcileKASEndpoints(context.Background(), tc.hcp)
+			err := r.reconcileKASEndpoints(t.Context(), tc.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			endpoints := &corev1.Endpoints{}
-			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
+			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 
 			endpointSlice := &discoveryv1.EndpointSlice{}
-			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
+			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
@@ -1331,9 +1331,9 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				client:                 fakeClient,
 				cpClient:               cpFakeClient,
 			}
-			g.Expect(r.reconcileKubeletConfig(context.TODO())).To(Succeed())
+			g.Expect(r.reconcileKubeletConfig(t.Context())).To(Succeed())
 			for _, obj := range tc.expectedHostedClusterObjects {
-				g.Expect(r.client.Get(context.TODO(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
 			}
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
@@ -1342,7 +1342,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				},
 			}
 			cmList := &corev1.ConfigMapList{}
-			g.Expect(r.client.List(context.TODO(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
+			g.Expect(r.client.List(t.Context(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
 			expectedLen := len(tc.expectedHostedClusterObjects)
 			g.Expect(cmList.Items).To(HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
 		})
@@ -1462,12 +1462,12 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 				platformType:           tc.platformType,
 			}
-			_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+			_, err := r.Reconcile(t.Context(), controllerruntime.Request{})
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// Check if the OCM configuration has changed or not
 			updatedOcmConfigMap := &corev1.ConfigMap{}
-			err = cpClient.Get(context.Background(), types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
+			err = cpClient.Get(t.Context(), types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(Equal(tc.expectConfigMapUnchanged))
 		})
@@ -1935,7 +1935,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewWithT(t)
-			ctx := context.Background()
+			ctx := t.Context()
 
 			cpClient := fake.NewClientBuilder().
 				WithScheme(api.Scheme).

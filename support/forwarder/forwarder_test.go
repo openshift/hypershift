@@ -1,7 +1,6 @@
 package forwarder
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -90,7 +89,7 @@ func TestGetRunningKubeAPIServerPod(t *testing.T) {
 				WithObjects(tt.pods...).
 				Build()
 
-			got, err := GetRunningKubeAPIServerPod(context.Background(), fakeClient, tt.cpNamespace)
+			got, err := GetRunningKubeAPIServerPod(t.Context(), fakeClient, tt.cpNamespace)
 
 			if tt.wantErr {
 				if err == nil {

@@ -1,7 +1,6 @@
 package kubevirt
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -724,7 +723,7 @@ func TestCacheImage(t *testing.T) {
 		},
 	}
 
-	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 	for _, tc := range testCases {
 		t.Run(tc.name, func(tst *testing.T) {
 			g := NewWithT(tst)

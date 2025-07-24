@@ -230,6 +230,6 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
-		e2eutil.ValidateHostedClusterConditions(t, context.Background(), mgmtClient, hostedCluster, true, 5*time.Minute)
+		e2eutil.ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
 }

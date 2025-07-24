@@ -491,7 +491,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				r.hcpKey = client.ObjectKeyFromObject(tc.hcp)
 			}
 			for _, m := range tc.machines {
-				_, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{
+				_, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: types.NamespacedName{
 					Namespace: m.Namespace,
 					Name:      m.Name,
 				}})
@@ -504,13 +504,13 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				})
 			}
 			obtainedEndpointSliceList := discoveryv1.EndpointSliceList{}
-			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedEndpointSliceList)).To(Succeed())
+			g.Expect(r.kubevirtInfraClient.List(t.Context(), &obtainedEndpointSliceList)).To(Succeed())
 			_, err := yaml.Marshal(obtainedEndpointSliceList)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedEndpointSliceList.Items).To(WithTransform(resetResourceVersionFromEndpointSlices, ConsistOf(tc.expectedIngressEndpointSlices)))
 
 			obtainedServicesList := corev1.ServiceList{}
-			g.Expect(r.kubevirtInfraClient.List(context.Background(), &obtainedServicesList)).To(Succeed())
+			g.Expect(r.kubevirtInfraClient.List(t.Context(), &obtainedServicesList)).To(Succeed())
 			_, err = yaml.Marshal(obtainedServicesList)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(obtainedServicesList.Items).To(WithTransform(resetResourceVersionFromServices, ConsistOf(tc.expectedServices)))

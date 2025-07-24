@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestGetRegistryOverrides(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	testsCases := []struct {
 		name           string
 		ref            reference.DockerImageReference
@@ -108,7 +107,7 @@ func TestGetRegistryOverrides(t *testing.T) {
 }
 
 func TestGetManifest(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	pullSecret := []byte("{}")
 
 	testsCases := []struct {
@@ -174,7 +173,7 @@ func TestGetManifest(t *testing.T) {
 }
 
 func TestGetDigest(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	pullSecret := []byte("{}")
 
 	testsCases := []struct {
@@ -414,7 +413,7 @@ func TestSeekOverride(t *testing.T) {
 
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.TODO()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			pullSecret, err := os.ReadFile("../../hack/dev/fakePullSecret.json")
 			if err != nil {

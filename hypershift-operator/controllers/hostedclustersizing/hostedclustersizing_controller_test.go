@@ -28,7 +28,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
-	ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log)
 
 	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.000000000Z")
 	if err != nil {

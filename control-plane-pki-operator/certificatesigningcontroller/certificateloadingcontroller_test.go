@@ -34,7 +34,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		ca, err := controller.CurrentCA(context.Background())
+		ca, err := controller.CurrentCA(t.Context())
 		caChan <- ca
 		errChan <- err
 		wg.Done()
@@ -46,7 +46,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 
 	t.Log("expect that a sync does not error")
-	if err := controller.sync(context.Background(), syncCtx); err != nil {
+	if err := controller.sync(t.Context(), syncCtx); err != nil {
 		t.Fatalf("expected no error from sync, got %v", err)
 	}
 
@@ -61,7 +61,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 
 	t.Log("expect that a sync does not error")
-	if err := controller.sync(context.Background(), syncCtx); err != nil {
+	if err := controller.sync(t.Context(), syncCtx); err != nil {
 		t.Fatalf("expected no error from sync, got %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestCertificateLoadingController_CurrentCA(t *testing.T) {
 	}
 
 	t.Log("expect that subsequent calls to CurrentCA() return quickly and load the correct thing")
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 1*time.Second)
 	defer cancel()
 	ca, err := controller.CurrentCA(ctx)
 	if err != nil {

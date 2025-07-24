@@ -1,7 +1,6 @@
 package core
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -97,7 +96,7 @@ func TestValidateHostedClusterPayloadSupportsNodePoolCPUArch(t *testing.T) {
 
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			err := validateHostedClusterPayloadSupportsNodePoolCPUArch(context.TODO(), c, testCase.hc.Name, testCase.hc.Namespace, testCase.nodePoolCPUArch)
+			err := validateHostedClusterPayloadSupportsNodePoolCPUArch(t.Context(), c, testCase.hc.Name, testCase.hc.Namespace, testCase.nodePoolCPUArch)
 			if testCase.expectedErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -217,7 +216,7 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			}
 
 			// Run the test
-			err := validMinorVersionCompatibility(context.TODO(), c, "test-cluster", "test-namespace", test.nodePoolReleaseImage, releaseProvider)
+			err := validMinorVersionCompatibility(t.Context(), c, "test-cluster", "test-namespace", test.nodePoolReleaseImage, releaseProvider)
 
 			// Check the results
 			if test.expectedError == "" {

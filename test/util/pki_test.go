@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"crypto/x509"
 	"encoding/pem"
 	"testing"
@@ -15,7 +14,7 @@ import (
 )
 
 func TestGenerateTestCertificate(t *testing.T) {
-	ctx := log.IntoContext(context.Background(), testr.New(t))
+	ctx := log.IntoContext(t.Context(), testr.New(t))
 
 	testsCases := []struct {
 		name        string

@@ -1,7 +1,6 @@
 package supportedversion
 
 import (
-	"context"
 	"encoding/json"
 	"testing"
 
@@ -25,10 +24,10 @@ func TestEnsureSupportedVersionConfigMap(t *testing.T) {
 		namespace:              "hypershift",
 	}
 	g := NewGomegaWithT(t)
-	_, err := reconciler.Reconcile(context.Background(), reconcile.Request{})
+	_, err := reconciler.Reconcile(t.Context(), reconcile.Request{})
 	g.Expect(err).To(BeNil())
 	cfgMap := manifests.ConfigMap("hypershift")
-	err = c.Get(context.Background(), client.ObjectKeyFromObject(cfgMap), cfgMap)
+	err = c.Get(t.Context(), client.ObjectKeyFromObject(cfgMap), cfgMap)
 	g.Expect(err).To(BeNil())
 	g.Expect(cfgMap.Data[config.ConfigMapVersionsKey]).ToNot(BeEmpty())
 	data := &supportedversion.SupportedVersions{}

@@ -211,7 +211,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 
 			if len(tt.namedCertificates) > 0 && (tt.customCertSecret != nil && tt.customCertSecret.Data == nil) {
 				// Generate a test certificate
-				pemCert, pemKey, err = util.GenerateTestCertificate(context.Background(), tt.dnsNames, tt.ipAddresses, 24*time.Hour)
+				pemCert, pemKey, err = util.GenerateTestCertificate(t.Context(), tt.dnsNames, tt.ipAddresses, 24*time.Hour)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(pemCert).NotTo(BeNil())
 			}
@@ -254,7 +254,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 				switch object.(type) {
 				case *corev1.Secret:
 					var foundSecret corev1.Secret
-					err := fakeClient.Get(context.Background(), types.NamespacedName{
+					err := fakeClient.Get(t.Context(), types.NamespacedName{
 						Name:      object.GetName(),
 						Namespace: object.GetNamespace(),
 					}, &foundSecret)
@@ -274,7 +274,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 				hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{}
 			}
 			hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = tt.namedCertificates
-			errs := ValidateOCPAPIServerSANs(context.Background(), hc, fakeClient)
+			errs := ValidateOCPAPIServerSANs(t.Context(), hc, fakeClient)
 			g.Expect(errs).To(Equal(tt.expectedErrors))
 		})
 	}
