@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kubelet-config-configurator
+  namespace: kube-system
+  labels:
+    app: kubelet-config-configurator
+spec:
+  selector:
+    matchLabels:
+      app: kubelet-config-configurator
+  template:
+    metadata:
+      labels:
+        app: kubelet-config-configurator
+    spec:
+      nodeSelector:
+        hypershift.openshift.io/control-plane: "true"
+      hostPID: true
+      hostNetwork: true
+      serviceAccountName: kubelet-config-configurator
+      tolerations:
+      - key: hypershift.openshift.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+      containers:
+      - name: kubelet-configurator
+        image: registry.redhat.io/ubi9/ubi:latest
+        command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          
+          KUBELET_CONFIG_PATH="/host/etc/kubernetes/kubelet.conf"
+          
+          # Check if kubelet config exists
+          if [[ ! -f "$KUBELET_CONFIG_PATH" ]]; then
+            echo "Kubelet config not found at $KUBELET_CONFIG_PATH"
+            exit 1
+          fi
+          
+          # Backup original config
+          cp "$KUBELET_CONFIG_PATH" "$KUBELET_CONFIG_PATH.backup.$(date +%s)"
+          
+          # Install yq if not present
+          if ! command -v yq &> /dev/null; then
+            curl -L https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq
+            chmod +x /usr/local/bin/yq
+          fi
+          
+          # Update maxPods in kubelet config
+          yq eval '.maxPods = 400' -i "$KUBELET_CONFIG_PATH"
+          
+          echo "Updated kubelet config with maxPods: 400"
+          
+          # Restart kubelet service
+          nsenter -t 1 -m -u -i -n -p -- systemctl restart kubelet
+          
+          echo "Kubelet service restarted"
+          
+          # Keep container running to maintain the DaemonSet
+          while true; do
+            sleep 3600
+          done
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: host-etc
+          mountPath: /host/etc
+        resources:
+          requests:
+            memory: "10Mi"
+            cpu: "10m"
+      volumes:
+      - name: host-etc
+        hostPath:
+          path: /etc
+          type: Directory
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubelet-config-configurator
+  namespace: kube-system
