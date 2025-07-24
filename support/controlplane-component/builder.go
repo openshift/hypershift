@@ -105,6 +105,22 @@ func (b *controlPlaneWorkloadBuilder[T]) InjectServiceAccountKubeConfig(opts Ser
 	return b
 }
 
+// WithCustomOperandsRolloutCheckFunc allows to set a custom function to check the rollout status of operands.
+// This function should return true if the operands are ready, false otherwise.
+// TODO: This is a temporary solution, should be replaced by MonitorOperandsRolloutStatus() once we enforce a common label/annotation on all operands to provide more generic rollout check.
+func (b *controlPlaneWorkloadBuilder[T]) WithCustomOperandsRolloutCheckFunc(fn func(cpContext WorkloadContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
+	b.workload.customOperandsRolloutCheck = fn
+	return b
+}
+
+// MonitorOperandsRolloutStatus will enable monitoring of the rollout status of all operands(deployments) with the label "hypershift.openshift.io/managed-by: <component-name>".
+// Operands must also have the annotation "release.openshift.io/version" with their release image version.
+// The component will be marked as ready only when all operands are ready.
+func (b *controlPlaneWorkloadBuilder[T]) MonitorOperandsRolloutStatus() *controlPlaneWorkloadBuilder[T] {
+	b.workload.monitorOperandsRolloutStatus = true
+	return b
+}
+
 type ServiceAccountKubeConfigOpts struct {
 	Name, Namespace, MountPath, ContainerName string
 }
