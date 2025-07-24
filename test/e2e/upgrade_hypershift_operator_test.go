@@ -74,8 +74,6 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				obj.Labels = make(map[string]string)
 			}
 			obj.Labels[hostedClusterUpgradeTestLabel] = "true"
-			// TODO: remove when the switch to CPOv2 is merged and the new HO version is used as the init image for this test.
-			obj.Annotations["hypershift.openshift.io/cpo-v2"] = "true"
 		}
 	}
 
