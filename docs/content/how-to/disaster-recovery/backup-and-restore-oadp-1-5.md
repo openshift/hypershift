@@ -288,7 +288,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
       - clusterdeployment
       excludedResources: []
       storageLocation: default
-      ttl: 720h0m0s
+      ttl: 2h30m0s
       snapshotMoveData: true
       datamover: "velero"
       defaultVolumesToFsBackup: false
@@ -389,7 +389,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
       - clusterdeployment
       excludedResources: []
       storageLocation: default
-      ttl: 720h0m0s
+      ttl: 2h30m0s
       snapshotMoveData: true
       datamover: "velero"
       defaultVolumesToFsBackup: false
@@ -491,7 +491,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
       excludedResources: []
       defaultVolumesToFsBackup: true
       storageLocation: default
-      ttl: 720h0m0s
+      ttl: 2h30m0s
     ```
 
     We will emphasize the most important fields:
@@ -585,7 +585,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
       - clusterdeployment
       excludedResources: []
       storageLocation: default
-      ttl: 720h0m0s
+      ttl: 2h30m0s
       snapshotMoveData: true
       datamover: "velero"
       defaultVolumesToFsBackup: false
@@ -669,7 +669,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
           operator: 'DoesNotExist'
       storageLocation: default
       preserveNodePorts: true
-      ttl: 4h0m0s
+      ttl: 2h30m0s
       snapshotMoveData: true
       datamover: "velero"
       defaultVolumesToFsBackup: false
