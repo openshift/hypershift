@@ -189,6 +189,12 @@ const (
 	ClusterSizeTransitionPending = "ClusterSizeTransitionPending"
 	// ClusterSizeTransitionRequired exposes the next t-shirt size that the cluster will transition to.
 	ClusterSizeTransitionRequired = "ClusterSizeTransitionRequired"
+
+	// HostedClusterRestoredFromBackup indicates that the HostedCluster was restored from backup.
+	// This condition is set to true when the HostedCluster is restored from backup and the recovery process is complete.
+	// This condition is used to track the status of the recovery process and to determine if the HostedCluster
+	// is ready to be used after restoration.
+	HostedClusterRestoredFromBackup ConditionType = "HostedClusterRestoredFromBackup"
 )
 
 // Reasons.
@@ -241,6 +247,8 @@ const (
 	KubeVirtSuboptimalMTUReason = "KubeVirtSuboptimalMTUDetected"
 
 	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
+
+	RecoveryFinishedReason = "RecoveryFinished"
 )
 
 // Messages.
