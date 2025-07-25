@@ -564,6 +564,14 @@ func TestGetImageArchitecture(t *testing.T) {
 		expectErr             bool
 	}{
 		{
+			name:                  "Bad pull secret, cache empty; err",
+			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:       []byte(""),
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedArch:          "",
+			expectErr:             true,
+		},
+		{
 			name:                  "Get amd64 from amd64 image; no err",
 			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			pullSecretBytes:       pullSecretBytes,
@@ -578,14 +586,6 @@ func TestGetImageArchitecture(t *testing.T) {
 			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
 			expectedArch:          hyperv1.PPC64LE,
 			expectErr:             false,
-		},
-		{
-			name:                  "Bad pull secret; err",
-			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
-			pullSecretBytes:       []byte(""),
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedArch:          "",
-			expectErr:             true,
 		},
 	}
 
