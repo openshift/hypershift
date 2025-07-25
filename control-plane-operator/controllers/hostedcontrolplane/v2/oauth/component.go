@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -44,6 +45,7 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		WithManifestAdapter(
 			"audit-config.yaml",
+			component.WithPredicate(kasv2.AuditEnabledWorkloadContext),
 			component.WithAdaptFunction(adaptAuditConfig),
 		).
 		WithManifestAdapter(
