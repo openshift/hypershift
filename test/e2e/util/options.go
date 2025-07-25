@@ -104,6 +104,7 @@ type ConfigurableClusterOptions struct {
 	AzureCredentialsFile                  string
 	AzureManagedIdentitiesFile            string
 	AzureIssuerURL                        string
+	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
 	AzureEncryptionKeyID                  string
@@ -317,6 +318,7 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 		DataPlaneIdentitiesFile:          o.ConfigurableClusterOptions.AzureDataPlaneIdentities,
 		DNSZoneRGName:                    "os4-common",
 		AssignServicePrincipalRoles:      true,
+		MultiArch:                        o.ConfigurableClusterOptions.AzureMultiArch,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
