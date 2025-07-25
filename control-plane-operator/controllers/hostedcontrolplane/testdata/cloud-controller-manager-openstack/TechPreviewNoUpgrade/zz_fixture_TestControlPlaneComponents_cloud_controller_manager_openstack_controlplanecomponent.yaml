@@ -27,4 +27,3 @@ status:
   - group: ""
     kind: ConfigMap
     name: openstack-trusted-ca
-  version: 4.18.0

@@ -18,4 +18,3 @@ status:
     reason: Unknown
     status: "False"
     type: RolloutComplete
-  version: 4.18.0
