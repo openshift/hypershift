@@ -772,7 +772,7 @@ metadata:
   name: hc-clusters-example-hosted-restore
   namespace: openshift-adp
 spec:
-  backupName: <NAME OF THE REFERED BACKUP>
+  backupName: <NAME OF THE REFERRED BACKUP>
   restorePVs: true
   existingResourcePolicy: update
   excludedResources:
