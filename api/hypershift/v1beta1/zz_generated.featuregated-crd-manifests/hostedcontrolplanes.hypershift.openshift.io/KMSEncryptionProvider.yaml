@@ -2718,6 +2718,10 @@ spec:
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
                           resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
                           for the user.
+                          Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
+                          These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
+                          Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+                          These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
                         items:
                           description: AWSResourceTag is a tag to apply to AWS resources
                             created for the cluster.
