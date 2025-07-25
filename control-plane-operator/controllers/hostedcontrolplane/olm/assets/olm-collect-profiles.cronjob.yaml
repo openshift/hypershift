@@ -34,6 +34,7 @@ spec:
                 requests:
                   cpu: 10m
                   memory: 80Mi
+              terminationMessagePolicy: FallbackToLogsOnError
           volumes:
             - name: config-volume
               configMap:
