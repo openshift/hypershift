@@ -1093,13 +1093,21 @@ func TestReconcileRouter(t *testing.T) {
 
 	testCases := []struct {
 		name                         string
+		platformType                 hyperv1.PlatformType
 		endpointAccess               hyperv1.AWSEndpointAccessType
 		exposeAPIServerThroughRouter bool
 		existingObjects              []client.Object
 		expectedDeployments          []appsv1.Deployment
 	}{
 		{
+			name:                         "IBM Cloud",
+			platformType:                 hyperv1.IBMCloudPlatform,
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+		},
+		{
 			name:                         "Public HCP, uses public service host name",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.Public,
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{},
@@ -1125,6 +1133,7 @@ func TestReconcileRouter(t *testing.T) {
 		},
 		{
 			name:                         "PublicPrivate HCP, deployment gets hostname from public service",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.PublicAndPrivate,
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{},
@@ -1151,6 +1160,7 @@ func TestReconcileRouter(t *testing.T) {
 
 		{
 			name:                         "Private HCP, deployment gets hostname from private service",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.Private,
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{},
@@ -1176,11 +1186,13 @@ func TestReconcileRouter(t *testing.T) {
 		},
 		{
 			name:                         "Public HCP apiserver not exposed through router, nothing gets created",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.Public,
 			exposeAPIServerThroughRouter: false,
 		},
 		{
 			name:                         "PublicPrivate HCP apiserver not exposed through router, router without custom template and private router service get created",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.PublicAndPrivate,
 			exposeAPIServerThroughRouter: false,
 			expectedDeployments: []appsv1.Deployment{
@@ -1205,6 +1217,7 @@ func TestReconcileRouter(t *testing.T) {
 		},
 		{
 			name:                         "Private HCP apiserver not exposed through router, router without custom template and private router service get created",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.Private,
 			exposeAPIServerThroughRouter: false,
 			expectedDeployments: []appsv1.Deployment{
@@ -1229,6 +1242,7 @@ func TestReconcileRouter(t *testing.T) {
 		},
 		{
 			name:                         "Old router resources get cleaned up when exposed through route",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.PublicAndPrivate,
 			exposeAPIServerThroughRouter: true,
 			existingObjects: []client.Object{
@@ -1259,6 +1273,7 @@ func TestReconcileRouter(t *testing.T) {
 		},
 		{
 			name:                         "Old router resources get cleaned up when exposed through LB",
+			platformType:                 hyperv1.AWSPlatform,
 			endpointAccess:               hyperv1.PublicAndPrivate,
 			exposeAPIServerThroughRouter: false,
 			existingObjects: []client.Object{
@@ -1308,7 +1323,7 @@ func TestReconcileRouter(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
+						Type: tc.platformType,
 						AWS: &hyperv1.AWSPlatformSpec{
 							EndpointAccess: tc.endpointAccess,
 						},

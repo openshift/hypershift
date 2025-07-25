@@ -1848,7 +1848,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}
@@ -1942,7 +1942,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
 	exposeKASThroughRouter := util.IsRouteKAS(hcp)
@@ -2075,14 +2075,28 @@ func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPrivateHCP(hcp) {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileInternalRouterServiceStatus", "host", host, "needed", needed, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileInternalRouterServiceStatus", "host", host, "needed", needed, "message", message, "err", nil)
+		}
+	}()
+	if !util.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileExternalRouterServiceStatus", "host", host, "needed", needed, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileExternalRouterServiceStatus", "host", host, "needed", needed, "message", message, "err", nil)
+		}
+	}()
+	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
@@ -2111,12 +2125,19 @@ func (r *HostedControlPlaneReconciler) reconcileRouterServiceStatus(ctx context.
 }
 
 func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileAPIServerServiceStatus", "host", host, "port", port, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileAPIServerServiceStatus", "host", host, "port", port, "message", message, "err", nil)
+		}
+	}()
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if serviceStrategy == nil {
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
@@ -2160,6 +2181,13 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 }
 
 func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileKonnectivityServiceStatus", "host", host, "port", port, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileKonnectivityServiceStatus", "host", host, "port", port, "message", message, "err", nil)
+		}
+	}()
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("konnectivity service strategy not specified")
@@ -2190,6 +2218,13 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServiceStatus(ctx co
 }
 
 func (r *HostedControlPlaneReconciler) reconcileOAuthServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, port int32, message string, err error) {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileOAuthServiceStatus", "host", host, "port", port, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileOAuthServiceStatus", "host", host, "port", port, "message", message, "err", nil)
+		}
+	}()
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
 	if serviceStrategy == nil {
 		err = fmt.Errorf("OAuth strategy not specified")
@@ -2256,8 +2291,15 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerServiceStatus(ct
 	return r.reconcileClusterIPServiceStatus(ctx, svc)
 }
 
-func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx context.Context, svc *corev1.Service) (string, error) {
-	if err := r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+func (r *HostedControlPlaneReconciler) reconcileClusterIPServiceStatus(ctx context.Context, svc *corev1.Service) (message string, err error) {
+	defer func() {
+		if err != nil {
+			r.Log.Info("returning from reconcileClusterIPServiceStatus", "service", svc, "message", message, "err", err.Error())
+		} else {
+			r.Log.Info("returning from reconcileClusterIPServiceStatus", "service", svc, "message", message, "err", nil)
+		}
+	}()
+	if err = r.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			return "", nil
 		}
@@ -4523,6 +4565,10 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 }
 
 func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN) error {
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		return nil
+	}
+
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
