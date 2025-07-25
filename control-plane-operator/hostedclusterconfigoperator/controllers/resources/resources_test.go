@@ -1391,3 +1391,554 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 		},
 	}
 }
+
+func TestReconcileAuthOIDC(t *testing.T) {
+	log := controllerruntime.LoggerFrom(context.Background())
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+
+	tests := map[string]struct {
+		inputHCP                *hyperv1.HostedControlPlane
+		inputCPObjects          []client.Object
+		expectIssuerCAConfigMap bool
+		expectOIDCClientSecrets []string
+		expectErrors            bool
+		expectedErrorMessages   []string
+	}{
+		"when OAuth is enabled, should not copy OIDC resources": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							IdentityProviders: []configv1.IdentityProvider{
+								{
+									Name: "test-provider",
+									IdentityProviderConfig: configv1.IdentityProviderConfig{
+										Type: configv1.IdentityProviderTypeHTPasswd,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled and no OIDC providers, should not copy anything": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with CA configmap, should copy CA": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "oidc-ca-bundle",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "test-ca-certificate",
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with OIDC clients, should copy client secrets": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+										{
+											ComponentName:      "cli",
+											ComponentNamespace: "openshift-authentication",
+											ClientID:           "cli-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "cli-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cli-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("cli-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret", "cli-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with both CA and client secrets, should copy both": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "oidc-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "test-ca-certificate",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with confidential and public OIDC clients, should copy confidential client secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+										{
+											ComponentName:      "cli",
+											ComponentNamespace: "openshift-authentication",
+											ClientID:           "cli-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled but CA configmap is missing, should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "missing-ca-bundle",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            true,
+			expectedErrorMessages:   []string{"failed to get issuer CA configmap missing-ca-bundle"},
+		},
+		"when OAuth is disabled but client secret is missing, should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "missing-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            true,
+			expectedErrorMessages:   []string{"failed to get OIDCClient secret missing-client-secret"},
+		},
+		"when OAuth is disabled with multiple OIDC providers, should handle first provider only": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "first-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://first.example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "first-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "first-console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "first-console-secret",
+											},
+										},
+									},
+								},
+								{
+									Name: "second-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://second.example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "second-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "second-console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "second-console-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "first-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "first-ca-certificate",
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "second-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "second-ca-certificate",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "first-console-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("first-console-secret-value"),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "second-console-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("second-console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{"first-console-secret"}, // Only first provider should be processed
+			expectErrors:            false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(test.inputCPObjects...).
+				Build()
+
+			hcClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			r := &reconciler{
+				client:                 hcClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			// Verify that CA configmaps and OIDC client secrets don't exist in hosted cluster before reconciliation
+			if test.expectIssuerCAConfigMap {
+				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+				caConfigMap := &corev1.ConfigMap{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      provider.Issuer.CertificateAuthority.Name,
+				}, caConfigMap)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "CA configmap should not exist before reconciliation")
+			}
+
+			for _, secretName := range test.expectOIDCClientSecrets {
+				clientSecret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      secretName,
+				}, clientSecret)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "OIDC client secret should not exist before reconciliation")
+			}
+
+			err := r.reconcileAuthOIDC(ctx, test.inputHCP, log)
+
+			if test.expectErrors {
+				g.Expect(err).To(HaveOccurred())
+				errorStr := err.Error()
+				for _, expectedMsg := range test.expectedErrorMessages {
+					g.Expect(errorStr).To(ContainSubstring(expectedMsg))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Check if issuer CA configmap was copied to openshift-config namespace
+			if test.expectIssuerCAConfigMap {
+				if test.inputHCP.Spec.Configuration != nil &&
+					test.inputHCP.Spec.Configuration.Authentication != nil &&
+					len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+					provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+					caConfigMap := &corev1.ConfigMap{}
+					err := hcClient.Get(ctx, client.ObjectKey{
+						Namespace: ConfigNamespace,
+						Name:      provider.Issuer.CertificateAuthority.Name,
+					}, caConfigMap)
+					g.Expect(err).ToNot(HaveOccurred())
+					// Get expected CA certificate from the test case input objects
+					expectedCA := ""
+					for _, obj := range test.inputCPObjects {
+						if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == provider.Issuer.CertificateAuthority.Name {
+							expectedCA = cm.Data["ca-bundle.crt"]
+							break
+						}
+					}
+					g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(Equal(expectedCA))
+				}
+			}
+
+			// Check if OIDC client secrets were copied to openshift-config namespace
+			for _, secretName := range test.expectOIDCClientSecrets {
+				clientSecret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      secretName,
+				}, clientSecret)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clientSecret.Data["clientSecret"]).ToNot(BeEmpty())
+			}
+
+			// Verify that unexpected resources were not created
+			if !test.expectIssuerCAConfigMap &&
+				test.inputHCP.Spec.Configuration != nil &&
+				test.inputHCP.Spec.Configuration.Authentication != nil &&
+				len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+				if provider.Issuer.CertificateAuthority.Name != "" {
+					caConfigMap := &corev1.ConfigMap{}
+					err := hcClient.Get(ctx, client.ObjectKey{
+						Namespace: ConfigNamespace,
+						Name:      provider.Issuer.CertificateAuthority.Name,
+					}, caConfigMap)
+					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				}
+			}
+		})
+	}
+}

@@ -1150,7 +1150,8 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 
 		// Copy OIDCClient Secrets into openshift-config namespace
 		for _, oidcClient := range provider.OIDCClients {
-			// If the secret name is empty, we assume the guest cluster admin is going to create this secret manually
+			// Public OIDC clients have no secrets, so the secret name will be the empty string since ClientSecret is
+			// optional and not a pointer
 			if oidcClient.ClientSecret.Name == "" {
 				log.Info("OIDC client secret is empty, skipping reconciliation", "component", oidcClient.ComponentName)
 				continue
