@@ -10,7 +10,8 @@ metadata:
     pipelinesascode.tekton.dev/on-cel-expression: |
       event == "push"
       && target_branch == "main"
-      && files.all.exists(x, x.matches('^shared-ingress/'))
+      && ( "^shared-ingress/***".pathChanged() ||
+           ".tekton/hypershift-shared-ingress*".pathChanged() )
   creationTimestamp:
   labels:
     appstudio.openshift.io/application: hypershift-shared-ingress
@@ -31,9 +32,13 @@ spec:
     - linux/x86_64
     - linux/arm64
   - name: dockerfile
-    value: /shared-ingress/Containerfile
+    value: /Containerfile
   - name: hermetic
     value: "true"
+  - name: path-context
+    value: shared-ingress
+  - name: prefetch-input
+    value: '[{"type": "rpm", "path": "shared-ingress"}]'
   pipelineSpec:
     description: |
       This pipeline is ideal for building multi-arch container images from a Containerfile while maintaining trust after pipeline customization.
@@ -187,6 +192,8 @@ spec:
         value: $(params.output-image).prefetch
       - name: ociArtifactExpiresAfter
         value: $(params.image-expires-after)
+      - name: dev-package-managers
+        value: true
       runAfter:
       - clone-repository
       taskRef:
