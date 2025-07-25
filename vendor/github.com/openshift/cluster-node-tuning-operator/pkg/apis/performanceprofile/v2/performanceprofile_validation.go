@@ -396,7 +396,7 @@ func (r *PerformanceProfile) validateHugePages(nodes corev1.NodeList) field.Erro
 	if r.Spec.HugePages.DefaultHugePagesSize != nil {
 		defaultSize := *r.Spec.HugePages.DefaultHugePagesSize
 		errField := "spec.hugepages.defaultHugepagesSize"
-		errMsg := "hugepages default size should be equal to one of"
+		errMsg := fmt.Sprintf("The compatible default huge page sizes for the selected kernel page size %s are:", kernelPageSize)
 		docsRef := "https://docs.kernel.org/mm/vmemmap_dedup.html"
 		if x86 && !slices.Contains(x86ValidHugepagesSizes, string(defaultSize)) {
 			allErrs = append(
@@ -413,8 +413,14 @@ func (r *PerformanceProfile) validateHugePages(nodes corev1.NodeList) field.Erro
 				field.Invalid(
 					field.NewPath(errField),
 					r.Spec.HugePages.DefaultHugePagesSize,
-					fmt.Sprintf("%s %v. doc reference=%s", errMsg, aarch64HugePagesByKernelPageSize[kernelPageSize], docsRef),
-				),
+					fmt.Sprintf(
+						"%s %v. doc reference=%s. "+
+							"In case you are trying to define a default hugepage size that requires a different kernel page size, "+
+							"please set the needed kernel page size under the spec.kernelPageSize field.",
+						errMsg,
+						aarch64HugePagesByKernelPageSize[kernelPageSize],
+						docsRef,
+					)),
 			)
 		} else if !x86 && !aarch64 && !hugepagesSizes.Has(string(defaultSize)) {
 			allErrs = append(
@@ -430,14 +436,14 @@ func (r *PerformanceProfile) validateHugePages(nodes corev1.NodeList) field.Erro
 
 	for i, page := range r.Spec.HugePages.Pages {
 		errField := "spec.hugepages.pages"
-		errMsg := "the page size should be equal to one of"
+		errMsg := fmt.Sprintf("The compatible huge page sizes for the selected kernel page size %s are:", kernelPageSize)
 		docsRef := "https://docs.kernel.org/mm/vmemmap_dedup.html"
 		if x86 && !slices.Contains(x86ValidHugepagesSizes, string(page.Size)) {
 			allErrs = append(
 				allErrs,
 				field.Invalid(
 					field.NewPath(errField),
-					r.Spec.HugePages.Pages,
+					page.Size,
 					fmt.Sprintf("%s %v. doc reference=%s", errMsg, x86ValidHugepagesSizes, docsRef),
 				),
 			)
@@ -446,16 +452,22 @@ func (r *PerformanceProfile) validateHugePages(nodes corev1.NodeList) field.Erro
 				allErrs,
 				field.Invalid(
 					field.NewPath(errField),
-					r.Spec.HugePages.Pages,
-					fmt.Sprintf("%s %v. doc reference=%s", errMsg, aarch64HugePagesByKernelPageSize[(kernelPageSize)], docsRef),
-				),
+					page.Size,
+					fmt.Sprintf(
+						"%s %v. doc reference=%s. "+
+							"In case you are trying to define a hugepage that requires a different kernel page size, "+
+							"please set the needed kernel page size under the spec.kernelPageSize field.",
+						errMsg,
+						aarch64HugePagesByKernelPageSize[kernelPageSize],
+						docsRef,
+					)),
 			)
 		} else if !x86 && !aarch64 && !hugepagesSizes.Has(string(page.Size)) {
 			allErrs = append(
 				allErrs,
 				field.Invalid(
 					field.NewPath(errField),
-					r.Spec.HugePages.Pages,
+					page.Size,
 					fmt.Sprintf("%s %v. doc reference=%s", errMsg, hugepagesSizes, docsRef),
 				),
 			)
