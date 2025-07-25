@@ -19,7 +19,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -104,67 +103,12 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, []routev1.Route, error) {
-	hcList := &hyperv1.HostedClusterList{}
-	if err := r.Client.List(ctx, hcList); err != nil {
-		return "", nil, fmt.Errorf("failed to list HCs: %w", err)
-	}
-
-	namespaces := make([]string, 0, len(hcList.Items))
-	svcsNamespaceToClusterID := make(map[string]string)
-	for _, hc := range hcList.Items {
-		hcpNamespace := hc.Namespace + "-" + hc.Name
-		namespaces = append(namespaces, hcpNamespace)
-		svcsNamespaceToClusterID[hcpNamespace] = hc.Spec.ClusterID
-	}
-
-	// This enables traffic from through external DNS.
-	routes := make([]routev1.Route, 0, len(namespaces))
-	for _, ns := range namespaces {
-		routeList := &routev1.RouteList{}
-		if err := r.Client.List(ctx, routeList, client.InNamespace(ns)); err != nil {
-			return "", nil, fmt.Errorf("failed to list routes: %w", err)
-		}
-		routes = append(routes, routeList.Items...)
-	}
-	svcsNameToIP := make(map[string]string)
-	for _, route := range routes {
-		svc := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      route.Spec.To.Name,
-				Namespace: route.Namespace,
-			},
-		}
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-			return "", nil, fmt.Errorf("failed to get service %s: %w", svc.Name, err)
-		}
-		svcsNameToIP[route.Namespace+route.Spec.To.Name] = svc.Spec.ClusterIP
-	}
-
-	// This enables traffic from the data plane via kubernetes.svc.
-	svcList := &corev1.ServiceList{}
-	fieldSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "kube-apiserver"})
-	listOptions := &client.ListOptions{
-		FieldSelector: fieldSelector,
-	}
-	if err := r.Client.List(ctx, svcList, listOptions); err != nil {
-		return "", nil, err
-	}
-
-	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate router config: %w", err)
-	}
-
-	return config, routes, nil
-}
-
 func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecretPresent bool) error {
 	if err := r.reconcileDefaultServiceAccount(ctx, pullSecretPresent); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
-	config, routes, err := r.generateConfig(ctx)
+	config, err := generateRouterConfig(ctx, r.Client)
 	if err != nil {
 		return fmt.Errorf("failed to generate router config: %w", err)
 	}
@@ -201,15 +145,18 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].IP
 		}
 	}
+
+	routeList := &routev1.RouteList{}
+	// If the hypershift.openshift.io/hosted-control-plane label is not present,
+	// then it means the route should be fulfilled by the management cluster's router.
+	if err := r.Client.List(ctx, routeList, client.HasLabels{util.HCPRouteLabel}); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
+	}
+
 	// "Admit" routes that we manage so that other code depending on routes continues
 	// to work as before.
-	for i := range routes {
-		route := routes[i]
-		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
-			// If the hypershift.openshift.io/hosted-control-plane label is not present,
-			// then it means the route should be fulfilled by the management cluster's router.
-			continue
-		}
+	for i := range routeList.Items {
+		route := routeList.Items[i]
 		originalRoute := route.DeepCopy()
 		ReconcileRouteStatus(&route, canonicalHostname)
 		if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {

@@ -985,7 +985,7 @@ type ClusterNetworking struct {
 	// apiServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a hosted cluster node.
 	//
-	// +immutable
+	// +optional
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
 
@@ -1014,7 +1014,8 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
+// +kubebuilder:validation:XValidation:rule=`self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$') || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')`,message="cidr must be a valid IPv4 or IPv6 CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)"
+// +kubebuilder:validation:MaxLength=43
 type CIDRBlock string
 
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
@@ -1040,9 +1041,14 @@ type APIServerNetworking struct {
 	// +optional
 	Port *int32 `json:"port,omitempty"`
 
-	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer.
 	// If not specified, traffic is allowed from all addresses.
-	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
+	// This field is enforced for ARO (Azure Red Hat OpenShift) via the shared-ingress HAProxy.
+	// For platforms other than ARO, the enforcement depends on whether the underlying cloud provider supports the Service LoadBalancerSourceRanges field.
+	// If the platform does not support LoadBalancerSourceRanges, this field may have no effect.
+	// +kubebuilder:validation:MaxItems=50
+	// +listType=set
+	// +optional
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
 }
 

@@ -2,24 +2,32 @@ package sharedingress
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"fmt"
-	"sort"
+	"slices"
+	"strings"
 	"text/template"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
+
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -49,83 +57,59 @@ func init() {
 	}
 }
 
-type svcByNamespace []corev1.Service
-
-func (s svcByNamespace) Len() int           { return len(s) }
-func (s svcByNamespace) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s svcByNamespace) Less(i, j int) bool { return s[i].Namespace < s[j].Namespace }
-
-type routeByNamespaceName []routev1.Route
-
-func (r routeByNamespaceName) Len() int      { return len(r) }
-func (r routeByNamespaceName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r routeByNamespaceName) Less(i, j int) bool {
-	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
+type backendDesc struct {
+	Name         string
+	SVCIP        string
+	SVCPort      int32
+	ClusterID    string
+	AllowedCIDRs string
+}
+type ExternalDNSBackendDesc struct {
+	Name         string
+	HostName     string
+	SVCIP        string
+	SVCPort      int32
+	AllowedCIDRs string
 }
 
-func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
-	type backendDesc struct {
-		Name      string
-		SVCIP     string
-		SVCPort   int32
-		ClusterID string
-	}
-	type ExternalDNSBackendDesc struct {
-		Name                 string
-		HostName             string
-		DestinationServiceIP string
-		DestinationPort      int32
-	}
+func generateRouterConfig(ctx context.Context, client crclient.Client) (string, error) {
+	logger := log.FromContext(ctx)
+
 	type templateParams struct {
 		Backends            []backendDesc
 		ExternalDNSBackends []ExternalDNSBackendDesc
 	}
-	p := templateParams{}
-	sort.Sort(svcByNamespace(svcList.Items))
-	p.Backends = make([]backendDesc, 0, len(svcList.Items))
-	for _, svc := range svcList.Items {
-		p.Backends = append(p.Backends, backendDesc{
-			Name:      svc.Namespace + "-" + svc.Name,
-			SVCIP:     svc.Spec.ClusterIP,
-			SVCPort:   svc.Spec.Ports[0].Port,
-			ClusterID: svcsNamespaceToClusterID[svc.Namespace],
-		})
+
+	hcList := &hyperv1.HostedClusterList{}
+	if err := client.List(ctx, hcList); err != nil {
+		return "", fmt.Errorf("failed to list HostedClusters: %w", err)
 	}
 
-	sort.Sort(routeByNamespaceName(routes))
-	p.ExternalDNSBackends = make([]ExternalDNSBackendDesc, 0, len(routes))
-	for _, route := range routes {
-		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
-			// If the hypershift.openshift.io/hosted-control-plane label is not present,
-			// then it means the route should be fulfilled by the management cluster's router.
+	hostedClusters := hcList.Items
+	slices.SortFunc(hostedClusters, func(a, b hyperv1.HostedCluster) int {
+		hcpNamespaceA := a.Namespace + "-" + a.Name
+		hcpNamespaceB := b.Namespace + "-" + b.Name
+		return strings.Compare(hcpNamespaceA, hcpNamespaceB)
+	})
+
+	p := templateParams{
+		Backends:            make([]backendDesc, 0, len(hostedClusters)),
+		ExternalDNSBackends: make([]ExternalDNSBackendDesc, 0, len(hostedClusters)),
+	}
+	for _, hc := range hostedClusters {
+		if !hc.DeletionTimestamp.IsZero() {
 			continue
 		}
-		switch route.Name {
-		case manifests.KubeAPIServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-apiserver",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      config.KASSVCPort})
-		case ignitionserver.Route("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-ignition",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      443})
-		case manifests.KonnectivityServerRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-konnectivity",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      8091})
-		case manifests.OauthServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-oauth",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      6443})
+
+		backends, externalDNSBackends, err := getBackendsForHostedCluster(ctx, hc, client)
+		if err != nil {
+			// don't return an error here, otherwise we block config generation for other HostedClusters and potentially block their KAS access.
+			logger.Error(err, "failed to generate router config for hosted cluster", "hosted_cluster", crclient.ObjectKeyFromObject(&hc))
+			continue
 		}
+
+		p.Backends = append(p.Backends, backends...)
+		p.ExternalDNSBackends = append(p.ExternalDNSBackends, externalDNSBackends...)
 	}
 
 	out := &bytes.Buffer{}
@@ -133,6 +117,99 @@ func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID 
 		return "", fmt.Errorf("failed to generate router config: %w", err)
 	}
 	return out.String(), nil
+}
+
+func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, client crclient.Client) ([]backendDesc, []ExternalDNSBackendDesc, error) {
+	backends := []backendDesc{}
+	externalDNSBackends := []ExternalDNSBackendDesc{}
+
+	var allowedCIDRs string
+	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.AllowedCIDRBlocks != nil {
+		allowedCIDRBlocks := make([]string, 0, len(hc.Spec.Networking.APIServer.AllowedCIDRBlocks))
+		for _, cidr := range hc.Spec.Networking.APIServer.AllowedCIDRBlocks {
+			if cidr != "" {
+				allowedCIDRBlocks = append(allowedCIDRBlocks, string(cidr))
+			}
+		}
+
+		allowedCIDRs = strings.Join(allowedCIDRBlocks, " ")
+	}
+
+	hcpNamespace := hc.Namespace + "-" + hc.Name
+	kasService := manifests.KubeAPIServerService(hcpNamespace)
+	if err := client.Get(ctx, crclient.ObjectKeyFromObject(kasService), kasService); err != nil {
+		return nil, nil, fmt.Errorf("failed to get kube-apiserver service: %w", err)
+	}
+
+	backends = append(backends, backendDesc{
+		Name:         kasService.Namespace + "-" + kasService.Name,
+		SVCIP:        kasService.Spec.ClusterIP,
+		SVCPort:      kasService.Spec.Ports[0].Port,
+		ClusterID:    hc.Spec.ClusterID,
+		AllowedCIDRs: allowedCIDRs,
+	})
+
+	// This enables traffic from through external DNS.
+	routeList := &routev1.RouteList{}
+	if err := client.List(ctx, routeList, crclient.InNamespace(hcpNamespace), crclient.HasLabels{util.HCPRouteLabel}); err != nil {
+		return nil, nil, fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	routes := routeList.Items
+	slices.SortFunc(routes, func(a, b routev1.Route) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	for _, route := range routes {
+		svc := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      route.Spec.To.Name,
+				Namespace: route.Namespace,
+			},
+		}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(svc), svc); err != nil {
+			return nil, nil, fmt.Errorf("failed to get service %s: %w", svc.Name, err)
+		}
+
+		switch route.Name {
+		case manifests.KubeAPIServerExternalPublicRoute("").Name:
+			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
+				Name:         route.Namespace + "-apiserver",
+				HostName:     route.Spec.Host,
+				SVCIP:        svc.Spec.ClusterIP,
+				SVCPort:      config.KASSVCPort,
+				AllowedCIDRs: allowedCIDRs})
+		case ignitionserver.Route("").Name:
+			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
+				Name:     route.Namespace + "-ignition",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  443})
+		case manifests.KonnectivityServerRoute("").Name:
+			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
+				Name:     route.Namespace + "-konnectivity",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  8091})
+		case manifests.OauthServerExternalPublicRoute("").Name:
+			externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
+				Name:     route.Namespace + "-oauth",
+				HostName: route.Spec.Host,
+				SVCIP:    svc.Spec.ClusterIP,
+				SVCPort:  6443})
+		}
+	}
+
+	if hc.Spec.KubeAPIServerDNSName != "" {
+		externalDNSBackends = append(externalDNSBackends, ExternalDNSBackendDesc{
+			Name:         hcpNamespace + "-apiserver-custom",
+			HostName:     hc.Spec.KubeAPIServerDNSName,
+			SVCIP:        kasService.Spec.ClusterIP,
+			SVCPort:      config.KASSVCPort,
+			AllowedCIDRs: allowedCIDRs})
+	}
+
+	return backends, externalDNSBackends, nil
 }
 
 func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {
@@ -248,6 +325,8 @@ func ReconcileRouterService(svc *corev1.Service) error {
 		svc.Labels[k] = v
 	}
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	// ServiceExternalTrafficPolicyLocal preserves the client source IP. see: https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
 	svc.Spec.Selector = hcpRouterLabels()
 	foundExternaDNS := false
 	foundKASSVC := false
@@ -293,4 +372,120 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, owner
 	}
 	ownerRef.ApplyTo(pdb)
 	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(1))
+}
+
+func ReconcileRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) {
+	httpPort := intstr.FromInt(8080)
+	httpsPort := intstr.FromInt(8443)
+	kasServiceFrontendPort := intstr.FromInt(6443)
+	protocol := corev1.ProtocolTCP
+
+	policy.Spec.PodSelector = metav1.LabelSelector{
+		MatchLabels: hcpRouterLabels(),
+	}
+
+	// Allow ingress to the router ports
+	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
+		{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &httpPort,
+					Protocol: &protocol,
+				},
+				{
+					Port:     &httpsPort,
+					Protocol: &protocol,
+				},
+				{
+					Port:     &kasServiceFrontendPort,
+					Protocol: &protocol,
+				},
+			},
+		},
+	}
+
+	clusterNetworks := make([]string, 0)
+	// In vanilla kube management cluster this would be nil.
+	if managementClusterNetwork != nil {
+		for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
+			clusterNetworks = append(clusterNetworks, network.CIDR)
+		}
+	}
+
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{
+			// Allow traffic to the internet (excluding cluster internal IPs).
+			// This is needed for the router to be able to resolve external DNS names.
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					IPBlock: &networkingv1.IPBlock{
+						CIDR:   "0.0.0.0/0",
+						Except: clusterNetworks,
+					},
+				},
+			},
+		},
+		{
+			// Allow traffic to the HostedControlPlane kube-apiserver in all namespaces.
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					PodSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app":                              "kube-apiserver",
+							hyperv1.ControlPlaneComponentLabel: "kube-apiserver",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if isOpenShiftDNS {
+		// Allow traffic to openshift-dns namespace
+		dnsUDPPort := intstr.FromInt(5353)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(5353)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			To: []networkingv1.NetworkPolicyPeer{
+				{
+					NamespaceSelector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"kubernetes.io/metadata.name": "openshift-dns",
+						},
+					},
+				},
+			},
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	} else {
+		// All traffic to any destination on port 53 for both TCP and UDP
+		dnsUDPPort := intstr.FromInt(53)
+		dnsUDPProtocol := corev1.ProtocolUDP
+		dnsTCPPort := intstr.FromInt(53)
+		dnsTCPProtocol := corev1.ProtocolTCP
+		policy.Spec.Egress = append(policy.Spec.Egress, networkingv1.NetworkPolicyEgressRule{
+			Ports: []networkingv1.NetworkPolicyPort{
+				{
+					Port:     &dnsUDPPort,
+					Protocol: &dnsUDPProtocol,
+				},
+				{
+					Port:     &dnsTCPPort,
+					Protocol: &dnsTCPProtocol,
+				},
+			},
+		})
+	}
+
+	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
 }
