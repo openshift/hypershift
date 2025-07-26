@@ -46,6 +46,9 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	AuthenticationConfig *configv1.AuthenticationSpec
+	ExtOIDCParam         *ConfigWithExtOIDCParam
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -249,6 +252,37 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		err = h.client.Create(h.ctx, serviceAccountSigningKeySecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
+		//create external oidc secret and configmap
+		if opts.AuthenticationConfig != nil && opts.ExtOIDCParam != nil {
+			consoleCliSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCParam.ConsoleClientSecretName,
+					Namespace: namespace.Name,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					"clientSecret": opts.ExtOIDCParam.ConsoleClientSecretValue,
+				},
+			}
+			err := h.client.Create(h.ctx, consoleCliSecret)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
+
+			caData, err := os.ReadFile(opts.ExtOIDCParam.issuerCABundleFile)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
+
+			oidcCAConfigmap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCParam.IssuerCAConfigmapName,
+					Namespace: namespace.Name,
+				},
+				BinaryData: map[string][]byte{
+					"ca-bundle.crt": caData,
+				},
+			}
+			err = h.client.Create(h.ctx, oidcCAConfigmap)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
+		}
+
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {
 			if originalBeforeApply != nil {
@@ -273,6 +307,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 								},
 							},
 						},
+					}
+
+					if opts.AuthenticationConfig != nil && opts.ExtOIDCParam != nil {
+						v.Spec.Configuration.Authentication = opts.AuthenticationConfig
 					}
 				}
 			}
