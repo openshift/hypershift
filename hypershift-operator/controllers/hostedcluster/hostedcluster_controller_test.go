@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
@@ -4337,5 +4338,106 @@ func TestReconcileComponents(t *testing.T) {
 
 	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 		t.Fatalf("update loop detected: %v", err)
+	}
+}
+
+func TestEnsureHostedResroucesAreEmpty(t *testing.T) {
+	// Setup test cases
+	testCases := []struct {
+		name          string
+		setAROHCP     bool
+		annotations   map[string]string
+		secretContent map[string][]byte
+		expectError   bool
+		errorMessage  string
+	}{
+		{
+			name:          "non-ARO-HCP environment should pass",
+			setAROHCP:     false,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP without annotation should pass",
+			setAROHCP:     true,
+			annotations:   nil,
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP with annotation but empty secret should pass",
+			setAROHCP:     true,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP with annotation and non-empty secret should fail",
+			setAROHCP:     true,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   true,
+			errorMessage:  "secret test-secret is not empty. Secrets annotated with hypershift.openshift.io/hosted-cluster-sourced must be empty",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setAROHCP {
+				azureutil.SetAsAroHCPTest(t)
+			}
+			// Create the test namespace
+			namespace := "test-namespace"
+			secretName := "test-secret"
+
+			// Create a HostedCluster
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: namespace,
+				},
+			}
+
+			// Create a Secret that would exist in the cluster
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        secretName,
+					Namespace:   namespace,
+					Annotations: tc.annotations,
+				},
+				Data: tc.secretContent,
+			}
+
+			// Create a fake client with proper scheme
+			scheme := api.Scheme
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(hcluster, secret).
+				Build()
+
+			// Create a Secret to be validated (this would be the object passed to ensureHostedResroucesAreEmpty)
+			validateSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        secretName,
+					Namespace:   namespace,
+					Annotations: tc.annotations,
+				},
+			}
+
+			// Run the function being tested
+			err := ensureHostedResourcesAreEmpty(context.Background(), fakeClient, hcluster, validateSecret)
+
+			// Check the result
+			if tc.expectError && err == nil {
+				t.Errorf("expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("expected no error but got: %v", err)
+			}
+			if tc.expectError && err != nil && !strings.Contains(err.Error(), tc.errorMessage) {
+				t.Errorf("expected error message to contain %q but got: %v", tc.errorMessage, err)
+			}
+		})
 	}
 }

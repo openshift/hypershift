@@ -1693,6 +1693,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
 				}
+				if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
+				}
 				destSecret := &corev1.Secret{}
 				destSecret.Name = sourceSecret.Name
 				destSecret.Namespace = controlPlaneNamespace.Name
@@ -4726,6 +4729,20 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 	obj.SetAnnotations(existing)
 	if err := client.Update(ctx, obj); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ensureHostedResourcesAreEmpty(ctx context.Context, crclient client.Client, hcluster *hyperv1.HostedCluster, obj client.Object) error {
+	if !azureutil.IsAroHCP() || !hyperutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
+		return nil
+	}
+	var cm corev1.Secret
+	if err := crclient.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: obj.GetName()}, &cm); err != nil {
+		return fmt.Errorf("failed to retrieve secret %s: %w", obj.GetName(), err)
+	}
+	if len(cm.Data) != 0 || len(cm.StringData) != 0 {
+		return fmt.Errorf("secret %s is not empty. Secrets annotated with %s must be empty", cm.GetName(), hyperv1.HostedClusterSourcedAnnotation)
 	}
 	return nil
 }
