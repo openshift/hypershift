@@ -71,6 +71,7 @@ nav:
   - 'Common':
     - how-to/common/exposing-services-from-hcp.md
     - how-to/common/multi-arch-on-hcp.md
+    - 'Global Pull Secret': how-to/common/global-pull-secret.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
   - 'Disaster Recovery':
@@ -94,6 +95,7 @@ nav:
     - how-to/aws/disaster-recovery.md
     - how-to/aws/shared-vpc.md
     - how-to/aws/define-custom-kube-api-name.md
+    - 'Global Pull Secret': how-to/aws/global-pull-secret.md
     - 'Other SDN providers': how-to/aws/other-sdn-providers.md
     - 'Troubleshooting':
         - how-to/aws/troubleshooting/index.md
@@ -103,6 +105,7 @@ nav:
     - how-to/azure/create-azure-cluster_on_aks.md
     - how-to/azure/create-azure-cluster-with-options.md
     - how-to/azure/scheduler.md
+    - 'Global Pull Secret': how-to/azure/global-pull-secret.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
@@ -111,6 +114,7 @@ nav:
     - how-to/agent/create-heterogeneous-nodepools.md
     - 'Other SDN providers': how-to/agent/other-sdn-providers.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
+    - 'Global Pull Secret': how-to/agent/global-pull-secret.md
   - 'Disconnected':
     - how-to/disconnected/index.md
     - how-to/disconnected/tls-certificates.md
@@ -127,6 +131,7 @@ nav:
     - how-to/kubevirt/external-infrastructure.md
     - how-to/kubevirt/gpu-devices.md
     - how-to/kubevirt/troubleshooting-kubevirt-cluster.md
+    - 'Global Pull Secret': how-to/kubevirt/global-pull-secret.md
   - 'OpenStack':
     - how-to/openstack/index.md
     - how-to/openstack/prerequisites.md
@@ -135,13 +140,16 @@ nav:
     - how-to/openstack/additional-ports.md
     - how-to/openstack/performance-tuning.md
     - how-to/openstack/destroy.md
+    - 'Global Pull Secret': how-to/openstack/global-pull-secret.md
   - 'None':
     - how-to/none/create-none-cluster.md
     - 'Exposing HCP Services': how-to/agent/exposing-services-from-hcp.md
+    - 'Global Pull Secret': how-to/none/global-pull-secret.md
   - 'PowerVS':
     - how-to/powervs/create-cluster-powervs.md
     - how-to/powervs/create-infra-separately.md
     - how-to/powervs/prerequisites-and-env-guide.md
+    - 'Global Pull Secret': how-to/powervs/global-pull-secret.md
 - 'Self-Managed Laboratories':
   - 'MultiCluster Engine and Agent provider':
     - labs/index.md

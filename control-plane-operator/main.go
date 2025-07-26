@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
+	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -94,6 +95,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = etcddefrag.NewStartCommand()
 	case "sync-fg-configmap":
 		cmd = syncfgconfigmap.NewRunCommand()
+	case "sync-global-pullsecret":
+		cmd = syncglobalpullsecret.NewRunCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -146,6 +149,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(etcdbackup.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
+	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
 	return cmd
 }
 

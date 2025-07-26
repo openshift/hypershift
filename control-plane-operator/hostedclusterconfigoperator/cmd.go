@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/globalps"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
@@ -281,6 +282,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
+	if o.platformType == string(hyperv1.AzurePlatform) {
+		controllersToRun[globalps.ControllerName] = globalps.Setup
+	}
+
 	for _, controllerName := range o.Controllers {
 		if setup, registered := controllerFuncs[controllerName]; !registered {
 			return fmt.Errorf("requested to run unknown controller %q", controllerName)
