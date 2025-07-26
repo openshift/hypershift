@@ -19,7 +19,6 @@ import (
 // Action of TestEvent
 type Action string
 
-// nolint: unused
 const (
 	ActionRun    Action = "run"
 	ActionPause  Action = "pause"
@@ -29,6 +28,7 @@ const (
 	ActionFail   Action = "fail"
 	ActionOutput Action = "output"
 	ActionSkip   Action = "skip"
+	ActionBuild  Action = "build-output"
 )
 
 // IsTerminal returns true if the Action is one of: pass, fail, skip.
@@ -44,10 +44,11 @@ func (a Action) IsTerminal() bool {
 // TestEvent is a structure output by go tool test2json and go test -json.
 type TestEvent struct {
 	// Time encoded as an RFC3339-format string
-	Time    time.Time
-	Action  Action
-	Package string
-	Test    string
+	Time       time.Time
+	Action     Action
+	Package    string
+	Test       string
+	ImportPath string
 	// Elapsed time in seconds
 	Elapsed float64
 	// Output of test or benchmark
@@ -76,6 +77,9 @@ type Package struct {
 	Skipped []TestCase
 	Passed  []TestCase
 
+	// Start is the earliest timestamp reported by any event for this package.
+	Start time.Time
+
 	// elapsed time reported by the pass or fail event for the package.
 	elapsed time.Duration
 
@@ -101,6 +105,9 @@ type Package struct {
 	// github.com/golang/go/issues/45508. This field may be removed in the future
 	// if the issue is fixed in Go.
 	panicked bool
+	// hasDataRace is true if the package, or one of the tests in the package,
+	// contained output that looked like a data race.
+	hasDataRace bool
 	// shuffleSeed is the seed used to shuffle the tests. The value is set when
 	// tests are run with -shuffle
 	shuffleSeed string
@@ -193,6 +200,9 @@ func (p *Package) OutputLines(tc TestCase) []string {
 func (p *Package) addOutput(id int, output string) {
 	if strings.HasPrefix(output, "panic: ") {
 		p.panicked = true
+	}
+	if strings.HasPrefix(output, "WARNING: DATA RACE") {
+		p.hasDataRace = true
 	}
 	p.output[id] = append(p.output[id], output)
 }
@@ -345,7 +355,9 @@ func newPackage() *Package {
 
 // Execution of one or more test packages
 type Execution struct {
-	started    time.Time
+	procStart  time.Time
+	testStart  time.Time
+	testEnd    time.Time
 	packages   map[string]*Package
 	errorsLock sync.RWMutex
 	errors     []string
@@ -359,6 +371,24 @@ func (e *Execution) add(event TestEvent) {
 		pkg = newPackage()
 		e.packages[event.Package] = pkg
 	}
+
+	if !event.Time.IsZero() {
+		if e.testStart.IsZero() || event.Time.Before(e.testStart) {
+			e.testStart = event.Time
+		}
+		if event.Time.After(e.testEnd) {
+			e.testEnd = event.Time
+		}
+		if pkg.Start.IsZero() || event.Time.Before(pkg.Start) {
+			pkg.Start = event.Time
+		}
+	}
+
+	if event.Action == ActionBuild {
+		e.addError(event.Output)
+		return
+	}
+
 	if event.PackageEvent() {
 		pkg.addEvent(event)
 		return
@@ -522,7 +552,10 @@ var timeNow = time.Now
 
 // Elapsed returns the time elapsed since the execution started.
 func (e *Execution) Elapsed() time.Duration {
-	return timeNow().Sub(e.started)
+	if !e.testEnd.IsZero() {
+		return e.testEnd.Sub(e.Started())
+	}
+	return timeNow().Sub(e.Started())
 }
 
 // Failed returns a list of all the failed test cases.
@@ -530,7 +563,7 @@ func (e *Execution) Failed() []TestCase {
 	if e == nil {
 		return nil
 	}
-	var failed []TestCase //nolint:prealloc
+	var failed []TestCase
 	for _, name := range sortedKeys(e.packages) {
 		pkg := e.packages[name]
 
@@ -639,9 +672,18 @@ func (e *Execution) HasPanic() bool {
 	return false
 }
 
+func (e *Execution) HasDataRace() bool {
+	for _, pkg := range e.packages {
+		if pkg.hasDataRace {
+			return true
+		}
+	}
+	return false
+}
+
 func (e *Execution) end() []TestEvent {
 	e.done = true
-	var result []TestEvent // nolint: prealloc
+	var result []TestEvent
 	for _, pkg := range e.packages {
 		result = append(result, pkg.end()...)
 	}
@@ -649,15 +691,18 @@ func (e *Execution) end() []TestEvent {
 }
 
 func (e *Execution) Started() time.Time {
-	return e.started
+	if e.testStart.IsZero() {
+		return e.procStart
+	}
+	return e.testStart
 }
 
 // newExecution returns a new Execution and records the current time as the
 // time the test execution started.
 func newExecution() *Execution {
 	return &Execution{
-		started:  timeNow(),
-		packages: make(map[string]*Package),
+		procStart: time.Now(),
+		packages:  make(map[string]*Package),
 	}
 }
 
@@ -749,12 +794,12 @@ func readStdout(config ScanConfig, execution *Execution) error {
 		event, err := parseEvent(raw)
 		switch {
 		case err == errBadEvent:
-			// nolint: errcheck
+			//nolint:errcheck
 			config.Handler.Err(errBadEvent.Error() + ": " + scanner.Text())
 			continue
 		case err != nil:
 			if config.IgnoreNonJSONOutputLines {
-				// nolint: errcheck
+				//nolint:errcheck
 				config.Handler.Err(string(raw))
 				continue
 			}
