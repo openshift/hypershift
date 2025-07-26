@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmpfs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmpfs,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -129,6 +129,8 @@ spec:
           requests:
             cpu: 10m
             memory: 250Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -211,6 +213,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
       - name: konnectivity-proxy-cert
         secret:
           defaultMode: 416
