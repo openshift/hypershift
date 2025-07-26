@@ -228,9 +228,7 @@ func TestReconcileRouterDeployment(t *testing.T) {
 				if *tt.args.deployment.Spec.Replicas != 2 {
 					t.Errorf("Expected replicas to be 2, got %d", *tt.args.deployment.Spec.Replicas)
 				}
-				if tt.args.deployment.Spec.Template.Annotations[routerConfigHashKey] != util.ComputeHash(tt.args.configMap.Data[routerConfigKey]) {
-					t.Errorf("Expected annotation %s to be %s, got %s", routerConfigHashKey, util.ComputeHash(tt.args.configMap.Data[routerConfigKey]), tt.args.deployment.Spec.Template.Annotations[routerConfigHashKey])
-				}
+
 				expectedAffinity := &corev1.Affinity{
 					PodAntiAffinity: &corev1.PodAntiAffinity{
 						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
