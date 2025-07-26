@@ -16,8 +16,10 @@ func GetConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.QPS = 100
-	cfg.Burst = 100
+	// Increased QPS and Burst to handle multiple parallel tests and polling operations
+	// Previous values (QPS=100, Burst=100) were insufficient for concurrent NodePool polling
+	cfg.QPS = 200
+	cfg.Burst = 300
 	cfg.Timeout = 5 * time.Minute
 	return cfg, nil
 }
