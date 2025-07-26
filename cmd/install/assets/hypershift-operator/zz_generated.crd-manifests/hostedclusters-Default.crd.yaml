@@ -3331,6 +3331,30 @@ spec:
                 x-kubernetes-validations:
                 - message: OLMCatalogPlacement is immutable
                   rule: self == oldSelf
+              operatorConfiguration:
+                description: operatorConfiguration specifies configuration for individual
+                  OCP operators in the cluster.
+                properties:
+                  clusterNetworkOperator:
+                    description: clusterNetworkOperator specifies the configuration
+                      for the Cluster Network Operator in the hosted cluster.
+                    properties:
+                      disableMultiNetwork:
+                        default: false
+                        description: |-
+                          disableMultiNetwork when set to true disables the Multus CNI plugin and related components
+                          in the hosted cluster. This prevents the installation of multus daemon sets in the
+                          guest cluster and the multus-admission-controller in the management cluster.
+                          Default is false (Multus is enabled).
+                          This field is immutable.
+                          This field can only be set to true when NetworkType is "Other". Setting it to true
+                          with any other NetworkType will result in a validation error during cluster creation.
+                        type: boolean
+                        x-kubernetes-validations:
+                        - message: disableMultiNetwork is immutable
+                          rule: self == oldSelf
+                    type: object
+                type: object
               pausedUntil:
                 description: |-
                   pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
@@ -5704,6 +5728,12 @@ spec:
                 && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration)
                 && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
                 cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
+            - message: disableMultiNetwork can only be set to true when networkType
+                is 'Other'
+              rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
+                || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
+                || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
+                || self.networking.networkType == ''Other'''
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

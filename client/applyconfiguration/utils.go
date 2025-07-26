@@ -123,6 +123,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworking"):
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworkOperatorSpec"):
+		return &hypershiftv1beta1.ClusterNetworkOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
 		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
