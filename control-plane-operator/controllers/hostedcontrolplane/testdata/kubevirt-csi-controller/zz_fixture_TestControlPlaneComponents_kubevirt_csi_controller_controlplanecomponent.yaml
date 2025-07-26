@@ -35,4 +35,3 @@ status:
   - group: ""
     kind: Secret
     name: kubevirt-csi-controller-service-account-kubeconfig
-  version: 4.18.0

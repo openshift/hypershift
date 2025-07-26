@@ -19,4 +19,3 @@ status:
     reason: WaitingForRolloutComplete
     status: "False"
     type: RolloutComplete
-  version: 4.18.0
