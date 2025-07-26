@@ -10,7 +10,6 @@ import (
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -554,7 +553,7 @@ func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity 
 	return candidateNodes[:capacity]
 }
 
-func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, poolName string) error {
+func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, compressedAndEncodedPayload []byte, poolName string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	namespace := inPlaceUpgradeNamespace(poolName)
@@ -576,7 +575,7 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 	configmap := inPlaceUpgradeConfigMap(poolName, namespace.Name)
 	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, configmap, func() error {
 		return r.reconcileUpgradeConfigmap(
-			ctx, configmap, targetConfigVersionHash, payload,
+			ctx, configmap, targetConfigVersionHash, compressedAndEncodedPayload,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile upgrade ConfigMap for hash %s: %w", targetConfigVersionHash, err)
@@ -586,17 +585,11 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 	return nil
 }
 
-func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, payload []byte) error {
+func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, compressedAndEncodedPayload []byte) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Base64-encode and gzip the payload to allow larger overall payload sizes.
-	compressedPayload, err := util.CompressAndEncode(payload)
-	if err != nil {
-		return fmt.Errorf("could not compress payload: %w", err)
-	}
-
 	configmap.Data = map[string]string{
-		"config": compressedPayload.String(),
+		"config": string(compressedAndEncodedPayload),
 		"hash":   targetConfigVersionHash,
 	}
 
