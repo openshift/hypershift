@@ -1523,7 +1523,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 }
 
 func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) error {
-	AtLeast(t, Version420)
+	AtLeast(t, Version419)
 
 	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform ARO")
