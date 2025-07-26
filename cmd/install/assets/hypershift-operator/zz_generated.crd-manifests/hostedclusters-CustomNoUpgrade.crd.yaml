@@ -212,6 +212,14 @@ spec:
                     maxItems: 3
                     minItems: 1
                     type: array
+                  extraArgs:
+                    description: |-
+                      extraArgs allows users to specify additional command line arguments for the cluster autoscaler.
+                      These arguments will be appended to the autoscaler's command line.
+                      This field is useful for passing custom flags that are not directly supported by the API.
+                      Arguments should be space-separated (e.g., "--custom-flag=value --another-flag --third-flag=123").
+                    maxLength: 1024
+                    type: string
                   maxFreeDifferenceRatioPercent:
                     description: |-
                       maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
