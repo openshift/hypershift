@@ -1071,7 +1071,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	r.Log.Info("Reconciling default security group")
 	if err := r.reconcileDefaultSecurityGroup(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to reconcile default security group")
+		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
 
 	cpContext := component.ControlPlaneContext{
@@ -2860,6 +2860,12 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 			Reason:  hyperv1.AWSErrorReason,
 		}
 	} else {
+		// if creation was successful, patch the HCP with the last-applied-security-group-tags annotation
+		if err := r.Client.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return fmt.Errorf("failed to patch HostedControlPlane object: %w", err)
+		}
+		originalHCP = hcp.DeepCopy()
+
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
 			Status:  metav1.ConditionTrue,
@@ -2958,6 +2964,9 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
 
+		if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, tags); err != nil {
+			return "", fmt.Errorf("failed to update last applied security group tags annotation: %w", err)
+		}
 		// Fetch just-created SG
 		describeSGInput := &ec2.DescribeSecurityGroupsInput{
 			GroupIds: []*string{awssdk.String(sgID)},

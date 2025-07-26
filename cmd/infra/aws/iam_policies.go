@@ -23,7 +23,7 @@ func APIsByDelegatedServices() (ServicesByDelegate, error) {
 		ingressPermPolicy("fake", "fake", false),
 		imageRegistryPermPolicy,
 		awsEBSCSIPermPolicy,
-		cloudControllerPolicy,
+		kubeControllerPolicy,
 		nodePoolPolicy,
 		controlPlaneOperatorPolicy("fake", false),
 		kmsProviderPolicy("fake"),
