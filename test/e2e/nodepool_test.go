@@ -164,11 +164,11 @@ func TestNodePoolMultiArch(t *testing.T) {
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
 			setup: func(t *testing.T) {
-				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch {
+				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
 					t.Skip("test only supported on multi-arch clusters")
 				}
-				if globalOpts.Platform != hyperv1.AWSPlatform {
-					t.Skip("test only supported on platform AWS")
+				if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+					t.Skip("test only supported on platform AWS and Azure")
 				}
 				t.Log("Starting NodePoolArm64CreateTest.")
 			},

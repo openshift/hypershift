@@ -110,6 +110,7 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.aws-zones", "Deprecated, use -e2e.availability-zones instead")
 
 	// Azure specific flags
+	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AzureMultiArch, "e2e.azure-multi-arch", false, "Enable multi arch for Azure clusters")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureCredentialsFile, "e2e.azure-credentials-file", "", "Path to an Azure credentials file")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureLocation, "e2e.azure-location", "eastus", "The location to use for Azure")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AzureManagedIdentitiesFile, "e2e.azure-managed-identities-file", "", "Path to an Azure managed identities file")
