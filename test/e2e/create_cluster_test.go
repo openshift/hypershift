@@ -1653,6 +1653,7 @@ func TestCreateCluster(t *testing.T) {
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
+		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
