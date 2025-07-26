@@ -731,6 +731,11 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		}
 	}
 
+	disabledCaps := sets.NewString(opts.DisableClusterCapabilities...)
+	if disabledCaps.Has(string(hyperv1.IngressCapability)) && !disabledCaps.Has(string(hyperv1.ConsoleCapability)) {
+		return nil, fmt.Errorf("ingress capability can only be disabled if Console capability is also disabled")
+	}
+
 	if len(opts.KubeAPIServerDNSName) > 0 {
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
 			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
