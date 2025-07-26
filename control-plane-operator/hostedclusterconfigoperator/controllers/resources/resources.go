@@ -235,9 +235,11 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
+
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
+
 	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
 	// and mirrors them to the hosted cluster so the operators on the hosted cluster
 	// could access the data in the mirrored ConfigMaps.
