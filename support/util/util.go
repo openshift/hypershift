@@ -29,6 +29,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	kubeclient "k8s.io/client-go/kubernetes"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -697,4 +698,22 @@ func HostFromURL(addr string) (string, error) {
 // EnableIfCustomKubeconfig returns true if the hosted control plane has a custom kubeconfig defined
 func EnableIfCustomKubeconfig(hcp *hyperv1.HostedControlPlane) bool {
 	return len(hcp.Spec.KubeAPIServerDNSName) > 0
+}
+
+// cidrEntry helps check for network overlaps by associating a CIDR with its field path.
+type CidrEntry struct {
+	Cidr *net.IPNet
+	Path *field.Path
+}
+
+// checkCIDROverlaps iterates through a list of CIDRs and returns an error if any overlap.
+func CheckCIDROverlaps(cidrs []CidrEntry) *field.Error {
+	for i := 0; i < len(cidrs); i++ {
+		for j := i + 1; j < len(cidrs); j++ {
+			if cidrs[i].Cidr.Contains(cidrs[j].Cidr.IP) || cidrs[j].Cidr.Contains(cidrs[i].Cidr.IP) {
+				return field.Invalid(cidrs[j].Path, cidrs[j].Cidr.String(), fmt.Sprintf("overlaps with %s CIDR %s", cidrs[i].Path.String(), cidrs[i].Cidr.String()))
+			}
+		}
+	}
+	return nil
 }

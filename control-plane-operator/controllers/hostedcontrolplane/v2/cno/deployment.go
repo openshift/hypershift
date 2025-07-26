@@ -158,5 +158,27 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		)
 	}
 
+	// Pass down IPSec configuration if specified.
+	if hcp.Spec.Networking.IPSecConfig != nil && hcp.Spec.Networking.IPSecConfig.Mode != "" {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  "IPSEC_MODE",
+			Value: hcp.Spec.Networking.IPSecConfig.Mode,
+		})
+	}
+	// Pass down custom OVN subnet configurations if specified.
+	if hcp.Spec.Networking.OVNKubernetesConfig != nil {
+		if hcp.Spec.Networking.OVNKubernetesConfig.InternalJoinSubnet != nil {
+			cnoEnv = append(cnoEnv, corev1.EnvVar{
+				Name:  "OVN_INTERNAL_JOIN_SUBNET",
+				Value: *hcp.Spec.Networking.OVNKubernetesConfig.InternalJoinSubnet,
+			})
+		}
+		if hcp.Spec.Networking.OVNKubernetesConfig.InternalTransitSwitchSubnet != nil {
+			cnoEnv = append(cnoEnv, corev1.EnvVar{
+				Name:  "OVN_INTERNAL_TRANSIT_SWITCH_SUBNET",
+				Value: *hcp.Spec.Networking.OVNKubernetesConfig.InternalTransitSwitchSubnet,
+			})
+		}
+	}
 	return cnoEnv, nil
 }
