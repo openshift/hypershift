@@ -89,13 +89,13 @@ github.com/Azure/go-ansiterm/winterm
 github.com/Azure/msi-dataplane/pkg/dataplane
 github.com/Azure/msi-dataplane/pkg/dataplane/internal/challenge
 github.com/Azure/msi-dataplane/pkg/dataplane/internal/client
-# github.com/AzureAD/microsoft-authentication-library-for-go v1.3.3
+# github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2
 ## explicit; go 1.18
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base
-github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage
+github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json
 github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time
