@@ -18,6 +18,12 @@ Ensure the following prerequisites are met on the Management cluster (connected 
 - Access to the openshift-adp version 1.5+ subscription via a CatalogSource.
 - Access to online storage compatible with OpenShift ADP cloud storage providers (e.g., S3, Azure, GCP, MinIO).
 - HostedControlPlane pods are accessible and functioning correctly.
+- The HostedCluster should be PublicAndPrivate or Private.
+- The Public only clusters should have at least a hostname.
+
+!!! warning "⚠️ HostedCluster Configuration"
+
+    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See [HostedCluster Configuration Requirements](#hostedcluster-configuration-requirements) for details.
 
 !!! Note "Note for Bare Metal Providers"
 
@@ -887,3 +893,46 @@ velero delete backup hc-clusters-hosted-backup
 !!! Important
 
     If you modify the folder structure of the remote storage where your backups are hosted, you may encounter issues with `backuprepositories.velero.io`. In such cases, you will need to recreate all the associated objects, including DPAs, backups, restores, etc.
+
+
+## HostedCluster Configuration Requirements
+
+The HostedCluster must be configured as `PublicAndPrivate` or `Private` for backup/restore operations to work correctly. If the HostedCluster is configured as Public (without a hostname in the ServicePublishingStrategy for the kube-api-server), the restore operation will fail with the following consequences:
+
+- **Nodes remain in NotReady state**
+- **NodePool scaling fails to generate new nodes**
+
+### Root Cause
+
+The issue occurs because:
+
+- Nodes store the ELB (Elastic Load Balancer) address in their kubelet configuration, which is ephemeral and changes when the cluster is deleted and restored
+- The SAN (Subject Alternative Name) in the certificate fails because the certificate name no longer matches the new ELB
+- Original nodes cannot connect to the ControlPlane because they point to the old ELB, and even if they pointed to the new one, the certificate would be incorrect
+
+### Solution
+
+Ensure your HostedCluster is configured with either:
+
+- `PublicAndPrivate` service publishing strategy, OR
+- `Private` service publishing strategy, OR
+- `Public` service publishing strategy with a **hostname** specified for the kube-api-server
+
+### Example Configuration
+
+**Option 1: PublicAndPrivate or Private**
+```yaml
+spec:
+  servicePublishingStrategy:
+    kubeAPIServer:
+      type: PublicAndPrivate  # or Private
+```
+
+**Option 2: Public with hostname**
+```yaml
+spec:
+  servicePublishingStrategy:
+    kubeAPIServer:
+      type: Public
+      hostname: "api.your-cluster.example.com"
+```
