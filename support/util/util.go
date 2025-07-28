@@ -622,7 +622,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {
 			return overrideImage, nil
 		}

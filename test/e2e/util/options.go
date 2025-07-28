@@ -377,7 +377,7 @@ func (o *Options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 func (o *Options) Complete() error {
 
 	if shouldTestCPOOverride() {
-		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases()
+		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases(string(o.Platform))
 	}
 
 	if len(o.LatestReleaseImage) == 0 {
