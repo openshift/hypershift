@@ -53,6 +53,7 @@ type RawCreateOptions struct {
 	PrivateZonesInClusterAccount bool
 	PublicOnly                   bool
 	AutoNode                     bool
+	UseROSAManagedPolicies       bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -105,6 +106,10 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			externalDNSDomain:      opts.ExternalDNSDomain,
 			namespace:              opts.Namespace,
 		},
+	}
+
+	if o.UseROSAManagedPolicies {
+		o.AdditionalTags = append(o.AdditionalTags, "red-hat-managed=true")
 	}
 
 	if opts.EtcdStorageClass == "" {
@@ -456,6 +461,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
 	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
+	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
@@ -528,10 +534,12 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		PrivateZoneID:                infra.PrivateZoneID,
 		PublicZoneID:                 infra.PublicZoneID,
 		LocalZoneID:                  infra.LocalZoneID,
+		BaseDomain:                   infra.BaseDomain,
 		KMSKeyARN:                    awsOpts.EtcdKMSKeyARN,
 		VPCOwnerCredentialsOpts:      awsOpts.VPCOwnerCredentials,
 		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
 		CreateKarpenterRoleARN:       awsOpts.AutoNode,
+		UseROSAManagedPolicies:       awsOpts.UseROSAManagedPolicies,
 	}
 }
 

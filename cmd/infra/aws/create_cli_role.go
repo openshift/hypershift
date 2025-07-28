@@ -208,7 +208,7 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 		additionalIAMTags: tags,
 	}
 
-	roleArn, err := createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, logger, iamClient)
+	roleArn, err := createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, iamClient, logger)
 	if err != nil {
 		return err
 	}

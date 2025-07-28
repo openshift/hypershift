@@ -33,6 +33,7 @@ type CreateIAMOptions struct {
 	PublicZoneID                    string
 	PrivateZoneID                   string
 	LocalZoneID                     string
+	BaseDomain                      string
 	InfraID                         string
 	IssuerURL                       string
 	OutputFile                      string
@@ -45,6 +46,7 @@ type CreateIAMOptions struct {
 
 	additionalIAMTags      []*iam.Tag
 	CreateKarpenterRoleARN bool
+	UseROSAManagedPolicies bool
 }
 
 type CreateIAMOutput struct {
@@ -86,6 +88,8 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.KMSKeyARN, "kms-key-arn", opts.KMSKeyARN, "The ARN of the KMS key to use for Etcd encryption. If not supplied, etcd encryption will default to using a generated AESCBC key.")
 	cmd.Flags().StringSliceVar(&opts.AdditionalTags, "additional-tags", opts.AdditionalTags, "Additional tags to set on AWS resources")
 	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
+	cmd.Flags().BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
+	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
@@ -119,6 +123,12 @@ func NewCreateIAMCommand() *cobra.Command {
 }
 
 func (o *CreateIAMOptions) Run(ctx context.Context, client crclient.Client, logger logr.Logger) error {
+	if o.UseROSAManagedPolicies {
+		if o.BaseDomain == "" {
+			return fmt.Errorf("base domain must be specified when using ROSA managed policies")
+		}
+	}
+
 	results, err := o.CreateIAM(ctx, client, logger)
 	if err != nil {
 		return err
@@ -191,7 +201,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)
 
-	results, err := o.CreateOIDCResources(iamClient, logger, sharedVPC)
+	results, err := o.CreateOIDCResources(ctx, iamClient, logger, sharedVPC)
 	if err != nil {
 		return nil, err
 	}
@@ -207,10 +217,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		if o.PrivateZonesInClusterAccount {
 			route53RoleClient = iamClient
 		}
-		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
+		if results.SharedIngressRoleARN, err = o.CreateSharedVPCRoute53Role(ctx, route53RoleClient, logger, results.Roles.IngressARN, results.Roles.ControlPlaneOperatorARN); err != nil {
 			return nil, err
 		}
-		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
+		if results.SharedControlPlaneRoleARN, err = o.CreateSharedVPCEndpointRole(ctx, vpcOwnerIAMClient, logger, results.Roles.ControlPlaneOperatorARN); err != nil {
 			return nil, err
 		}
 	}
