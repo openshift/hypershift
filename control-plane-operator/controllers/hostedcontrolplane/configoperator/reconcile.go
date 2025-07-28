@@ -433,6 +433,10 @@ func buildHCCContainerMain(image, hcpName, openShiftVersion, kubeVersion string,
 				Name:  "OPENSHIFT_IMG_OVERRIDES",
 				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(openShiftImageRegistryOverrides),
 			},
+			{
+				Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
+				Value: image,
+			},
 		}
 		proxy.SetEnvVars(&c.Env)
 		if os.Getenv("ENABLE_SIZE_TAGGING") == "1" {
