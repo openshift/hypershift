@@ -309,4 +309,5 @@ nav:
   - 'Run Tests': contribute/run-tests.md
   - 'Develop in Cluster': contribute/develop_in_cluster.md
   - 'Run hypershift-operator locally': contribute/run-hypershift-operator-locally.md
+  - 'CPO Overrides': contribute/cpo-overrides.md
   - 'Contribute to docs': contribute/contribute-docs.md
