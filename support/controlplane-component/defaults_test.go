@@ -303,9 +303,10 @@ func TestSetDefaultOptions(t *testing.T) {
 	err := controlPlaneWorkload.setDefaultOptions(ControlPlaneContext{
 		HCP:                       &hyperv1.HostedControlPlane{},
 		SetDefaultSecurityContext: true,
+		DefaultSecurityContextUID: int64(1002),
 		Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
 	}, workloadObject, nil)
 	g.Expect(err).NotTo(HaveOccurred())
-	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(DefaultSecurityContextUser))))
-	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(DefaultSecurityContextUser))))
+	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
+	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
 }

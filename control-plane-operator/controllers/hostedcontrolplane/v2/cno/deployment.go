@@ -138,7 +138,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	// If CP is running on kube cluster, pass user ID for CNO to run its managed services with
 	if cpContext.SetDefaultSecurityContext {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
-			Name: "RUN_AS_USER", Value: strconv.Itoa(config.DefaultSecurityContextUser),
+			Name: "RUN_AS_USER", Value: strconv.Itoa(int(cpContext.DefaultSecurityContextUID)),
 		})
 	}
 

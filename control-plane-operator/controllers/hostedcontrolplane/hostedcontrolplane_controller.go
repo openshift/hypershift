@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ import (
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
@@ -156,6 +158,8 @@ type HostedControlPlaneReconciler struct {
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
+	// DefaultSecurityContextUID is the UID to use for the default security context
+	DefaultSecurityContextUID int64
 
 	// CertRotationScale determines how quickly we rotate certificates - should only be set faster in testing
 	CertRotationScale time.Duration
@@ -201,6 +205,20 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 	r.ec2Client, r.awsSession = GetEC2Client()
 
 	r.registerComponents(hcp)
+
+	uidInput := os.Getenv(controlplaneoperator.DefaultSecurityContextUIDEnvVar)
+	if uidInput == "" {
+		r.Log.Info("DEFAULT_SECURITY_CONTEXT_UID is not set. This should never happen, unless you are running a HO which doesn't support this CPO")
+		r.DefaultSecurityContextUID = component.DefaultSecurityContextUID
+		return nil
+	}
+
+	uid, err := strconv.ParseInt(uidInput, 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse %q: %w", controlplaneoperator.DefaultSecurityContextUIDEnvVar, err)
+	}
+	r.DefaultSecurityContextUID = uid
+
 	return nil
 }
 
@@ -1083,6 +1101,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		ReleaseImageProvider:      releaseImageProvider,
 		UserReleaseImageProvider:  userReleaseImageProvider,
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		DefaultSecurityContextUID: r.DefaultSecurityContextUID,
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		ImageMetadataProvider:     r.ImageMetadataProvider,

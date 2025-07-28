@@ -27,6 +27,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -158,6 +159,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
+		}
+		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
+			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
 		}
 		ValidateMetrics(t, context.Background(), hostedCluster, []string{
 			hcmetrics.SilenceAlertsMetricName,

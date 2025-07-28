@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -3332,4 +3333,55 @@ func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, 
 		}
 	}
 	return false
+}
+
+// EnsureSecurityContextUID validates that all pods in the control plane namespace have the expected SecurityContext UID.
+// TestCreateClusterDefaultSecurityContextUID ensures uniqueness across namespaces.
+func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureSecurityContextUID", func(t *testing.T) {
+		g := NewWithT(t)
+
+		namespaceName := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		controlPlaneNamespace := &corev1.Namespace{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: namespaceName}, controlPlaneNamespace)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", controlPlaneNamespace)
+
+		uid, ok := controlPlaneNamespace.Annotations["hypershift.openshift.io/default-security-context-uid"]
+		g.Expect(ok).To(BeTrue(), "namespace %s missing SCC UID annotation", controlPlaneNamespace.Name)
+
+		expectedUID, err := strconv.ParseInt(uid, 10, 64)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't parse SCC UID", controlPlaneNamespace.Name, uid)
+
+		var podList corev1.PodList
+		err = client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespaceName})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", controlPlaneNamespace)
+
+		var errs []string
+		for _, pod := range podList.Items {
+			// Skip pods that are known exceptions for SecurityContext UID validation
+			name := pod.Name
+			switch {
+			case strings.HasPrefix(name, "azure-disk-csi-driver-controller"),
+				strings.HasPrefix(name, "azure-file-csi-driver-controller"),
+				strings.HasPrefix(name, "azure-disk-csi-driver-operator"),
+				strings.HasPrefix(name, "azure-file-csi-driver-operator"),
+				strings.HasPrefix(name, "network-node-identity"),
+				strings.HasPrefix(name, "ovnkube-control-plane"):
+				continue
+			}
+			if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil || *pod.Spec.SecurityContext.RunAsUser != expectedUID {
+				errs = append(errs, fmt.Sprintf("pod %s/%s: RunAsUser %v does not match expected UID %d", pod.Namespace, pod.Name,
+					func() interface{} {
+						if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil {
+							return nil
+						}
+						return *pod.Spec.SecurityContext.RunAsUser
+					}(), expectedUID))
+			}
+		}
+		if len(errs) == 0 {
+			t.Logf("All %d pods in namespace %s have the expected RunAsUser UID %d", len(podList.Items), namespaceName, expectedUID)
+		}
+		g.Expect(errs).To(BeEmpty(), "Pods with mismatched RunAsUser:\n%s", strings.Join(errs, "\n"))
+	})
 }

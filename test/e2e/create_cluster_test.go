@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -19,6 +21,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -1719,6 +1723,75 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
+}
+
+// TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
+// Without the prefix, this e2e wouldn't run now.
+func TestCreateClusterDefaultSecurityContextUID(t *testing.T) {
+	t.Parallel()
+	if globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platform Azure")
+	}
+	if e2eutil.IsLessThan(e2eutil.Version420) {
+		t.Skip("test only supported on version 4.20 and higher")
+	}
+
+	g := NewWithT(t)
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	labelSelector := labels.SelectorFromSet(labels.Set{
+		"hypershift.openshift.io/hosted-control-plane": "true",
+	})
+
+	var namespaces []*corev1.Namespace
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+	e2eutil.EventuallyObjects(t, ctx, "At least 3 Control Plane Namespaces",
+		func(ctx context.Context) ([]*corev1.Namespace, error) {
+			nsList := &corev1.NamespaceList{}
+			err := client.List(ctx, nsList, &crclient.ListOptions{
+				LabelSelector: labelSelector,
+			})
+
+			namespaces = make([]*corev1.Namespace, len(nsList.Items))
+			for i := range nsList.Items {
+				namespaces[i] = &nsList.Items[i]
+			}
+			return namespaces, err
+		},
+		[]e2eutil.Predicate[[]*corev1.Namespace]{
+			func(namespaces []*corev1.Namespace) (done bool, reasons string, err error) {
+				return len(namespaces) >= 3, fmt.Sprintf("expected at least 3 namespaces, got %v", len(namespaces)), nil
+			},
+		},
+		nil,
+		e2eutil.WithTimeout(30*time.Minute), e2eutil.WithInterval(4*time.Minute), e2eutil.WithDelayedStart(),
+	)
+
+	// Validate that each namespace has a unique SecurityContext UID.
+	g.Expect(len(namespaces)).To(BeNumerically(">=", 3), "expected at least 3 namespaces, got %v", len(namespaces))
+	uidMap := make(map[int64]bool, len(namespaces))
+	for _, ns := range namespaces {
+		uid, ok := ns.Annotations["hypershift.openshift.io/default-security-context-uid"]
+		g.Expect(ok).To(BeTrue(), "namespace %s missing SCC UID annotation", ns.Name)
+
+		expectedUID, err := strconv.ParseInt(uid, 10, 64)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't parse SCC UID", ns.Name, uid)
+
+		podList := &corev1.PodList{}
+		err = client.List(ctx, podList, &crclient.ListOptions{Namespace: ns.Name})
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't list pods in namespace %s", ns.Name)
+
+		g.Expect(uidMap[expectedUID]).To(BeFalse(), "namespace %s has duplicate SecurityContext UID %s", ns.Name, uid)
+		uidMap[expectedUID] = true
+	}
+
+	for _, ns := range namespaces {
+		uid := ns.Annotations["hypershift.openshift.io/default-security-context-uid"]
+		t.Logf("Namespace %s has SecurityContext UID %s", ns.Name, uid)
+	}
+	t.Logf("Successfully validated that all %d control plane namespaces have unique SecurityContext UIDs", len(namespaces))
 }
 
 func TestCreateClusterRequestServingIsolation(t *testing.T) {
