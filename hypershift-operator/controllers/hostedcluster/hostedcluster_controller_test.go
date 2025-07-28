@@ -4341,7 +4341,7 @@ func TestReconcileComponents(t *testing.T) {
 	}
 }
 
-func TestEnsureHostedResroucesAreEmpty(t *testing.T) {
+func TestEnsureHostedResourcesAreEmpty(t *testing.T) {
 	// Setup test cases
 	testCases := []struct {
 		name          string
@@ -4437,6 +4437,178 @@ func TestEnsureHostedResroucesAreEmpty(t *testing.T) {
 			}
 			if tc.expectError && err != nil && !strings.Contains(err.Error(), tc.errorMessage) {
 				t.Errorf("expected error message to contain %q but got: %v", tc.errorMessage, err)
+			}
+		})
+	}
+}
+
+func TestReconcileAdditionalTrustBundle(t *testing.T) {
+	const (
+		testNamespace            = "test-ns"
+		controlPlaneNamespace    = "test-hcp-ns"
+		hostedClusterName        = "test-cluster"
+		trustBundleConfigMapName = "additional-trust-bundle"
+		caBundleData             = "-----BEGIN CERTIFICATE-----\nMIIBkTCB..."
+	)
+
+	testCases := []struct {
+		name                   string
+		hostedCluster          *hyperv1.HostedCluster
+		existingObjects        []crclient.Object
+		expectError            bool
+		expectConfigMapCreated bool
+		expectConfigMapDeleted bool
+		expectedErrorSubstring string
+	}{
+		{
+			name: "creates configmap when AdditionalTrustBundle is specified",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      trustBundleConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": caBundleData,
+					},
+				},
+			},
+			expectError:            false,
+			expectConfigMapCreated: true,
+		},
+		{
+			name: "deletes configmap when AdditionalTrustBundle is nil",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: nil,
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "user-ca-bundle",
+						Namespace: controlPlaneNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": caBundleData,
+					},
+				},
+			},
+			expectError:            false,
+			expectConfigMapDeleted: true,
+		},
+		{
+			name: "returns error when source configmap does not exist",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects:        []crclient.Object{},
+			expectError:            true,
+			expectedErrorSubstring: "failed to get hostedcluster AdditionalTrustBundle ConfigMap",
+		},
+		{
+			name: "returns error when source configmap missing ca-bundle.crt key",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      trustBundleConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"wrong-key": caBundleData,
+					},
+				},
+			},
+			expectError:            true,
+			expectedErrorSubstring: "must have a ca-bundle.crt key",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			g := NewWithT(t)
+
+			// Create fake client with existing objects
+			client := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).
+				Build()
+
+			// Create the reconciler
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			// Create a mock createOrUpdate function
+			createOrUpdate := upsert.New(false).CreateOrUpdate
+
+			// Call the function under test
+			err := r.reconcileAdditionalTrustBundle(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+
+			// Check error expectations
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Check if destination configmap was created/updated
+			if tc.expectConfigMapCreated {
+				destConfigMap := &corev1.ConfigMap{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "user-ca-bundle",
+					Namespace: controlPlaneNamespace,
+				}, destConfigMap)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(destConfigMap.Data).To(HaveKeyWithValue("ca-bundle.crt", caBundleData))
+			}
+
+			// Check if destination configmap was deleted
+			if tc.expectConfigMapDeleted {
+				destConfigMap := &corev1.ConfigMap{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "user-ca-bundle",
+					Namespace: controlPlaneNamespace,
+				}, destConfigMap)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
 			}
 		})
 	}

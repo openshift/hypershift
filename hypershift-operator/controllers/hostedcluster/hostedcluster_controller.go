@@ -1580,30 +1580,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving the source reference
 	// from the HostedCluster and syncing the CM in the control plane namespace.
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		var src corev1.ConfigMap
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
-		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		dest := controlplaneoperator.UserCABundle(controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-			srcData, srcHasData := src.Data["ca-bundle.crt"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
-			}
-			if dest.Data == nil {
-				dest.Data = map[string]string{}
-			}
-			dest.Data["ca-bundle.crt"] = srcData
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
-		}
+	if err := r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile the service account signing key if set
@@ -4762,6 +4740,44 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
 		}
+	}
+
+	return nil
+}
+
+// reconcileAdditionalTrustBundle reconciles the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving
+// the source reference from the HostedCluster and syncing the CM in the control plane namespace.
+func (r *HostedClusterReconciler) reconcileAdditionalTrustBundle(ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string) error {
+	dest := controlplaneoperator.UserCABundle(controlPlaneNamespace)
+	if hcluster.Spec.AdditionalTrustBundle == nil {
+		// If the HostedCluster has no additional trust bundle, delete the destination ConfigMap if it exists
+		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+			return fmt.Errorf("failed to delete unused additionalTrustBundle: %w", err)
+		}
+		return nil
+	}
+
+	var src corev1.ConfigMap
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
+	if err != nil {
+		return fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
+	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+	_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+		srcData, srcHasData := src.Data["ca-bundle.crt"]
+		if !srcHasData {
+			return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
+		}
+		if dest.Data == nil {
+			dest.Data = map[string]string{}
+		}
+		dest.Data["ca-bundle.crt"] = srcData
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
 	}
 
 	return nil
