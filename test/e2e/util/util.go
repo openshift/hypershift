@@ -732,7 +732,7 @@ func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Client
 		return false
 	}
 
-	return strings.Contains(buf.String(), "leader election lost")
+	return strings.Contains(buf.String(), "leader election lost") || strings.Contains(buf.String(), "leaderelection lost")
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
