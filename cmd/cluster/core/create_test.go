@@ -297,6 +297,61 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "",
 		},
+		{
+			name: "fails when ingress is disabled but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
+		{
+			name: "passes when both ingress and console are disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when only console is disabled without ingress",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when ingress and console are disabled along with other capabilities",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console", "ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when ingress is disabled with other capabilities but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "ImageRegistry"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
