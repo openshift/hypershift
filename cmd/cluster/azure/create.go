@@ -97,6 +97,7 @@ type RawCreateOptions struct {
 	AssignCustomHCPRoles             bool
 	IssuerURL                        string
 	ServiceAccountTokenIssuerKeyPath string
+	MultiArch                        bool
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
