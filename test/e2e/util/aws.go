@@ -7,6 +7,7 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/oidc"
+	"github.com/openshift/hypershift/support/util"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
@@ -69,6 +70,44 @@ func GetIAMClient(awsCreds, awsRegion string) iamiface.IAMAPI {
 	awsSession := awsutil.NewSession("e2e-iam", awsCreds, "", "", awsRegion)
 	awsConfig := awsutil.NewConfig()
 	return iam.New(awsSession, awsConfig)
+}
+
+func PutRolePolicy(awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
+	iamClient := GetIAMClient(awsCreds, awsRegion)
+	roleName := roleARN[strings.LastIndex(roleARN, "/")+1:]
+	policyName := util.HashSimple(policy)
+
+	_, err := iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
+		RoleName:       aws.String(roleName),
+		PolicyName:     aws.String(policyName),
+		PolicyDocument: aws.String(policy),
+	})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok {
+			if aerr.Code() == iam.ErrCodeNoSuchEntityException {
+				return nil, fmt.Errorf("role %s doesn't exist", roleARN)
+			}
+		}
+		return nil, fmt.Errorf("failed to put role policy: %w", err)
+	}
+
+	cleanupFunc := func() error {
+		_, err := iamClient.DeleteRolePolicy(&iam.DeleteRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if err != nil {
+			if aerr, ok := err.(awserr.Error); ok {
+				if aerr.Code() == iam.ErrCodeNoSuchEntityException {
+					return nil
+				}
+			}
+			return fmt.Errorf("failed to delete role policy: %w", err)
+		}
+		return nil
+	}
+
+	return cleanupFunc, nil
 }
 
 func DestroyOIDCProvider(log logr.Logger, iamClient iamiface.IAMAPI, issuerURL string) {

@@ -19,11 +19,16 @@ import (
 	"github.com/go-logr/logr"
 )
 
+const (
+	ROSAWorkerRoleNameSuffix = "ROSA-Worker-Role"
+)
+
 type policyBinding struct {
-	name            string
-	serviceAccounts []string
-	policy          string
-	allowAssumeRole bool
+	name                 string
+	serviceAccounts      []string
+	policy               string
+	allowAssumeRole      bool
+	rosaManagedPolicyARN string
 }
 
 type sharedVPCPolicyBinding struct {
@@ -79,6 +84,7 @@ var (
 		}
 	]
 }`,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAImageRegistryOperatorPolicy",
 	}
 
 	awsEBSCSIPermPolicy = policyBinding{
@@ -134,9 +140,10 @@ var (
         }
 	]
 }`,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAAmazonEBSCSIDriverOperatorPolicy",
 	}
 
-	cloudControllerPolicy = policyBinding{
+	kubeControllerPolicy = policyBinding{
 		name:            "cloud-controller",
 		serviceAccounts: []string{"system:serviceaccount:kube-system:kube-controller-manager"},
 		policy: `{
@@ -209,6 +216,7 @@ var (
     }
   ]
 }`,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAKubeControllerPolicy",
 	}
 
 	//   {
@@ -536,6 +544,7 @@ var (
 	}
   ]
 }`,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSANodePoolManagementPolicy",
 	}
 
 	cloudNetworkConfigControllerPolicy = policyBinding{
@@ -561,6 +570,7 @@ var (
 		}
 	]
 }`,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSACloudNetworkConfigOperatorPolicy",
 	}
 )
 
@@ -621,10 +631,11 @@ func ingressPermPolicy(publicZone, privateZone string, sharedVPC bool) policyBin
 	}
 
 	return policyBinding{
-		name:            "openshift-ingress",
-		serviceAccounts: []string{"system:serviceaccount:openshift-ingress-operator:ingress-operator"},
-		policy:          policy,
-		allowAssumeRole: sharedVPC,
+		name:                 "openshift-ingress",
+		serviceAccounts:      []string{"system:serviceaccount:openshift-ingress-operator:ingress-operator"},
+		policy:               policy,
+		allowAssumeRole:      sharedVPC,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAIngressOperatorPolicy",
 	}
 }
 
@@ -689,10 +700,11 @@ func controlPlaneOperatorPolicy(hostedZone string, sharedVPC bool) policyBinding
 		}`, hostedZone)
 	}
 	return policyBinding{
-		name:            "control-plane-operator",
-		serviceAccounts: []string{"system:serviceaccount:kube-system:control-plane-operator"},
-		policy:          policy,
-		allowAssumeRole: sharedVPC,
+		name:                 "control-plane-operator",
+		serviceAccounts:      []string{"system:serviceaccount:kube-system:control-plane-operator"},
+		policy:               policy,
+		allowAssumeRole:      sharedVPC,
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAControlPlaneOperatorPolicy",
 	}
 }
 
@@ -779,6 +791,7 @@ func kmsProviderPolicy(kmsKeyARN string) policyBinding {
 		}
 	]
 }`, kmsKeyARN),
+		rosaManagedPolicyARN: "arn:aws:iam::aws:policy/service-role/ROSAKMSProviderPolicy",
 	}
 }
 
@@ -795,7 +808,7 @@ func DefaultProfileName(infraID string) string {
 
 // inputs: none
 // outputs rsa keypair
-func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger logr.Logger, sharedVPC bool) (*CreateIAMOutput, error) {
+func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient iamiface.IAMAPI, logger logr.Logger, sharedVPC bool) (*CreateIAMOutput, error) {
 	var providerName string
 	var providerARN string
 	if o.IssuerURL == "" {
@@ -841,7 +854,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 		&output.Roles.IngressARN:              ingressPermPolicy(o.PublicZoneID, o.PrivateZoneID, sharedVPC),
 		&output.Roles.ImageRegistryARN:        imageRegistryPermPolicy,
 		&output.Roles.StorageARN:              awsEBSCSIPermPolicy,
-		&output.Roles.KubeCloudControllerARN:  cloudControllerPolicy,
+		&output.Roles.KubeCloudControllerARN:  kubeControllerPolicy,
 		&output.Roles.NodePoolManagementARN:   nodePoolPolicy,
 		&output.Roles.ControlPlaneOperatorARN: controlPlaneOperatorPolicy(o.LocalZoneID, sharedVPC),
 		&output.Roles.NetworkARN:              cloudNetworkConfigControllerPolicy,
@@ -858,11 +871,47 @@ func (o *CreateIAMOptions) CreateOIDCResources(iamClient iamiface.IAMAPI, logger
 
 	for into, binding := range bindings {
 		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
-		arn, err := o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, binding.allowAssumeRole, logger)
+		arn, err := o.CreateOIDCRole(ctx, iamClient, binding, trustPolicy, logger)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
 		}
 		*into = arn
+	}
+
+	if o.UseROSAManagedPolicies {
+		// When using ROSA managed policies, some permissions are scoped to specific resource names,
+		// which might not match the generated resources by the CLI which differs based on user input.
+		//
+		// Currently ingress operator managed policy is scoped to specific DNS domain names,
+		// which is why we need to create an additional policy on top to allow it to manage routes with the DNS basedomain specified by the CLI user.
+		policy := fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"route53:ChangeResourceRecordSets"
+					],
+					"Resource": "*",
+					"Condition": {
+						"ForAllValues:StringLike": {
+							"route53:ChangeResourceRecordSetsNormalizedRecordNames": [
+								"*.%s"
+							]
+						}
+					}
+				}
+			]
+		}`, o.BaseDomain)
+
+		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
+		if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(ingressRoleName),
+			RoleName:       aws.String(ingressRoleName),
+			PolicyDocument: aws.String(policy),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ingressRoleName, policy, err)
+		}
 	}
 
 	return output, nil
@@ -913,16 +962,19 @@ func (o *CreateIAMOptions) CreateOIDCProvider(iamClient iamiface.IAMAPI, logger 
 }
 
 // CreateOIDCRole create an IAM Role with a trust policy for the OIDC provider
-func (o *CreateIAMOptions) CreateOIDCRole(client iamiface.IAMAPI, name, trustPolicy, permPolicy string, allowAssume bool, logger logr.Logger) (string, error) {
+func (o *CreateIAMOptions) CreateOIDCRole(ctx context.Context, client iamiface.IAMAPI, binding policyBinding, trustPolicy string, logger logr.Logger) (string, error) {
 	createIAMRoleOpts := CreateIAMRoleOptions{
-		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, name),
+		RoleName:          fmt.Sprintf("%s-%s", o.InfraID, binding.name),
 		TrustPolicy:       trustPolicy,
-		PermissionsPolicy: permPolicy,
+		PermissionsPolicy: binding.policy,
 		additionalIAMTags: o.additionalIAMTags,
-		AllowAssume:       allowAssume,
+		AllowAssume:       binding.allowAssumeRole,
 	}
 
-	return createIAMRoleOpts.CreateRoleWithInlinePolicy(context.Background(), logger, client)
+	if o.UseROSAManagedPolicies && binding.rosaManagedPolicyARN != "" {
+		return createIAMRoleOpts.CreateRoleWithManagedPolicy(ctx, client, binding.rosaManagedPolicyARN, logger)
+	}
+	return createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, client, logger)
 }
 
 func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string, logger logr.Logger) error {
@@ -954,7 +1006,12 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
   ]
 }`
 	)
+
 	roleName := fmt.Sprintf("%s-role", profileName)
+	if o.UseROSAManagedPolicies {
+		roleName = fmt.Sprintf("%s-%s", profileName, ROSAWorkerRoleNameSuffix)
+	}
+
 	role, err := existingRole(client, roleName)
 	if err != nil {
 		return err
@@ -1007,6 +1064,18 @@ func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, p
 		}
 		logger.Info("Added role to instance profile", "role", roleName, "profile", profileName)
 	}
+
+	if o.UseROSAManagedPolicies {
+		_, err = client.AttachRolePolicy(&iam.AttachRolePolicyInput{
+			PolicyArn: aws.String("arn:aws:iam::aws:policy/service-role/ROSAWorkerInstancePolicy"),
+			RoleName:  aws.String(roleName),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to attach managed policy to worker instance profile: %w", err)
+		}
+		return nil
+	}
+
 	rolePolicyName := fmt.Sprintf("%s-policy", profileName)
 	hasPolicy, err := existingRolePolicy(client, roleName, rolePolicyName)
 	if err != nil {
@@ -1035,30 +1104,36 @@ type CreateIAMRoleOptions struct {
 	additionalIAMTags []*iam.Tag
 }
 
-func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, logger logr.Logger, client iamiface.IAMAPI) (string, error) {
+func (o *CreateIAMRoleOptions) CreateRole(ctx context.Context, client iamiface.IAMAPI, logger logr.Logger) (string, error) {
 	role, err := existingRole(client, o.RoleName)
-	var arn string
 	if err != nil {
 		return "", err
 	}
-	if role == nil {
-		output, err := client.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
-			AssumeRolePolicyDocument: aws.String(o.TrustPolicy),
-			RoleName:                 aws.String(o.RoleName),
-			Tags:                     o.additionalIAMTags,
-		})
-		if err != nil {
-			return "", err
-		}
-		logger.Info("Created role", "name", o.RoleName)
-		arn = *output.Role.Arn
-	} else {
+
+	if role != nil {
 		logger.Info("Found existing role", "name", o.RoleName)
-		arn = *role.Arn
+		return *role.Arn, nil
+	}
+
+	output, err := client.CreateRoleWithContext(ctx, &iam.CreateRoleInput{
+		AssumeRolePolicyDocument: aws.String(o.TrustPolicy),
+		RoleName:                 aws.String(o.RoleName),
+		Tags:                     o.additionalIAMTags,
+	})
+	if err != nil {
+		return "", err
+	}
+	logger.Info("Created role", "name", o.RoleName)
+	return *output.Role.Arn, nil
+}
+
+func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, client iamiface.IAMAPI, logger logr.Logger) (string, error) {
+	arn, err := o.CreateRole(ctx, client, logger)
+	if err != nil {
+		return "", err
 	}
 
 	rolePolicyName := o.RoleName
-
 	_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
 		PolicyName:     aws.String(rolePolicyName),
 		PolicyDocument: aws.String(o.PermissionsPolicy),
@@ -1067,6 +1142,7 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, l
 	if err != nil {
 		return "", err
 	}
+
 	logger.Info("Added/Updated role policy", "name", rolePolicyName)
 
 	if o.AllowAssume {
@@ -1085,15 +1161,46 @@ func (o *CreateIAMRoleOptions) CreateRoleWithInlinePolicy(ctx context.Context, l
 	return arn, nil
 }
 
-func (o *CreateIAMOptions) CreateSharedVPCEndpointRole(iamClient iamiface.IAMAPI, logger logr.Logger, controlPlaneRole string) (string, error) {
-	return o.createSharedVPCRole(iamClient, logger, sharedVPCEndpointRole(controlPlaneRole))
+func (o *CreateIAMRoleOptions) CreateRoleWithManagedPolicy(ctx context.Context, client iamiface.IAMAPI, managedPolicyARN string, logger logr.Logger) (string, error) {
+	arn, err := o.CreateRole(ctx, client, logger)
+	if err != nil {
+		return "", err
+	}
+
+	_, err = client.AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
+		PolicyArn: aws.String(managedPolicyARN),
+		RoleName:  aws.String(o.RoleName),
+	})
+	if err != nil {
+		return "", err
+	}
+	logger.Info("Attached role policy", "arn", managedPolicyARN)
+
+	if o.AllowAssume {
+		rolePolicyName := fmt.Sprintf("%s-assume", o.RoleName)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(rolePolicyName),
+			PolicyDocument: aws.String(allowAssumeRolePolicy),
+			RoleName:       aws.String(o.RoleName),
+		})
+		if err != nil {
+			return "", err
+		}
+		logger.Info("Added/Updated role policy", "name", rolePolicyName)
+	}
+
+	return arn, nil
 }
 
-func (o *CreateIAMOptions) CreateSharedVPCRoute53Role(iamClient iamiface.IAMAPI, logger logr.Logger, ingressRole, controlPlaneRole string) (string, error) {
-	return o.createSharedVPCRole(iamClient, logger, sharedVPCRoute53Role([]string{ingressRole, controlPlaneRole}))
+func (o *CreateIAMOptions) CreateSharedVPCEndpointRole(ctx context.Context, iamClient iamiface.IAMAPI, logger logr.Logger, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(ctx, iamClient, logger, sharedVPCEndpointRole(controlPlaneRole))
 }
 
-func (o *CreateIAMOptions) createSharedVPCRole(iamClient iamiface.IAMAPI, logger logr.Logger, binding sharedVPCPolicyBinding) (string, error) {
+func (o *CreateIAMOptions) CreateSharedVPCRoute53Role(ctx context.Context, iamClient iamiface.IAMAPI, logger logr.Logger, ingressRole, controlPlaneRole string) (string, error) {
+	return o.createSharedVPCRole(ctx, iamClient, logger, sharedVPCRoute53Role([]string{ingressRole, controlPlaneRole}))
+}
+
+func (o *CreateIAMOptions) createSharedVPCRole(ctx context.Context, iamClient iamiface.IAMAPI, logger logr.Logger, binding sharedVPCPolicyBinding) (string, error) {
 	trustPolicy := sharedVPCRoleTrustPolicy(binding.allowedRoles)
 	backoff := wait.Backoff{
 		Steps:    10,
@@ -1103,8 +1210,14 @@ func (o *CreateIAMOptions) createSharedVPCRole(iamClient iamiface.IAMAPI, logger
 	}
 	var arn string
 	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+		createIAMRoleOpts := CreateIAMRoleOptions{
+			RoleName:          fmt.Sprintf("%s-%s", o.InfraID, binding.name),
+			TrustPolicy:       trustPolicy,
+			PermissionsPolicy: binding.policy,
+			additionalIAMTags: o.additionalIAMTags,
+		}
 		var err error
-		arn, err = o.CreateOIDCRole(iamClient, binding.name, trustPolicy, binding.policy, false, logger)
+		arn, err = createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, iamClient, logger)
 		if err != nil {
 			return err
 		}
@@ -1156,6 +1269,7 @@ func existingRolePolicy(client iamiface.IAMAPI, roleName, policyName string) (bo
 		}
 		return false, fmt.Errorf("cannot get existing role policy: %w", err)
 	}
+
 	return aws.StringValue(result.PolicyName) == policyName, nil
 }
 

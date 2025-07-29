@@ -2847,11 +2847,32 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 		}
 		g := NewWithT(t)
 
+		tagsPolicy := fmt.Sprintf(`{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"ec2:CreateTags",
+						"ec2:DeleteTags"
+					],
+					"Resource": "arn:aws:ec2:*:*:security-group/%s"
+				}
+			]
+		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+
+		cleanup, err := PutRolePolicy(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
+		defer func() {
+			err := cleanup()
+			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")
+		}()
+
 		day2TagKey := "test-day2-tag"
 		day2TagValue := "test-day2-value"
 
 		// Update the hosted cluster to add a day2 tag
-		err := UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
+		err = UpdateObject(t, ctx, client, hostedCluster, func(object *hyperv1.HostedCluster) {
 			object.Spec.Platform.AWS.ResourceTags = append(object.Spec.Platform.AWS.ResourceTags, hyperv1.AWSResourceTag{
 				Key:   day2TagKey,
 				Value: day2TagValue,
