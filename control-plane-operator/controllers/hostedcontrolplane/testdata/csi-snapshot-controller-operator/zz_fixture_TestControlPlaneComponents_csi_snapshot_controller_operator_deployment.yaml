@@ -101,6 +101,7 @@ spec:
         - https://kube-apiserver:6443/readyz
         - --kubeconfig=/var/kubeconfig/kubeconfig
         - --required-api=operator.openshift.io,v1,CSISnapshotController
+        - --required-api=snapshot.storage.k8s.io,v1,VolumeSnapshot
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober

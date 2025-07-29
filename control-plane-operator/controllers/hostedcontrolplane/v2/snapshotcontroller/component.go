@@ -42,6 +42,7 @@ func NewComponent() component.ControlPlaneComponent {
 			KubeconfigVolumeName: "guest-kubeconfig",
 			RequiredAPIs: []schema.GroupVersionKind{
 				{Group: "operator.openshift.io", Version: "v1", Kind: "CSISnapshotController"},
+				{Group: "snapshot.storage.k8s.io", Version: "v1", Kind: "VolumeSnapshot"},
 			},
 		}).
 		Build()
