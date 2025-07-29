@@ -25,10 +25,7 @@ func adaptService(cpContext component.WorkloadContext, svc *corev1.Service) erro
 			return fmt.Errorf("failed to get existing ignition service: %w", err)
 		}
 	} else {
-		if len(existingService.Spec.Ports) != 1 {
-			return fmt.Errorf("existing ignition service must have exactly one port exposed, this has: %d", len(existingService.Spec.Ports))
-		}
-		existingServiceUsesNodePort = existingService.Spec.Type == corev1.ServiceTypeNodePort
+		existingServiceUsesNodePort = (existingService.Spec.Type == corev1.ServiceTypeNodePort) && (len(existingService.Spec.Ports) == 1)
 	}
 
 	strategy := util.ServicePublishingStrategyByTypeForHCP(cpContext.HCP, hyperv1.Ignition)
@@ -45,11 +42,7 @@ func adaptService(cpContext component.WorkloadContext, svc *corev1.Service) erro
 	case hyperv1.Route:
 		if existingServiceUsesNodePort {
 			svc.Spec.Type = corev1.ServiceTypeNodePort
-			if strategy.NodePort != nil {
-				svc.Spec.Ports[0].NodePort = strategy.NodePort.Port
-			} else {
-				svc.Spec.Ports[0].NodePort = existingService.Spec.Ports[0].NodePort
-			}
+			svc.Spec.Ports[0].NodePort = existingService.Spec.Ports[0].NodePort
 		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Ignition service: %s", strategy.Type)
