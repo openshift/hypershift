@@ -99,8 +99,9 @@ spec:
         - --kube-api-qps=150
         - --leader-elect-resource-lock=leases
         - --leader-elect=true
-        - --leader-elect-renew-deadline=12s
-        - --leader-elect-retry-period=3s
+        - --leader-elect-lease-duration=137s
+        - --leader-elect-renew-deadline=107s
+        - --leader-elect-retry-period=26s
         - --root-ca-file=/etc/kubernetes/certs/root-ca/ca.crt
         - --secure-port=10257
         - --service-account-private-key-file=/etc/kubernetes/certs/service-signer/service-account.key
