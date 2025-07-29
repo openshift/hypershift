@@ -129,8 +129,10 @@ type DumpOptions struct {
 	// are located, when using the agent platform.
 	AgentNamespace string
 
-	DumpGuestCluster bool
-	ImpersonateAs    string
+	DumpGuestCluster                   bool
+	DumpGuestClusterThroughKubeService bool
+
+	ImpersonateAs string
 
 	Log logr.Logger
 }
@@ -157,9 +159,12 @@ func NewDumpCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ArtifactDir, "artifact-dir", opts.ArtifactDir, "Destination directory for dump files")
 	cmd.Flags().BoolVar(&opts.ArchiveDump, "archive-dump", opts.ArchiveDump, "Create a tar archive of the artifact directory")
 	cmd.Flags().StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "For agent platform, the namespace where the agents are located")
-	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "If the guest cluster contents should also be dumped")
+	cmd.Flags().BoolVar(&opts.DumpGuestCluster, "dump-guest-cluster", opts.DumpGuestCluster, "Dump data plane content as well")
+	cmd.Flags().BoolVar(&opts.DumpGuestClusterThroughKubeService, "dump-guest-cluster-through-kube-service", opts.DumpGuestClusterThroughKubeService,
+		"Dump data plane content through the kube-apiserver service (to be used within MC clusters for which debug handlers are disabled)")
 
 	_ = cmd.MarkFlagRequired("artifact-dir")
+	cmd.MarkFlagsMutuallyExclusive("dump-guest-cluster", "dump-guest-cluster-through-kube-service")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -191,7 +196,55 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		return fmt.Errorf("failed to get hosted cluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
 	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
-	localPort := rand.Intn(45000-32767) + 32767
+
+	var localPort int
+	var forwarderStop chan struct{}
+
+	if opts.DumpGuestClusterThroughKubeService {
+		localPort = -1 // Indicates connection via kube-apiserver service instead of port-forward
+	} else {
+		localPort = rand.Intn(45000-32767) + 32767
+		podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
+		if err != nil {
+			return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
+		}
+
+		restConfig, err := util.GetConfig()
+		if err != nil {
+			return fmt.Errorf("failed to get a config for management cluster: %w", err)
+		}
+
+		if len(opts.ImpersonateAs) > 0 {
+			restConfig.Impersonate = restclient.ImpersonationConfig{
+				UserName: opts.ImpersonateAs,
+			}
+		}
+
+		kubeClient, err := kubeclient.NewForConfig(restConfig)
+		if err != nil {
+			return fmt.Errorf("failed to get a kubernetes client: %w", err)
+		}
+		forwarderOutput := &bytes.Buffer{}
+		forwarder := supportforwarder.PortForwarder{
+			Namespace: podToForward.Namespace,
+			PodName:   podToForward.Name,
+			Config:    restConfig,
+			Client:    kubeClient,
+			Out:       forwarderOutput,
+			ErrOut:    forwarderOutput,
+		}
+		podPort := supportutil.KASPodPortFromHostedCluster(hostedCluster)
+		forwarderStop = make(chan struct{})
+		if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, forwarderStop); err != nil {
+			return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())
+		}
+	}
+	defer func() {
+		if forwarderStop != nil {
+			close(forwarderStop)
+		}
+	}()
+
 	kubeconfigFileName, err := createGuestKubeconfig(ctx, c, cpNamespace, localPort, opts.Log)
 	if err != nil {
 		return err
@@ -202,43 +255,10 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}()
 
-	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
-
-	podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
+	target := filepath.Join(opts.ArtifactDir, "hostedcluster-"+opts.Name)
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return err
 	}
-
-	restConfig, err := util.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get a config for management cluster: %w", err)
-	}
-
-	if len(opts.ImpersonateAs) > 0 {
-		restConfig.Impersonate = restclient.ImpersonationConfig{
-			UserName: opts.ImpersonateAs,
-		}
-	}
-
-	kubeClient, err := kubeclient.NewForConfig(restConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get a kubernetes client: %w", err)
-	}
-	forwarderOutput := &bytes.Buffer{}
-	forwarder := supportforwarder.PortForwarder{
-		Namespace: podToForward.Namespace,
-		PodName:   podToForward.Name,
-		Config:    restConfig,
-		Client:    kubeClient,
-		Out:       forwarderOutput,
-		ErrOut:    forwarderOutput,
-	}
-	podPort := supportutil.KASPodPortFromHostedCluster(hostedCluster)
-	forwarderStop := make(chan struct{})
-	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, forwarderStop); err != nil {
-		return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())
-	}
-	defer close(forwarderStop)
 
 	opts.Log.Info("Dumping guestcluster", "target", target)
 	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFileName, target); err != nil {
@@ -280,8 +300,15 @@ func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace str
 		return "", fmt.Errorf("no clusters found in localhost kubeconfig")
 	}
 
+	var kubeUrl string
+	if localPort > 0 {
+		kubeUrl = fmt.Sprintf("https://localhost:%d", localPort)
+	} else {
+		kubeUrl = fmt.Sprintf("https://kube-apiserver.%s.svc.cluster.local:6443", cpNamespace)
+	}
+
 	for k := range localhostKubeconfig.Clusters {
-		localhostKubeconfig.Clusters[k].Server = fmt.Sprintf("https://localhost:%d", localPort)
+		localhostKubeconfig.Clusters[k].Server = kubeUrl
 	}
 	localhostKubeconfigYaml, err := clientcmd.Write(*localhostKubeconfig)
 	if err != nil {
@@ -453,7 +480,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	gatherNetworkLogs(ocCommand, controlPlaneNamespace, opts.ArtifactDir, ctx, c, opts.Log)
 
-	if opts.DumpGuestCluster {
+	if opts.DumpGuestCluster || opts.DumpGuestClusterThroughKubeService {
 		if err = dumpGuestCluster(ctx, opts); err != nil {
 			opts.Log.Error(err, "Failed to dump guest cluster")
 		}
@@ -584,8 +611,9 @@ func (i *OCAdmInspect) Run(ctx context.Context, cmdArgs ...string) {
 	}
 	allArgs = append(allArgs, cmdArgs...)
 	cmd := exec.CommandContext(ctx, i.oc, allArgs...)
-	// oc adm inspect command always returns an error so ignore
-	_, _ = cmd.CombinedOutput()
+	if outb, err := cmd.CombinedOutput(); err != nil {
+		i.log.Info(fmt.Sprintf("failed running command oc %s: %v, %s", strings.Join(allArgs, " "), err, string(outb)))
+	}
 }
 
 type OCAdmNodeLogs struct {
