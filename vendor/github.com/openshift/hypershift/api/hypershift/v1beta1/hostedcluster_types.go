@@ -357,6 +357,19 @@ const (
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
+
+	// HostedClusterSourcedAnnotation is set to true on Secret and ConfigMap resources to designate them as
+	// hosted-cluster-sourced resources. This means that the hosted cluster version of these resources is the source of
+	// truth and the management cluster version will be just empty resources that have this annotation. This is useful
+	// to enable day-two configuration use cases where such resources are expected to be provided by the end-user after
+	// the cluster creation, and, due to certain restrictions, those resources include sensitive data that can't live
+	// on the control-plane. Setting this annotation will instruct HyperShift to skip creating this resource on the hosted
+	// cluster and to not override any changes done later on the hosted cluster version of this resource.
+	//
+	// This annotation can only be set on empty resources and currently it's only honored when set on secrets that are
+	// referenced in the HostedCluster `spec.configuration.authentication.oidcProviders[*].oidcClients[*].clientSecret`
+	// and only for the ARO-HCP platform.
+	HostedClusterSourcedAnnotation = "hypershift.openshift.io/hosted-cluster-sourced"
 )
 
 // RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.

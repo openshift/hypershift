@@ -1158,10 +1158,16 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 				log.Info("OIDC client secret is empty, skipping reconciliation", "component", oidcClient.ComponentName)
 				continue
 			}
+
 			var src corev1.Secret
 			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+				continue
+			}
+
+			if azureutil.IsAroHCP() && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+				// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
 				continue
 			}
 			dest := corev1.Secret{
