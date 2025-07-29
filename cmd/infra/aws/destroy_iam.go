@@ -122,7 +122,10 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	}
 
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
-		if strings.Contains(*provider.Arn, o.InfraID) {
+		// OIDC Provider ARN is of the form arn:aws:iam::<account-id>:oidc-provider/hypershift-ci-2-oidc.s3.us-east-1.amazonaws.com/<infra-id>
+		arnTokens := strings.Split(*provider.Arn, "/")
+		arnInfraID := arnTokens[len(arnTokens)-1]
+		if arnInfraID == o.InfraID {
 			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
 				OpenIDConnectProviderArn: provider.Arn,
 			})
