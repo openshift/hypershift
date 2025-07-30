@@ -6,9 +6,15 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	runtime "k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	fuzz "github.com/google/gofuzz"
 )
@@ -277,4 +283,29 @@ func generateResources() (map[string]*corev1.Secret, map[string]*corev1.ConfigMa
 		configMaps[cm.Name] = cm
 	}
 	return secrets, configMaps
+}
+
+func TestSetDefaultOptions(t *testing.T) {
+	g := NewGomegaWithT(t)
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	// Test case for etcd SecurityContext.
+	controlPlaneWorkload := &controlPlaneWorkload[*appsv1.StatefulSet]{
+		name:             "etcd",
+		workloadProvider: &statefulSetProvider{},
+		ComponentOptions: &testComponent{},
+	}
+	workloadObject := &appsv1.StatefulSet{}
+
+	err := controlPlaneWorkload.setDefaultOptions(ControlPlaneContext{
+		HCP:                       &hyperv1.HostedControlPlane{},
+		SetDefaultSecurityContext: true,
+		Client:                    fake.NewClientBuilder().WithScheme(scheme).Build(),
+	}, workloadObject, nil)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(DefaultSecurityContextUser))))
+	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(DefaultSecurityContextUser))))
 }

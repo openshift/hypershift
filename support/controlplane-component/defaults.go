@@ -130,10 +130,12 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	}
 
 	// set default security context for the pod.
-	// ETCD component is excluded as it fails to create data dir on AKS if we set the default security context.
-	if c.Name() != etcdComponentName && cpContext.SetDefaultSecurityContext {
+	if cpContext.SetDefaultSecurityContext {
 		podTemplateSpec.Spec.SecurityContext = &corev1.PodSecurityContext{
 			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
+		}
+		if c.Name() == etcdComponentName {
+			podTemplateSpec.Spec.SecurityContext.FSGroup = ptr.To[int64](DefaultSecurityContextUser)
 		}
 	}
 
