@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -78,6 +79,9 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	if util.IsPrivateHCP(hcp) {
 		apiServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
 		apiServerPort = util.APIPortForLocalZone(util.IsLBKAS(hcp))
+	} else if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		apiServerAddress = *hcp.Spec.Networking.APIServer.AdvertiseAddress
+		apiServerPort = *hcp.Spec.Networking.APIServer.Port
 	}
 
 	cnoEnv := []corev1.EnvVar{
