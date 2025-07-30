@@ -41,6 +41,7 @@ type HostedControlPlaneStatusApplyConfiguration struct {
 	KubeadminPassword              *corev1.LocalObjectReference            `json:"kubeadminPassword,omitempty"`
 	Platform                       *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
 	NodeCount                      *int                                    `json:"nodeCount,omitempty"`
+	Configuration                  *ConfigurationStatusApplyConfiguration  `json:"configuration,omitempty"`
 }
 
 // HostedControlPlaneStatusApplyConfiguration constructs a declarative configuration of the HostedControlPlaneStatus type for use with
@@ -171,5 +172,13 @@ func (b *HostedControlPlaneStatusApplyConfiguration) WithPlatform(value *Platfor
 // If called multiple times, the NodeCount field is set to the value of the last call.
 func (b *HostedControlPlaneStatusApplyConfiguration) WithNodeCount(value int) *HostedControlPlaneStatusApplyConfiguration {
 	b.NodeCount = &value
+	return b
+}
+
+// WithConfiguration sets the Configuration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Configuration field is set to the value of the last call.
+func (b *HostedControlPlaneStatusApplyConfiguration) WithConfiguration(value *ConfigurationStatusApplyConfiguration) *HostedControlPlaneStatusApplyConfiguration {
+	b.Configuration = value
 	return b
 }
