@@ -111,6 +111,7 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 		&configv1.FeatureGate{}:       allSelector,
 		&configv1.ClusterOperator{}:   allSelector,
 		&configv1.OperatorHub{}:       allSelector,
+		&configv1.Authentication{}:    allSelector,
 		&operatorv1.CloudCredential{}: allSelector,
 		&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
 		&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
