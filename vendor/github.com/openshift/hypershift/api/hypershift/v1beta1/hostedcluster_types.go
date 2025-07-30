@@ -1764,6 +1764,9 @@ type HostedClusterStatus struct {
 	// platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// Configuration contains the configuration status of the HostedCluster
+	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status
@@ -1824,6 +1827,11 @@ type ClusterVersionStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
 	ConditionalUpdates []configv1.ConditionalUpdate `json:"conditionalUpdates,omitempty"`
+}
+
+// ConfigurationStatus contains the status of HostedCluster configuration
+type ConfigurationStatus struct {
+	Authentication configv1.AuthenticationStatus `json:"authentication"`
 }
 
 // ClusterConfiguration specifies configuration for individual OCP components in the
