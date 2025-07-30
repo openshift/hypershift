@@ -4,17 +4,17 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
-      == "release-4.16"
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
+      == "release-4.20"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: release-mce-26
-    appstudio.openshift.io/component: hypershift-release-mce-26
+    appstudio.openshift.io/component: hypershift-cli-mce-26
     pipelines.appstudio.openshift.io/type: build
-  name: hypershift-release-mce-26-on-pull-request
+  name: hypershift-cli-mce-26-on-push
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -23,11 +23,15 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/release-mce-26/hypershift-release-mce-26:on-pr-{{revision}}
-  - name: image-expires-after
-    value: 5d
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-cli-mce-26:{{revision}}
+  - name: build-platforms
+    value:
+    - linux/x86_64
+    - linux/ppc64le
+    - linux/s390x
+    - linux/arm64
   - name: dockerfile
-    value: Containerfile.operator
+    value: Containerfile.cli
   - name: path-context
     value: .
   - name: build-source-image
@@ -193,7 +197,7 @@ spec:
         value: $(params.output-image).prefetch
       - name: ociArtifactExpiresAfter
         value: $(params.image-expires-after)
-      - name: dev-package-managers
+      - name: dev-package-managers 
         value: "true"
       runAfter:
       - clone-repository
@@ -617,8 +621,7 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate:
-    serviceAccountName: build-pipeline-hypershift-release-mce-26
+  taskRunTemplate: {}
   workspaces:
   - name: git-auth
     secret:
