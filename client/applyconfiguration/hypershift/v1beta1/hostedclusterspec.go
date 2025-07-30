@@ -50,6 +50,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	OperatorConfiguration            *OperatorConfigurationApplyConfiguration             `json:"operatorConfiguration,omitempty"`
 	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
+	ImageTagMirrorSet                []ImageTagMirrorApplyConfiguration                   `json:"imageTagMirrorSet,omitempty"`
 	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
 	FIPS                             *bool                                                `json:"fips,omitempty"`
@@ -265,6 +266,19 @@ func (b *HostedClusterSpecApplyConfiguration) WithImageContentSources(values ...
 			panic("nil value passed to WithImageContentSources")
 		}
 		b.ImageContentSources = append(b.ImageContentSources, *values[i])
+	}
+	return b
+}
+
+// WithImageTagMirrorSet adds the given value to the ImageTagMirrorSet field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ImageTagMirrorSet field.
+func (b *HostedClusterSpecApplyConfiguration) WithImageTagMirrorSet(values ...*ImageTagMirrorApplyConfiguration) *HostedClusterSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithImageTagMirrorSet")
+		}
+		b.ImageTagMirrorSet = append(b.ImageTagMirrorSet, *values[i])
 	}
 	return b
 }
