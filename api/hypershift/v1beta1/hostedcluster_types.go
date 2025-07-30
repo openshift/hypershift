@@ -446,6 +446,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
 // +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -648,7 +649,6 @@ type HostedClusterSpec struct {
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
 	//
 	// +optional
-	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
 	// auditWebhook contains metadata for configuring an audit webhook endpoint
@@ -1905,7 +1905,13 @@ type OperatorConfiguration struct {
 	// clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.
 	//
 	// +optional
+	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	ClusterVersionOperator *ClusterVersionOperatorSpec `json:"clusterVersionOperator,omitempty"`
+
+	// clusterNetworkOperator specifies the configuration for the Cluster Network Operator in the hosted cluster.
+	//
+	// +optional
+	ClusterNetworkOperator *ClusterNetworkOperatorSpec `json:"clusterNetworkOperator,omitempty"`
 }
 
 // +genclient

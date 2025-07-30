@@ -1348,6 +1348,69 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when operator configuration is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when disableMultiNetwork is set to false it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(false),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when disableMultiNetwork is true and networkType is Other it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.Other,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(true),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when disableMultiNetwork is true and networkType is not Other it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OVNKubernetes,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(true),
+								},
+							}
+						},
+						expectedErrorSubstring: "disableMultiNetwork can only be set to true when networkType is 'Other'",
+					},
+					{
+						name: "when disableMultiNetwork is false and networkType is OVNKubernetes it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OVNKubernetes,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(false),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {

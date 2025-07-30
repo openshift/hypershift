@@ -21,6 +21,7 @@ package v1beta1
 // with apply.
 type OperatorConfigurationApplyConfiguration struct {
 	ClusterVersionOperator *ClusterVersionOperatorSpecApplyConfiguration `json:"clusterVersionOperator,omitempty"`
+	ClusterNetworkOperator *ClusterNetworkOperatorSpecApplyConfiguration `json:"clusterNetworkOperator,omitempty"`
 }
 
 // OperatorConfigurationApplyConfiguration constructs a declarative configuration of the OperatorConfiguration type for use with
@@ -34,5 +35,13 @@ func OperatorConfiguration() *OperatorConfigurationApplyConfiguration {
 // If called multiple times, the ClusterVersionOperator field is set to the value of the last call.
 func (b *OperatorConfigurationApplyConfiguration) WithClusterVersionOperator(value *ClusterVersionOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
 	b.ClusterVersionOperator = value
+	return b
+}
+
+// WithClusterNetworkOperator sets the ClusterNetworkOperator field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterNetworkOperator field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithClusterNetworkOperator(value *ClusterNetworkOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.ClusterNetworkOperator = value
 	return b
 }

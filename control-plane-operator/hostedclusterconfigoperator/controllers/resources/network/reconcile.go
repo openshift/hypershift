@@ -37,7 +37,7 @@ const kubevirtDefaultGenevePort = uint32(9880)
 // 100.65.0.0/16 is not used internally at OVN kubernetes.
 const kubevirtDefaultV4InternalSubnet = "100.65.0.0/16"
 
-func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType) {
+func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType, disableMultiNetwork bool) {
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
 		// Modify vxlan port to avoid collisions with management cluster's default vxlan port.
@@ -83,6 +83,11 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 	// after the cno reconciles this operator CR
 	if network.Spec.ManagementState == "" {
 		network.Spec.ManagementState = "Managed"
+	}
+
+	// Set disableMultiNetwork to disable Multus CNI and related components
+	if disableMultiNetwork {
+		network.Spec.DisableMultiNetwork = &disableMultiNetwork
 	}
 }
 

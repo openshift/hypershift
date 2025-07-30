@@ -111,6 +111,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -173,6 +174,7 @@ type RawCreateOptions struct {
 	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	DisableMultiNetwork              bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -457,6 +459,16 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	}
 	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
 
+	if opts.DisableMultiNetwork {
+		if prototype.Cluster.Spec.OperatorConfiguration == nil {
+			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+		}
+		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+	}
+
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
 	}
@@ -740,6 +752,10 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
 			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
 		}
+	}
+
+	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
+		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
 
 	return &ValidatedCreateOptions{

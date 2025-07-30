@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +16,7 @@ import (
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -352,6 +354,66 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
 		},
+		{
+			name: "passes when disable-multi-network is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when disable-multi-network is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: false,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OVNKubernetes",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OpenShiftSDN",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=Calico",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Calico",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -363,6 +425,70 @@ func TestValidate(t *testing.T) {
 			} else {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
+
+func TestDisableMultiNetworkFlag(t *testing.T) {
+	tests := []struct {
+		name                        string
+		disableMultiNetwork         bool
+		expectedDisableMultiNetwork *bool
+		description                 string
+	}{
+		{
+			name:                        "disable multus flag set to true",
+			disableMultiNetwork:         true,
+			expectedDisableMultiNetwork: ptr.To(true),
+			description:                 "When --disable-multi-network=true is set, DisableMultiNetwork should be true",
+		},
+		{
+			name:                        "disable multus flag set to false",
+			disableMultiNetwork:         false,
+			expectedDisableMultiNetwork: ptr.To(false),
+			description:                 "When --disable-multi-network=false is set, DisableMultiNetwork should be false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								DisableMultiNetwork: tt.disableMultiNetwork,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+
+			// Verify the field is set correctly
+			if tt.disableMultiNetwork {
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration).ToNot(BeNil())
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).ToNot(BeNil())
+
+				// Both should be non-nil pointers to bool
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+				g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+				g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+			} else {
+				if resources.Cluster.Spec.OperatorConfiguration != nil && resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+					// Both should be non-nil pointers to bool
+					g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+					g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+					g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+				}
+				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
 			}
 		})
 	}
