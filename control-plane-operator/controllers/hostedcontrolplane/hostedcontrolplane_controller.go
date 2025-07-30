@@ -2442,17 +2442,22 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return nil
 	}
 
-	// ImageDigestMirrorSet is only applicable for release image versions >= 4.13
-	r.Log.Info("Reconciling ImageDigestMirrorSet")
+	// ImageDigestMirrorSet and ImageTagMirrorSet are only applicable for release image versions >= 4.13
+	r.Log.Info("Reconciling ImageDigestMirrorSet and ImageTagMirrorSet")
 	imageDigestMirrorSet := globalconfig.ImageDigestMirrorSet()
 	if err := globalconfig.ReconcileImageDigestMirrors(imageDigestMirrorSet, hcp); err != nil {
-		return fmt.Errorf("failed to reconcile image content policy: %w", err)
+		return fmt.Errorf("failed to reconcile image digest mirrors: %w", err)
+	}
+
+	imageTagMirrorSet := globalconfig.ImageTagMirrorSet()
+	if err := globalconfig.ReconcileImageTagMirrors(imageTagMirrorSet, hcp); err != nil {
+		return fmt.Errorf("failed to reconcile image tag mirrors: %w", err)
 	}
 
 	if _, err := createOrUpdate(ctx, r, imageContentPolicyIgnitionConfig, func() error {
-		return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
+		return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromBoth(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet, imageTagMirrorSet)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
+		return fmt.Errorf("failed to reconcile image mirror policies ignition config: %w", err)
 	}
 
 	return nil

@@ -61,6 +61,27 @@ func ImageDigestMirrorSetList() *configv1.ImageDigestMirrorSetList {
 	}
 }
 
+func ImageTagMirrorSet() *configv1.ImageTagMirrorSet {
+	return &configv1.ImageTagMirrorSet{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ImageTagMirrorSet",
+			APIVersion: configv1.GroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+}
+
+func ImageTagMirrorSetList() *configv1.ImageTagMirrorSetList {
+	return &configv1.ImageTagMirrorSetList{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ImageTagMirrorSetList",
+			APIVersion: configv1.GroupVersion.String(),
+		},
+	}
+}
+
 // ReconcileImageDigestMirrors reconciles the ImageContentSources from the HCP spec into an ImageDigestMirrorSet
 func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyperv1.HostedControlPlane) error {
 	if idms.Labels == nil {
@@ -79,6 +100,40 @@ func ReconcileImageDigestMirrors(idms *configv1.ImageDigestMirrorSet, hcp *hyper
 		idms.Spec.ImageDigestMirrors = append(idms.Spec.ImageDigestMirrors, configv1.ImageDigestMirrors{
 			Source:  source.Source,
 			Mirrors: mirrors,
+		})
+	}
+	return nil
+}
+
+// ReconcileImageTagMirrors reconciles the ImageTagMirrorSet from the HCP spec into an ImageTagMirrorSet
+func ReconcileImageTagMirrors(itms *configv1.ImageTagMirrorSet, hcp *hyperv1.HostedControlPlane) error {
+	if itms.Labels == nil {
+		itms.Labels = map[string]string{}
+	}
+
+	itms.Labels["machineconfiguration.openshift.io/role"] = "worker"
+	itms.Spec.ImageTagMirrors = []configv1.ImageTagMirrors{}
+	for _, source := range hcp.Spec.ImageTagMirrorSet {
+		var mirrors []configv1.ImageMirror
+
+		for _, mirror := range source.Mirrors {
+			mirrors = append(mirrors, configv1.ImageMirror(mirror))
+		}
+
+		var mirrorSourcePolicy configv1.MirrorSourcePolicy
+		if source.MirrorSourcePolicy != nil {
+			switch *source.MirrorSourcePolicy {
+			case hyperv1.NeverContactSource:
+				mirrorSourcePolicy = configv1.NeverContactSource
+			case hyperv1.AllowContactingSource:
+				mirrorSourcePolicy = configv1.AllowContactingSource
+			}
+		}
+
+		itms.Spec.ImageTagMirrors = append(itms.Spec.ImageTagMirrors, configv1.ImageTagMirrors{
+			Source:             source.Source,
+			Mirrors:            mirrors,
+			MirrorSourcePolicy: mirrorSourcePolicy,
 		})
 	}
 	return nil
