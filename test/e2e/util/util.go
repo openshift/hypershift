@@ -1492,6 +1492,97 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 	})
 }
 
+func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	// By default, we enable readOnlyRootFilesystem in every container.
+	// This testchecks to make sure that every container has this field enabled, unless manually specified in auditedAppContainersNoRORFS
+	t.Run("EnsureReadOnlyRootFilesystem", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
+		// auditedAppContainersNoRORFS[pod.Name][pod.Spec.Containers[*]] indicates that particular container is allowed to be false
+		auditedAppContainersNoRORFS := map[string]map[string]struct{}{}
+
+		for _, pod := range hcpPods.Items {
+			// skip etcd and feature-gate-generator pods
+			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
+			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
+				continue
+			}
+
+			for _, c := range pod.Spec.Containers {
+				_, isAuditedOff := auditedAppContainersNoRORFS[pod.Name][c.Name]
+				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
+
+				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
+				g.Expect(isRORFS).ToNot(BeIdenticalTo(isAuditedOff), "container %s in pod %s expects readOnlyRootFilesystem to be %v, it was %v", c.Name, pod.Name, !isAuditedOff, isRORFS)
+			}
+		}
+	})
+
+	// By default, we add an emptyDir pod volume named "tmp-dir" and mount it into every container in the pod at /tmp.
+	// This test checks to make sure that every container has this mount, unless manually specified in auditedAppContainerNoTmpDir.
+	t.Run("EnsureReadOnlyRootFilesystemTmpDirMount", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hcpPods := &corev1.PodList{}
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+			Namespace: hcpNs,
+		}); err != nil {
+			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
+		}
+
+		// a list of applications that are allowed to not have the emptyDir "tmp-dir" mounted.
+		// auditedAppContainerNoTmpDir[pod.Name][pod.Spec.Containers[*]] indicates that particular container is allowed to not have the mount
+		auditedAppContainerNoTmpDir := map[string]map[string]struct{}{}
+
+		for _, pod := range hcpPods.Items {
+			// skip etcd and feature-gate-generator pods
+			// If added to the list of audited pods,it will fail the e2e check on older release branches since e2e is ran from main.
+			if componentName := pod.Labels["hypershift.openshift.io/control-plane-component"]; componentName == "etcd" || componentName == "featuregate-generator" {
+				continue
+			}
+
+			containersHaveTmpMount := false
+			for _, c := range pod.Spec.Containers {
+				_, allowedNoTmpDir := auditedAppContainerNoTmpDir[pod.Name][c.Name]
+				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
+					return v.Name == "tmp-dir" && v.MountPath == "/tmp"
+				})
+				var msg string
+				if containerHasTmpDir && allowedNoTmpDir {
+					msg = "container %s in pod %s has tmp-dir mounted, but it is expected to not have it mounted"
+				} else if !containerHasTmpDir && !allowedNoTmpDir {
+					msg = "container %s in pod %s does not have tmp-dir mounted, and it is expected to mount it"
+				}
+				g.Expect(containerHasTmpDir).ToNot(BeIdenticalTo(allowedNoTmpDir), msg, c.Name, pod.Name)
+				containersHaveTmpMount = containersHaveTmpMount || containerHasTmpDir
+			}
+
+			podContainsTmpDir := slices.ContainsFunc(pod.Spec.Volumes, func(v corev1.Volume) bool {
+				if v.Name == "tmp-dir" {
+					g.Expect(v.HostPath).To(BeNil(), "pod %s has a volume named \"tmp-dir\" that should be an emptyDir, but is hostPath", pod.Name)
+					g.Expect(v.EmptyDir).ToNot(BeNil(), "pod %s has a volume named \"tmp-dir\" that should be an emptyDir, but is not", pod.Name)
+				}
+				return v.Name == "tmp-dir" && v.EmptyDir != nil && v.HostPath == nil
+			})
+			var msg string
+			if podContainsTmpDir && !containersHaveTmpMount {
+				msg = "pod %s has an emptyDir volume named \"tmp-dir\" while none of its containers mount it"
+			} else if !podContainsTmpDir && containersHaveTmpMount {
+				msg = "containers in pod %s mount an emptyDir volume named \"tmp-dir\", but the pod does not define it"
+			}
+			g.Expect(podContainsTmpDir).To(BeIdenticalTo(containersHaveTmpMount), msg, pod.Name)
+		}
+	})
+}
+
 func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsureGuestWebhooksValidated", func(t *testing.T) {
 		guestWebhookConf := &admissionregistrationv1.ValidatingWebhookConfiguration{
