@@ -32,4 +32,3 @@ status:
   - group: ""
     kind: Secret
     name: capi-webhooks-tls
-  version: 4.18.0
