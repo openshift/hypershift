@@ -19,7 +19,6 @@ import (
 
 	. "github.com/onsi/gomega"
 	"github.com/tidwall/gjson"
-
 	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -221,8 +220,8 @@ func ChangeUserForKeycloakExtOIDC(t *testing.T, ctx context.Context, clientCfg *
 	var username, password string
 
 	// Pick a random user for current running case to use
-	rand.Seed(time.Now().UnixMilli())
-	userIndex := rand.Intn(usersTotal)
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	userIndex := r.Intn(usersTotal)
 	username = testUsers[userIndex][1]
 	g.Expect(username).NotTo(BeEmpty())
 	password = testUsers[userIndex][2]
