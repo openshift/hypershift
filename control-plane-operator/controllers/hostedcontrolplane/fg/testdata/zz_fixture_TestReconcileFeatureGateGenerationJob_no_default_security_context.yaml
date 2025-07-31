@@ -1,0 +1,129 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  creationTimestamp: null
+  name: featuregate-generator
+  namespace: test-namespace
+spec:
+  backoffLimit: 5
+  template:
+    metadata:
+      annotations:
+        hypershift.openshift.io/release-image: ""
+      creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: ""
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - ""
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: ""
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      containers:
+      - args:
+        - sync-fg-configmap
+        command:
+        - /usr/bin/control-plane-operator
+        env:
+        - name: NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: PAYLOAD_VERSION
+          value: 4.19.0
+        image: example.org/cpo-image
+        name: apply
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /manifests
+          name: manifests
+      initContainers:
+      - args:
+        - |-
+          #!/bin/sh
+          cd /work
+          mkdir input output manifests
+
+          touch /work/manifests/99_feature-gate.yaml
+          cat <<EOF >/work/manifests/99_feature-gate.yaml
+          $(FEATURE_GATE_YAML)
+          EOF
+
+          /usr/bin/render \
+             --asset-output-dir /work/output \
+             --rendered-manifest-dir=/work/manifests \
+             --cluster-profile=ibm-cloud-managed \
+             --payload-version=$(PAYLOAD_VERSION)
+
+          cp /work/manifests/* /output
+        command:
+        - /bin/bash
+        - -c
+        env:
+        - name: PAYLOAD_VERSION
+          value: 4.19.0
+        - name: FEATURE_GATE_YAML
+          value: |
+            apiVersion: config.openshift.io/v1
+            kind: FeatureGate
+            metadata:
+              creationTimestamp: null
+              name: cluster
+            spec: {}
+            status:
+              featureGates: null
+        image: example.org/config-image
+        imagePullPolicy: IfNotPresent
+        name: render-feature-gates
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /output
+          name: manifests
+        - mountPath: /work
+          name: work
+      priorityClassName: hypershift-control-plane
+      restartPolicy: Never
+      serviceAccountName: control-plane-operator
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+      volumes:
+      - emptyDir: {}
+        name: manifests
+      - emptyDir: {}
+        name: work
+status: {}

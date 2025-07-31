@@ -84,10 +84,14 @@ func (c *controlPlaneWorkload[T]) defaultOptions(cpContext ControlPlaneContext, 
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
 
 	deploymentConfig := &config.DeploymentConfig{
-		SetDefaultSecurityContext: cpContext.SetDefaultSecurityContext,
 		AdditionalLabels: map[string]string{
 			hyperv1.ControlPlaneComponentLabel: c.Name(),
 		},
+	}
+	// set default security context for the pod.
+	// ETCD component is excluded as it fails to create data dir on AKS if we set the default security context.
+	if c.Name() != etcdComponentName && cpContext.SetDefaultSecurityContext {
+		deploymentConfig.SetDefaultSecurityContext = true
 	}
 	deploymentConfig.Scheduling.PriorityClass = getPriorityClass(c.Name(), cpContext.HCP)
 
