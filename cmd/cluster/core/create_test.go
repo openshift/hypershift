@@ -9,16 +9,20 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
@@ -489,6 +493,55 @@ func TestDisableMultiNetworkFlag(t *testing.T) {
 					g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
 				}
 				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
+			}
+		})
+	}
+}
+
+func TestValidateVersion(t *testing.T) {
+	tests := []struct {
+		name             string
+		versionCLI       string
+		operatorVersion  string
+		wantError        bool
+		errMessage       string
+		mutateDeployment func(*appsv1.Deployment)
+	}{
+		{
+			name:            "Commit SHAS match",
+			versionCLI:      "abc123",
+			operatorVersion: "abc123",
+			wantError:       false,
+		},
+		{
+			name:            "Mismatching SHAs",
+			versionCLI:      "abc123",
+			operatorVersion: "def456",
+			wantError:       true,
+			errMessage:      "version mismatch detected, CLI: abc123, Operator: def456",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+			supportedVersions := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "supported-versions",
+					Namespace: "hypershift",
+				},
+				Data: map[string]string{
+					config.ConfigMapServerVersionKey: tc.operatorVersion,
+					config.ConfigMapVersionsKey:      `{"versions":[]}`,
+				},
+			}
+			client := fake.NewClientBuilder().WithObjects(supportedVersions).Build()
+			err := validateVersion(ctx, tc.versionCLI, client)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tc.name)
+			} else {
+				g.Expect(err).To(BeNil(), "Did not expect error for test case: %s", tc.name)
 			}
 		})
 	}
