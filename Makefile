@@ -358,8 +358,8 @@ verify-codespell: codespell ## Verify codespell.
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)
 ifdef PULL_BASE_SHA
-	@echo "Linting commits from $(PULL_BASE_SHA) to HEAD (CI: PR targeting $(PULL_BASE_REF))"
-	@$(GITLINT) --commits $(PULL_BASE_SHA)..HEAD
+	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
+	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
 else
 	$(eval MERGE_BASE := $(shell \
 		git merge-base HEAD origin/HEAD 2>/dev/null || \
