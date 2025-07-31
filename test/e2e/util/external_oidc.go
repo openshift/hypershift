@@ -18,18 +18,22 @@ import (
 	"time"
 
 	. "github.com/onsi/gomega"
-	"github.com/tidwall/gjson"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	configv1 "github.com/openshift/api/config/v1"
+	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
+
 	kauthnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kauthnv1typedclient "k8s.io/client-go/kubernetes/typed/authentication/v1"
 	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	configv1 "github.com/openshift/api/config/v1"
-	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/tidwall/gjson"
 )
 
 type ProviderType string
