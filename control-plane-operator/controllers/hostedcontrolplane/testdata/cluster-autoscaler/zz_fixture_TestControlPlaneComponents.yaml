@@ -81,9 +81,6 @@ spec:
         - --balancing-ignore-label=topology.disk.csi.azure.com/zone
         - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
         - --balancing-ignore-label=vpc-block-csi-driver-labels
-        - --balancing-ignore-label=lifecycle
-        - --balancing-ignore-label=k8s.amazonaws.com/eniConfig
-        - --balancing-ignore-label=topology.k8s.aws/zone-id
         command:
         - /usr/bin/cluster-autoscaler
         env:

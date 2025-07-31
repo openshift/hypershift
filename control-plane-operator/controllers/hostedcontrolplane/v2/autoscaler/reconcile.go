@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/autoscaler"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,36 +51,6 @@ const (
 	leastWasteFlag string = "least-waste"
 	priorityFlag   string = "priority"
 	randomFlag     string = "random"
-)
-
-// AWS cloud provider ignore labels for the autoscaler.、
-const (
-	// AwsIgnoredLabelK8sEniconfig is a label used by the AWS CNI for custom networking.
-	AwsIgnoredLabelK8sEniconfig = "k8s.amazonaws.com/eniConfig"
-
-	// AwsIgnoredLabelLifecycle is a label used by the AWS for spot.
-	AwsIgnoredLabelLifecycle = "lifecycle"
-
-	// AwsIgnoredLabelZoneID is a label used for the AWS-specific zone identifier, see https://github.com/kubernetes/cloud-provider-aws/issues/300 for a more detailed explanation of its use.
-	AwsIgnoredLabelZoneID = "topology.k8s.aws/zone-id"
-)
-
-// Azure cloud provider ignore labels for the autoscaler.
-const (
-	// AzureNodepoolLegacyLabel is a label specifying which Azure node pool a particular node belongs to.
-	AzureNodepoolLegacyLabel = "agentpool"
-
-	// AzureNodepoolLabel is an AKS label specifying which nodepool a particular node belongs to.
-	AzureNodepoolLabel = "kubernetes.azure.com/agentpool"
-)
-
-// Common ignore labels for the autoscaler that are applied to all platforms.
-const (
-	CommonIgnoredLabelNodePool          = "hypershift.openshift.io/nodePool"
-	CommonIgnoredLabelAWSEBSZone        = "topology.ebs.csi.aws.com/zone"
-	CommonIgnoredLabelAzureDiskZone     = "topology.disk.csi.azure.com/zone"
-	CommonIgnoredLabelIBMCloudWorkerID  = "ibm-cloud.kubernetes.io/worker-id"
-	CommonIgnoredLabelVPCBlockCSIDriver = "vpc-block-csi-driver-labels"
 )
 
 func (a AutoscalerArg) String() string {
@@ -185,25 +156,10 @@ func ScaleDownArgs(sd *hyperv1.ScaleDownConfig) []string {
 // AppendBasicIgnoreLabels appends ignore labels for specific cloud provider to the arguments
 // so the autoscaler can use these labels without the user having to input them manually.
 func appendBasicIgnoreLabels(args []string, platformType hyperv1.PlatformType) []string {
-	// Add common labels that are applied to all platforms
-	args = append(args, BalancingIgnoreLabelArg.Value(CommonIgnoredLabelNodePool),
-		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelAWSEBSZone),
-		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelAzureDiskZone),
-		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelIBMCloudWorkerID),
-		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelVPCBlockCSIDriver))
-
-	// Add platform-specific labels
-	switch platformType {
-	case hyperv1.AWSPlatform:
-		args = append(args, BalancingIgnoreLabelArg.Value(AwsIgnoredLabelLifecycle),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelK8sEniconfig),
-			BalancingIgnoreLabelArg.Value(AwsIgnoredLabelZoneID))
-	case hyperv1.AzurePlatform:
-		args = append(args, BalancingIgnoreLabelArg.Value(AzureNodepoolLegacyLabel),
-			BalancingIgnoreLabelArg.Value(AzureNodepoolLabel),
-		)
+	ignoreLabels := autoscaler.GetIgnoreLabels(platformType)
+	for _, label := range ignoreLabels {
+		args = append(args, BalancingIgnoreLabelArg.Value(label))
 	}
-
 	return args
 }
 
