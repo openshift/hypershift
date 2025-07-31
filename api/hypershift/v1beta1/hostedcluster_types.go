@@ -1099,7 +1099,7 @@ type APIServerNetworking struct {
 	// This field is enforced for ARO (Azure Red Hat OpenShift) via the shared-ingress HAProxy.
 	// For platforms other than ARO, the enforcement depends on whether the underlying cloud provider supports the Service LoadBalancerSourceRanges field.
 	// If the platform does not support LoadBalancerSourceRanges, this field may have no effect.
-	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:MaxItems=500
 	// +listType=set
 	// +optional
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
