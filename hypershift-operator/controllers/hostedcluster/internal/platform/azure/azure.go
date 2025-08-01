@@ -104,6 +104,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						"--namespace=$(MY_NAMESPACE)",
 						"--leader-elect=true",
 						"--feature-gates=MachinePool=false,ASOAPI=false",
+						"--disable-controllers-or-webhooks=DisableASOSecretController",
 					},
 					Resources: corev1.ResourceRequirements{
 						Requests: corev1.ResourceList{
