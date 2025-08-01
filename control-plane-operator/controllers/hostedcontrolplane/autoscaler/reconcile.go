@@ -3,11 +3,13 @@ package autoscaler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
+	"github.com/openshift/hypershift/support/autoscaler"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -45,14 +47,13 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	}
 
 	args := []string{
-		"--expander=priority,least-waste",
 		"--cloud-provider=clusterapi",
 		"--node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)",
 		"--kubeconfig=/mnt/kubeconfig/target-kubeconfig",
 		"--clusterapi-cloud-config-authoritative",
 		// TODO (alberto): Is this a fair assumption?
 		// There's currently pods with local storage e.g grafana and image-registry.
-		// Without this option after after a scaling out operation and an “unfortunate” reschedule
+		// Without this option after after a scaling out operation and an "unfortunate" reschedule
 		// we might end up locked with three nodes.
 		"--skip-nodes-with-local-storage=false",
 		"--alsologtostderr",
@@ -63,9 +64,42 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 		"--v=4",
 	}
 
-	ignoreLabels := GetIgnoreLabels()
+	// Configure expanders
+	if len(options.Expanders) > 0 {
+		expanders := make([]string, 0)
+		for _, v := range options.Expanders {
+			switch v {
+			case hyperv1.LeastWasteExpander:
+				expanders = append(expanders, "least-waste")
+			case hyperv1.PriorityExpander:
+				expanders = append(expanders, "priority")
+			case hyperv1.RandomExpander:
+				expanders = append(expanders, "random")
+			}
+		}
+		args = append(args, fmt.Sprintf("--expander=%s", strings.Join(expanders, ",")))
+	} else {
+		args = append(args, "--expander=priority,least-waste")
+	}
+
+	// Configure scaling behavior
+	switch options.Scaling {
+	case hyperv1.ScaleUpOnly:
+		args = append(args, "--scale-down-enabled=false")
+	case hyperv1.ScaleUpAndScaleDown:
+		if options.ScaleDown != nil {
+			args = append(args, scaleDownArgs(options.ScaleDown)...)
+		}
+	}
+
+	ignoreLabels := autoscaler.GetIgnoreLabels(hcp.Spec.Platform.Type)
 	for _, v := range ignoreLabels {
 		args = append(args, fmt.Sprintf("%s=%v", BalancingIgnoreLabelArg, v))
+	}
+
+	// Add user-configured balancing ignored labels
+	for _, ignoredLabel := range options.BalancingIgnoredLabels {
+		args = append(args, fmt.Sprintf("%s=%s", BalancingIgnoreLabelArg, ignoredLabel))
 	}
 
 	// TODO if the options for the cluster autoscaler continues to grow, we should take inspiration
@@ -87,6 +121,11 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 
 	if options.PodPriorityThreshold != nil {
 		arg := fmt.Sprintf("%s=%d", "--expendable-pods-priority-cutoff", *options.PodPriorityThreshold)
+		args = append(args, arg)
+	}
+
+	if options.MaxFreeDifferenceRatioPercent != nil {
+		arg := fmt.Sprintf("--max-free-difference-ratio=%.2f", float64(*options.MaxFreeDifferenceRatioPercent)/100.0)
 		args = append(args, arg)
 	}
 
@@ -220,6 +259,34 @@ func ReconcileAutoscalerDeployment(deployment *appsv1.Deployment, hcp *hyperv1.H
 	return nil
 }
 
+func scaleDownArgs(sd *hyperv1.ScaleDownConfig) []string {
+	args := []string{
+		"--scale-down-enabled=true",
+	}
+
+	if sd.DelayAfterAddSeconds != nil {
+		args = append(args, fmt.Sprintf("--scale-down-delay-after-add=%ds", *sd.DelayAfterAddSeconds))
+	}
+
+	if sd.DelayAfterDeleteSeconds != nil {
+		args = append(args, fmt.Sprintf("--scale-down-delay-after-delete=%ds", *sd.DelayAfterDeleteSeconds))
+	}
+
+	if sd.DelayAfterFailureSeconds != nil {
+		args = append(args, fmt.Sprintf("--scale-down-delay-after-failure=%ds", *sd.DelayAfterFailureSeconds))
+	}
+
+	if sd.UnneededDurationSeconds != nil {
+		args = append(args, fmt.Sprintf("--scale-down-unneeded-time=%ds", *sd.UnneededDurationSeconds))
+	}
+
+	if sd.UtilizationThresholdPercent != nil {
+		args = append(args, fmt.Sprintf("--scale-down-utilization-threshold=%.2f", float64(*sd.UtilizationThresholdPercent)/100.0))
+	}
+
+	return args
+}
+
 func ReconcileAutoscalerRole(role *rbacv1.Role, owner config.OwnerRef) error {
 	owner.ApplyTo(role)
 	role.Rules = []rbacv1.PolicyRule{
@@ -325,38 +392,3 @@ func ReconcileAutoscaler(ctx context.Context, c client.Client, hcp *hyperv1.Host
 }
 
 const BalancingIgnoreLabelArg = "--balancing-ignore-label"
-
-// AWS cloud provider ignore labels for the autoscaler.
-const (
-	// AwsIgnoredLabelEbsCsiZone is a label used by the AWS EBS CSI driver as a target for Persistent Volume Node Affinity.
-	AwsIgnoredLabelEbsCsiZone = "topology.ebs.csi.aws.com/zone"
-)
-
-// IBM cloud provider ignore labels for the autoscaler.
-const (
-	// IbmcloudIgnoredLabelWorkerId is a label used by the IBM Cloud Cloud Controller Manager.
-	IbmcloudIgnoredLabelWorkerId = "ibm-cloud.kubernetes.io/worker-id"
-
-	// IbmcloudIgnoredLabelVpcBlockCsi is a label used by the IBM Cloud CSI driver as a target for Persistent Volume Node Affinity.
-	IbmcloudIgnoredLabelVpcBlockCsi = "vpc-block-csi-driver-labels"
-)
-
-// Azure cloud provider ignore labels for the autoscaler.
-const (
-	// AzureDiskTopologyKey is the topology key of Azure Disk CSI driver.
-	AzureDiskTopologyKey = "topology.disk.csi.azure.com/zone"
-)
-
-func GetIgnoreLabels() []string {
-	return []string{
-		// Hypershift
-		"hypershift.openshift.io/nodePool",
-		// AWS
-		AwsIgnoredLabelEbsCsiZone,
-		// Azure
-		AzureDiskTopologyKey,
-		// IBM
-		IbmcloudIgnoredLabelWorkerId,
-		IbmcloudIgnoredLabelVpcBlockCsi,
-	}
-}
