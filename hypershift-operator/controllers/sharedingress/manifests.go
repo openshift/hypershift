@@ -19,8 +19,8 @@ func RouterDeployment() *appsv1.Deployment {
 	}
 }
 
-func RouterConfigurationConfigMap() *corev1.ConfigMap {
-	return &corev1.ConfigMap{
+func RouterServiceAccount() *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "router",
 			Namespace: RouterNamespace,
