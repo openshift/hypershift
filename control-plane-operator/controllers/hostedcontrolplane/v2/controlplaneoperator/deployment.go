@@ -3,6 +3,7 @@ package controlplaneoperator
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -20,7 +21,8 @@ import (
 )
 
 const (
-	managedServiceEnvVar = "MANAGED_SERVICE"
+	managedServiceEnvVar            = "MANAGED_SERVICE"
+	DefaultSecurityContextUIDEnvVar = "DEFAULT_SECURITY_CONTEXT_UID"
 )
 
 func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -84,6 +86,10 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			{
 				Name:  "HYPERSHIFT_FEATURESET",
 				Value: string(cpo.FeatureSet),
+			},
+			{
+				Name:  DefaultSecurityContextUIDEnvVar,
+				Value: strconv.FormatInt(cpContext.DefaultSecurityContextUID, 10),
 			},
 			metrics.MetricsSetToEnv(cpContext.MetricsSet),
 		}...)

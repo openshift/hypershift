@@ -51,6 +51,7 @@ type ControlPlaneContext struct {
 	InfraStatus infra.InfrastructureStatus
 	// SetDefaultSecurityContext is used to configure Security Context for containers.
 	SetDefaultSecurityContext bool
+	DefaultSecurityContextUID int64
 	// EnableCIDebugOutput enable extra debug logs.
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
@@ -77,6 +78,7 @@ type WorkloadContext struct {
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
+	DefaultSecurityContextUID int64
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
 
@@ -93,6 +95,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		UserReleaseImageProvider:  cp.UserReleaseImageProvider,
 		InfraStatus:               cp.InfraStatus,
 		SetDefaultSecurityContext: cp.SetDefaultSecurityContext,
+		DefaultSecurityContextUID: cp.DefaultSecurityContextUID,
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,

@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -60,6 +61,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	interceptor "sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -4609,6 +4611,159 @@ func TestReconcileAdditionalTrustBundle(t *testing.T) {
 					Namespace: controlPlaneNamespace,
 				}, destConfigMap)
 				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
+func TestGetNextAvailableSecurityContextUID(t *testing.T) {
+	// Setup test cases
+	tests := []struct {
+		name        string
+		namespaces  []corev1.Namespace
+		expectedUID int64
+		expectErr   bool
+	}{
+		{
+			name:        "when no namespaces, it should return default",
+			namespaces:  []corev1.Namespace{},
+			expectedUID: controlplanecomponent.DefaultSecurityContextUID,
+			expectErr:   false,
+		},
+		{
+			name: "when there are multiple namespaces, it should pick the highest and return that +1",
+			namespaces: []corev1.Namespace{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "ns1",
+						Labels: map[string]string{
+							ControlPlaneNamespaceLabelKey: "true",
+						},
+						Annotations: map[string]string{
+							DefaultSecurityContextUIDAnnnotation: "1000123456",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "ns2",
+						Labels: map[string]string{
+							ControlPlaneNamespaceLabelKey: "true",
+						},
+						Annotations: map[string]string{
+							DefaultSecurityContextUIDAnnnotation: "1000123499",
+						},
+					},
+				},
+			},
+			expectedUID: 1000123500,
+			expectErr:   false,
+		},
+		{
+			name: "when there are namespaces with invalid annotation it should be ignored",
+			namespaces: []corev1.Namespace{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "ns1",
+						Labels: map[string]string{
+							ControlPlaneNamespaceLabelKey: "true",
+						},
+						Annotations: map[string]string{
+							DefaultSecurityContextUIDAnnnotation: "notanumber",
+						},
+					},
+				},
+			},
+			expectedUID: controlplanecomponent.DefaultSecurityContextUID,
+			expectErr:   false,
+		},
+		{
+			name: "when there are namespaces without the control plane label it should be ignored",
+			namespaces: []corev1.Namespace{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "ns1",
+						Annotations: map[string]string{
+							DefaultSecurityContextUIDAnnnotation: "1000123456",
+						},
+					},
+				},
+			},
+			expectedUID: controlplanecomponent.DefaultSecurityContextUID,
+			expectErr:   false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			objs := []crclient.Object{}
+			for i := range tc.namespaces {
+				ns := tc.namespaces[i]
+				objs = append(objs, &ns)
+			}
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objs...).
+				Build()
+
+			// Reset the cache for each test.
+			maxSecurityContextUIDCache = 0
+			uid, err := getNextAvailableSecurityContextUID(context.Background(), fakeClient)
+			if tc.expectErr && err == nil {
+				t.Errorf("expected error but got none")
+				return
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+			if !tc.expectErr && err == nil && uid != tc.expectedUID {
+				t.Errorf("expected UID %d, got %d", tc.expectedUID, uid)
+			}
+
+			// Now make subsequent calls and check they each get a value using the cache.
+			if !tc.expectErr && err == nil {
+				// Wrap the List method to panic if called again (should only be called on the first invocation)
+				fakeClient = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, client crclient.WithWatch, list crclient.ObjectList, opts ...crclient.ListOption) error {
+							t.Errorf("client.List should not be called after the first getNextAvailableSecurityContextUID call")
+							return nil
+						},
+					}).WithObjects(objs...).
+					Build()
+
+				var wg sync.WaitGroup
+				results := make(chan int64, 3)
+				for i := 0; i < 3; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						uid, err := getNextAvailableSecurityContextUID(context.Background(), fakeClient)
+						if err != nil {
+							t.Errorf("unexpected error: %v", err)
+						}
+						results <- uid
+					}()
+				}
+				wg.Wait()
+				close(results)
+
+				// All UIDs should be unique.
+				seen := make(map[int64]bool)
+				for uid := range results {
+					if seen[uid] {
+						t.Errorf("duplicate UID returned: %d", uid)
+					}
+					seen[uid] = true
+				}
+				g.Expect(seen).To(HaveKey(uid+1), "expected to see UID %d in results", uid+1)
+				g.Expect(seen).To(HaveKey(uid+2), "expected to see UID %d in results", uid+2)
+				g.Expect(seen).To(HaveKey(uid+3), "expected to see UID %d in results", uid+3)
+				g.Expect(seen).To(HaveLen(3), "expected to see 3 unique UIDs")
 			}
 		})
 	}

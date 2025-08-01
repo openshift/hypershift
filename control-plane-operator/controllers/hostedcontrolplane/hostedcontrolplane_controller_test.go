@@ -849,7 +849,8 @@ func TestEventHandling(t *testing.T) {
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
-		ec2Client: &fakeEC2Client{},
+		SetDefaultSecurityContext: false,
+		ec2Client:                 &fakeEC2Client{},
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 
