@@ -283,7 +283,7 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 	log := ctrl.LoggerFrom(ctx)
 
 	ec2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-	ec2NodeClass.SetName("default")
+	ec2NodeClass.SetName(assets.EC2NodeClassDefault)
 
 	op, err := r.CreateOrUpdate(ctx, r.GuestClient, ec2NodeClass, func() error {
 		ec2NodeClass.Spec = hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
