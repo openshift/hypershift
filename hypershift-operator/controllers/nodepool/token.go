@@ -308,6 +308,12 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	tokenSecret.Annotations[TokenSecretAnnotation] = "true"
 	tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] = string(t.nodePool.Spec.Management.UpgradeType)
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
+	if t.hostedCluster.Spec.AutoNode != nil && t.hostedCluster.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+		t.hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+		if t.nodePool.GetName() == "karpenter" {
+			tokenSecret.Annotations[supportutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(t.ConfigGenerator.hostedCluster).String()
+		}
+	}
 	// active token should never be marked as expired.
 	delete(tokenSecret.Annotations, hyperv1.IgnitionServerTokenExpirationTimestampAnnotation)
 
