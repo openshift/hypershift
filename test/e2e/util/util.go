@@ -96,6 +96,8 @@ var expectedKasManagementComponents = []string{
 	"cloud-controller-manager",
 	"olm-collect-profiles",
 	"aws-ebs-csi-driver-operator",
+	"azure-disk-csi-driver-operator",
+	"azure-file-csi-driver-operator",
 	"karpenter",
 	"karpenter-operator",
 	"featuregate-generator",
@@ -994,8 +996,8 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
+		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform && hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
+			t.Skipf("test only supported on AWS and Azure platforms, saw %s", hostedCluster.Spec.Platform.Type)
 		}
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -1035,6 +1037,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			g.Expect(err).To(HaveOccurred())
 
 			// Validate private router is not allowed to access management KAS.
+			// Note: Private router validation only applies to AWS - Azure doesn't have private router config
 			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 				if hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
 					// TODO (alberto): Run also in private case. Today it results in a flake:
