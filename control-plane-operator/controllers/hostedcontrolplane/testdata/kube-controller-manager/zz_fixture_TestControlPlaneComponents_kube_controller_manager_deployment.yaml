@@ -92,6 +92,7 @@ spec:
         - --controllers=-ttl
         - --controllers=-bootstrapsigner
         - --controllers=-tokencleaner
+        - --controllers=selinux-warning-controller
         - --enable-dynamic-provisioning=true
         - --flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec
         - --pv-recycler-pod-template-filepath-nfs=/etc/kubernetes/recycler-config/recycler-pod.yaml
