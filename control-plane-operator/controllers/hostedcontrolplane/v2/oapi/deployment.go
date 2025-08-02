@@ -7,11 +7,10 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
-
-	configv1 "github.com/openshift/api/config/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -75,8 +74,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 	})
 
-	if cpContext.HCP.Spec.Configuration.GetAuditPolicyConfig().Profile == configv1.NoneAuditProfileType {
+	// If auditing is none/disabled, remove the audit-logs container and remove volume and volume mount
+	if !kasv2.AuditEnabledWorkloadContext(cpContext) {
 		util.RemoveContainer("audit-logs", &deployment.Spec.Template.Spec)
+		util.RemoveContainerVolumeMount("audit-config", util.FindContainer(ComponentName, deployment.Spec.Template.Spec.Containers))
+		util.RemovePodVolume("audit-config", &deployment.Spec.Template.Spec)
 	}
 
 	serviceServingCA, err := getServiceServingCA(cpContext)
