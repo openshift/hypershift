@@ -4786,6 +4786,37 @@ and reports missing images if any.</p>
 </td>
 </tr></tbody>
 </table>
+###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>ConfigurationStatus contains the status of HostedCluster configuration</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>authentication</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.AuthenticationStatus
+</a>
+</em>
+</td>
+<td>
+</td>
+</tr>
+</tbody>
+</table>
 ###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
 <p>
 <p>ControlPlaneComponent specifies the state of a ControlPlane Component</p>
@@ -6235,6 +6266,19 @@ PlatformStatus
 <p>platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>configuration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigurationStatus">
+ConfigurationStatus
+</a>
+</em>
+</td>
+<td>
+<p>Configuration contains the configuration status of the HostedCluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -6974,6 +7018,19 @@ int
 <td>
 <em>(Optional)</em>
 <p>nodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>configuration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigurationStatus">
+ConfigurationStatus
+</a>
+</em>
+</td>
+<td>
+<p>Configuration contains the configuration status of the HostedCluster</p>
 </td>
 </tr>
 </tbody>
