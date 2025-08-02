@@ -91,3 +91,58 @@ or in separate steps:
 ../contrib/managed-azure/setup_backup_extension.sh --setup-backup-requirements
 ../contrib/managed-azure/setup_backup_extension.sh --deploy-backup-extension
 ```
+
+## Cleanup and Deletion
+
+When you're done with your clusters, you can use the provided deletion scripts to clean up all resources:
+
+### Complete Cleanup (Recommended)
+
+To delete both the hosted cluster and AKS management cluster along with all associated resources:
+
+```
+../contrib/managed-azure/delete_all.sh
+```
+
+This script will:
+1. Delete the hosted cluster and its managed resources
+2. Delete the AKS management cluster and resource group
+3. Clean up customer VNET and NSG resource groups
+4. Remove AKS-specific Key Vault role assignments
+5. Preserve managed identities, service principals, and Key Vault for reuse
+
+### Individual Cleanup Scripts
+
+If you need more granular control, you can run the individual deletion scripts:
+
+#### Delete Only the Hosted Cluster
+
+```
+../contrib/managed-azure/delete_hosted_cluster.sh
+```
+
+This deletes:
+- The hosted cluster itself
+- Managed resource group (contains cluster resources)
+- Customer VNET resource group
+- Customer NSG resource group
+
+#### Delete Only the AKS Management Cluster
+
+```
+../contrib/managed-azure/delete_aks_cluster.sh
+```
+
+This deletes:
+- The AKS management cluster
+- AKS resource group
+- AKS-specific Key Vault role assignments
+
+Note: Managed identities and Key Vault resources are preserved for reuse across multiple clusters
+
+### Important Notes
+
+- **Safety**: The `delete_all.sh` script includes a confirmation prompt to prevent accidental deletions
+- **Order**: When using individual scripts, delete the hosted cluster first, then the AKS cluster
+- **Background Operations**: Some resource deletions run in the background and may take several minutes to complete
+- **Monitoring**: You can monitor deletion progress with: `az group list --query "[?starts_with(name, 'YOUR-PREFIX')]"`
