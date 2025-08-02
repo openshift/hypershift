@@ -196,7 +196,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			}
 			// Wait until all NodePools are deleted before removing the finalizer
 			if len(nodePoolList.Items) > 0 {
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+				log.Info("Waiting for NodePools to be deleted, requeueing...", "count", len(nodePoolList.Items))
+				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 			}
 
 			nodeClaimList := &karpenterv1.NodeClaimList{}
@@ -205,7 +206,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				return ctrl.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
 			}
 			if len(nodeClaimList.Items) > 0 {
-				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "count", len(nodeClaimList.Items))
+				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 			}
 
 			originalHCP := hcp.DeepCopy()
@@ -283,7 +285,7 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 	log := ctrl.LoggerFrom(ctx)
 
 	ec2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-	ec2NodeClass.SetName("default")
+	ec2NodeClass.SetName(assets.EC2NodeClassDefault)
 
 	op, err := r.CreateOrUpdate(ctx, r.GuestClient, ec2NodeClass, func() error {
 		ec2NodeClass.Spec = hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
