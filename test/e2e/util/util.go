@@ -287,6 +287,14 @@ func WaitForGuestKubeConfig(t *testing.T, ctx context.Context, client crclient.C
 	return data
 }
 
+func WaitForGuestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) *rest.Config {
+	g := NewWithT(t)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest rest config")
+	return guestConfig
+}
+
 func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) crclient.Client {
 	g := NewWithT(t)
 	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
