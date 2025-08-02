@@ -32,4 +32,3 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: etcd
-  version: 4.18.0

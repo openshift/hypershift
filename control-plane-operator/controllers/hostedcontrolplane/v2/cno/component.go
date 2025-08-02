@@ -2,6 +2,7 @@ package cno
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -72,6 +73,7 @@ func NewComponent() component.ControlPlaneComponent {
 			WaitForClusterRolebinding:     ComponentName,
 			WaitForInfrastructureResource: true,
 		}).
+		WithCustomOperandsRolloutCheckFunc(checkOperandsRolloutStatus).
 		Build()
 }
 
@@ -99,4 +101,66 @@ func SetRestartAnnotationAndPatch(ctx context.Context, crclient client.Client, d
 	}
 
 	return nil
+}
+
+type operand struct {
+	DeploymentName  string
+	ContainerName   string
+	ReleaseImageKey string
+}
+
+func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
+	operandsDeploymentsList := []operand{
+		{
+			DeploymentName:  "ovnkube-control-plane",
+			ContainerName:   "ovnkube-control-plane",
+			ReleaseImageKey: "ovn-kubernetes",
+		},
+		{
+			DeploymentName:  "network-node-identity",
+			ContainerName:   "approver",
+			ReleaseImageKey: "ovn-kubernetes",
+		},
+		{
+			DeploymentName:  "cloud-network-config-controller",
+			ContainerName:   "controller",
+			ReleaseImageKey: "cloud-network-config-controller",
+		},
+	}
+	if !util.IsDisableMultiNetwork(cpContext.HCP) {
+		operandsDeploymentsList = append(operandsDeploymentsList, operand{
+			DeploymentName:  "multus-admission-controller",
+			ContainerName:   "multus-admission-controller",
+			ReleaseImageKey: "multus-admission-controller",
+		})
+	}
+
+	var errs []error
+	for _, operand := range operandsDeploymentsList {
+		deployment := &appsv1.Deployment{}
+		if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: cpContext.HCP.Namespace, Name: operand.DeploymentName}, deployment); err != nil {
+			errs = append(errs, fmt.Errorf("failed to get deployment %s: %w", operand.DeploymentName, err))
+			continue
+		}
+
+		expectedImage := cpContext.ReleaseImageProvider.GetImage(operand.ReleaseImageKey)
+		for _, container := range deployment.Spec.Template.Spec.Containers {
+			if container.Name == operand.ContainerName {
+				if container.Image != expectedImage {
+					errs = append(errs, fmt.Errorf("container %s in deployment %s is not using the expected image %s", operand.ContainerName, operand.DeploymentName, expectedImage))
+				}
+				break
+			}
+		}
+
+		if !util.IsDeploymentReady(cpContext, deployment) {
+			errs = append(errs, fmt.Errorf("deployment %s is not ready", operand.DeploymentName))
+		}
+	}
+
+	if len(errs) > 0 {
+		return false, errors.Join(errs...)
+	}
+
+	return true, nil
 }

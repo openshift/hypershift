@@ -30,4 +30,3 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: openshift-route-controller-manager
-  version: 4.18.0
