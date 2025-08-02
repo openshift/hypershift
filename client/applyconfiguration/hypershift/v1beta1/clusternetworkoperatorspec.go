@@ -20,7 +20,8 @@ package v1beta1
 // ClusterNetworkOperatorSpecApplyConfiguration represents a declarative configuration of the ClusterNetworkOperatorSpec type for use
 // with apply.
 type ClusterNetworkOperatorSpecApplyConfiguration struct {
-	DisableMultiNetwork *bool `json:"disableMultiNetwork,omitempty"`
+	DisableMultiNetwork *bool                                  `json:"disableMultiNetwork,omitempty"`
+	OVNKubernetesConfig *OVNKubernetesConfigApplyConfiguration `json:"ovnKubernetesConfig,omitempty"`
 }
 
 // ClusterNetworkOperatorSpecApplyConfiguration constructs a declarative configuration of the ClusterNetworkOperatorSpec type for use with
@@ -34,5 +35,13 @@ func ClusterNetworkOperatorSpec() *ClusterNetworkOperatorSpecApplyConfiguration 
 // If called multiple times, the DisableMultiNetwork field is set to the value of the last call.
 func (b *ClusterNetworkOperatorSpecApplyConfiguration) WithDisableMultiNetwork(value bool) *ClusterNetworkOperatorSpecApplyConfiguration {
 	b.DisableMultiNetwork = &value
+	return b
+}
+
+// WithOVNKubernetesConfig sets the OVNKubernetesConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OVNKubernetesConfig field is set to the value of the last call.
+func (b *ClusterNetworkOperatorSpecApplyConfiguration) WithOVNKubernetesConfig(value *OVNKubernetesConfigApplyConfiguration) *ClusterNetworkOperatorSpecApplyConfiguration {
+	b.OVNKubernetesConfig = value
 	return b
 }
