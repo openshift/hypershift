@@ -229,6 +229,16 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if value, ok := r.PayloadStore.Get(token); ok {
 		log.Info("Payload found in cache")
 
+		// TODO(maxcao13): This is a hack. Token rotation will drift karpenter nodes, which is undesired.
+		// So for now we do not rotate karpenter ignition tokens. The "right" solution to this is to make
+		// sure that the token change does not cause drift in the karpenter-provider-aws code.
+		if nodePoolLabel := tokenSecret.Annotations[hyperv1.NodePoolLabel]; nodePoolLabel != "" {
+			if util.ParseNamespacedName(nodePoolLabel).Name == "karpenter" {
+				log.Info("Skipping token rotation for karpenter nodepool", "nodePoolLabel", nodePoolLabel)
+				return ctrl.Result{RequeueAfter: ttl / 2}, nil
+			}
+		}
+
 		if tokenNeedRotation(timeLived) {
 			log.Info("Rotating token ID")
 			if err := r.rotateToken(ctx, tokenSecret, value, now); err != nil {
