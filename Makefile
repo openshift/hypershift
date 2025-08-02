@@ -83,7 +83,7 @@ lint-fix:
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
-verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync
+verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync run-gitlint
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
