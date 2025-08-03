@@ -28,7 +28,6 @@ import (
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
 )
 
 const (
@@ -63,14 +62,18 @@ func init() {
 }
 
 type analyzer struct {
-	isFirstField     config.ConditionsFirstField
-	useProtobuf      config.ConditionsUseProtobuf
-	usePatchStrategy config.ConditionsUsePatchStrategy
+	isFirstField     ConditionsFirstField
+	useProtobuf      ConditionsUseProtobuf
+	usePatchStrategy ConditionsUsePatchStrategy
 }
 
 // newAnalyzer creates a new analyzer.
-func newAnalyzer(cfg config.ConditionsConfig) *analysis.Analyzer {
-	defaultConfig(&cfg)
+func newAnalyzer(cfg *ConditionsConfig) *analysis.Analyzer {
+	if cfg == nil {
+		cfg = &ConditionsConfig{}
+	}
+
+	defaultConfig(cfg)
 
 	a := &analyzer{
 		isFirstField:     cfg.IsFirstField,
@@ -86,7 +89,7 @@ func newAnalyzer(cfg config.ConditionsConfig) *analysis.Analyzer {
 	}
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
+func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -136,12 +139,12 @@ func (a *analyzer) checkField(pass *analysis.Pass, index int, field *ast.Field, 
 	checkFieldMarkers(pass, field, fieldMarkers, a.usePatchStrategy)
 	a.checkFieldTags(pass, index, field)
 
-	if a.isFirstField == config.ConditionsFirstFieldWarn && index != 0 {
+	if a.isFirstField == ConditionsFirstFieldWarn && index != 0 {
 		pass.Reportf(field.Pos(), "Conditions field must be the first field in the struct")
 	}
 }
 
-func checkFieldMarkers(pass *analysis.Pass, field *ast.Field, fieldMarkers markers.MarkerSet, usePatchStrategy config.ConditionsUsePatchStrategy) {
+func checkFieldMarkers(pass *analysis.Pass, field *ast.Field, fieldMarkers markers.MarkerSet, usePatchStrategy ConditionsUsePatchStrategy) {
 	missingMarkers := []string{}
 	additionalMarkers := []markers.Marker{}
 
@@ -170,12 +173,12 @@ func checkFieldMarkers(pass *analysis.Pass, field *ast.Field, fieldMarkers marke
 	}
 }
 
-func checkPatchStrategyMarkers(fieldMarkers markers.MarkerSet, usePatchStrategy config.ConditionsUsePatchStrategy) ([]string, []markers.Marker) {
+func checkPatchStrategyMarkers(fieldMarkers markers.MarkerSet, usePatchStrategy ConditionsUsePatchStrategy) ([]string, []markers.Marker) {
 	missingMarkers := []string{}
 	additionalMarkers := []markers.Marker{}
 
 	switch usePatchStrategy {
-	case config.ConditionsUsePatchStrategySuggestFix, config.ConditionsUsePatchStrategyWarn:
+	case ConditionsUsePatchStrategySuggestFix, ConditionsUsePatchStrategyWarn:
 		if !fieldMarkers.HasWithValue(patchStrategyMerge) {
 			missingMarkers = append(missingMarkers, patchStrategyMerge)
 		}
@@ -183,9 +186,9 @@ func checkPatchStrategyMarkers(fieldMarkers markers.MarkerSet, usePatchStrategy 
 		if !fieldMarkers.HasWithValue(patchMergeKeyType) {
 			missingMarkers = append(missingMarkers, patchMergeKeyType)
 		}
-	case config.ConditionsUsePatchStrategyIgnore:
+	case ConditionsUsePatchStrategyIgnore:
 		// If it's there, we don't care.
-	case config.ConditionsUsePatchStrategyForbid:
+	case ConditionsUsePatchStrategyForbid:
 		if fieldMarkers.HasWithValue(patchStrategyMerge) {
 			additionalMarkers = append(additionalMarkers, fieldMarkers[patchStrategy]...)
 		}
@@ -200,11 +203,11 @@ func checkPatchStrategyMarkers(fieldMarkers markers.MarkerSet, usePatchStrategy 
 	return missingMarkers, additionalMarkers
 }
 
-func reportMissingMarkers(pass *analysis.Pass, field *ast.Field, missingMarkers []string, usePatchStrategy config.ConditionsUsePatchStrategy) {
+func reportMissingMarkers(pass *analysis.Pass, field *ast.Field, missingMarkers []string, usePatchStrategy ConditionsUsePatchStrategy) {
 	suggestedFixes := []analysis.SuggestedFix{}
 
 	// If patch strategy is warn, and the only markers in the list are patchStrategy and patchMergeKeyType, we don't need to suggest a fix.
-	if usePatchStrategy != config.ConditionsUsePatchStrategyWarn || slices.ContainsFunc[[]string, string](missingMarkers, func(marker string) bool {
+	if usePatchStrategy != ConditionsUsePatchStrategyWarn || slices.ContainsFunc[[]string, string](missingMarkers, func(marker string) bool {
 		switch marker {
 		case patchStrategyMerge, patchMergeKeyType:
 			return false
@@ -324,14 +327,14 @@ func (a *analyzer) checkFieldTags(pass *analysis.Pass, index int, field *ast.Fie
 	}
 }
 
-func getExpectedTag(usePatchStrategy config.ConditionsUsePatchStrategy, useProtobuf config.ConditionsUseProtobuf, isFirstField config.ConditionsFirstField, index int) string {
+func getExpectedTag(usePatchStrategy ConditionsUsePatchStrategy, useProtobuf ConditionsUseProtobuf, isFirstField ConditionsFirstField, index int) string {
 	expectedTag := fmt.Sprintf("`%s", expectedJSONTag)
 
-	if usePatchStrategy == config.ConditionsUsePatchStrategySuggestFix || usePatchStrategy == config.ConditionsUsePatchStrategyWarn {
+	if usePatchStrategy == ConditionsUsePatchStrategySuggestFix || usePatchStrategy == ConditionsUsePatchStrategyWarn {
 		expectedTag += fmt.Sprintf(" %s", expectedPatchTag)
 	}
 
-	if useProtobuf == config.ConditionsUseProtobufSuggestFix || useProtobuf == config.ConditionsUseProtobufWarn {
+	if useProtobuf == ConditionsUseProtobufSuggestFix || useProtobuf == ConditionsUseProtobufWarn {
 		expectedTag += fmt.Sprintf(" %s", getExpectedProtobufTag(isFirstField, index))
 	}
 
@@ -340,46 +343,46 @@ func getExpectedTag(usePatchStrategy config.ConditionsUsePatchStrategy, useProto
 	return expectedTag
 }
 
-func getExpectedProtobufTag(isFirstField config.ConditionsFirstField, index int) string {
+func getExpectedProtobufTag(isFirstField ConditionsFirstField, index int) string {
 	i := 1
-	if isFirstField == config.ConditionsFirstFieldIgnore {
+	if isFirstField == ConditionsFirstFieldIgnore {
 		i = index + 1
 	}
 
 	return fmt.Sprintf(expectedProtobufTag, i)
 }
 
-func tagIsAsExpected(tag string, usePatchStrategy config.ConditionsUsePatchStrategy, useProtobuf config.ConditionsUseProtobuf, isFirstField config.ConditionsFirstField, index int) (bool, bool) {
+func tagIsAsExpected(tag string, usePatchStrategy ConditionsUsePatchStrategy, useProtobuf ConditionsUseProtobuf, isFirstField ConditionsFirstField, index int) (bool, bool) {
 	patchTagCorrect, patchShouldSuggestFix := patchStrategyTagIsAsExpected(tag, usePatchStrategy)
 	protoTagCorrect, protoShouldSuggestFix := protobufTagIsAsExpected(tag, useProtobuf, isFirstField, index)
 
 	return patchTagCorrect && protoTagCorrect, patchShouldSuggestFix || protoShouldSuggestFix
 }
 
-func patchStrategyTagIsAsExpected(tag string, usePatchStrategy config.ConditionsUsePatchStrategy) (bool, bool) {
+func patchStrategyTagIsAsExpected(tag string, usePatchStrategy ConditionsUsePatchStrategy) (bool, bool) {
 	switch usePatchStrategy {
-	case config.ConditionsUsePatchStrategySuggestFix:
+	case ConditionsUsePatchStrategySuggestFix:
 		return strings.Contains(tag, expectedPatchTag), true
-	case config.ConditionsUsePatchStrategyWarn:
+	case ConditionsUsePatchStrategyWarn:
 		return strings.Contains(tag, expectedPatchTag), false
-	case config.ConditionsUsePatchStrategyIgnore:
+	case ConditionsUsePatchStrategyIgnore:
 		return true, false
-	case config.ConditionsUsePatchStrategyForbid:
+	case ConditionsUsePatchStrategyForbid:
 		return !strings.Contains(tag, expectedPatchTag), true
 	default:
 		panic("unexpected usePatchStrategy value")
 	}
 }
 
-func protobufTagIsAsExpected(tag string, useProtobuf config.ConditionsUseProtobuf, isFirstField config.ConditionsFirstField, index int) (bool, bool) {
+func protobufTagIsAsExpected(tag string, useProtobuf ConditionsUseProtobuf, isFirstField ConditionsFirstField, index int) (bool, bool) {
 	switch useProtobuf {
-	case config.ConditionsUseProtobufSuggestFix:
+	case ConditionsUseProtobufSuggestFix:
 		return strings.Contains(tag, getExpectedProtobufTag(isFirstField, index)), true
-	case config.ConditionsUseProtobufWarn:
+	case ConditionsUseProtobufWarn:
 		return strings.Contains(tag, getExpectedProtobufTag(isFirstField, index)), false
-	case config.ConditionsUseProtobufIgnore:
+	case ConditionsUseProtobufIgnore:
 		return true, false
-	case config.ConditionsUseProtobufForbid:
+	case ConditionsUseProtobufForbid:
 		return !strings.Contains(tag, getExpectedProtobufTag(isFirstField, index)), true
 	default:
 		panic("unexpected useProtobuf value")
@@ -429,16 +432,16 @@ func isSliceMetaV1Condition(field *ast.Field) bool {
 	return true
 }
 
-func defaultConfig(cfg *config.ConditionsConfig) {
+func defaultConfig(cfg *ConditionsConfig) {
 	if cfg.IsFirstField == "" {
-		cfg.IsFirstField = config.ConditionsFirstFieldWarn
+		cfg.IsFirstField = ConditionsFirstFieldWarn
 	}
 
 	if cfg.UseProtobuf == "" {
-		cfg.UseProtobuf = config.ConditionsUseProtobufSuggestFix
+		cfg.UseProtobuf = ConditionsUseProtobufSuggestFix
 	}
 
 	if cfg.UsePatchStrategy == "" {
-		cfg.UsePatchStrategy = config.ConditionsUsePatchStrategySuggestFix
+		cfg.UsePatchStrategy = ConditionsUsePatchStrategySuggestFix
 	}
 }
