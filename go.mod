@@ -35,7 +35,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/openshift/api v0.0.0-20240215031714-be926bb0d751
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1
+	github.com/openshift/client-go 396b36f983ee
 	github.com/openshift/cloud-credential-operator v0.0.0-20240504012628-26d4761a9f4e
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
