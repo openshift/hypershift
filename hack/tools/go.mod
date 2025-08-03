@@ -10,7 +10,7 @@ require (
 	gotest.tools/gotestsum v1.12.0
 	honnef.co/go/tools v0.5.1
 	k8s.io/code-generator v0.32.2
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397
 )
 
 require (
