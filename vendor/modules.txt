@@ -925,7 +925,7 @@ github.com/tombuildsstuff/giovanni/version
 # github.com/vincent-petithory/dataurl v1.0.0
 ## explicit
 github.com/vincent-petithory/dataurl
-# github.com/xiang90/probing v0.0.0-20190116061207-43a291ad63a2
+# github.com/xiang90/probing v0.0.0-20221125231312-a49e3df8f510
 ## explicit
 github.com/xiang90/probing
 # github.com/xlab/treeprint v1.2.0
