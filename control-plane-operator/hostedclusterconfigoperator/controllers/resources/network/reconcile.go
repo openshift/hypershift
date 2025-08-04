@@ -37,7 +37,7 @@ const kubevirtDefaultGenevePort = uint32(9880)
 // 100.65.0.0/16 is not used internally at OVN kubernetes.
 const kubevirtDefaultV4InternalSubnet = "100.65.0.0/16"
 
-func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType, disableMultiNetwork bool) {
+func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType, disableMultiNetwork bool, ovnConfig *hyperv1.OVNKubernetesConfig) {
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
 		// Modify vxlan port to avoid collisions with management cluster's default vxlan port.
@@ -75,6 +75,25 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 		}
 	default:
 		// do nothing
+	}
+
+	if networkType == hyperv1.OVNKubernetes && ovnConfig != nil {
+		if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
+			network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}
+		}
+		ovnCfg := network.Spec.DefaultNetwork.OVNKubernetesConfig
+		// Apply IPv4 configuration
+		if ovnConfig.IPv4 != nil {
+			if ovnCfg.IPv4 == nil {
+				ovnCfg.IPv4 = &operatorv1.IPv4OVNKubernetesConfig{}
+			}
+			if ovnConfig.IPv4.InternalJoinSubnet != "" {
+				ovnCfg.IPv4.InternalJoinSubnet = ovnConfig.IPv4.InternalJoinSubnet
+			}
+			if ovnConfig.IPv4.InternalTransitSwitchSubnet != "" {
+				ovnCfg.IPv4.InternalTransitSwitchSubnet = ovnConfig.IPv4.InternalTransitSwitchSubnet
+			}
+		}
 	}
 
 	// Setting the management state is required in order to create
