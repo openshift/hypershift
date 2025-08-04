@@ -66,6 +66,9 @@ type ControlPlaneContext struct {
 	SkipCertificateSigning bool
 }
 
+// WorkloadContext is what we pass to the components(adapt, predicate functions, etc..).
+// It is mostly like ControlPlaneContext, but WorkloadContext hides some fields that the component should not know about
+// and has only a Reader client so components can't create resources outside of the framework.
 type WorkloadContext struct {
 	context.Context
 
