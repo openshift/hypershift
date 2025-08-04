@@ -210,16 +210,58 @@ This script handles:
 - Applying FIPS configuration and security settings
 - Enabling workload identity and managed identity integration
 
-### 10. Deleting the Azure Hosted Cluster
-You can delete the cluster by using the following command:
+### 10. Cleanup and Deletion
+
+#### Automated Cleanup (Recommended)
+
+If you used the automated setup scripts, you can use the corresponding deletion scripts for easy cleanup:
+
+**Complete Cleanup** - Delete both hosted cluster and AKS management cluster:
+```shell
+../contrib/managed-azure/delete_all.sh
+```
+
+This is the recommended approach as it will clean up all cluster-specific resources in the correct order:
+1. Hosted cluster and its managed resources
+2. AKS management cluster and resource group  
+3. Customer VNet and NSG resource groups
+4. AKS-specific Key Vault role assignments
+
+Note: Managed identities, service principals, and Key Vault itself are preserved for reuse across multiple clusters
+
+**Individual Cleanup** - For more granular control:
+
+Delete only the hosted cluster:
+```shell
+../contrib/managed-azure/delete_hosted_cluster.sh
+```
+
+Delete only the AKS management cluster:
+```shell
+../contrib/managed-azure/delete_aks_cluster.sh
+```
+
+#### Manual Deletion
+
+You can also delete the hosted cluster manually using the hypershift CLI:
 ```shell
 ${HYPERSHIFT_BINARY_PATH}/hypershift destroy cluster azure \
 --name $CLUSTER_NAME \
---azure-creds $AZURE_CREDS
+--azure-creds $AZURE_CREDS \
+--resource-group-name ${MANAGED_RG_NAME}
 ```
 
 !!! tip
-    If you used the automated scripts, `CLUSTER_NAME` is set to `"${PREFIX}-hc"` and `AZURE_CREDS` matches your `user-vars.sh` configuration.
+    If you used the automated scripts, `CLUSTER_NAME` is set to `"${PREFIX}-hc"`, `AZURE_CREDS` matches your `user-vars.sh` configuration, and `MANAGED_RG_NAME` is `"${PREFIX}-managed-rg"`.
+
+!!! warning
+    The manual deletion command only removes the hosted cluster. You'll need to manually clean up the AKS management cluster and other Azure resources created during setup.
+
+!!! note
+    The automated deletion scripts include safety confirmations and handle resource dependencies correctly. Some deletions may take several minutes to complete in the background.
+
+!!! important
+    **Resource Reuse**: The deletion scripts preserve managed identities, service principals, and the Key Vault itself for reuse across multiple clusters. AKS-specific role assignments are removed, but the underlying identities and vault remain for reuse.
 
 ## Troubleshooting
 
