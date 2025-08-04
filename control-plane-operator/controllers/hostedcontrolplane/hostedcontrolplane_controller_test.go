@@ -25,6 +25,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
+	autoscalercommon "github.com/openshift/hypershift/support/autoscaler"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -552,7 +553,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 // become arguments to the autoscaler.
 func TestClusterAutoscalerArgs(t *testing.T) {
 	IgnoreLabelArgs := make([]string, 0)
-	for _, v := range autoscaler.GetIgnoreLabels() {
+	for _, v := range autoscalercommon.GetIgnoreLabels(hyperv1.AWSPlatform) {
 		IgnoreLabelArgs = append(IgnoreLabelArgs, fmt.Sprintf("%s=%v", autoscaler.BalancingIgnoreLabelArg, v))
 	}
 
@@ -619,6 +620,7 @@ func TestClusterAutoscalerArgs(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Name = "name"
 			hcp.Namespace = "namespace"
+			hcp.Spec.Platform.Type = hyperv1.AWSPlatform
 			err := autoscaler.ReconcileAutoscalerDeployment(deployment, hcp, sa, secret, test.AutoscalerOptions, "clusterAutoscalerImage", "availabilityProberImage", false, config.OwnerRefFrom(hcp))
 			if err != nil {
 				t.Error(err)

@@ -283,6 +283,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RouterParam"):
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
+		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):

@@ -1234,9 +1234,126 @@ const (
 // +kubebuilder:validation:Enum=Karpenter
 type Provisioner string
 
+// Configures when and how to scale down cluster nodes.
+type ScaleDownConfig struct {
+	// delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+	// When omitted, the autoscaler defaults to 600s (10 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterAddSeconds *int32 `json:"delayAfterAddSeconds,omitempty"`
+
+	// delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+	// When omitted, the autoscaler defaults to 0s.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterDeleteSeconds *int32 `json:"delayAfterDeleteSeconds,omitempty"`
+
+	// delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+	// When omitted, the autoscaler defaults to 180s (3 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterFailureSeconds *int32 `json:"delayAfterFailureSeconds,omitempty"`
+
+	// unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds.
+	// It must be between 0 and 86400 (24 hours).
+	// When omitted, the autoscaler defaults to 600s (10 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	UnneededDurationSeconds *int32 `json:"unneededDurationSeconds,omitempty"`
+
+	// utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down.
+	// The value represents a percentage from 0 to 100.
+	// When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+	// When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+	// A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+	// When omitted, the autoscaler defaults to 50%.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	UtilizationThresholdPercent *int32 `json:"utilizationThresholdPercent,omitempty"`
+}
+
+// ExpanderString contains the name of an expander to be used by the cluster autoscaler.
+// +kubebuilder:validation:Enum=LeastWaste;Priority;Random
+type ExpanderString string
+
+// These constants define the valid values for an ExpanderString
+const (
+	LeastWasteExpander ExpanderString = "LeastWaste" // Selects the node group with the least idle resources.
+	PriorityExpander   ExpanderString = "Priority"   // Selects the node group with the highest priority.
+	RandomExpander     ExpanderString = "Random"     // Selects a node group randomly.
+)
+
+// ScalingType defines the scaling behavior for the cluster autoscaler.
+// +kubebuilder:validation:Enum=ScaleUpOnly;ScaleUpAndScaleDown
+type ScalingType string
+
+const (
+	// ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+	ScaleUpOnly ScalingType = "ScaleUpOnly"
+
+	// ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+	ScaleUpAndScaleDown ScalingType = "ScaleUpAndScaleDown"
+)
+
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
+// +kubebuilder:validation:XValidation:rule="self.scaling == 'ScaleUpAndScaleDown' ? true : !has(self.scaleDown)",message="scaleDown can only be set when scaling is ScaleUpAndScaleDown"
 type ClusterAutoscaling struct {
+	// scaling defines the scaling behavior for the cluster autoscaler.
+	// ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+	// ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+	// When set to ScaleUpAndScaleDown, the scaleDown field can be used to configure scale down behavior.
+	//
+	// Note: This field is only supported in OpenShift versions 4.19 and above.
+	//
+	// +kubebuilder:default=ScaleUpAndScaleDown
+	// +optional
+	Scaling ScalingType `json:"scaling,omitempty"`
+
+	// scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
+	// This field is only valid when scaling is set to ScaleUpAndScaleDown.
+	//
+	// +optional
+	ScaleDown *ScaleDownConfig `json:"scaleDown,omitempty"`
+
+	// balancingIgnoredLabels sets "--balancing-ignore-label <label name>" flag on cluster-autoscaler for each listed label.
+	// This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+	// For example, if you have nodes with "topology.ebs.csi.aws.com/zone" label, you can add name of this label here
+	// to prevent cluster autoscaler from splitting nodes into different node groups based on its value.
+	//
+	// HyperShift automatically appends platform-specific balancing ignore labels:
+	// - AWS: "lifecycle", "k8s.amazonaws.com/eniConfig", "topology.k8s.aws/zone-id"
+	// - Azure: "agentpool", "kubernetes.azure.com/agentpool"
+	// - Common:
+	//   - "hypershift.openshift.io/nodePool"
+	//   - "topology.ebs.csi.aws.com/zone"
+	//   - "topology.disk.csi.azure.com/zone"
+	//   - "ibm-cloud.kubernetes.io/worker-id"
+	//   - "vpc-block-csi-driver-labels"
+	// These labels are added by default and do not need to be manually specified.
+	//
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=317
+	// +kubebuilder:validation:XValidation:rule="self.all(l, l.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$'))", message="Each balancingIgnoredLabels item must be a valid label key"
+	// +optional
+	BalancingIgnoredLabels []string `json:"balancingIgnoredLabels,omitempty"`
+
 	// maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
 	// The autoscaler will not grow the cluster beyond this number.
 	// If omitted, the autoscaler will not have a maximum limit.
@@ -1261,6 +1378,19 @@ type ClusterAutoscaling struct {
 	// +optional
 	MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
 
+	// maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+	// The value represents a percentage from 0 to 100.
+	// When set to 0, this means node groups must have exactly the same free resources to be considered similar (no difference allowed).
+	// When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
+	// A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
+	// When omitted, the autoscaler defaults to 10%.
+	// This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	MaxFreeDifferenceRatioPercent *int32 `json:"maxFreeDifferenceRatioPercent,omitempty"`
+
 	// podPriorityThreshold enables users to schedule "best-effort" pods, which
 	// shouldn't trigger autoscaler actions, but only run when there are spare
 	// resources available. The default is -10.
@@ -1270,6 +1400,20 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
+
+	// expanders guide the autoscaler in choosing node groups during scale-out.
+	// Sets the order of expanders for scaling out node groups.
+	// Options include:
+	// * LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+	// * Priority - selects the group with the highest user-defined priority.
+	// * Random - selects a group randomly.
+	// If not specified, `[Priority, LeastWaste]` is the default.
+	// Maximum of 3 expanders can be specified.
+	// +kubebuilder:validation:MaxItems=3
+	// +kubebuilder:validation:MinItems=1
+	//
+	// +optional
+	Expanders []ExpanderString `json:"expanders,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
