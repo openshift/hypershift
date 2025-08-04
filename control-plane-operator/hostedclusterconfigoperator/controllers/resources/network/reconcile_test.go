@@ -24,6 +24,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		inputNetworkType    hyperv1.NetworkType
 		inputPlatformType   hyperv1.PlatformType
 		disableMultiNetwork bool
+		ovnConfig           *hyperv1.OVNKubernetesConfig
 		expectedNetwork     *operatorv1.Network
 	}{
 		{
@@ -289,11 +290,78 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "IPv4 subnets configured for OVN Kubernetes",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "192.168.1.0/24",
+					InternalTransitSwitchSubnet: "192.168.2.0/24",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							IPv4: &operatorv1.IPv4OVNKubernetesConfig{
+								InternalJoinSubnet:          "192.168.1.0/24",
+								InternalTransitSwitchSubnet: "192.168.2.0/24",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "OVN config with non-OVN network type is ignored",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "192.168.1.0/24",
+					InternalTransitSwitchSubnet: "192.168.2.0/24",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
+		{
+			name:                "Nil OVN config does not affect network",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig:           nil,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
 	}
+
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultiNetwork, nil)
+			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultiNetwork, tc.ovnConfig)
 			g.Expect(tc.inputNetwork).To(BeEquivalentTo(tc.expectedNetwork))
 		})
 	}

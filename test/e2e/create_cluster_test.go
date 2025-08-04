@@ -1413,6 +1413,57 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "",
 					},
+					{
+						name: "when ovnKubernetesConfig is set and networkType is not OVNKubernetes it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OpenShiftSDN,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									OVNKubernetesConfig: &hyperv1.OVNKubernetesConfig{
+										IPv4: &hyperv1.OVNIPv4Config{
+											InternalJoinSubnet: "10.10.0.0/16",
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes",
+					},
+					{
+						name: "when ovnKubernetesConfig is set and networkType is OVNKubernetes it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OVNKubernetes,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									OVNKubernetesConfig: &hyperv1.OVNKubernetesConfig{
+										IPv4: &hyperv1.OVNIPv4Config{
+											InternalJoinSubnet:          "10.10.0.0/16",
+											InternalTransitSwitchSubnet: "10.20.0.0/16",
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when ovnKubernetesConfig is not set and networkType is not OVNKubernetes it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OpenShiftSDN,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(false),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
 				},
 			},
 		}
