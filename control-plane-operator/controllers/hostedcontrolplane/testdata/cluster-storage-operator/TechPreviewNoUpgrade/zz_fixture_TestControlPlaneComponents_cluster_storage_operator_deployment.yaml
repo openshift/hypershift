@@ -30,6 +30,7 @@ spec:
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
       labels:
+        app: cluster-storage-operator
         hypershift.openshift.io/control-plane-component: cluster-storage-operator
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
         hypershift.openshift.io/need-management-kas-access: "true"

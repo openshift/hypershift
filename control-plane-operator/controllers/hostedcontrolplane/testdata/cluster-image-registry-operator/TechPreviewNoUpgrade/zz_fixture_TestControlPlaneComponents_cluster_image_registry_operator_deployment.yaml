@@ -30,6 +30,7 @@ spec:
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
+        app: cluster-image-registry-operator
         hypershift.openshift.io/control-plane-component: cluster-image-registry-operator
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
         name: cluster-image-registry-operator

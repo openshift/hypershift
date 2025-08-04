@@ -13,6 +13,7 @@ spec:
   template:
     metadata:
       labels:
+        app: cluster-image-registry-operator
         name: cluster-image-registry-operator
     spec:
       containers:
