@@ -56,7 +56,7 @@ func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context
 		"configs",
 	}
 
-	denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed'"
+	denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed' || request.userInfo.username == 'system:hosted-cluster-config'"
 	registryConfigManagementStateAdmissionPolicy.Validations = []k8sadmissionv1.Validation{denyRemovedManagementStateValidation}
 	registryConfigManagementStateAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(registryConfigManagementStateResources, registryConfigManagementStateAPIVersion, registryConfigManagementStateAPIGroup, []k8sadmissionv1.OperationType{"CREATE", "UPDATE"})
 	if err := registryConfigManagementStateAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
