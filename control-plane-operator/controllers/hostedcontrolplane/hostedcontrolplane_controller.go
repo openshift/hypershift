@@ -2925,7 +2925,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudProviderConfig(ctx context.
 }
 
 func (r *HostedControlPlaneReconciler) reconcileManagedEtcd(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, createOrUpdate upsert.CreateOrUpdateFN, statefulSet *appsv1.StatefulSet) error {
-	p, err := etcd.NewEtcdParams(hcp, releaseImageProvider)
+	p, err := etcd.NewEtcdParams(hcp, releaseImageProvider, r.SetDefaultSecurityContext)
 	if err != nil {
 		return fmt.Errorf("error creating etcd params")
 	}

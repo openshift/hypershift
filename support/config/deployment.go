@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"os"
+	"strconv"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -108,7 +111,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 	// set revision history limit
 	deployment.Spec.RevisionHistoryLimit = ptr.To(int32(c.RevisionHistoryLimit))
 
-	c.setDefaultSecurityContextForPod(&deployment.Spec.Template.Spec)
+	c.setDefaultSecurityContextForPod(&deployment.Spec.Template.Spec, false)
 
 	// set managed-by label
 	if deployment.Labels == nil {
@@ -146,7 +149,7 @@ func (c *DeploymentConfig) ApplyTo(deployment *appsv1.Deployment) {
 }
 
 func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
-	c.setDefaultSecurityContextForPod(&daemonset.Spec.Template.Spec)
+	c.setDefaultSecurityContextForPod(&daemonset.Spec.Template.Spec, false)
 
 	// replicas is not used for DaemonSets
 	c.Scheduling.ApplyTo(&daemonset.Spec.Template.Spec)
@@ -161,7 +164,7 @@ func (c *DeploymentConfig) ApplyToDaemonSet(daemonset *appsv1.DaemonSet) {
 }
 
 func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
-	c.setDefaultSecurityContextForPod(&sts.Spec.Template.Spec)
+	c.setDefaultSecurityContextForPod(&sts.Spec.Template.Spec, true)
 
 	sts.Spec.Replicas = ptr.To(int32(c.Replicas))
 	c.Scheduling.ApplyTo(&sts.Spec.Template.Spec)
@@ -176,7 +179,7 @@ func (c *DeploymentConfig) ApplyToStatefulSet(sts *appsv1.StatefulSet) {
 }
 
 func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
-	c.setDefaultSecurityContextForPod(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
+	c.setDefaultSecurityContextForPod(&cronJob.Spec.JobTemplate.Spec.Template.Spec, false)
 
 	c.Scheduling.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
 	c.SecurityContexts.ApplyTo(&cronJob.Spec.JobTemplate.Spec.Template.Spec)
@@ -190,7 +193,7 @@ func (c *DeploymentConfig) ApplyToCronJob(cronJob *batchv1.CronJob) {
 }
 
 func (c *DeploymentConfig) ApplyToJob(job *batchv1.Job) {
-	c.setDefaultSecurityContextForPod(&job.Spec.Template.Spec)
+	c.setDefaultSecurityContextForPod(&job.Spec.Template.Spec, false)
 
 	c.Scheduling.ApplyTo(&job.Spec.Template.Spec)
 	c.SecurityContexts.ApplyTo(&job.Spec.Template.Spec)
@@ -203,10 +206,44 @@ func (c *DeploymentConfig) ApplyToJob(job *batchv1.Job) {
 	c.AdditionalAnnotations.ApplyTo(&job.Spec.Template.ObjectMeta)
 }
 
-func (c *DeploymentConfig) setDefaultSecurityContextForPod(spec *corev1.PodSpec) {
+var (
+	DefaultSecurityContextUIDEnvVar = "DEFAULT_SECURITY_CONTEXT_UID"
+	DefaultSecurityContextUID       = int64(1001)
+)
+
+func getSecurityContextUID() (int64, error) {
+	uidInput := os.Getenv(DefaultSecurityContextUIDEnvVar)
+	if uidInput == "" {
+		return DefaultSecurityContextUID, nil
+	}
+
+	uid, err := strconv.ParseInt(uidInput, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse %q: %w", DefaultSecurityContextUIDEnvVar, err)
+	}
+	return uid, nil
+}
+
+func (c *DeploymentConfig) setDefaultSecurityContextForPod(spec *corev1.PodSpec, statefulSet bool) {
 	if c.SetDefaultSecurityContext {
-		spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
+		uid, err := getSecurityContextUID()
+		if err != nil {
+			uid = DefaultSecurityContextUID
+		}
+
+		if !statefulSet {
+			spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: ptr.To[int64](uid),
+			}
+			return
+		}
+
+		// Only impact ARO 4.19. Respect existing SecurityContext value for anything else, e.g. IBM.
+		if statefulSet && os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP {
+			spec.SecurityContext = &corev1.PodSecurityContext{
+				RunAsUser: ptr.To[int64](uid),
+				FSGroup:   ptr.To[int64](uid),
+			}
 		}
 	}
 }

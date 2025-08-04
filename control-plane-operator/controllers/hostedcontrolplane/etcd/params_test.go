@@ -110,7 +110,7 @@ func TestNewEtcdParams(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			imageProvider := imageprovider.NewFromImages(tt.images)
 			g := NewGomegaWithT(t)
-			p, err := NewEtcdParams(tt.hcp, imageProvider)
+			p, err := NewEtcdParams(tt.hcp, imageProvider, false)
 			g.Expect(err).To(BeNil())
 			g.Expect(p).ToNot(BeNil())
 			g.Expect(p.EtcdImage).To(Equal(tt.images["etcd"]))

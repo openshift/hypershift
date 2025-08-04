@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestSetRestartAnnotation(t *testing.T) {
@@ -572,6 +574,96 @@ func TestApplyTo(t *testing.T) {
 			if _, exists := deployment.Spec.Template.ObjectMeta.Annotations[PodSafeToEvictLocalVolumesKey]; exists {
 				g.Expect(deployment.Spec.Template.ObjectMeta.Annotations).To(HaveKeyWithValue(PodSafeToEvictLocalVolumesKey, strings.Join(localVolumeList, ",")))
 			}
+		})
+	}
+}
+
+func TestSetDefaultSecurityContextForPod(t *testing.T) {
+	tests := []struct {
+		name                    string
+		config                  *DeploymentConfig
+		statefulSet             bool
+		envUID                  string
+		isAroHCP                bool
+		expectedUID             *int64
+		expectedFSGroup         *int64
+		expectNoSecurityContext bool
+	}{
+		{
+			name: "when SetDefaultSecurityContext is false, it should not set any security context",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: false,
+			},
+			expectNoSecurityContext: true,
+		},
+		{
+			name: "when SetDefaultSecurityContext is true, it should set the default UID for non-statefulset",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: true,
+			},
+			expectedUID: ptr.To[int64](DefaultSecurityContextUID),
+		},
+		{
+			name: "when SetDefaultSecurityContext is true, it should set the custom UID from env for non-statefulset",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: true,
+			},
+			envUID:      "2000",
+			expectedUID: ptr.To[int64](2000),
+		},
+		{
+			name: "when SetDefaultSecurityContext is true, invalid UID from env falls back to default",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: true,
+			},
+			envUID:      "invalid",
+			expectedUID: ptr.To[int64](DefaultSecurityContextUID),
+		},
+		{
+			name: "when SetDefaultSecurityContext is true, it should not set any security context for statefulset without ARO HCP",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: true,
+			},
+			statefulSet:             true,
+			isAroHCP:                false,
+			expectNoSecurityContext: true,
+		},
+		{
+			name: "when SetDefaultSecurityContext is true, it should set the default UID for statefulset with ARO HCP",
+			config: &DeploymentConfig{
+				SetDefaultSecurityContext: true,
+			},
+			statefulSet:     true,
+			isAroHCP:        true,
+			expectedUID:     ptr.To[int64](DefaultSecurityContextUID),
+			expectedFSGroup: ptr.To[int64](DefaultSecurityContextUID),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			if tt.envUID != "" {
+				os.Setenv(DefaultSecurityContextUIDEnvVar, tt.envUID)
+				defer os.Unsetenv(DefaultSecurityContextUIDEnvVar)
+			}
+			if tt.isAroHCP {
+				os.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				defer os.Unsetenv("MANAGED_SERVICE")
+			}
+
+			spec := &corev1.PodSpec{}
+			tt.config.setDefaultSecurityContextForPod(spec, tt.statefulSet)
+
+			if tt.expectNoSecurityContext {
+				g.Expect(spec.SecurityContext).To(BeNil(), "expected no security context")
+				return
+			}
+
+			g.Expect(spec.SecurityContext).NotTo(BeNil(), "expected security context to be set")
+			g.Expect(spec.SecurityContext.RunAsUser).To(Equal(tt.expectedUID), "unexpected RunAsUser")
+			g.Expect(spec.SecurityContext.FSGroup).To(Equal(tt.expectedFSGroup), "unexpected FSGroup")
 		})
 	}
 }
