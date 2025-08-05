@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
+	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
@@ -1634,50 +1635,17 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			"azure_tenant_id":            []byte(hcp.Spec.Platform.Azure.TenantID),
 		}
 
-		// The ingress controller fails if this secret is not provided. The controller runs on the control plane side. In managed azure, we are
-		// overriding the Azure credentials authentication method to always use client certificate authentication. This secret is just created
-		// so that the ingress controller does not fail. The data in the secret is never used by the ingress controller due to the aforementioned
-		// override to use client certificate authentication.
-		//
-		// Skip this step if the user explicitly disabled ingress.
-		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-			ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
-			if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
-				secretData["azure_client_id"] = []byte("fakeClientID")
-				ingressCredentialSecret.Data = secretData
-				return nil
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile guest cluster ingress operator secret: %w", err))
+		// managed Azure (ARO-HCP)
+		if azureutil.IsAroHCP() {
+			errs = azureresources.SetupManagedCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData)
+			if errs != nil {
+				return errs
 			}
-		}
-
-		azureDiskCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, azureDiskCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.DiskMSIClientID)
-			azureDiskCSISecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster CSI secret: %w", err))
-		}
-
-		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-			imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
-			if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
-				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
-				imageRegistrySecret.Data = secretData
-				return nil
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile guest cluster image-registry secret: %w", err))
+		} else { // self-managed Azure
+			errs = azureresources.SetupSelfManagedCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp, secretData)
+			if errs != nil {
+				return errs
 			}
-		}
-
-		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, azureFileCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.FileMSIClientID)
-			azureFileCSISecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile csi driver secret: %w", err))
 		}
 	case hyperv1.OpenStackPlatform:
 		credentialsSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.OpenStack.IdentityRef.Name}}
