@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -11,7 +12,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -142,4 +142,74 @@ func TestSetupOperandCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+
+
+func TestReconcileAzureCloudCredentials(t *testing.T) {
+	// Test the core functionality using real upsert provider like other tests in the codebase
+	g := NewWithT(t)
+	c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+	secretData := map[string][]byte{
+		"base_key": []byte("base_value"),
+	}
+	azureClientIDs := clientIDs{
+		ingress:       "ingress-id",
+		azureDisk:     "disk-id",
+		azureFile:     "file-id",
+		imageRegistry: "registry-id",
+	}
+
+	// Test all capabilities enabled
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Capabilities: &hyperv1.Capabilities{},
+		},
+	}
+	errs := reconcileAzureCloudCredentials(t.Context(), c, upsert.New(false), hcp, secretData, azureClientIDs)
+	g.Expect(errs).To(BeEmpty())
+
+	// Verify all 4 secrets were created with correct data
+	expectedSecrets := map[string]map[string]string{
+		"openshift-ingress-operator/cloud-credentials":         {"azure_client_id": "ingress-id"},
+		"openshift-cluster-csi-drivers/azure-disk-credentials": {"azure_client_id": "disk-id"},
+		"openshift-cluster-csi-drivers/azure-file-credentials": {"azure_client_id": "file-id"},
+		"openshift-image-registry/installer-cloud-credentials": {"azure_client_id": "registry-id"},
+	}
+
+	for secretKey, expectedData := range expectedSecrets {
+		parts := strings.Split(secretKey, "/")
+		key := client.ObjectKey{Namespace: parts[0], Name: parts[1]}
+		var secret corev1.Secret
+		err := c.Get(t.Context(), key, &secret)
+		g.Expect(err).ToNot(HaveOccurred())
+		for dataKey, expectedValue := range expectedData {
+			g.Expect(string(secret.Data[dataKey])).To(Equal(expectedValue))
+		}
+		g.Expect(secret.Data["base_key"]).To(Equal([]byte("base_value")))
+	}
+
+	// Test with ingress capability disabled
+	c2 := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+	hcp2 := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Capabilities: &hyperv1.Capabilities{
+				Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability},
+			},
+		},
+	}
+	errs = reconcileAzureCloudCredentials(t.Context(), c2, upsert.New(false), hcp2, secretData, azureClientIDs)
+	g.Expect(errs).To(BeEmpty())
+
+	// Verify ingress secret was not created
+	ingressKey := client.ObjectKey{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}
+	var ingressSecret corev1.Secret
+	err := c2.Get(t.Context(), ingressKey, &ingressSecret)
+	g.Expect(err).To(HaveOccurred())
+
+	// Verify other secrets were still created
+	diskKey := client.ObjectKey{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}
+	var diskSecret corev1.Secret
+	err = c2.Get(t.Context(), diskKey, &diskSecret)
+	g.Expect(err).ToNot(HaveOccurred())
 }

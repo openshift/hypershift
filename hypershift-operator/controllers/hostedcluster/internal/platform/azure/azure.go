@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -197,20 +200,98 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 }
 
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	// Sync CNCC secret
-	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
-	secretData := map[string][]byte{
+	// Base secret data common to all Azure credentials
+	baseSecretData := map[string][]byte{
 		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
 		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
 		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
 		"azure_subscription_id": []byte(hcluster.Spec.Platform.Azure.SubscriptionID),
 		"azure_tenant_id":       []byte(hcluster.Spec.Platform.Azure.TenantID),
 	}
+
+	// For self-managed Azure, use workload identity credentials; for managed Azure, use the existing approach
+	if !azureutil.IsAroHCP() && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		// Add federated token file for workload identity authentication
+		baseSecretData["azure_federated_token_file"] = []byte("/var/run/secrets/openshift/serviceaccount/token")
+
+		// Create credentials for each control plane operator using workload identity client IDs
+		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
+
+		// Cloud Controller Manager credentials
+		cloudProviderCreds := manifests.AzureCloudProviderCredentials(controlPlaneNamespace)
+		if _, err := createOrUpdate(ctx, c, cloudProviderCreds, func() error {
+			secretData := make(map[string][]byte)
+			for k, v := range baseSecretData {
+				secretData[k] = v
+			}
+			secretData["azure_client_id"] = []byte(workloadIdentities.CloudProvider.ClientID)
+			cloudProviderCreds.Data = secretData
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile cloud provider credentials: %w", err)
+		}
+
+		// Ingress Operator credentials (only if capability enabled)
+		if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) {
+			ingressCreds := manifests.AzureIngressCredentials(controlPlaneNamespace)
+			if _, err := createOrUpdate(ctx, c, ingressCreds, func() error {
+				secretData := maps.Clone(baseSecretData)
+				secretData["azure_client_id"] = []byte(workloadIdentities.Ingress.ClientID)
+				ingressCreds.Data = secretData
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile ingress credentials: %w", err)
+			}
+		}
+
+		// Image Registry Operator credentials (only if capability enabled)
+		if capabilities.IsImageRegistryCapabilityEnabled(hcluster.Spec.Capabilities) {
+			registryCreds := manifests.AzureImageRegistryCredentials(controlPlaneNamespace)
+			if _, err := createOrUpdate(ctx, c, registryCreds, func() error {
+				secretData := maps.Clone(baseSecretData)
+				secretData["azure_client_id"] = []byte(workloadIdentities.ImageRegistry.ClientID)
+				registryCreds.Data = secretData
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile image registry credentials: %w", err)
+			}
+		}
+
+		// Azure Disk CSI credentials
+		diskCSICreds := manifests.AzureDiskCSICredentials(controlPlaneNamespace)
+		if _, err := createOrUpdate(ctx, c, diskCSICreds, func() error {
+			secretData := maps.Clone(baseSecretData)
+			secretData["azure_client_id"] = []byte(workloadIdentities.Disk.ClientID)
+			diskCSICreds.Data = secretData
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile disk CSI credentials: %w", err)
+		}
+
+		// Azure File CSI credentials
+		fileCSICreds := manifests.AzureFileCSICredentials(controlPlaneNamespace)
+		if _, err := createOrUpdate(ctx, c, fileCSICreds, func() error {
+			secretData := maps.Clone(baseSecretData)
+			secretData["azure_client_id"] = []byte(workloadIdentities.File.ClientID)
+			fileCSICreds.Data = secretData
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile file CSI credentials: %w", err)
+		}
+	}
+
+	// Sync CNCC secret (common to both managed and self-managed Azure)
+	cloudNetworkConfigCreds := manifests.AzureCloudNetworkConfigCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
+		secretData := maps.Clone(baseSecretData)
+		// For self-managed Azure with workload identities, add the network client ID
+		if !azureutil.IsAroHCP() && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+			secretData["azure_client_id"] = []byte(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Network.ClientID)
+		}
 		cloudNetworkConfigCreds.Data = secretData
 		return nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("failed to reconcile cloud network config controller credentials: %w", err)
 	}
 
 	return nil
@@ -218,7 +299,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// Reconcile the Azure KMS Config Secret
-	azureKMSConfigSecret := manifests.AzureKMSWithCredentials(controlPlaneNamespace)
+	azureKMSConfigSecret := cpomanifests.AzureKMSWithCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, azureKMSConfigSecret, func() error {
 		return reconcileKMSConfigSecret(azureKMSConfigSecret, hc)
 	}); err != nil {
