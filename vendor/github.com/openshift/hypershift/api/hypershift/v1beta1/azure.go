@@ -520,6 +520,11 @@ type AzureWorkloadIdentities struct {
 	// workload identity authentication.
 	// +required
 	CloudProvider WorkloadIdentity `json:"cloudProvider"`
+
+	// network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
+	// workload identity authentication.
+	// +required
+	Network WorkloadIdentity `json:"network"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
