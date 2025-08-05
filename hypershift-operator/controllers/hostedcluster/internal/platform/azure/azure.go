@@ -33,17 +33,19 @@ import (
 )
 
 type Azure struct {
+	utilitiesImage    string
 	capiProviderImage string
 	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string, payloadVersion *semver.Version) *Azure {
+func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *Azure {
 	if payloadVersion != nil {
 		payloadVersion.Pre = nil
 		payloadVersion.Build = nil
 	}
 
 	return &Azure{
+		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
 		payloadVersion:    payloadVersion,
 	}
@@ -100,44 +102,46 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: ptr.To[int64](10),
-				Containers: []corev1.Container{{
-					Name:            "manager",
-					Image:           image,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Args: []string{
-						"--namespace=$(MY_NAMESPACE)",
-						"--leader-elect=true",
-						"--feature-gates=MachinePool=false,ASOAPI=false",
-						"--disable-controllers-or-webhooks=DisableASOSecretController",
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("10Mi"),
+				Containers: []corev1.Container{
+					{
+						Name:            "manager",
+						Image:           image,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Args: []string{
+							"--namespace=$(MY_NAMESPACE)",
+							"--leader-elect=true",
+							"--feature-gates=MachinePool=false,ASOAPI=false",
+							"--disable-controllers-or-webhooks=DisableASOSecretController",
 						},
-					},
-					Env: []corev1.EnvVar{
-						{
-							Name: "MY_NAMESPACE",
-							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{
-									FieldPath: "metadata.namespace",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name: "MY_NAMESPACE",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.namespace",
+									},
 								},
 							},
 						},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "capi-webhooks-tls",
-							MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							ReadOnly:  true,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "capi-webhooks-tls",
+								MountPath: "/tmp/k8s-webhook-server/serving-certs",
+								ReadOnly:  true,
+							},
+							{
+								Name:      "kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
 						},
-						{
-							Name:      "svc-kubeconfig",
-							MountPath: "/etc/kubernetes",
-						},
 					},
-				}},
+				},
 				Volumes: []corev1.Volume{
 					{
 						Name: "capi-webhooks-tls",
@@ -148,7 +152,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						},
 					},
 					{
-						Name: "svc-kubeconfig",
+						Name: "kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								DefaultMode: &defaultMode,
@@ -157,7 +161,9 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						},
 					},
 				},
-			}}}
+			},
+		},
+	}
 
 	if azureutil.IsAroHCP() {
 		managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
@@ -196,6 +202,70 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		)
 	}
 
+	// For self-managed Azure with workload identity, instruct Azure SDK to use the minted SA token
+	if !azureutil.IsAroHCP() && hcluster.Spec.Platform.Azure != nil &&
+		hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		deploymentSpec.Template.Spec.Containers[0].Env = append(
+			deploymentSpec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_FEDERATED_TOKEN_FILE",
+				Value: "/var/run/secrets/openshift/serviceaccount/token",
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_ID",
+				Value: string(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.NodePoolManagement.ClientID),
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_TENANT_ID",
+				Value: hcluster.Spec.Platform.Azure.TenantID,
+			},
+		)
+
+		// Inject cloud token-minter sidecar and mount token volume for self-managed Azure workload identity
+		tokenVolume := corev1.Volume{
+			Name: "cloud-token",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory},
+			},
+		}
+		deploymentSpec.Template.Spec.Volumes = append(deploymentSpec.Template.Spec.Volumes, tokenVolume)
+
+		deploymentSpec.Template.Spec.Containers[0].VolumeMounts = append(deploymentSpec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      tokenVolume.Name,
+			MountPath: "/var/run/secrets/openshift/serviceaccount",
+		})
+
+		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
+			Name:    "cloud-token-minter",
+			Image:   a.utilitiesImage,
+			Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
+			Args: []string{
+				"--token-audience=openshift",
+				"--service-account-namespace=kube-system",
+				"--service-account-name=capi-provider",
+				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+				"--kubeconfig=/etc/kubernetes/kubeconfig",
+			},
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("30Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      tokenVolume.Name,
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+				{
+					Name:      "kubeconfig",
+					MountPath: "/etc/kubernetes",
+				},
+			},
+		})
+	}
+
 	return deploymentSpec, nil
 }
 
@@ -216,20 +286,6 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Create credentials for each control plane operator using workload identity client IDs
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
-
-		// Cloud Controller Manager credentials
-		cloudProviderCreds := manifests.AzureCloudProviderCredentials(controlPlaneNamespace)
-		if _, err := createOrUpdate(ctx, c, cloudProviderCreds, func() error {
-			secretData := make(map[string][]byte)
-			for k, v := range baseSecretData {
-				secretData[k] = v
-			}
-			secretData["azure_client_id"] = []byte(workloadIdentities.CloudProvider.ClientID)
-			cloudProviderCreds.Data = secretData
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile cloud provider credentials: %w", err)
-		}
 
 		// Ingress Operator credentials (only if capability enabled)
 		if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) {
