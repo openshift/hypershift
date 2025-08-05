@@ -2,6 +2,7 @@ package azure
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 )
 
@@ -44,6 +45,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secretprovider.yaml",
 			component.WithAdaptFunction(adaptSecretProvider),
+			component.WithPredicate(isAroHCP),
 		).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
@@ -56,4 +58,8 @@ func NewComponent() component.ControlPlaneComponent {
 
 func predicate(cpContext component.WorkloadContext) (bool, error) {
 	return cpContext.HCP.Spec.Platform.Type == hyperv1.AzurePlatform, nil
+}
+
+func isAroHCP(cpContext component.WorkloadContext) bool {
+	return azureutil.IsAroHCP()
 }
