@@ -196,6 +196,11 @@ func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
 }
 
+// IsSelfManagedAzure returns true when the platform is Azure and the managed service is not ARO-HCP
+func IsSelfManagedAzure(platform hyperv1.PlatformType ) bool {
+	return platform == hyperv1.AzurePlatform && !IsAroHCP()
+}
+
 // SetAsAroHCPTest sets the proper environment variable for the test, designating this is an ARO-HCP environment
 func SetAsAroHCPTest(t *testing.T) {
 	t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)

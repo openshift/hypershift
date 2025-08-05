@@ -32,6 +32,9 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
 		)
+	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+		deployment.Spec.Template.Spec.ServiceAccountName = "azure-cloud-controller-manager"
 	}
+	
 	return nil
 }

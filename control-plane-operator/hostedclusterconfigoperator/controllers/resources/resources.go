@@ -2755,6 +2755,13 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 			operatorv1.CinderCSIDriver,
 			operatorv1.ManilaCSIDriver,
 		}
+	case hyperv1.AzurePlatform:
+		if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+			driverNames = []operatorv1.CSIDriverName{
+				operatorv1.AzureDiskCSIDriver,
+				operatorv1.AzureFileCSIDriver,
+			}
+		}
 	}
 	for _, driverName := range driverNames {
 		driver := manifests.ClusterCSIDriver(driverName)
