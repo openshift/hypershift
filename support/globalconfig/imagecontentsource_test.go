@@ -15,6 +15,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,7 +37,7 @@ func TestGetAllImageRegistryMirrors(t *testing.T) {
 			name: "validate ImageRegistryMirrors with only ICSP",
 			icsp: createFakeICSP(),
 			expectedResult: map[string][]string{
-				"registry1": {"mirror1", "mirror2"},
+				"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 				"registry2": {"mirror1", "mirror2"},
 				"registry3.sample.com/samplens/sampleimage@sha256:123456": {
 					"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
@@ -64,7 +65,7 @@ func TestGetAllImageRegistryMirrors(t *testing.T) {
 			expectedResult: map[string][]string{
 				"registry1.sample.com/samplens/sampleimage@sha256:123456": {"mirror1.sample.com/samplens/sampleimage@sha256:123456", "mirror1.sample.com/samplens/sampleimage@sha256:123456"},
 				"registry2.sample.com/samplens/sampleimage@sha256:123456": {"mirror2.sample.com/samplens/sampleimage@sha256:123456", "mirror2.sample.com/samplens/sampleimage@sha256:123456"},
-				"registry1": {"mirror1", "mirror2"},
+				"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 				"registry2": {"mirror1", "mirror2"},
 				"registry3.sample.com/samplens/sampleimage@sha256:123456": {
 					"mirror3.sample.com/samplens/sampleimage@sha256:123456",
@@ -124,11 +125,14 @@ func createFakeICSP() *operatorv1alpha1.ImageContentSourcePolicyList {
 	return &operatorv1alpha1.ImageContentSourcePolicyList{
 		Items: []operatorv1alpha1.ImageContentSourcePolicy{
 			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "icsp-registry-mirrors-1",
+				},
 				Spec: operatorv1alpha1.ImageContentSourcePolicySpec{
 					RepositoryDigestMirrors: []operatorv1alpha1.RepositoryDigestMirrors{
 						{
 							Source:  "registry1",
-							Mirrors: []string{"mirror1", "mirror2"},
+							Mirrors: []string{"icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 						},
 						{
 							Source:  "registry2",
@@ -140,6 +144,19 @@ func createFakeICSP() *operatorv1alpha1.ImageContentSourcePolicyList {
 								"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
 								"mirroricsp3.sample.com/samplens/sampleimage@sha256:123456",
 							},
+						},
+					},
+				},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "icsp-registry-mirrors-2",
+				},
+				Spec: operatorv1alpha1.ImageContentSourcePolicySpec{
+					RepositoryDigestMirrors: []operatorv1alpha1.RepositoryDigestMirrors{
+						{
+							Source:  "registry1",
+							Mirrors: []string{"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2"},
 						},
 					},
 				},
@@ -223,7 +240,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 					},
 				},
 				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"mirror1", "mirror2"},
+					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 					"registry2": {"mirror1", "mirror2"},
 					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
 						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
@@ -243,7 +260,7 @@ func TestReconcileMgmtImageRegistryOverrides(t *testing.T) {
 			},
 			expectedMetadata: &hyperutil.RegistryClientImageMetadataProvider{
 				OpenShiftImageRegistryOverrides: map[string][]string{
-					"registry1": {"mirror1", "mirror2"},
+					"registry1": {"icsp-registry-mirrors-2/mirror1", "icsp-registry-mirrors-2/mirror2", "icsp-registry-mirrors-1/mirror1", "icsp-registry-mirrors-1/mirror2"},
 					"registry2": {"mirror1", "mirror2"},
 					"registry1.sample.com/samplens/sampleimage@sha256:123456": {
 						"mirror1.sample.com/samplens/sampleimage@sha256:123456",
