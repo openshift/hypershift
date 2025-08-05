@@ -10,6 +10,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -33,5 +34,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCloudProviderSecretStoreVolumeName, config.ManagedAzureCloudProviderSecretProviderClassName),
 		)
 	}
+
+	if azureutil.IsSelfManagedAzure() {
+		deployment.Spec.Template.Spec.ServiceAccountName = "azure-cloud-controller-manager"
+		deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(true)
+	}
+	
 	return nil
 }
