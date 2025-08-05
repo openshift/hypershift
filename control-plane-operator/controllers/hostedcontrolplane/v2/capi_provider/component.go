@@ -55,6 +55,11 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 			"serviceaccount.yaml",
 			component.SetHostedClusterAnnotation(),
 		).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountNameSpace: "kube-system",
+			ServiceAccountName:      "capi-provider",
+		}).
 		Build()
 }
 
