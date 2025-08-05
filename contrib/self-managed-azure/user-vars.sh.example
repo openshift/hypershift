@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# Example user variables file for self-managed Azure HyperShift setup
+# Copy this file to user-vars.sh and customize the values below
+
+# Required: Unique prefix for your resources (lowercase letters and numbers only)
+export PREFIX="your-prefix"
+
+# Required: Your DNS record name (subdomain)
+export DNS_RECORD_NAME="your-name"
+
+# Required: Release image to use for the hosted cluster
+export RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:4.21.0-ec.0-multi"
+
+# Optional: Azure location (default: eastus)
+# export LOCATION="eastus"
+
+# Optional: Binary paths (defaults shown)
+# export HYPERSHIFT_BINARY_PATH="./bin"
+# export CCOCTL_BINARY_PATH="${HOME}/cloud-credential-operator"
+
+# Optional: File paths (defaults shown)
+# export AZURE_CREDS="${HOME}/.azure/credentials"
+# export PULL_SECRET="${HOME}/all-the-pull-secrets.json"
+# export WORKLOAD_IDENTITIES_FILE="./workload-identities.json"
