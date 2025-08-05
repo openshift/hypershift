@@ -9,7 +9,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -215,7 +216,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
 
 		// Cloud Controller Manager credentials
-		cloudProviderCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "azure-cloud-config"}}
+		cloudProviderCreds := manifests.AzureCloudProviderCredentials(controlPlaneNamespace)
 		if _, err := createOrUpdate(ctx, c, cloudProviderCreds, func() error {
 			secretData := make(map[string][]byte)
 			for k, v := range baseSecretData {
@@ -230,7 +231,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Ingress Operator credentials (only if capability enabled)
 		if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) {
-			ingressCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "azure-ingress-credentials"}}
+			ingressCreds := manifests.AzureIngressCredentials(controlPlaneNamespace)
 			if _, err := createOrUpdate(ctx, c, ingressCreds, func() error {
 				secretData := make(map[string][]byte)
 				for k, v := range baseSecretData {
@@ -246,7 +247,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Image Registry Operator credentials (only if capability enabled)
 		if capabilities.IsImageRegistryCapabilityEnabled(hcluster.Spec.Capabilities) {
-			registryCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "azure-image-registry-credentials"}}
+			registryCreds := manifests.AzureImageRegistryCredentials(controlPlaneNamespace)
 			if _, err := createOrUpdate(ctx, c, registryCreds, func() error {
 				secretData := make(map[string][]byte)
 				for k, v := range baseSecretData {
@@ -261,7 +262,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		}
 
 		// Azure Disk CSI credentials
-		diskCSICreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "azure-disk-csi-config"}}
+		diskCSICreds := manifests.AzureDiskCSICredentials(controlPlaneNamespace)
 		if _, err := createOrUpdate(ctx, c, diskCSICreds, func() error {
 			secretData := make(map[string][]byte)
 			for k, v := range baseSecretData {
@@ -275,7 +276,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		}
 
 		// Azure File CSI credentials
-		fileCSICreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "azure-file-csi-config"}}
+		fileCSICreds := manifests.AzureFileCSICredentials(controlPlaneNamespace)
 		if _, err := createOrUpdate(ctx, c, fileCSICreds, func() error {
 			secretData := make(map[string][]byte)
 			for k, v := range baseSecretData {
@@ -290,7 +291,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 	}
 
 	// Sync CNCC secret (common to both managed and self-managed Azure)
-	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
+	cloudNetworkConfigCreds := manifests.AzureCloudNetworkConfigCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
 		secretData := make(map[string][]byte)
 		for k, v := range baseSecretData {
@@ -313,7 +314,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// Reconcile the Azure KMS Config Secret
-	azureKMSConfigSecret := manifests.AzureKMSWithCredentials(controlPlaneNamespace)
+	azureKMSConfigSecret := cpomanifests.AzureKMSWithCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, azureKMSConfigSecret, func() error {
 		return reconcileKMSConfigSecret(azureKMSConfigSecret, hc)
 	}); err != nil {
