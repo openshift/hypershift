@@ -45,6 +45,11 @@ func NewComponent() component.ControlPlaneComponent {
 			"config-secretprovider.yaml",
 			component.WithAdaptFunction(adaptSecretProvider),
 		).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountNameSpace: "openshift-cloud-controller-manager",
+			ServiceAccountName:      "cloud-controller-manager",
+		}).
 		Build()
 
 }
