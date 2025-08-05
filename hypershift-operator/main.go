@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -94,6 +95,7 @@ func main() {
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(NewInitCommand())
 	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
+	cmd.AddCommand(sharedingressconfiggenerator.NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -444,6 +446,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		sharedIngress := sharedingress.SharedIngressReconciler{
 			Namespace:                     opts.Namespace,
 			ManagementClusterCapabilities: mgmtClusterCaps,
+			HypershiftOperatorImage:       operatorImage,
 		}
 		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)

@@ -18,6 +18,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,6 +37,7 @@ type SharedIngressReconciler struct {
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
+	HypershiftOperatorImage       string
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
@@ -124,23 +126,13 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
-	config, err := generateRouterConfig(ctx, r.Client)
-	if err != nil {
-		return fmt.Errorf("failed to generate router config: %w", err)
-	}
-
-	routerConfig := RouterConfigurationConfigMap()
-	if _, err := r.createOrUpdate(ctx, r.Client, routerConfig, func() error {
-		return ReconcileRouterConfiguration(routerConfig, config)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router configuration: %w", err)
+	if err := r.reconcileConfigGeneratorControllerRBAC(ctx, pullSecretPresent); err != nil {
+		return fmt.Errorf("failed to reconcile config generator RBAC: %w", err)
 	}
 
 	deployment := RouterDeployment()
 	if _, err := r.createOrUpdate(ctx, r.Client, deployment, func() error {
-		return ReconcileRouterDeployment(deployment,
-			routerConfig,
-		)
+		return ReconcileRouterDeployment(deployment, r.HypershiftOperatorImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile router deployment: %w", err)
 	}
@@ -226,6 +218,76 @@ func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Con
 	}); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (r *SharedIngressReconciler) reconcileConfigGeneratorControllerRBAC(ctx context.Context, pullSecretPresent bool) error {
+	sa := RouterServiceAccount()
+	if _, err := r.createOrUpdate(ctx, r.Client, sa, func() error {
+		if pullSecretPresent {
+			util.EnsurePullSecret(sa, PullSecret().Name)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router ServiceAccount: %w", err)
+	}
+
+	cr := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sharedingress-config-generator",
+		},
+	}
+	if _, err := r.createOrUpdate(ctx, r.Client, cr, func() error {
+		cr.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"hostedclusters"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"services"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"events"},
+				Verbs:     []string{"create", "patch", "update"},
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ClusterRole: %w", err)
+	}
+
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sharedingress-config-generator",
+		},
+	}
+	if _, err := r.createOrUpdate(ctx, r.Client, crb, func() error {
+		crb.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     cr.Name,
+		}
+		crb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      sa.Name,
+				Namespace: sa.Namespace,
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ClusterRoleBinding: %w", err)
+	}
+
 	return nil
 }
 
