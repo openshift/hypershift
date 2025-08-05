@@ -2347,6 +2347,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if hcluster.Spec.AdditionalTrustBundle != nil {
 		hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: controlplaneoperator.UserCABundle(hcp.Namespace).Name}
+	} else {
+		hcp.Spec.AdditionalTrustBundle = nil
 	}
 	if hcluster.Spec.SecretEncryption != nil {
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
