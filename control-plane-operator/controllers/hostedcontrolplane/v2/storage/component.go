@@ -47,7 +47,6 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-disk-csi-config.yaml",
 			component.WithAdaptFunction(adaptAzureCSIDiskSecret),
-			component.WithPredicate(isAroHCP),
 		).
 		WithManifestAdapter(
 			"azure-disk-csi-secretprovider.yaml",
@@ -57,7 +56,6 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-file-csi-config.yaml",
 			component.WithAdaptFunction(adaptAzureCSIFileSecret),
-			component.WithPredicate(isAroHCP),
 		).
 		WithManifestAdapter(
 			"azure-file-csi-secretprovider.yaml",
