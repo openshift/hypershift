@@ -6,11 +6,9 @@ import (
 	"maps"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/upsert"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -68,7 +66,7 @@ func SetupOperandCredentials(
 
 	// Skip this step if the user explicitly disabled image registry.
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-		imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
+		imageRegistrySecret := manifests.AzureImageRegistryCloudCredsSecret()
 		if _, err := upsertProvider.CreateOrUpdate(ctx, client, imageRegistrySecret, func() error {
 			data, err := cloneAndSetClientID(secretData, "imageRegistry", azureClientIDs.imageRegistry)
 			if err != nil {
