@@ -361,6 +361,13 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		return nil, fmt.Errorf("unable to generate kubevirt machine template: %w", err)
 	}
 
+	// Replace cloud-init volume with configdrive for secret-based ignition if enabled
+	if isSecretBasedIgnitionEnabled(nodePool, hcluster) {
+		if err := ReplaceCloudInitWithConfigDrive(vmTemplate, nodePool); err != nil {
+			return nil, fmt.Errorf("unable to replace cloud-init with configdrive: %w", err)
+		}
+	}
+
 	// Newer versions of the NodePool controller transitioned to spreading VMs across the cluster
 	// using TopologySpreadConstraints instead of Pod Anti-Affinity. When the new controller interacts
 	// with a older NodePool that was previously using pod anti-affinity, we don't want to immediately
@@ -433,11 +440,21 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		vmTemplate.ObjectMeta.Namespace = hcluster.Spec.Platform.Kubevirt.Credentials.InfraNamespace
 	}
 
+	virtualMachinePool := []capikubevirt.VirtualMachinePoolEntry{}
+	for _, host := range nodePool.Spec.Platform.Kubevirt.Hosts {
+		virtualMachinePool = append(virtualMachinePool, capikubevirt.VirtualMachinePoolEntry{
+			Name: host.Name,
+			// TODO: CloudInitUserDataSecretRef
+
+		})
+	}
+
 	if err := applyJsonPatches(nodePool, hcluster, vmTemplate); err != nil {
 		return nil, err
 	}
 
 	return &capikubevirt.KubevirtMachineTemplateSpec{
+		VirtualMachinePool: virtualMachinePool,
 		Template: capikubevirt.KubevirtMachineTemplateResource{
 			Spec: capikubevirt.KubevirtMachineSpec{
 				VirtualMachineTemplate: *vmTemplate,
@@ -503,5 +520,67 @@ func applyJsonPatch(tmplt *[]byte, patch string) error {
 		return fmt.Errorf("failed to apply json patch annotation: %w", err)
 	}
 
+	return nil
+}
+
+const kubeVirtSecretBasedIgnitionAnnotation = "hypershift.openshift.io/kubevirt-secret-based-ignition"
+
+// IsSecretBasedIgnitionEnabled checks if secret-based ignition is enabled for KubeVirt machines
+func IsSecretBasedIgnitionEnabled(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) bool {
+	// Check NodePool annotation first (takes precedence)
+	if val, exists := nodePool.Annotations[kubeVirtSecretBasedIgnitionAnnotation]; exists {
+		return strings.ToLower(val) == "true"
+	}
+	// Check HostedCluster annotation as fallback
+	if val, exists := hcluster.Annotations[kubeVirtSecretBasedIgnitionAnnotation]; exists {
+		return strings.ToLower(val) == "true"
+	}
+	return false
+}
+
+func isSecretBasedIgnitionEnabled(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) bool {
+	return IsSecretBasedIgnitionEnabled(nodePool, hcluster)
+}
+
+// ReplaceCloudInitWithConfigDrive replaces existing CloudInitNoCloud volume with CloudInitConfigDrive for secret-based ignition
+func ReplaceCloudInitWithConfigDrive(vmTemplate *capikubevirt.VirtualMachineTemplateSpec, nodePool *hyperv1.NodePool) error {
+	// Find and replace existing cloud-init volume with configdrive
+	volumes := vmTemplate.Spec.Template.Spec.Volumes
+	disks := vmTemplate.Spec.Template.Spec.Domain.Devices.Disks
+
+	// Look for existing cloud-init volumes
+	for i := range volumes {
+		volume := &volumes[i]
+		if volume.CloudInitNoCloud != nil {
+			// Replace CloudInitNoCloud with CloudInitConfigDrive
+			volume.CloudInitConfigDrive = &kubevirtv1.CloudInitConfigDriveSource{
+				UserDataSecretRef: &corev1.LocalObjectReference{
+					// Use a placeholder name - this will be replaced during machine deployment
+					// with the actual user-data secret name that includes the config hash
+					Name: "user-data-secret-placeholder",
+				},
+			}
+			// Remove the old CloudInitNoCloud
+			volume.CloudInitNoCloud = nil
+
+			// Update corresponding disk if it exists
+			for j := range disks {
+				if disks[j].Name == volume.Name {
+					// Ensure disk uses virtio bus for better performance
+					if disks[j].DiskDevice.Disk != nil {
+						disks[j].DiskDevice.Disk.Bus = "virtio"
+					}
+					break
+				}
+			}
+
+			return nil
+		}
+	}
+
+	// If no existing cloud-init volume found, do NOT create a new volume
+	// For secret-based ignition, we rely on CAPI-KV to automatically create
+	// the cloud-init volume and we ensure it references our secret with complete payload
+	// This prevents duplicate volumes being created
 	return nil
 }

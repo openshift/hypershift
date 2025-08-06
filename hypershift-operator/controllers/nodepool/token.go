@@ -2,8 +2,12 @@ package nodepool
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"time"
 
@@ -30,6 +34,11 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/google/uuid"
 )
+
+// IgnitionProvider can build ignition payload contents for a given release image.
+type IgnitionProvider interface {
+	GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error)
+}
 
 const (
 	TokenSecretTokenGenerationTime       = "hypershift.openshift.io/last-token-generation-time"
@@ -62,16 +71,23 @@ type Token struct {
 }
 
 // userData contains the input necessary to generate the user data secret
-// that points to the ignition server URL using the UUUID token as an authenticator header.
+// that points to the ignition server URL using the UUUID token as an authenticator header,
+// or contains the complete ignition payload for secret-based delivery.
 type userData struct {
-	caCert                 []byte
-	ignitionServerEndpoint string
-	proxy                  *configv1.Proxy
-	ami                    string
+	caCert                  []byte
+	ignitionServerEndpoint  string
+	proxy                   *configv1.Proxy
+	ami                     string
+	completeIgnitionPayload []byte // For secret-based ignition delivery
 }
 
 // NewToken is the contract to create a new Token struct.
 func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabilities *CPOCapabilities) (*Token, error) {
+	return NewTokenWithIgnitionProvider(ctx, configGenerator, cpoCapabilities, nil)
+}
+
+// NewTokenWithIgnitionProvider creates a new Token struct with an optional ignition provider for secret-based ignition.
+func NewTokenWithIgnitionProvider(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabilities *CPOCapabilities, ignitionProvider IgnitionProvider) (*Token, error) {
 	if configGenerator == nil {
 		return nil, fmt.Errorf("configGenerator can't be nil")
 	}
@@ -142,14 +158,59 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 		}
 	}
 
-	token.userData = &userData{
+	userData := &userData{
 		ignitionServerEndpoint: ignEndpoint,
 		caCert:                 caCert,
 		proxy:                  proxy,
 		ami:                    ami,
 	}
 
+	// Check if secret-based ignition is enabled for KubeVirt
+	if isKubeVirtSecretBasedIgnitionEnabled(configGenerator.nodePool, configGenerator.hostedCluster) {
+		if ignitionProvider != nil {
+			// Get the compressed and encoded config from the ConfigGenerator
+			compressedConfig, err := configGenerator.CompressedAndEncoded()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get compressed config for ignition payload: %w", err)
+			}
+
+			// Use the provided ignition provider to fetch the complete payload
+			completePayload, err := ignitionProvider.GetPayload(ctx,
+				configGenerator.nodePool.Spec.Release.Image,   // payloadImage (release image)
+				compressedConfig.String(),                     // config (compressed and encoded)
+				supportutil.HashSimple(pullSecretBytes),       // pullSecretHash
+				supportutil.HashSimple(additionalTrustBundle), // additionalTrustBundleHash
+				hcConfigurationHash,                           // hcConfigurationHash
+			)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get complete ignition payload from provider: %w", err)
+			}
+
+			userData.completeIgnitionPayload = completePayload
+		}
+		// If ignitionProvider is nil, we'll fetch the payload at reconciliation time
+		// This allows us to use the actual token when making the HTTP request
+	}
+
+	token.userData = userData
 	return token, nil
+}
+
+func isKubeVirtSecretBasedIgnitionEnabled(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) bool {
+	// Only enable for KubeVirt platform
+	if nodePool.Spec.Platform.Type != hyperv1.KubevirtPlatform {
+		return false
+	}
+
+	// Check NodePool annotation first (takes precedence)
+	if val, exists := nodePool.Annotations["hypershift.openshift.io/kubevirt-secret-based-ignition"]; exists {
+		return strings.ToLower(val) == "true"
+	}
+	// Check HostedCluster annotation as fallback
+	if val, exists := hcluster.Annotations["hypershift.openshift.io/kubevirt-secret-based-ignition"]; exists {
+		return strings.ToLower(val) == "true"
+	}
+	return false
 }
 
 // getInitionCACert gets the ignition CA cert from a secret.
@@ -378,13 +439,42 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 
 	}
 
-	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
-	encodedToken := base64.StdEncoding.EncodeToString([]byte(token))
-	ignConfig := ignConfig(encodedCACert, encodedToken, t.userData.ignitionServerEndpoint, t.Hash(), t.userData.proxy, t.nodePool)
-	userDataValue, err := json.Marshal(ignConfig)
-	if err != nil {
-		return fmt.Errorf("failed to marshal ignition config: %w", err)
+	var userDataValue []byte
+	var err error
+
+	// Check if we have complete ignition payload for secret-based delivery
+	if len(t.userData.completeIgnitionPayload) > 0 {
+		// For secret-based ignition, modify the complete payload to include core user
+		modifiedPayload, err := addCoreUserToIgnitionPayload(t.userData.completeIgnitionPayload, t.nodePool, t.hostedCluster)
+		if err != nil {
+			return fmt.Errorf("failed to add core user to ignition payload: %w", err)
+		}
+		userDataValue = modifiedPayload
+	} else if isKubeVirtSecretBasedIgnitionEnabled(t.nodePool, t.hostedCluster) {
+		// For secret-based ignition without pre-fetched payload, fetch it now using the actual token
+		ctx := context.TODO() // TODO: Get context from caller
+		completePayload, err := fetchIgnitionPayloadViaHTTP(ctx, t.userData, token, t.ConfigGenerator)
+		if err != nil {
+			return fmt.Errorf("failed to fetch complete ignition payload: %w", err)
+		}
+
+		// Add core user to the fetched payload
+		modifiedPayload, err := addCoreUserToIgnitionPayload(completePayload, t.nodePool, t.hostedCluster)
+		if err != nil {
+			return fmt.Errorf("failed to add core user to fetched ignition payload: %w", err)
+		}
+		userDataValue = modifiedPayload
+	} else {
+		// For URL-based ignition, generate the pointer config as before
+		encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)
+		encodedToken := base64.StdEncoding.EncodeToString([]byte(token))
+		ignConfig := ignConfig(encodedCACert, encodedToken, t.userData.ignitionServerEndpoint, t.Hash(), t.userData.proxy, t.nodePool)
+		userDataValue, err = json.Marshal(ignConfig)
+		if err != nil {
+			return fmt.Errorf("failed to marshal ignition config: %w", err)
+		}
 	}
+
 	userDataSecret.Data = map[string][]byte{
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 		"value":             userDataValue,
@@ -439,5 +529,125 @@ func ignConfig(encodedCACert, encodedToken, endpoint, targetConfigVersionHash st
 			cfg.Ignition.Proxy.NoProxy = append(cfg.Ignition.Proxy.NoProxy, ignitionapi.NoProxyItem(item))
 		}
 	}
+
+	// Add core user with password for KubeVirt platform if secret-based ignition is enabled
+	if isKubeVirtSecretBasedIgnitionEnabled(nodePool, nil) {
+		coreUserPasswordHash := "$y$j9T$nPcPBN0.6un36OhC6vvzY1$5/CRNcIGh377A6Wc9qkhakwZNXb5p3Yewy1hYMs81O1" /* hypershift */
+		cfg.Passwd = ignitionapi.Passwd{
+			Users: []ignitionapi.PasswdUser{
+				{
+					Name:         "core",
+					PasswordHash: ptr.To(coreUserPasswordHash), /* hypershift */
+					Groups: []ignitionapi.Group{
+						"wheel",
+						"sudo",
+					},
+				},
+			},
+		}
+	}
+
 	return cfg
+}
+
+// addCoreUserToIgnitionPayload parses the ignition payload and adds the core user with password
+func addCoreUserToIgnitionPayload(payload []byte, nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
+	// Only add user for KubeVirt platform with secret-based ignition
+	if !isKubeVirtSecretBasedIgnitionEnabled(nodePool, hostedCluster) {
+		return payload, nil
+	}
+
+	var config ignitionapi.Config
+	if err := json.Unmarshal(payload, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal ignition config: %w", err)
+	}
+
+	coreUserPasswordHash := "$y$j9T$nPcPBN0.6un36OhC6vvzY1$5/CRNcIGh377A6Wc9qkhakwZNXb5p3Yewy1hYMs81O1" /* hypershift */
+	// Check if core user already exists
+	coreUserExists := false
+	for i, user := range config.Passwd.Users {
+		if user.Name == "core" {
+			// Update existing core user with password
+			config.Passwd.Users[i].PasswordHash = ptr.To(coreUserPasswordHash)
+			if config.Passwd.Users[i].Groups == nil {
+				config.Passwd.Users[i].Groups = []ignitionapi.Group{"wheel", "sudo"}
+			}
+			coreUserExists = true
+			break
+		}
+	}
+
+	// If core user doesn't exist, add it
+	if !coreUserExists {
+		coreUser := ignitionapi.PasswdUser{
+			Name:         "core",
+			PasswordHash: ptr.To(coreUserPasswordHash),
+			Groups: []ignitionapi.Group{
+				"wheel",
+				"sudo",
+			},
+		}
+		config.Passwd.Users = append(config.Passwd.Users, coreUser)
+	}
+
+	// Marshal back to JSON
+	modifiedPayload, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal modified ignition config: %w", err)
+	}
+
+	return modifiedPayload, nil
+}
+
+// fetchIgnitionPayloadViaHTTP fetches the complete ignition payload from the ignition server via HTTP
+// This is used when secret-based ignition is enabled but no ignition provider is available
+func fetchIgnitionPayloadViaHTTP(ctx context.Context, userData *userData, token string, configGenerator *ConfigGenerator) ([]byte, error) {
+	// Create HTTP client with ignition server CA cert
+	caCert := userData.caCert
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		return nil, fmt.Errorf("failed to parse ignition server CA certificate")
+	}
+
+	httpClient := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				RootCAs: caCertPool,
+			},
+		},
+		Timeout: 30 * time.Second,
+	}
+
+	// Build the ignition URL
+	ignitionURL := fmt.Sprintf("https://%s/ignition", userData.ignitionServerEndpoint)
+
+	// Create HTTP request
+	req, err := http.NewRequestWithContext(ctx, "GET", ignitionURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create HTTP request: %w", err)
+	}
+
+	// Add required headers (similar to what a machine would send)
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", base64.StdEncoding.EncodeToString([]byte(token))))
+	req.Header.Set("NodePool", fmt.Sprintf("clusters/%s", configGenerator.nodePool.Name))
+	req.Header.Set("TargetConfigVersionHash", configGenerator.Hash()) // Use the config hash for the target version
+
+	// Make the request
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make HTTP request to ignition server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("ignition server returned status %d", resp.StatusCode)
+	}
+
+	// Read the complete ignition payload
+	payload, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read ignition payload: %w", err)
+	}
+
+	return payload, nil
 }

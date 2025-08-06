@@ -69,6 +69,11 @@ var (
 	OpenStackNodePoolResources = []client.Object{
 		&capiopenstackv1beta1.OpenStackMachineTemplate{},
 	}
+
+	KubevirtNodePoolResources = []client.Object{
+		&capikubevirt.KubevirtMachineTemplate{},
+		&capikubevirt.KubevirtMachine{},
+	}
 )
 
 func GetHostedClusterManagedResources(platformsInstalled string) []client.Object {
@@ -128,6 +133,8 @@ func GetNodePoolManagedResources(platformsInstalled string) []client.Object {
 			managedResources = append(managedResources, AgentNodePoolResources...)
 		case strings.EqualFold(platform, string(hyperv1.OpenStackPlatform)):
 			managedResources = append(managedResources, OpenStackNodePoolResources...)
+		case strings.EqualFold(platform, string(hyperv1.KubevirtPlatform)):
+			managedResources = append(managedResources, KubevirtNodePoolResources...)
 		}
 	}
 

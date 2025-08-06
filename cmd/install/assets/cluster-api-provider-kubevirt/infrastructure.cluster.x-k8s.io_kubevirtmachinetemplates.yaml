@@ -4480,6 +4480,48 @@ spec:
                 required:
                 - spec
                 type: object
+              virtualMachinePool:
+                description: |-
+                  VirtualMachinePool defines a pool of pre-configured virtual machines with specific names and cloud-init configs.
+                  When specified, the controller will use VMs from this pool for scaling operations instead of generating new ones.
+                items:
+                  description: VirtualMachinePoolEntry defines a single virtual machine
+                    entry in the pool with a specific name and cloud-init configuration.
+                  properties:
+                    cloudInitUserData:
+                      description: |-
+                        CloudInitUserData contains the cloud-init user data configuration for this specific VM.
+                        This data will be used to customize the VM during boot.
+                      type: string
+                    cloudInitUserDataSecretRef:
+                      description: |-
+                        CloudInitUserDataSecretRef is a reference to a secret containing cloud-init user data for this VM.
+                        This is an alternative to CloudInitUserData for storing sensitive configuration.
+                      properties:
+                        name:
+                          default: ""
+                          description: |-
+                            Name of the referent.
+                            This field is effectively required, but due to backwards compatibility is
+                            allowed to be empty. Instances of this type with an empty value here are
+                            almost certainly wrong.
+                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                          type: string
+                      type: object
+                      x-kubernetes-map-type: atomic
+                    name:
+                      description: |-
+                        Name specifies the desired name for this virtual machine.
+                        This name will be used as the VM name when creating the virtual machine.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                type: array
             required:
             - template
             type: object
