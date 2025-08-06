@@ -792,22 +792,23 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
-		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
-			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
-		}
-		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-			return fmt.Errorf("APIServer external route not admitted")
-		}
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
+				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
+			}
+			if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
+				return fmt.Errorf("APIServer external route not admitted")
+			}
 
-		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := 443
-		if sharedingress.UseSharedIngress() {
-			endpoint = externalRoute.Spec.Host
-			port = sharedingress.ExternalDNSLBPort
+			endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
+			port := 443
+			if sharedingress.UseSharedIngress() {
+				endpoint = externalRoute.Spec.Host
+				port = sharedingress.ExternalDNSLBPort
+			}
+			return healthCheckKASEndpoint(endpoint, port)
 		}
-		return healthCheckKASEndpoint(endpoint, port)
-
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
@@ -995,7 +996,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 // which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
 func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return false
 	}
 	return labelHCPRoutes(hostedControlPlane)
@@ -4396,6 +4397,10 @@ func (r *HostedControlPlaneReconciler) reconcileRouter(ctx context.Context, hcp 
 }
 
 func (r *HostedControlPlaneReconciler) admitHCPManagedRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane, privateRouterHost, externalRouterHost string) error {
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && externalRouterHost == "" {
+		externalRouterHost = "not.used"
+	}
+
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
