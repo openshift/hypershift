@@ -4441,6 +4441,8 @@ spec:
                 default: false
                 description: Ready denotes that the machine is ready
                 type: boolean
+              virtualMachine:
+                type: string
             required:
             - ready
             type: object

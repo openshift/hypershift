@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/testutil"
@@ -28,9 +30,22 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	kubevirtv1 "kubevirt.io/api/core/v1"
+	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
+
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/google/uuid"
 )
+
+// MockIgnitionProvider is a mock implementation of IgnitionProvider for testing
+type MockIgnitionProvider struct {
+	PayloadResponse []byte
+	ErrorResponse   error
+}
+
+func (m *MockIgnitionProvider) GetPayload(ctx context.Context, payloadImage, config, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
+	return m.PayloadResponse, m.ErrorResponse
+}
 
 func TestNewToken(t *testing.T) {
 	hcName := "test-hc"
@@ -1001,4 +1016,262 @@ func TestGetIgnitionCACert(t *testing.T) {
 			g.Expect(caCert).To(Equal(tc.expectedCACert))
 		})
 	}
+}
+
+func TestSecretBasedIgnitionPayload(t *testing.T) {
+	t.Run("Secret-based ignition for KubeVirt should fetch complete payload", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Create test data
+		hcName := "test-hc"
+		hcNamespace := "namespace"
+		controlplaneNamespace := "controlplane-namespace"
+		expectedPayload := []byte(`{"ignition":{"config":{"merge":[{"source":"complete-payload"}]},"version":"3.2.0"}}`)
+
+		// Mock ignition provider
+		mockProvider := &MockIgnitionProvider{
+			PayloadResponse: expectedPayload,
+			ErrorResponse:   nil,
+		}
+
+		pullSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "pull-secret",
+				Namespace: hcNamespace,
+			},
+			Data: map[string][]byte{
+				corev1.DockerConfigJsonKey: []byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+			},
+		}
+
+		ignitionCACert := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      ignitionserver.IgnitionCACertSecret(controlplaneNamespace).Name,
+				Namespace: controlplaneNamespace,
+			},
+			Data: map[string][]byte{
+				corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
+			},
+		}
+
+		// Create KubeVirt NodePool with secret-based ignition enabled
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-nodepool",
+				Namespace: hcNamespace,
+				Annotations: map[string]string{
+					"hypershift.openshift.io/kubevirt-secret-based-ignition": "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: hcName,
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+				},
+				Release: hyperv1.Release{
+					Image: "test-release-image:latest",
+				},
+			},
+		}
+
+		hostedCluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hcName,
+				Namespace: hcNamespace,
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret: corev1.LocalObjectReference{
+					Name: pullSecret.Name,
+				},
+			},
+			Status: hyperv1.HostedClusterStatus{
+				IgnitionEndpoint: "ignition.example.com",
+			},
+		}
+
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "4.17",
+				},
+			},
+		}
+
+		configGenerator := &ConfigGenerator{
+			hostedCluster:         hostedCluster,
+			nodePool:              nodePool,
+			controlplaneNamespace: controlplaneNamespace,
+			rolloutConfig: &rolloutConfig{
+				releaseImage:              releaseImage,
+				pullSecretName:            "test-pull-secret",
+				additionalTrustBundleName: "test-trust-bundle",
+				globalConfig:              "test-global-config",
+				mcoRawConfig:              "test-mco-raw-config",
+			},
+		}
+
+		cpoCapabilities := &CPOCapabilities{
+			CreateDefaultAWSSecurityGroup: true,
+		}
+
+		fakeClient := fake.NewClientBuilder().WithObjects(pullSecret, ignitionCACert).Build()
+		configGenerator.Client = fakeClient
+
+		ctx := context.Background()
+
+		// Test NewTokenWithIgnitionProvider with secret-based ignition
+		token, err := NewTokenWithIgnitionProvider(ctx, configGenerator, cpoCapabilities, mockProvider)
+		g.Expect(err).To(Not(HaveOccurred()))
+		g.Expect(token).To(Not(BeNil()))
+
+		// Verify that the complete ignition payload was set
+		g.Expect(token.userData.completeIgnitionPayload).To(Equal(expectedPayload))
+
+		// Get user data secret directly to check the content
+		userDataSecret := token.UserDataSecret()
+		g.Expect(userDataSecret).To(Not(BeNil()))
+
+		// The secret should be generated with complete payload instead of URL-based config
+		err = token.reconcileUserDataSecret(userDataSecret, "test-token")
+		g.Expect(err).To(Not(HaveOccurred()))
+
+		// Verify user data secret was created with complete payload
+		g.Expect(userDataSecret.Data).To(Not(BeNil()))
+		g.Expect(userDataSecret.Data["value"]).To(Equal(expectedPayload))
+	})
+
+	t.Run("Cloud-init volume should be replaced with configdrive when secret-based ignition is enabled", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Create a mock VM template with existing CloudInitNoCloud volume
+		existingTemplate := &capikubevirt.VirtualMachineTemplateSpec{
+			Spec: kubevirtv1.VirtualMachineSpec{
+				Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+					Spec: kubevirtv1.VirtualMachineInstanceSpec{
+						Domain: kubevirtv1.DomainSpec{
+							Devices: kubevirtv1.Devices{
+								Disks: []kubevirtv1.Disk{
+									{
+										Name: "cloudinitvolume",
+										DiskDevice: kubevirtv1.DiskDevice{
+											Disk: &kubevirtv1.DiskTarget{Bus: "virtio"},
+										},
+									},
+								},
+							},
+						},
+						Volumes: []kubevirtv1.Volume{
+							{
+								Name: "cloudinitvolume",
+								VolumeSource: kubevirtv1.VolumeSource{
+									CloudInitNoCloud: &kubevirtv1.CloudInitNoCloudSource{
+										UserDataSecretRef: &corev1.LocalObjectReference{
+											Name: "existing-userdata-secret",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-nodepool",
+				Annotations: map[string]string{
+					"hypershift.openshift.io/kubevirt-secret-based-ignition": "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+				},
+			},
+		}
+
+		// Apply the replacement logic
+		err := kubevirt.ReplaceCloudInitWithConfigDrive(existingTemplate, nodePool)
+		g.Expect(err).To(Not(HaveOccurred()))
+
+		// Verify that CloudInitNoCloud was replaced with CloudInitConfigDrive
+		volumes := existingTemplate.Spec.Template.Spec.Volumes
+		g.Expect(volumes).To(HaveLen(1))
+
+		volume := volumes[0]
+		g.Expect(volume.Name).To(Equal("cloudinitvolume"))
+		g.Expect(volume.CloudInitNoCloud).To(BeNil())          // Should be removed
+		g.Expect(volume.CloudInitConfigDrive).To(Not(BeNil())) // Should be added
+		g.Expect(volume.CloudInitConfigDrive.UserDataSecretRef.Name).To(Equal("user-data-secret-placeholder"))
+
+		// Verify disk is still present with same name
+		disks := existingTemplate.Spec.Template.Spec.Domain.Devices.Disks
+		g.Expect(disks).To(HaveLen(1))
+		g.Expect(disks[0].Name).To(Equal("cloudinitvolume"))
+		g.Expect(string(disks[0].DiskDevice.Disk.Bus)).To(Equal("virtio"))
+	})
+
+	t.Run("No new volume should be created when no existing cloud-init volume is found", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Create a VM template with NO existing cloud-init volume
+		templateWithoutCloudInit := &capikubevirt.VirtualMachineTemplateSpec{
+			Spec: kubevirtv1.VirtualMachineSpec{
+				Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
+					Spec: kubevirtv1.VirtualMachineInstanceSpec{
+						Domain: kubevirtv1.DomainSpec{
+							Devices: kubevirtv1.Devices{
+								Disks: []kubevirtv1.Disk{
+									{
+										Name: "rhcos",
+										DiskDevice: kubevirtv1.DiskDevice{
+											Disk: &kubevirtv1.DiskTarget{Bus: "virtio"},
+										},
+									},
+								},
+							},
+						},
+						Volumes: []kubevirtv1.Volume{
+							{
+								Name: "rhcos",
+								VolumeSource: kubevirtv1.VolumeSource{
+									DataVolume: &kubevirtv1.DataVolumeSource{
+										Name: "rhcos",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-nodepool",
+				Annotations: map[string]string{
+					"hypershift.openshift.io/kubevirt-secret-based-ignition": "true",
+				},
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.KubevirtPlatform,
+				},
+			},
+		}
+
+		// Apply the replacement logic
+		err := kubevirt.ReplaceCloudInitWithConfigDrive(templateWithoutCloudInit, nodePool)
+		g.Expect(err).To(Not(HaveOccurred()))
+
+		// Verify that NO new volumes or disks were added (should still have only 1 volume and 1 disk)
+		volumes := templateWithoutCloudInit.Spec.Template.Spec.Volumes
+		g.Expect(volumes).To(HaveLen(1)) // Still only the rhcos volume
+		g.Expect(volumes[0].Name).To(Equal("rhcos"))
+
+		disks := templateWithoutCloudInit.Spec.Template.Spec.Domain.Devices.Disks
+		g.Expect(disks).To(HaveLen(1)) // Still only the rhcos disk
+		g.Expect(disks[0].Name).To(Equal("rhcos"))
+	})
 }
