@@ -229,7 +229,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	if err != nil {
 		return nil, fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
 	}
-	if err := json.Unmarshal(azureCredsRaw, &output.creds); err != nil {
+	if err := yaml.Unmarshal(azureCredsRaw, &output.creds); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 
