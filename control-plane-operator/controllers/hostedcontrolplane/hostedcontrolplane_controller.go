@@ -835,17 +835,18 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
-		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
-			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
-		}
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
+				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
+			}
 
-		endpoint, port, err := kas.GetHealthcheckEndpointForRoute(externalRoute, hcp)
-		if err != nil {
-			return err
+			endpoint, port, err := kas.GetHealthcheckEndpointForRoute(externalRoute, hcp)
+			if err != nil {
+				return err
+			}
+			return healthCheckKASEndpoint(endpoint, port)
 		}
-		return healthCheckKASEndpoint(endpoint, port)
-
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
