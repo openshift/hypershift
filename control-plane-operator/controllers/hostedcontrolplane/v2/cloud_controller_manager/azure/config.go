@@ -46,6 +46,12 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
 	}
 
+	// Initialize secret data if it doesn't exist
+	if secret.Data == nil {
+		secret.Data = make(map[string][]byte)
+	}
+
+	// Add cloud.conf while preserving any existing credential fields
 	secret.Data[ConfigKey] = serializedConfig
 	return nil
 }

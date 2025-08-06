@@ -41,6 +41,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secret.yaml",
 			component.WithAdaptFunction(adaptConfigSecret),
+			component.ReconcileExisting(),
 		).
 		WithManifestAdapter(
 			"config-secretprovider.yaml",
