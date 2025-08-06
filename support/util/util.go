@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -78,6 +79,21 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	for k, v := range source.Data {
 		cm.Data[k] = v
 	}
+}
+
+func UpdateObject[T client.Object](ctx context.Context, c client.Client, original T, mutate func(obj T) error) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(original), original); err != nil {
+			return err
+		}
+
+		obj := original.DeepCopyObject().(T)
+		if err := mutate(obj); err != nil {
+			return err
+		}
+
+		return c.Patch(ctx, obj, client.MergeFrom(original))
+	})
 }
 
 func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {

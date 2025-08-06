@@ -2842,6 +2842,16 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		if err != nil {
 			return fmt.Errorf("failed to get last applied security group tags annotation: %w", err)
 		}
+
+		// if we failed to apply the annotation prviously, fallback to fetching the current tags from the SG resource directly.
+		if lastAppliedTags == nil {
+			sg, err := supportawsutil.GetSecurityGroupById(r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			if err != nil {
+				return fmt.Errorf("failed to get default security group: %w", err)
+			}
+			lastAppliedTags = supportawsutil.EC2TagsToMap(sg.Tags)
+		}
+
 		desiredTags := awsSecurityGroupTags(hcp)
 		changed, deleted, isDifferent := util.MapsDiff(lastAppliedTags, desiredTags)
 		if !isDifferent {
@@ -2850,18 +2860,22 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 		logger.Info("Security group tags have changed", "changed", changed, "deleted", deleted)
 		if err := supportawsutil.UpdateResourceTags(r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID, changed, deleted); err != nil {
+			if supportawsutil.IsPermissionsError(err) {
+				logger.Info("insufficient permissions to update security group tags", "sg", hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+				return nil
+			}
 			return err
 		}
 
-		originalHCP := hcp.DeepCopy()
 		// Update the last-applied-security-group-tags annotation on the HCP with the tags applied to the SG.
 		// This is used to track changes to the tags and update them if necessary.
-		if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, desiredTags); err != nil {
-			return fmt.Errorf("failed to update last applied security group tags annotation")
-		}
-
-		if err := r.Client.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("failed to patch HostedControlPlane object: %w", err)
+		if err := util.UpdateObject(ctx, r.Client, hcp, func(obj *hyperv1.HostedControlPlane) error {
+			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, desiredTags); err != nil {
+				return fmt.Errorf("failed to update last applied security group tags annotation")
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
 		}
 
 		return nil
@@ -2875,7 +2889,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 	originalHCP := hcp.DeepCopy()
 	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
+	sgID, appliedTags, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
 	if creationErr != nil {
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -2884,11 +2898,16 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 			Reason:  hyperv1.AWSErrorReason,
 		}
 	} else {
-		// if creation was successful, patch the HCP with the last-applied-security-group-tags annotation
-		if err := r.Client.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-			return fmt.Errorf("failed to patch HostedControlPlane object: %w", err)
+		// Ensure the last-applied-security-group-tags annotation is set on the HCP on SG creation.
+		// This is used to track changes to the tags and update them if necessary.
+		if err := util.UpdateObject(ctx, r.Client, hcp, func(obj *hyperv1.HostedControlPlane) error {
+			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, appliedTags); err != nil {
+				return fmt.Errorf("failed to update last applied security group tags annotation")
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
 		}
-		originalHCP = hcp.DeepCopy()
 
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -2928,7 +2947,7 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, map[string]string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	var (
@@ -2942,15 +2961,15 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
-		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, supportawsutil.AWSErrorCode(err))
+		return "", nil, fmt.Errorf("failed to describe vpc %s, code %s", vpcID, supportawsutil.AWSErrorCode(err))
 	}
 	if len(vpcResult.Vpcs) == 0 {
-		return "", fmt.Errorf("vpc %s not found", vpcID)
+		return "", nil, fmt.Errorf("vpc %s not found", vpcID)
 	}
 
 	if len(hcp.Spec.Networking.MachineNetwork) == 0 {
 		// Should never happen
-		return "", errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
+		return "", nil, errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
 	}
 	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
 	for i, mNet := range hcp.Spec.Networking.MachineNetwork {
@@ -2960,7 +2979,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
-		return "", fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
+		return "", nil, fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
 	}
 	sgID := ""
 	var sg *ec2.SecurityGroup
@@ -2968,9 +2987,11 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		sg = describeSGResult.SecurityGroups[0]
 		sgID = awssdk.StringValue(sg.GroupId)
 	}
+
+	var tags map[string]string
 	if sgID == "" {
 		// Create a security group if one is not found
-		tags := awsSecurityGroupTags(hcp)
+		tags = awsSecurityGroupTags(hcp)
 
 		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 			GroupName:   awssdk.String(awsSecurityGroupName(infraID)),
@@ -2984,29 +3005,29 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			},
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
 
-		if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, tags); err != nil {
-			return "", fmt.Errorf("failed to update last applied security group tags annotation: %w", err)
-		}
 		// Fetch just-created SG
 		describeSGInput := &ec2.DescribeSecurityGroupsInput{
 			GroupIds: []*string{awssdk.String(sgID)},
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		sg = describeSGResult.SecurityGroups[0]
 		logger.Info("Created security group", "id", sgID)
+	} else {
+		tags = supportawsutil.EC2TagsToMap(sg.Tags)
 	}
+
 	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, awssdk.StringValue(sg.OwnerId))
 	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       awssdk.String(sgID),
@@ -3014,11 +3035,11 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
-			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
 	}
-	return sgID, nil
+	return sgID, tags, nil
 }
 
 func updateLastAppliedSecurityGroupTagsAnnotation(hcp *hyperv1.HostedControlPlane, tags map[string]string) error {
