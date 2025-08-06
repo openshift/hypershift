@@ -11,4 +11,4 @@ types = fix,feat,chore,docs,style,refactor,perf,test,revert,ci,build
 line-length=120
 
 [body-max-line-length]
-line-length=120
+line-length=140
