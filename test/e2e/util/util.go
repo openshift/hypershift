@@ -2840,6 +2840,38 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 	})
 }
 
+func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureAppLabel", func(t *testing.T) {
+		AtLeast(t, Version420)
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		podList := &corev1.PodList{}
+		if err := client.List(ctx, podList, crclient.InNamespace(hcpNamespace)); err != nil {
+			t.Fatalf("error listing hcp pods: %v", err)
+		}
+
+		var podsWithoutAppLabel []string
+		for _, pod := range podList.Items {
+			// Skip KubeVirt related pods
+			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+				continue
+			}
+
+			// Ensure that each pod in the HCP has an app label set
+			val, ok := pod.Labels["app"]
+			if ok && val != "" {
+				continue
+			}
+
+			podsWithoutAppLabel = append(podsWithoutAppLabel, pod.Name)
+		}
+
+		if len(podsWithoutAppLabel) > 0 {
+			t.Fatalf("expected pods [%s] to have app label set", strings.Join(podsWithoutAppLabel, ", "))
+		}
+	})
+}
+
 func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
 	t.Run("EnsureDefaultSecurityGroupTags", func(t *testing.T) {
 		AtLeast(t, Version420)
