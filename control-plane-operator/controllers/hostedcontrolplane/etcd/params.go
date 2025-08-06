@@ -37,7 +37,7 @@ func etcdPodSelector() map[string]string {
 	return map[string]string{"app": "etcd"}
 }
 
-func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider) (*EtcdParams, error) {
+func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, setDefaultSecurityContext bool) (*EtcdParams, error) {
 
 	ipv4, err := hyputils.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
@@ -68,6 +68,8 @@ func NewEtcdParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imagepr
 	if hcp.Annotations[hyperv1.EtcdPriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.EtcdPriorityClass]
 	}
+
+	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 	p.DeploymentConfig.SetDefaults(hcp, etcdPodSelector(), nil)
 
 	if hcp.Spec.Etcd.Managed == nil {
