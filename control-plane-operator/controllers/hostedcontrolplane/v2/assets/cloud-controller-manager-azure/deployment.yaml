@@ -44,6 +44,8 @@ spec:
           name: cloud-config
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
+      serviceAccountName: cloud-controller-manager
+      automountServiceAccountToken: true
       volumes:
       - name: kubeconfig
         secret:
