@@ -211,6 +211,11 @@ const (
 	// variant was released.
 	AllowUnsupportedKubeVirtRHCOSVariantsAnnotation = "hypershift.openshift.io/allow-unsupported-kubevirt-rhcos-variants"
 
+	// KubeVirtSecretBasedIgnitionAnnotation enables using Kubernetes secrets with configdrive
+	// for ignition payload delivery in KubeVirt machines instead of the default ignition server URL.
+	// This eliminates the need for machines to have network connectivity to the ignition server during bootstrap.
+	KubeVirtSecretBasedIgnitionAnnotation = "hypershift.openshift.io/kubevirt-secret-based-ignition"
+
 	// ImageOverridesAnnotation is passed as a flag to the CPO to allow overriding release images.
 	// The format of the annotation value is a comma-separated list of image=ref pairs like:
 	// cluster-network-operator=example.com/cno:latest,ovn-kubernetes=example.com/ovnkube:latest
