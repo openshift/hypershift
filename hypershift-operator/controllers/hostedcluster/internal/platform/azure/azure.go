@@ -223,6 +223,12 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 				secretData[k] = v
 			}
 			secretData["azure_client_id"] = []byte(workloadIdentities.CloudProvider.ClientID)
+
+			// Add cloud.conf for the cloud controller manager
+			if err := addCloudConfigToSecret(secretData, hcluster); err != nil {
+				return fmt.Errorf("failed to add cloud config: %w", err)
+			}
+
 			cloudProviderCreds.Data = secretData
 			return nil
 		}); err != nil {
@@ -454,4 +460,64 @@ func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) 
 	secret.Data[azure.CloudConfigKey] = serializedConfig
 
 	return nil
+}
+
+// addCloudConfigToSecret adds the cloud.conf configuration to the secret data for self-managed Azure
+func addCloudConfigToSecret(secretData map[string][]byte, hcluster *hyperv1.HostedCluster) error {
+	// Only add cloud.conf for self-managed Azure (not ARO HCP)
+	if azureutil.IsAroHCP() {
+		return nil
+	}
+
+	// Build the Azure cloud config
+	azureConfig := buildAzureCloudConfig(hcluster)
+
+	serializedConfig, err := json.MarshalIndent(azureConfig, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to serialize cloud config: %w", err)
+	}
+
+	secretData["cloud.conf"] = serializedConfig
+	return nil
+}
+
+// buildAzureCloudConfig builds the Azure cloud configuration for workload identity
+func buildAzureCloudConfig(hcluster *hyperv1.HostedCluster) map[string]interface{} {
+	azurePlatform := hcluster.Spec.Platform.Azure
+	workloadIdentities := azurePlatform.AzureAuthenticationConfig.WorkloadIdentities
+
+	// Parse network configuration
+	subnetName, _ := azureutil.GetSubnetNameFromSubnetID(azurePlatform.SubnetID)
+	securityGroupName, securityGroupResourceGroup, _ := azureutil.GetNameAndResourceGroupFromNetworkSecurityGroupID(azurePlatform.SecurityGroupID)
+	vnetName, vnetResourceGroup, _ := azureutil.GetVnetNameAndResourceGroupFromVnetID(azurePlatform.VnetID)
+
+	config := map[string]interface{}{
+		"cloud":                                     azurePlatform.Cloud,
+		"tenantId":                                  azurePlatform.TenantID,
+		"useManagedIdentityExtension":               false,
+		"useFederatedWorkloadIdentityExtension":     true,
+		"subscriptionId":                            azurePlatform.SubscriptionID,
+		"aadClientId":                               string(workloadIdentities.CloudProvider.ClientID),
+		"aadClientSecret":                           "",
+		"aadClientCertPath":                         "",
+		"aadFederatedTokenFile":                     "/var/run/secrets/openshift/serviceaccount/token",
+		"aadMSIDataPlaneIdentityPath":               "",
+		"resourceGroup":                             azurePlatform.ResourceGroupName,
+		"location":                                  azurePlatform.Location,
+		"vnetName":                                  vnetName,
+		"vnetResourceGroup":                         vnetResourceGroup,
+		"subnetName":                                subnetName,
+		"securityGroupName":                         securityGroupName,
+		"securityGroupResourceGroup":                securityGroupResourceGroup,
+		"routeTableName":                            "",
+		"cloudProviderBackoff":                      true,
+		"cloudProviderBackoffDuration":              6,
+		"useInstanceMetadata":                       false,
+		"loadBalancerSku":                           "standard",
+		"disableOutboundSNAT":                       true,
+		"loadBalancerName":                          hcluster.Spec.InfraID,
+		"clusterServiceLoadBalancerHealthProbeMode": "shared",
+	}
+
+	return config
 }
