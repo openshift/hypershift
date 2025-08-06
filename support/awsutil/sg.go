@@ -276,3 +276,14 @@ func MapToEC2Tags(m map[string]string) []*ec2.Tag {
 	}
 	return tags
 }
+
+func EC2TagsToMap(tags []*ec2.Tag) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, tag := range tags {
+		m[*tag.Key] = *tag.Value
+	}
+	return m
+}
