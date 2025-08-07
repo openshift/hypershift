@@ -559,7 +559,7 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 
 func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
-		Name: "tmp-dir",
+		Name: config.PodTmpDirMountName,
 		VolumeSource: corev1.VolumeSource{
 			EmptyDir: &corev1.EmptyDirVolumeSource{},
 		},
@@ -569,11 +569,11 @@ func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
 			podSpec.Containers[i].SecurityContext = &corev1.SecurityContext{}
 		}
 		if !slices.ContainsFunc(podSpec.Containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
-			return vm.MountPath == "/tmp"
+			return vm.MountPath == config.PodTmpDirMountPath
 		}) {
 			podSpec.Containers[i].VolumeMounts = append(podSpec.Containers[i].VolumeMounts, corev1.VolumeMount{
-				Name:      "tmp-dir",
-				MountPath: "/tmp",
+				Name:      config.PodTmpDirMountName,
+				MountPath: config.PodTmpDirMountPath,
 			})
 		}
 		podSpec.Containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)

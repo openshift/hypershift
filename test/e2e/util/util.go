@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1399,7 +1399,10 @@ func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prome
 }
 
 func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, Version420)
+
 	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
@@ -1472,18 +1475,16 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 				// if the Key/Value are empty we assume that the pod is not in the auditedList,
 				// if that's the case the annotation should not exists in that pod (except for tmp-dir which is in every pod by default).
 				// Then continue to the next pod
-				hasTmpDir := false
+				hasTmpDirAnnotation := false
 				safe2EvictVolumes := strings.Split(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey], ",")
 				safe2EvictVolumes = slices.DeleteFunc(safe2EvictVolumes, func(s string) bool {
-					if s == "" {
-						return true
-					}
-					hasTmpDir = s == "tmp-dir"
-					return hasTmpDir
+					hasTmpDir := s == suppconfig.PodTmpDirMountName
+					hasTmpDirAnnotation = hasTmpDirAnnotation || hasTmpDir
+					return s == "" || hasTmpDir
 				})
 				g.Expect(safe2EvictVolumes).To(BeEmpty(), "the pod  %s is not in the audited list for safe-eviction and should not contain the safe-to-evict-local-volume annotation", pod.Name)
-				// if we have a tmpdir mount, we need to check to make sure the pod has the correct annotations; done below
-				if !hasTmpDir {
+				// if we have a tmpdir annotation, we need to ensure that the volume is defined correctly; done below
+				if !hasTmpDirAnnotation {
 					continue
 				}
 			}
@@ -1500,7 +1501,14 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 	})
 }
 
+type labelSelector struct {
+	label string
+	value string
+}
+
 func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
+	AtLeast(t, Version420)
+
 	// By default, we enable readOnlyRootFilesystem in every container.
 	// This testchecks to make sure that every container has this field enabled, unless manually specified in auditedAppContainersNoRORFS
 	t.Run("EnsureReadOnlyRootFilesystem", func(t *testing.T) {
@@ -1514,8 +1522,23 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		}
 
 		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
-		// auditedAppContainersNoRORFS[pod.Name][pod.Spec.Containers[*]] indicates that particular container is allowed to be false
-		auditedAppContainersNoRORFS := map[string]map[string]struct{}{}
+		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false
+		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {
+				"csi-driver":           {},
+				"kube-rbac-proxy-8201": {},
+			},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}: {
+				"csi-driver":           {},
+				"kube-rbac-proxy-8201": {},
+			},
+			{label: "app", value: "catalog-operator"}: {
+				"konnectivity-proxy-socks5": {},
+			},
+			{label: "app", value: "olm-operator"}: {
+				"konnectivity-proxy-socks5": {},
+			},
+		}
 
 		for _, pod := range hcpPods.Items {
 			// skip etcd and feature-gate-generator pods
@@ -1524,8 +1547,17 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
+			auditedContainers := map[string]struct{}{}
+
+			for selector, containers := range auditedAppContainersNoRORFS {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
+			}
+
 			for _, c := range pod.Spec.Containers {
-				_, isAuditedOff := auditedAppContainersNoRORFS[pod.Name][c.Name]
+				_, isAuditedOff := auditedContainers[c.Name]
 				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
 
 				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
@@ -1547,8 +1579,23 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		}
 
 		// a list of applications that are allowed to not have the emptyDir "tmp-dir" mounted.
-		// auditedAppContainerNoTmpDir[pod.Name][pod.Spec.Containers[*]] indicates that particular container is allowed to not have the mount
-		auditedAppContainerNoTmpDir := map[string]map[string]struct{}{}
+		// auditedAppContainerNoTmpDir[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to not have the mount
+		auditedAppContainerNoTmpDir := map[labelSelector]map[string]struct{}{
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {
+				"csi-driver":           {},
+				"kube-rbac-proxy-8201": {},
+			},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}: {
+				"csi-driver":           {},
+				"kube-rbac-proxy-8201": {},
+			},
+			{label: "app", value: "catalog-operator"}: {
+				"konnectivity-proxy-socks5": {},
+			},
+			{label: "app", value: "olm-operator"}: {
+				"konnectivity-proxy-socks5": {},
+			},
+		}
 
 		for _, pod := range hcpPods.Items {
 			// skip etcd and feature-gate-generator pods
@@ -1557,11 +1604,20 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
+			auditedContainers := map[string]struct{}{}
+
+			for selector, containers := range auditedAppContainerNoTmpDir {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
+			}
+
 			containersHaveTmpMount := false
 			for _, c := range pod.Spec.Containers {
-				_, allowedNoTmpDir := auditedAppContainerNoTmpDir[pod.Name][c.Name]
+				_, allowedNoTmpDir := auditedContainers[c.Name]
 				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
-					return v.Name == "tmp-dir" && v.MountPath == "/tmp"
+					return v.Name == suppconfig.PodTmpDirMountName && v.MountPath == suppconfig.PodTmpDirMountPath
 				})
 				var msg string
 				if containerHasTmpDir && allowedNoTmpDir {
@@ -1574,11 +1630,11 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			}
 
 			podContainsTmpDir := slices.ContainsFunc(pod.Spec.Volumes, func(v corev1.Volume) bool {
-				if v.Name == "tmp-dir" {
+				if v.Name == suppconfig.PodTmpDirMountName {
 					g.Expect(v.HostPath).To(BeNil(), "pod %s has a volume named \"tmp-dir\" that should be an emptyDir, but is hostPath", pod.Name)
 					g.Expect(v.EmptyDir).ToNot(BeNil(), "pod %s has a volume named \"tmp-dir\" that should be an emptyDir, but is not", pod.Name)
 				}
-				return v.Name == "tmp-dir" && v.EmptyDir != nil && v.HostPath == nil
+				return v.Name == suppconfig.PodTmpDirMountName && v.EmptyDir != nil && v.HostPath == nil
 			})
 			var msg string
 			if podContainsTmpDir && !containersHaveTmpMount {

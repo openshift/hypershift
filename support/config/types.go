@@ -9,4 +9,9 @@ const (
 	HCCOUser = "hosted-cluster-config"
 	// HCCOUserAgent references the userAgent used by the HostedClusterConfigOperator
 	HCCOUserAgent = "hosted-cluster-config-operator-manager"
+
+	// PodTmpDirMountName is a name for a volume created in each pod by the CPO that gives the pods containers a place to mount and write temporary files to.
+	PodTmpDirMountName = "tmp-dir"
+	// PodTmpDirMountPath is the path that each container created by the CPO will mount the volume PodTmpDirMountName at.
+	PodTmpDirMountPath = "/tmp"
 )
