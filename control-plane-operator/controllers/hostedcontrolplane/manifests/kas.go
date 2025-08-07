@@ -43,6 +43,15 @@ func KASLocalhostKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	}
 }
 
+func KASHCCOKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcco-kubeconfig",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+}
+
 func KASServiceKubeconfigSecret(controlPlaneNamespace string) *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
