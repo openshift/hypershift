@@ -2864,7 +2864,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 		// Update the last-applied-security-group-tags annotation on the HCP with the tags applied to the SG.
 		// This is used to track changes to the tags and update them if necessary.
-		if err := util.UpdateObject(ctx, r.Client, hcp, func(obj *hyperv1.HostedControlPlane) error {
+		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
 			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, desiredTags); err != nil {
 				return fmt.Errorf("failed to update last applied security group tags annotation")
 			}
@@ -2895,7 +2895,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	} else {
 		// Ensure the last-applied-security-group-tags annotation is set on the HCP on SG creation.
 		// This is used to track changes to the tags and update them if necessary.
-		if err := util.UpdateObject(ctx, r.Client, hcp, func(obj *hyperv1.HostedControlPlane) error {
+		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
 			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, appliedTags); err != nil {
 				return fmt.Errorf("failed to update last applied security group tags annotation")
 			}
@@ -2903,6 +2903,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		}); err != nil {
 			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
 		}
+		originalHCP = hcp.DeepCopy()
 
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),

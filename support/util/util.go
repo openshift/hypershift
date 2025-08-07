@@ -81,14 +81,14 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	}
 }
 
-func UpdateObject[T client.Object](ctx context.Context, c client.Client, original T, mutate func(obj T) error) error {
+func UpdateObject[T client.Object](ctx context.Context, c client.Client, obj T, mutate func() error) error {
 	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		if err := c.Get(ctx, client.ObjectKeyFromObject(original), original); err != nil {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
 			return err
 		}
 
-		obj := original.DeepCopyObject().(T)
-		if err := mutate(obj); err != nil {
+		original := obj.DeepCopyObject().(T)
+		if err := mutate(); err != nil {
 			return err
 		}
 
