@@ -135,6 +135,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
+
+	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
+	monitorOperandsRolloutStatus bool
 }
 
 // Name implements ControlPlaneComponent.
