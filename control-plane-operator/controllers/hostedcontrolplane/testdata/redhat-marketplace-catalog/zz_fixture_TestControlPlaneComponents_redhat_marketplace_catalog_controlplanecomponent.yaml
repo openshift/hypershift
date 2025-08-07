@@ -23,4 +23,3 @@ status:
   - group: ""
     kind: Service
     name: redhat-marketplace
-  version: 4.18.0

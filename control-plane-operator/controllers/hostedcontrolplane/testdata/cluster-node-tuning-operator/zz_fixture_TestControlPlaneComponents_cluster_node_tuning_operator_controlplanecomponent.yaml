@@ -35,4 +35,3 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: node-tuning-operator
-  version: 4.18.0

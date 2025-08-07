@@ -41,4 +41,3 @@ status:
   - group: ""
     kind: Secret
     name: oauth-openshift-session
-  version: 4.18.0

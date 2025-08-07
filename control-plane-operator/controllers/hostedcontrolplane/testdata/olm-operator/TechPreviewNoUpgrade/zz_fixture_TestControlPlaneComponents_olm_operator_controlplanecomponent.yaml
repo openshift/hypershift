@@ -26,4 +26,3 @@ status:
   - group: monitoring.coreos.com
     kind: ServiceMonitor
     name: olm-operator
-  version: 4.18.0

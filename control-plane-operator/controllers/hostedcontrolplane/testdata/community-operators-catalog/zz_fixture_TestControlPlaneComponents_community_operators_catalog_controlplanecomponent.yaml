@@ -23,4 +23,3 @@ status:
   - group: ""
     kind: Service
     name: community-operators
-  version: 4.18.0

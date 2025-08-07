@@ -29,4 +29,3 @@ status:
   - group: rbac.authorization.k8s.io
     kind: RoleBinding
     name: csi-snapshot-controller-operator-role
-  version: 4.18.0

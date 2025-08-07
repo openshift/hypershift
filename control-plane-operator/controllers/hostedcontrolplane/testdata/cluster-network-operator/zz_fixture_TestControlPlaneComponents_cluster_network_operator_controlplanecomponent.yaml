@@ -29,4 +29,3 @@ status:
   - group: ""
     kind: ServiceAccount
     name: cluster-network-operator
-  version: 4.18.0
