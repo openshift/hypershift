@@ -33,6 +33,7 @@ import (
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
@@ -3428,5 +3429,117 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 			t.Logf("All %d pods in namespace %s have the expected RunAsUser UID %d", len(podList.Items), namespaceName, expectedUID)
 		}
 		g.Expect(errs).To(BeEmpty(), "Pods with mismatched RunAsUser:\n%s", strings.Join(errs, "\n"))
+	})
+}
+
+// EnsureCNOOperatorConfiguration tests that changes to the CNO operator configuration on the HostedCluster are
+// properly reflected in the hosted cluster's API and that the CNO doesn't report any errors via HCP conditions.
+func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCNOOperatorConfiguration", func(t *testing.T) {
+		AtLeast(t, Version420)
+		g := NewWithT(t)
+		const newJoinSubnet = "100.99.0.0/16"
+		const newTransitSwitchSubnet = "100.100.0.0/16"
+		// Update the HostedCluster to configure CNO settings
+		t.Logf("Updating HostedCluster %s/%s with custom OVN internal subnets", hostedCluster.Namespace, hostedCluster.Name)
+		err := UpdateObject(t, ctx, mgmtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+			if obj.Spec.OperatorConfiguration == nil {
+				obj.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+			}
+			if obj.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+				obj.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+			}
+			if obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig == nil {
+				obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfig{}
+			}
+			if obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4 == nil {
+				obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4 = &hyperv1.OVNIPv4Config{}
+			}
+			// Set the custom subnet values.
+			obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4.InternalJoinSubnet = newJoinSubnet
+			obj.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4.InternalTransitSwitchSubnet = newTransitSwitchSubnet
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster with custom OVN config")
+		t.Logf("Validating CNO conditions on HostedControlPlane")
+		hcpNamespace := fmt.Sprintf("%s-%s", hostedCluster.Namespace, hostedCluster.Name)
+		EventuallyObject(t, ctx, fmt.Sprintf("HostedControlPlane %s/%s to have healthy CNO conditions", hcpNamespace, hostedCluster.Name),
+			func(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
+				hcp := &hyperv1.HostedControlPlane{}
+				err := mgmtClient.Get(ctx, types.NamespacedName{
+					Namespace: hcpNamespace,
+					Name:      hostedCluster.Name,
+				}, hcp)
+				return hcp, err
+			},
+			[]Predicate[*hyperv1.HostedControlPlane]{
+				ConditionPredicate[*hyperv1.HostedControlPlane](Condition{
+					Type:   "network.operator.openshift.io/Available",
+					Status: metav1.ConditionTrue,
+				}),
+				ConditionPredicate[*hyperv1.HostedControlPlane](Condition{
+					Type:   "network.operator.openshift.io/Progressing",
+					Status: metav1.ConditionFalse,
+				}),
+				ConditionPredicate[*hyperv1.HostedControlPlane](Condition{
+					Type:   "network.operator.openshift.io/Degraded",
+					Status: metav1.ConditionFalse,
+				}),
+			},
+			WithTimeout(10*time.Minute),
+		)
+		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
+		// Check that the Network.operator.openshift.io resource in the guest cluster reflects our changes
+		EventuallyObject(t, ctx, "Network.operator.openshift.io/cluster in guest cluster to reflect the custom subnet changes",
+			func(ctx context.Context) (*operatorv1.Network, error) {
+				network := &operatorv1.Network{}
+				err := guestClient.Get(ctx, types.NamespacedName{Name: "cluster"}, network)
+				return network, err
+			},
+			[]Predicate[*operatorv1.Network]{
+				func(network *operatorv1.Network) (done bool, reasons string, err error) {
+					// Validate that OVN-Kubernetes is properly configured
+					if network.Spec.DefaultNetwork.Type != operatorv1.NetworkTypeOVNKubernetes {
+						return false, fmt.Sprintf("expected network type OVNKubernetes, got %s", network.Spec.DefaultNetwork.Type), nil
+					}
+					if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
+						return false, "OVNKubernetesConfig is nil in the reconciled Network CR", nil
+					}
+					if network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4 == nil {
+						return false, "OVNKubernetesConfig.IPv4 is nil in the reconciled Network CR", nil
+					}
+					if network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4.InternalJoinSubnet != newJoinSubnet {
+						return false, fmt.Sprintf("expected InternalJoinSubnet to be %s, but got %s", newJoinSubnet, network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4.InternalJoinSubnet), nil
+					}
+					if network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4.InternalTransitSwitchSubnet != newTransitSwitchSubnet {
+						return false, fmt.Sprintf("expected InternalTransitSwitchSubnet to be %s, but got %s", newTransitSwitchSubnet, network.Spec.DefaultNetwork.OVNKubernetesConfig.IPv4.InternalTransitSwitchSubnet), nil
+					}
+
+					return true, "Successfully validated custom OVN subnets", nil
+				},
+			},
+			WithTimeout(5*time.Minute),
+		)
+		EventuallyObject(t, ctx, "Network.config.openshift.io/cluster in guest cluster to be available",
+			func(ctx context.Context) (*configv1.Network, error) {
+				network := &configv1.Network{}
+				err := guestClient.Get(ctx, types.NamespacedName{Name: "cluster"}, network)
+				return network, err
+			},
+			[]Predicate[*configv1.Network]{
+				func(network *configv1.Network) (done bool, reasons string, err error) {
+					if network.Status.NetworkType == "" {
+						return false, "NetworkType is not set in status", nil
+					}
+					if len(network.Status.ClusterNetwork) == 0 {
+						return false, "ClusterNetwork is empty in status", nil
+					}
+					if len(network.Status.ServiceNetwork) == 0 {
+						return false, "ServiceNetwork is empty in status", nil
+					}
+					return true, "", nil
+				},
+			},
+			WithTimeout(3*time.Minute),
+		)
 	})
 }

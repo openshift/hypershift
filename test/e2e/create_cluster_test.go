@@ -1960,6 +1960,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure ingress component is disabled
 		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+
+		// ensure CNO operator configuration changes are properly handled
+		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
