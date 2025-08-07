@@ -99,6 +99,15 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.HOInstallationOptions.PlatformMonitoring, "e2e.platform-monitoring", "All", "The option for enabling platform cluster monitoring when installing the HyperShift Operator. Valid values are: None, OperatorOnly, All. This is a HyperShift Operator installation option")
 	flag.BoolVar(&globalOpts.RunUpgradeTest, "upgrade.run-tests", false, "Run HyperShift Operator upgrade test")
 
+	// external OIDC configuration
+	flag.StringVar(&globalOpts.ExternalOIDCProvider, "e2e.external-oidc-provider", "", "if not null, enable external OIDC config with provider. supported value: keycloak, azure")
+	flag.StringVar(&globalOpts.ExternalOIDCCliClientID, "e2e.external-oidc-cli-client-id", "", "cli client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCConsoleClientID, "e2e.external-oidc-console-client-id", "", "console client ID for external OIDC. This id is needed if you set external oidc in spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCIssuerURL, "e2e.external-oidc-issuer-url", "", "external OIDC issuer URL. This id is needed if you set external oidc in spec.configuration")
+	flag.StringVar(&globalOpts.ExternalOIDCConsoleSecret, "e2e.external-oidc-console-secret", "", "external OIDC console secret. This is needed if you set external oidc in spec.configuration for the console")
+	flag.StringVar(&globalOpts.ExternalOIDCCABundleFile, "e2e.external-oidc-ca-bundle-file", "", "external OIDC issuer issuerCertificateAuthority")
+	flag.StringVar(&globalOpts.ExternalOIDCTestUsers, "e2e.external-oidc-test-users", "", "external OIDC test users to login the cluster by the external oidc")
+
 	// AWS specific flags
 	flag.BoolVar(&globalOpts.ConfigurableClusterOptions.AWSMultiArch, "e2e.aws-multi-arch", false, "Enable multi arch for aws clusters")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, "e2e.aws-credentials-file", "", "path to AWS credentials")
