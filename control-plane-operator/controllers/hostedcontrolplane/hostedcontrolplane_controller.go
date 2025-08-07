@@ -852,15 +852,10 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
 			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
 		}
-		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-			return fmt.Errorf("APIServer external route not admitted")
-		}
 
-		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := 443
-		if sharedingress.UseSharedIngress() {
-			endpoint = externalRoute.Spec.Host
-			port = sharedingress.ExternalDNSLBPort
+		endpoint, port, err := kas.GetHealthcheckEndpointForRoute(externalRoute, hcp)
+		if err != nil {
+			return err
 		}
 		return healthCheckKASEndpoint(endpoint, port)
 
