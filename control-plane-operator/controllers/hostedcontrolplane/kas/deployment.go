@@ -39,7 +39,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		kasContainerBootstrap().Name: {
 			kasVolumeBootstrapManifests().Name:  "/work",
-			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
+			kasVolumeHCCOLocalhostKubeconfig().Name: "/var/secrets/hcco-kubeconfig",
 		},
 		kasContainerBootstrapRender().Name: {
 			kasVolumeBootstrapManifests().Name: "/work",
@@ -209,6 +209,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 			Volumes: []corev1.Volume{
 				util.BuildVolume(kasVolumeBootstrapManifests(), buildKASVolumeBootstrapManifests),
 				util.BuildVolume(kasVolumeLocalhostKubeconfig(), buildKASVolumeLocalhostKubeconfig),
+				util.BuildVolume(kasVolumeHCCOLocalhostKubeconfig(), buildKASVolumeHCCOLocalhostKubeconfig),
 				util.BuildVolume(kasVolumeWorkLogs(), buildKASVolumeWorkLogs),
 				util.BuildVolume(kasVolumeConfig(), buildKASVolumeConfig),
 				util.BuildVolume(kasVolumeAuthConfig(), buildKASVolumeAuthConfig),
@@ -356,7 +357,7 @@ func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "KUBECONFIG",
-				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
+				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeHCCOLocalhostKubeconfig().Name), KubeconfigKey),
 			},
 		}
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
@@ -496,12 +497,25 @@ func kasVolumeLocalhostKubeconfig() *corev1.Volume {
 		Name: "localhost-kubeconfig",
 	}
 }
+func kasVolumeHCCOLocalhostKubeconfig() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "hcco-localhost-kubeconfig",
+	}
+}
 func buildKASVolumeLocalhostKubeconfig(v *corev1.Volume) {
 	if v.Secret == nil {
 		v.Secret = &corev1.SecretVolumeSource{}
 	}
 	v.Secret.DefaultMode = ptr.To[int32](0640)
 	v.Secret.SecretName = manifests.KASLocalhostKubeconfigSecret("").Name
+}
+
+func buildKASVolumeHCCOLocalhostKubeconfig(v *corev1.Volume) {
+	if v.Secret == nil {
+		v.Secret = &corev1.SecretVolumeSource{}
+	}
+	v.Secret.DefaultMode = ptr.To[int32](0640)
+	v.Secret.SecretName = manifests.HCCOLocalhostKubeconfigSecret("").Name
 }
 
 func kasVolumeWorkLogs() *corev1.Volume {

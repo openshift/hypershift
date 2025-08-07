@@ -3119,6 +3119,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		return fmt.Errorf("failed to reconcile HCCO kubeconfig secret: %w", err)
 	}
 
+	hccoLocalhostKubeconfigSecret := manifests.HCCOLocalhostKubeconfigSecret(hcp.Namespace)
+	if _, err := createOrUpdate(ctx, r, hccoLocalhostKubeconfigSecret, func() error {
+		return kas.ReconcileHCCOLocalhostKubeconfigSecret(hccoLocalhostKubeconfigSecret, hccoClientCertSecret, rootCA, p.OwnerRef, p.KASPodPort)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile HCCO localhost kubeconfig secret: %w", err)
+	}
+
 	localhostKubeconfigSecret := manifests.KASLocalhostKubeconfigSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, localhostKubeconfigSecret, func() error {
 		return kas.ReconcileLocalhostKubeconfigSecret(localhostKubeconfigSecret, clientCertSecret, rootCA, p.OwnerRef, p.KASPodPort)
