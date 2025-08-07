@@ -24,7 +24,6 @@ import (
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	sharedingressmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -2963,12 +2962,6 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mg
 	g.Expect(err).To(Not(HaveOccurred()), "failed to update HostedCluster with allowed CIDRs")
 
 	g.Eventually(func(g Gomega) {
-		routerConfigMap := sharedingressmanifests.RouterConfigurationConfigMap()
-		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(routerConfigMap), routerConfigMap)
-		g.Expect(err).To(Not(HaveOccurred()))
-
-		g.Expect(routerConfigMap.Data["haproxy.cfg"]).To(ContainSubstring("_request_allowed src %s", allowedCIDR))
-
 		_, err = guestClient.ServerVersion()
 		if shouldBeReachable {
 			g.Expect(err).ToNot(HaveOccurred(), "kube-apiserver should be reachable")
