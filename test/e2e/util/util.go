@@ -2968,6 +2968,11 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mg
 		} else {
 			g.Expect(err).To(HaveOccurred(), "kube-apiserver should not be reachable")
 		}
+
+		// validate that KAS /healthz endpoint is always reachable
+		result := guestClient.RESTClient().Get().AbsPath("/healthz").Do(ctx)
+		g.Expect(result.Error()).ToNot(HaveOccurred())
+
 	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
 
 }

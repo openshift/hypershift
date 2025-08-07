@@ -55,6 +55,10 @@ type externalDNSBackendDesc struct {
 	SVCIP        string
 	SVCPort      int32
 	AllowedCIDRs string
+
+	// AllowedEndpoints is list of endpoints seperated by " ".
+	// Traffic to these endpoints is always allowed and ignores AllowedCIDRs.
+	AllowedEndpoints string
 }
 
 func generateRouterConfig(ctx context.Context, client crclient.Client, w io.Writer) error {
@@ -158,11 +162,12 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 		switch route.Name {
 		case manifests.KubeAPIServerExternalPublicRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
-				Name:         route.Namespace + "-apiserver",
-				HostName:     route.Spec.Host,
-				SVCIP:        svc.Spec.ClusterIP,
-				SVCPort:      config.KASSVCPort,
-				AllowedCIDRs: allowedCIDRs})
+				Name:             route.Namespace + "-apiserver",
+				HostName:         route.Spec.Host,
+				SVCIP:            svc.Spec.ClusterIP,
+				SVCPort:          config.KASSVCPort,
+				AllowedCIDRs:     allowedCIDRs,
+				AllowedEndpoints: "/healthz"}) // always allow /healthz for the CPO KAS health check.
 		case ignitionserver.Route("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
 				Name:         route.Namespace + "-ignition",
