@@ -27,7 +27,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -2057,57 +2056,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 }
 
 const (
-	DefaultSecurityContextUIDAnnnotation = "hypershift.openshift.io/default-security-context-uid"
-	ControlPlaneNamespaceLabelKey        = "hypershift.openshift.io/hosted-control-plane"
+	ControlPlaneNamespaceLabelKey = "hypershift.openshift.io/hosted-control-plane"
 )
-
-var securityContextUIDCheckMutex sync.Mutex
-var maxSecurityContextUIDCache int64
-
-// getNextAvailableSecurityContextUID returns the next available UID for a control plane namespace.
-// If no cache is set, it loops over existing namespaces, find the highest SecurityContext UID and returns that + 1.
-// When SCCs are available, this feature is implemented by https://github.com/openshift/cluster-policy-controller/blob/3e7538547c8f209c72083097a4ebaada6e9c46c5/pkg/security/controller/namespace_scc_allocation_controller.go#L148
-func getNextAvailableSecurityContextUID(ctx context.Context, c client.Client) (int64, error) {
-	securityContextUIDCheckMutex.Lock()
-	defer securityContextUIDCheckMutex.Unlock()
-
-	if maxSecurityContextUIDCache != 0 {
-		maxSecurityContextUIDCache++
-		return maxSecurityContextUIDCache, nil
-	}
-
-	// If cache is not set, loop over existing namespaces, find the highest SCC UID and returns that + 1.
-	labelSelector := labels.SelectorFromSet(labels.Set{
-		ControlPlaneNamespaceLabelKey: "true",
-	})
-
-	namespaceList := &corev1.NamespaceList{}
-	if err := c.List(ctx, namespaceList, &client.ListOptions{
-		LabelSelector: labelSelector,
-	}); err != nil {
-		return 0, err
-	}
-
-	var maxUID int64 = controlplanecomponent.DefaultSecurityContextUID - 1
-	for _, ns := range namespaceList.Items {
-		uidInput, ok := ns.Annotations[DefaultSecurityContextUIDAnnnotation]
-		if !ok {
-			continue
-		}
-
-		uid, err := strconv.ParseInt(uidInput, 10, 64)
-		if err != nil {
-			continue
-		}
-
-		if uid > maxUID {
-			maxUID = uid
-		}
-	}
-
-	maxSecurityContextUIDCache = maxUID + 1
-	return maxSecurityContextUIDCache, nil
-}
 
 // annotationsForCertRenewal returns a set of annotations to set based on the current state of the KAS
 // serving certificate. These could include the annotation to restart control plane pods.
