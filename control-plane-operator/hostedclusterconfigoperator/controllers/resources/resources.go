@@ -288,6 +288,26 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	if !hcp.DeletionTimestamp.IsZero() {
+		// Delete admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
+		if azureutil.IsAroHCP() {
+			registryConfigManagementStateAdmissionPolicy := registry.AdmissionPolicy{Name: registry.AdmissionPolicyNameManagementState}
+			// During cluster deletion, delete the admission policy and its binding to allow CIRO cleanup
+			log.Info("Cluster is being deleted, deleting registry management state admission policy and binding to allow cleanup")
+
+			// Delete binding first to avoid dangling reference
+			binding := manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", registryConfigManagementStateAdmissionPolicy.Name))
+			_, err := util.DeleteIfNeeded(ctx, r.client, binding)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicyBinding %s: %v", binding.Name, err)
+			}
+
+			// Delete policy
+			vap := manifests.ValidatingAdmissionPolicy(registryConfigManagementStateAdmissionPolicy.Name)
+			if _, err := util.DeleteIfNeeded(ctx, r.client, vap); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete ValidatingAdmissionPolicy %s: %v", vap.Name, err)
+			}
+		}
+
 		if shouldCleanupCloudResources(hcp) {
 			log.Info("Cleaning up hosted cluster cloud resources")
 			return r.destroyCloudResources(ctx, hcp)
