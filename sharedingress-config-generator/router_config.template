@@ -28,10 +28,10 @@ frontend dataplane-kas-svc
   # see https://www.haproxy.com/blog/introduction-to-haproxy-logging
   log-format "%{+Q}o\ cluster_id = %[var(sess.cluster_id)], %ci:%cp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
 
-  {{- range .Backends }}
-  acl is_{{ .Name }} var(sess.cluster_id) -m str {{ .ClusterID }}
-  {{- if .AllowedCIDRs }}
-  acl is_{{ .Name }}_request_allowed src {{ .AllowedCIDRs }}
+  {{- range $b := .Backends }}
+  acl is_{{ $b.Name }} var(sess.cluster_id) -m str {{ $b.ClusterID }}
+  {{- range $cidr := $b.AllowedCIDRs }}
+  acl is_{{ $b.Name }}_request_allowed src {{ $cidr }}
   {{- end }}
   {{- end }}
 
@@ -51,10 +51,10 @@ frontend external-dns
 
   log-format "%{+Q}o\ src_ip = %[var(sess.src_ip)], %ci:%cp / %si:%sp -> %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc %sq/%bq"
 
-  {{- range .ExternalDNSBackends }}
-  acl is_{{ .Name }} req_ssl_sni -i {{ .HostName }}
-  {{- if .AllowedCIDRs }}
-  acl is_{{ .Name }}_request_allowed src {{ .AllowedCIDRs }}
+  {{- range $b := .ExternalDNSBackends }}
+  acl is_{{ $b.Name }} req_ssl_sni -i {{ $b.HostName }}
+  {{- range $cidr := $b.AllowedCIDRs }}
+  acl is_{{ $b.Name }}_request_allowed src {{ $cidr }}
   {{- end }}
   {{- end }}
 
