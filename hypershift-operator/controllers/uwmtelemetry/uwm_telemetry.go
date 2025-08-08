@@ -249,13 +249,28 @@ func reconcileUWMConfigContent(cm *corev1.ConfigMap, relabelConfig *monv1.Relabe
 			MinBackoff:        ptr.To(monv1.Duration("1s")),
 			MaxBackoff:        ptr.To(monv1.Duration("256s")),
 		},
+		// Omit metadata since telemeter does not allow remote write metadata.
+		MetadataConfig: &monv1.MetadataConfig{
+			Send: false,
+		},
+		WriteRelabelConfigs: []monv1.RelabelConfig{
+			{
+				SourceLabels: []monv1.LabelName{"_id"},
+				Action:       "keep",
+				Regex:        ".+",
+			},
+		},
 	}
 	if relabelConfig != nil {
-		telemetryRemoteWrite.WriteRelabelConfigs = []monv1.RelabelConfig{*relabelConfig}
+		telemetryRemoteWrite.WriteRelabelConfigs = append(telemetryRemoteWrite.WriteRelabelConfigs, *relabelConfig)
 	}
 	telemetryRemoteWriteMap, err := toUnstructuredMap(telemetryRemoteWrite)
 	if err != nil {
 		return fmt.Errorf("cannot convert remote write config to unstructured map: %w", err)
+	}
+	// Ensure that send=false is written out for metadata config
+	if err = unstructured.SetNestedField(telemetryRemoteWriteMap, false, "metadataConfig", "send"); err != nil {
+		return err
 	}
 
 	if foundIndex != -1 {
