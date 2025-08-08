@@ -2345,6 +2345,9 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	if hcluster.Spec.ImageContentSources != nil {
 		hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
 	}
+	if hcluster.Spec.ImageTagMirrorSet != nil {
+		hcp.Spec.ImageTagMirrorSet = hcluster.Spec.ImageTagMirrorSet
+	}
 	if hcluster.Spec.AdditionalTrustBundle != nil {
 		hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: controlplaneoperator.UserCABundle(hcp.Namespace).Name}
 	}
@@ -2361,6 +2364,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	hcp.Spec.Tolerations = hcluster.Spec.Tolerations
 	hcp.Spec.Labels = hcluster.Spec.Labels
 	hcp.Spec.ImageContentSources = hcluster.Spec.ImageContentSources
+	hcp.Spec.ImageTagMirrorSet = hcluster.Spec.ImageTagMirrorSet
 
 	// Pass through Platform spec.
 	hcp.Spec.Platform = *hcluster.Spec.Platform.DeepCopy()

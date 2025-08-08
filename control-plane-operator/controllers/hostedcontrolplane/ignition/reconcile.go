@@ -59,6 +59,43 @@ func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, own
 	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
 }
 
+func ReconcileImageSourceMirrorsIgnitionConfigFromITMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageTagMirrorSet *configv1.ImageTagMirrorSet) error {
+	return reconcileImageContentTypeIgnitionConfigMap(cm, imageTagMirrorSet, ownerRef)
+}
+
+// ReconcileImageSourceMirrorsIgnitionConfigFromBoth handles both IDMS and ITMS configurations
+// When both are present, it concatenates them into a single configuration
+func ReconcileImageSourceMirrorsIgnitionConfigFromBoth(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet, imageTagMirrorSet *configv1.ImageTagMirrorSet) error {
+	scheme := runtime.NewScheme()
+	err := configv1.Install(scheme)
+	if err != nil {
+		return err
+	}
+
+	yamlSerializer := jsonserializer.NewSerializerWithOptions(
+		jsonserializer.DefaultMetaFactory, scheme, scheme,
+		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
+
+	var contentBuffer bytes.Buffer
+
+	// Serialize IDMS if it has mirrors
+	if len(imageDigestMirrorSet.Spec.ImageDigestMirrors) > 0 {
+		if err := yamlSerializer.Encode(imageDigestMirrorSet, &contentBuffer); err != nil {
+			return fmt.Errorf("failed to serialize ImageDigestMirrorSet: %w", err)
+		}
+		contentBuffer.WriteString("\n---\n")
+	}
+
+	// Serialize ITMS if it has mirrors
+	if len(imageTagMirrorSet.Spec.ImageTagMirrors) > 0 {
+		if err := yamlSerializer.Encode(imageTagMirrorSet, &contentBuffer); err != nil {
+			return fmt.Errorf("failed to serialize ImageTagMirrorSet: %w", err)
+		}
+	}
+
+	return ReconcileIgnitionConfigMap(cm, contentBuffer.String(), ownerRef)
+}
+
 func workerSSHConfig(sshKey string) ([]byte, error) {
 	config := &igntypes.Config{}
 	config.Ignition.Version = ignitionVersion
