@@ -27,7 +27,7 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 
 	if sharedingress.UseSharedIngress() &&
 		hcp.Spec.Networking.APIServer != nil && len(hcp.Spec.Networking.APIServer.AllowedCIDRBlocks) > 0 {
-		// When there's AllowedCIDRBlocks input, we have no guarantees the healthcheck can rountrip through the haproxy load balancer.
+		// When there's AllowedCIDRBlocks input, we have no guarantees the healthcheck can roundtrip through the haproxy load balancer.
 		// Hence we use KubeAPIServerService as a best effort.
 		endpoint = manifests.KubeAPIServerService("").Name
 		port = config.KASSVCPort
