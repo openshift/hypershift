@@ -2942,21 +2942,22 @@ func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClie
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// ensure that kube-apiserver is not reachable from anywhere
-		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, "0.0.0.0/32", false)
+		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, []string{"0.0.0.0/32"}, false)
 		// ensure kube-apiserver is reachable when allowed CIDRs allow access from everywhere
 		// This is useful for testing purposes, as it allows us to access the kube-apiserver from any IP
 		// In a production environment, this should be restricted to specific CIDRs
-		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, "0.0.0.0/0", true)
+		ensureAPIServerAllowedCIDRs(ctx, t, g, mgmtClient, kubeClient, hc, append([]string{"0.0.0.0/0"}, generateTestCIDRs250()...), true)
 	})
 }
 
-func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDR string, shouldBeReachable bool) {
+func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
 	err := UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 		if obj.Spec.Networking.APIServer == nil {
 			obj.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}
 		}
-		obj.Spec.Networking.APIServer.AllowedCIDRBlocks = []hyperv1.CIDRBlock{
-			hyperv1.CIDRBlock(allowedCIDR),
+		obj.Spec.Networking.APIServer.AllowedCIDRBlocks = nil
+		for _, cidr := range allowedCIDRs {
+			obj.Spec.Networking.APIServer.AllowedCIDRBlocks = append(obj.Spec.Networking.APIServer.AllowedCIDRBlocks, hyperv1.CIDRBlock(cidr))
 		}
 	})
 	g.Expect(err).To(Not(HaveOccurred()), "failed to update HostedCluster with allowed CIDRs")
@@ -2970,6 +2971,15 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mg
 		}
 	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
 
+}
+
+// generateTestCIDRs250 is a helper to generate 250 /32 CIDRs starting at 250.250.250.1
+func generateTestCIDRs250() []string {
+	cidrs := make([]string, 0, 250)
+	for i := 1; i <= 250; i++ {
+		cidrs = append(cidrs, fmt.Sprintf("250.250.250.%d/32", i))
+	}
+	return cidrs
 }
 
 // EnsureImageRegistryCapabilityDisabled validates the expectations for when ImageRegistryCapability is Disabled

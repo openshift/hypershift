@@ -47,14 +47,14 @@ type backendDesc struct {
 	SVCIP        string
 	SVCPort      int32
 	ClusterID    string
-	AllowedCIDRs string
+	AllowedCIDRs []string
 }
 type externalDNSBackendDesc struct {
 	Name         string
 	HostName     string
 	SVCIP        string
 	SVCPort      int32
-	AllowedCIDRs string
+	AllowedCIDRs []string
 }
 
 func generateRouterConfig(ctx context.Context, client crclient.Client, w io.Writer) error {
@@ -107,16 +107,13 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 	backends := []backendDesc{}
 	externalDNSBackends := []externalDNSBackendDesc{}
 
-	var allowedCIDRs string
+	var allowedCIDRs []string
 	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.AllowedCIDRBlocks != nil {
-		allowedCIDRBlocks := make([]string, 0, len(hc.Spec.Networking.APIServer.AllowedCIDRBlocks))
 		for _, cidr := range hc.Spec.Networking.APIServer.AllowedCIDRBlocks {
 			if cidr != "" {
-				allowedCIDRBlocks = append(allowedCIDRBlocks, string(cidr))
+				allowedCIDRs = append(allowedCIDRs, string(cidr))
 			}
 		}
-
-		allowedCIDRs = strings.Join(allowedCIDRBlocks, " ")
 	}
 
 	hcpNamespace := hc.Namespace + "-" + hc.Name
