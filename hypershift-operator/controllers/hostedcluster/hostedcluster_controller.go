@@ -800,6 +800,27 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
 	}
 
+	// Copy the ControlPlaneUpToDate condition from the hostedcontrolplane.
+	{
+		condition := &metav1.Condition{
+			Type:               string(hyperv1.ControlPlaneUpToDate),
+			Status:             metav1.ConditionUnknown,
+			Reason:             hyperv1.StatusUnknownReason,
+			Message:            "The hosted control plane is not found",
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcp != nil {
+			hcpCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ControlPlaneUpToDate))
+			if hcpCondition != nil {
+				condition = hcpCondition
+			} else {
+				condition.Message = "Condition not found in the HCP"
+			}
+		}
+		condition.ObservedGeneration = hcluster.Generation
+		meta.SetStatusCondition(&hcluster.Status.Conditions, *condition)
+	}
+
 	// Copy the ValidKubeVirtInfraNetworkMTU condition from the HostedControlPlane
 	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
 		if hcp != nil {
