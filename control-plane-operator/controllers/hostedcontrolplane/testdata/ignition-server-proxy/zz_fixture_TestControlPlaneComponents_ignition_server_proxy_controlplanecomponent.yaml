@@ -23,4 +23,3 @@ status:
   - group: ""
     kind: Service
     name: ignition-server-proxy
-  version: 4.18.0

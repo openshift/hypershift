@@ -23,4 +23,3 @@ status:
   - group: monitoring.coreos.com
     kind: PodMonitor
     name: cluster-image-registry-operator
-  version: 4.18.0

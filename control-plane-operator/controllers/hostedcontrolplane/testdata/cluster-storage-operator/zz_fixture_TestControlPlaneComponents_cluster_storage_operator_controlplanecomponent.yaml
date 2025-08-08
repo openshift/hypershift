@@ -29,4 +29,3 @@ status:
   - group: ""
     kind: ServiceAccount
     name: cluster-storage-operator
-  version: 4.18.0
