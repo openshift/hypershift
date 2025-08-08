@@ -55,6 +55,9 @@ frontend external-dns
   acl is_{{ .Name }} req_ssl_sni -i {{ .HostName }}
   {{- if .AllowedCIDRs }}
   acl is_{{ .Name }}_request_allowed src {{ .AllowedCIDRs }}
+    {{- if .AllowedEndpoints }}
+  acl is_{{ .Name }}_request_allowed path_beg -i {{ .AllowedEndpoints }}
+    {{- end }}
   {{- end }}
   {{- end }}
 
