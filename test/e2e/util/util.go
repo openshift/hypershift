@@ -1506,6 +1506,16 @@ type labelSelector struct {
 	value string
 }
 
+// auditedContainersHas checks the given map to see if the container name exists in it; if the map is empty, always return true
+func auditedContainersHas(container corev1.Container, auditedContainers map[string]struct{}) bool {
+	if len(auditedContainers) == 0 {
+		return true
+	}
+
+	_, has := auditedContainers[container.Name]
+	return has
+}
+
 func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
 	AtLeast(t, Version420)
 
@@ -1522,21 +1532,15 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		}
 
 		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
-		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false
+		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false.
+		// if a labelSelector is given with an empty map, allow all containers to be false
 		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
-			{label: "app", value: "azure-disk-csi-driver-controller"}: {
-				"csi-driver":           {},
-				"kube-rbac-proxy-8201": {},
-			},
-			{label: "app", value: "aws-ebs-csi-driver-controller"}: {
-				"csi-driver":           {},
-				"kube-rbac-proxy-8201": {},
-			},
-			{label: "app", value: "catalog-operator"}: {
-				"konnectivity-proxy-socks5": {},
-			},
-			{label: "app", value: "olm-operator"}: {
-				"konnectivity-proxy-socks5": {},
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}:    {},
+			{label: "app", value: "catalog-operator"}:                 {},
+			{label: "app", value: "olm-operator"}:                     {},
+			{label: "app", value: "openshift-apiserver"}: {
+				"konnectivity-proxy-https": {},
 			},
 		}
 
@@ -1557,7 +1561,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			}
 
 			for _, c := range pod.Spec.Containers {
-				_, isAuditedOff := auditedContainers[c.Name]
+				isAuditedOff := auditedContainersHas(c, auditedContainers)
 				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
 
 				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
@@ -1580,20 +1584,14 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 
 		// a list of applications that are allowed to not have the emptyDir "tmp-dir" mounted.
 		// auditedAppContainerNoTmpDir[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to not have the mount
+		// if a labelSelector is given with an empty map, allow all containers to be false
 		auditedAppContainerNoTmpDir := map[labelSelector]map[string]struct{}{
-			{label: "app", value: "azure-disk-csi-driver-controller"}: {
-				"csi-driver":           {},
-				"kube-rbac-proxy-8201": {},
-			},
-			{label: "app", value: "aws-ebs-csi-driver-controller"}: {
-				"csi-driver":           {},
-				"kube-rbac-proxy-8201": {},
-			},
-			{label: "app", value: "catalog-operator"}: {
-				"konnectivity-proxy-socks5": {},
-			},
-			{label: "app", value: "olm-operator"}: {
-				"konnectivity-proxy-socks5": {},
+			{label: "app", value: "azure-disk-csi-driver-controller"}: {},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}:    {},
+			{label: "app", value: "catalog-operator"}:                 {},
+			{label: "app", value: "olm-operator"}:                     {},
+			{label: "app", value: "openshift-apiserver"}: {
+				"konnectivity-proxy-https": {},
 			},
 		}
 
@@ -1615,7 +1613,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 
 			containersHaveTmpMount := false
 			for _, c := range pod.Spec.Containers {
-				_, allowedNoTmpDir := auditedContainers[c.Name]
+				allowedNoTmpDir := auditedContainersHas(c, auditedContainers)
 				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
 					return v.Name == suppconfig.PodTmpDirMountName && v.MountPath == suppconfig.PodTmpDirMountPath
 				})
