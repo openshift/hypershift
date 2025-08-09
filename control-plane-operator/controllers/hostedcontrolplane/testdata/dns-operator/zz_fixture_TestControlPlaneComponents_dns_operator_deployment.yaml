@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -85,8 +86,12 @@ spec:
           requests:
             cpu: 10m
             memory: 29Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
       initContainers:
@@ -118,6 +123,8 @@ spec:
         operator: Equal
         value: hcp-namespace
       volumes:
+      - emptyDir: {}
+        name: tmp-dir
       - name: service-account-kubeconfig
         secret:
           defaultMode: 416

@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir,cloud-token,apiserver-token
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -122,12 +122,16 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/certificate/ca
           name: ca-bundle
         - mountPath: /etc/secrets
           name: serving-cert
+        - mountPath: /tmp
+          name: tmp-dir
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -199,6 +203,8 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - emptyDir: {}
+        name: tmp-dir
       - emptyDir:
           medium: Memory
         name: cloud-token
