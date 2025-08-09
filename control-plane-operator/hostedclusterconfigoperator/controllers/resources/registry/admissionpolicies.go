@@ -48,7 +48,13 @@ func ReconcileRegistryConfigValidatingAdmissionPolicies(ctx context.Context, hcp
 	return nil
 }
 
+// reconcileRegistryConfigManagementStateValidatingAdmissionPolicy reconciles the Validating Admission Policy
+// that controls access to the Image Registry config managementState field.
+//
+// During normal operation, it prevents users from setting managementState to 'Removed' except for the HCCO user.
+// During cluster deletion, it disables the policy entirely to allow HCCO cleanup operations.
 func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
 	registryConfigManagementStateAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameManagementState}
 	registryConfigManagementStateAPIVersion := []string{imageregistryv1.GroupVersion.Version}
 	registryConfigManagementStateAPIGroup := []string{imageregistryv1.GroupVersion.Group}
@@ -56,7 +62,18 @@ func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context
 		"configs",
 	}
 
-	denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed' || request.userInfo.username == 'system:hosted-cluster-config'"
+	if !hcp.DeletionTimestamp.IsZero() {
+		// During cluster deletion, disable the admission policy to allow HCCO cleanup
+		// Set a permissive expression that always allows the request
+		log.Info("Cluster is being deleted, disabling registry management state admission policy to allow cleanup")
+		denyRemovedManagementStateValidation.Expression = "true"
+	} else {
+		// During normal operation, prevent users from setting managementState to Removed
+		// but allow the HCCO user
+		log.Info("Cluster is active, enforcing registry management state admission policy")
+		denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed' || request.userInfo.username == 'system:hosted-cluster-config'"
+	}
+
 	registryConfigManagementStateAdmissionPolicy.Validations = []k8sadmissionv1.Validation{denyRemovedManagementStateValidation}
 	registryConfigManagementStateAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(registryConfigManagementStateResources, registryConfigManagementStateAPIVersion, registryConfigManagementStateAPIGroup, []k8sadmissionv1.OperationType{"CREATE", "UPDATE"})
 	if err := registryConfigManagementStateAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
