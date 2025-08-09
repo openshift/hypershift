@@ -245,6 +245,63 @@ func TestHasBeenAvailable(t *testing.T) {
 	}
 }
 
+func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
+	tests := []struct {
+		name                          string
+		cluster                       hyperv1.HostedCluster
+		controlPlane                  hyperv1.HostedControlPlane
+		expectedAdditionalTrustBundle *corev1.LocalObjectReference
+	}{
+		{
+			name: "no additional trust bundle",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expectedAdditionalTrustBundle: nil,
+		},
+		{
+			name: "additional trust bundle",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "test-bundle"},
+				},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expectedAdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+		},
+		{
+			name: "additional trust bundle removed",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+				},
+			},
+			expectedAdditionalTrustBundle: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			updated := test.controlPlane.DeepCopy()
+			err := reconcileHostedControlPlane(updated, &test.cluster, true, func() (map[string]string, error) { return nil, nil })
+			if err != nil {
+				t.Error(err)
+			}
+			if !equality.Semantic.DeepEqual(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle) {
+				t.Error(cmp.Diff(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle))
+			}
+		})
+	}
+}
+
 func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	// TODO: the spec/status comparison of control plane is a weak check; the
 	// conditions should give us more information about e.g. whether that
