@@ -1173,7 +1173,7 @@ k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
 # k8s.io/code-generator v0.28.3 => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20231218200749-2151937f4610
-## explicit; go 1.21
+## explicit; go 1.21.3
 k8s.io/code-generator
 k8s.io/code-generator/cmd/applyconfiguration-gen
 k8s.io/code-generator/cmd/applyconfiguration-gen/args
@@ -1210,7 +1210,7 @@ k8s.io/code-generator/cmd/set-gen
 k8s.io/code-generator/pkg/namer
 k8s.io/code-generator/pkg/util
 k8s.io/code-generator/third_party/forked/golang/reflect
-# k8s.io/gengo v0.0.0-20230829151522-9cce18d56c01
+# k8s.io/gengo v0.0.0-20250704022524-ddb642e17a28
 ## explicit; go 1.13
 k8s.io/gengo/args
 k8s.io/gengo/examples/deepcopy-gen/generators
