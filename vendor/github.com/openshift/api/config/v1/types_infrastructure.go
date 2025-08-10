@@ -62,11 +62,13 @@ type InfrastructureStatus struct {
 	// infrastructureName uniquely identifies a cluster with a human friendly name.
 	// Once set it should not be changed. Must be of max length 27 and must have only
 	// alphanumeric or hyphen characters.
+	// +optional
 	InfrastructureName string `json:"infrastructureName"`
 
 	// platform is the underlying infrastructure provider for the cluster.
 	//
 	// Deprecated: Use platformStatus.type instead.
+	// +optional
 	Platform PlatformType `json:"platform,omitempty"`
 
 	// platformStatus holds status information specific to the underlying
@@ -78,17 +80,20 @@ type InfrastructureStatus struct {
 	// etcd servers and clients.
 	// For more info: https://github.com/etcd-io/etcd/blob/329be66e8b3f9e2e6af83c123ff89297e49ebd15/Documentation/op-guide/clustering.md#dns-discovery
 	// deprecated: as of 4.7, this field is no longer set or honored.  It will be removed in a future release.
+	// +optional
 	EtcdDiscoveryDomain string `json:"etcdDiscoveryDomain"`
 
 	// apiServerURL is a valid URI with scheme 'https', address and
 	// optionally a port (defaulting to 443).  apiServerURL can be used by components like the web console
 	// to tell users where to find the Kubernetes API.
+	// +optional
 	APIServerURL string `json:"apiServerURL"`
 
 	// apiServerInternalURL is a valid URI with scheme 'https',
 	// address and optionally a port (defaulting to 443).  apiServerInternalURL can be used by components
 	// like kubelets, to contact the Kubernetes API server using the
 	// infrastructure provider rather than Kubernetes networking.
+	// +optional
 	APIServerInternalURL string `json:"apiServerInternalURI"`
 
 	// controlPlaneTopology expresses the expectations for operands that normally run on control nodes.
@@ -102,6 +107,7 @@ type InfrastructureStatus struct {
 	// +openshift:validation:FeatureGateAwareEnum:featureGate=HighlyAvailableArbiter,enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;External
 	// +openshift:validation:FeatureGateAwareEnum:featureGate=DualReplica,enum=HighlyAvailable;SingleReplica;DualReplica;External
 	// +openshift:validation:FeatureGateAwareEnum:requiredFeatureGate=HighlyAvailableArbiter;DualReplica,enum=HighlyAvailable;HighlyAvailableArbiter;SingleReplica;DualReplica;External
+	// +optional
 	ControlPlaneTopology TopologyMode `json:"controlPlaneTopology"`
 
 	// infrastructureTopology expresses the expectations for infrastructure services that do not run on control
@@ -113,7 +119,8 @@ type InfrastructureStatus struct {
 	// NOTE: External topology mode is not applicable for this field.
 	// +kubebuilder:default=HighlyAvailable
 	// +kubebuilder:validation:Enum=HighlyAvailable;SingleReplica
-	InfrastructureTopology TopologyMode `json:"infrastructureTopology"`
+	// +optional
+	InfrastructureTopology TopologyMode `json:"infrastructureTopology,omitempty"`
 
 	// cpuPartitioning expresses if CPU partitioning is a currently enabled feature in the cluster.
 	// CPU Partitioning means that this cluster can support partitioning workloads to specific CPU Sets.
@@ -525,7 +532,7 @@ type AWSPlatformStatus struct {
 	//
 	// +default={"dnsType": "PlatformDefault"}
 	// +kubebuilder:default={"dnsType": "PlatformDefault"}
-	// +openshift:enable:FeatureGate=AWSClusterHostedDNS
+	// +openshift:enable:FeatureGate=AWSClusterHostedDNSInstall
 	// +optional
 	// +nullable
 	CloudLoadBalancerConfig *CloudLoadBalancerConfig `json:"cloudLoadBalancerConfig,omitempty"`
@@ -587,6 +594,19 @@ type AzurePlatformStatus struct {
 	// +listType=atomic
 	// +optional
 	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
+
+	// cloudLoadBalancerConfig holds configuration related to DNS and cloud
+	// load balancers. It allows configuration of in-cluster DNS as an alternative
+	// to the platform default DNS implementation.
+	// When using the ClusterHosted DNS type, Load Balancer IP addresses
+	// must be provided for the API and internal API load balancers as well as the
+	// ingress load balancer.
+	//
+	// +default={"dnsType": "PlatformDefault"}
+	// +kubebuilder:default={"dnsType": "PlatformDefault"}
+	// +openshift:enable:FeatureGate=AzureClusterHostedDNSInstall
+	// +optional
+	CloudLoadBalancerConfig *CloudLoadBalancerConfig `json:"cloudLoadBalancerConfig,omitempty"`
 }
 
 // AzureResourceTag is a tag to apply to Azure resources created for the cluster.
@@ -694,8 +714,8 @@ type GCPServiceEndpoint struct {
 type GCPPlatformSpec struct{}
 
 // GCPPlatformStatus holds the current status of the Google Cloud Platform infrastructure provider.
-// +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPLabelsTags,rule="!has(oldSelf.resourceLabels) && !has(self.resourceLabels) || has(oldSelf.resourceLabels) && has(self.resourceLabels)",message="resourceLabels may only be configured during installation"
-// +openshift:validation:FeatureGateAwareXValidation:featureGate=GCPLabelsTags,rule="!has(oldSelf.resourceTags) && !has(self.resourceTags) || has(oldSelf.resourceTags) && has(self.resourceTags)",message="resourceTags may only be configured during installation"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.resourceLabels) && !has(self.resourceLabels) || has(oldSelf.resourceLabels) && has(self.resourceLabels)",message="resourceLabels may only be configured during installation"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.resourceTags) && !has(self.resourceTags) || has(oldSelf.resourceTags) && has(self.resourceTags)",message="resourceTags may only be configured during installation"
 type GCPPlatformStatus struct {
 	// resourceGroupName is the Project ID for new GCP resources created for the cluster.
 	ProjectID string `json:"projectID"`
@@ -712,7 +732,6 @@ type GCPPlatformStatus struct {
 	// +listType=map
 	// +listMapKey=key
 	// +optional
-	// +openshift:enable:FeatureGate=GCPLabelsTags
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
 	// resourceTags is a list of additional tags to apply to GCP resources created for the cluster.
@@ -723,7 +742,6 @@ type GCPPlatformStatus struct {
 	// +listType=map
 	// +listMapKey=key
 	// +optional
-	// +openshift:enable:FeatureGate=GCPLabelsTags
 	ResourceTags []GCPResourceTag `json:"resourceTags,omitempty"`
 
 	// This field was introduced and removed under tech preview.
@@ -740,7 +758,7 @@ type GCPPlatformStatus struct {
 	//
 	// +default={"dnsType": "PlatformDefault"}
 	// +kubebuilder:default={"dnsType": "PlatformDefault"}
-	// +openshift:enable:FeatureGate=GCPClusterHostedDNS
+	// +openshift:enable:FeatureGate=GCPClusterHostedDNSInstall
 	// +optional
 	// +nullable
 	CloudLoadBalancerConfig *CloudLoadBalancerConfig `json:"cloudLoadBalancerConfig,omitempty"`
@@ -755,7 +773,7 @@ type GCPPlatformStatus struct {
 	// +kubebuilder:validation:MaxItems=8
 	// +kubebuilder:validation:XValidation:rule="self.all(x, self.exists_one(y, x.name == y.name))",message="only 1 endpoint override is permitted per GCP service name"
 	// +optional
-	// +openshift:enable:FeatureGate=GCPCustomAPIEndpoints
+	// +openshift:enable:FeatureGate=GCPCustomAPIEndpointsInstall
 	ServiceEndpoints []GCPServiceEndpoint `json:"serviceEndpoints,omitempty"`
 }
 
