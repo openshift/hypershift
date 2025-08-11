@@ -311,3 +311,5 @@ nav:
   - 'Run hypershift-operator locally': contribute/run-hypershift-operator-locally.md
   - 'CPO Overrides': contribute/cpo-overrides.md
   - 'Contribute to docs': contribute/contribute-docs.md
+- 'Videos':
+  - videos/index.md
