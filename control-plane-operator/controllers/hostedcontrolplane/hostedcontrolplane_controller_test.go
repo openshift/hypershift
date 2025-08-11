@@ -1986,6 +1986,92 @@ func TestControlPlaneComponents(t *testing.T) {
 
 }
 
+func TestAWSSecurityGroupTags(t *testing.T) {
+	tests := []struct {
+		name         string
+		hcp          *hyperv1.HostedControlPlane
+		expectedTags map[string]string
+	}{
+		{
+			name: "No additional tags, no AutoNode",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{},
+						},
+					},
+				},
+			},
+			expectedTags: map[string]string{
+				"kubernetes.io/cluster/test-infra": "owned",
+				"Name":                             "test-infra-default-sg",
+			},
+		},
+		{
+			name: "Additional tags override Name and cluster key",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "myinfra",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "Name", Value: "custom-name"},
+								{Key: "kubernetes.io/cluster/myinfra", Value: "shared"},
+								{Key: "foo", Value: "bar"},
+							},
+						},
+					},
+				},
+			},
+			expectedTags: map[string]string{
+				"Name":                          "custom-name",
+				"kubernetes.io/cluster/myinfra": "shared",
+				"foo":                           "bar",
+			},
+		},
+		{
+			name: "AutoNode with Karpenter AWS adds karpenter.sh/discovery",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "karpenter-infra",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{},
+					},
+					AutoNode: &hyperv1.AutoNode{
+						Provisioner: &hyperv1.ProvisionerConfig{
+							Name: hyperv1.ProvisionerKarpeneter,
+							Karpenter: &hyperv1.KarpenterConfig{
+								Platform: hyperv1.AWSPlatform,
+							},
+						},
+					},
+				},
+			},
+			expectedTags: map[string]string{
+				"kubernetes.io/cluster/karpenter-infra": "owned",
+				"Name":                                  "karpenter-infra-default-sg",
+				"karpenter.sh/discovery":                "karpenter-infra",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := awsSecurityGroupTags(tc.hcp)
+			if len(got) != len(tc.expectedTags) {
+				t.Errorf("expected %d tags, got %d: %v", len(tc.expectedTags), len(got), got)
+			}
+			for k, v := range tc.expectedTags {
+				if got[k] != v {
+					t.Errorf("expected tag %q=%q, got %q", k, v, got[k])
+				}
+			}
+		})
+	}
+}
+
 //go:embed testdata/featuregate-generator/feature-gate.yaml
 var testFeatureGateYAML string
 
