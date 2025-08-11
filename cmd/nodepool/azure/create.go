@@ -191,7 +191,7 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		}
 	}
 
-	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType
+	instanceType := o.InstanceType
 	if strings.TrimSpace(instanceType) == "" {
 		// Aligning with Azure IPI instance type defaults
 		switch nodePool.Spec.Arch {

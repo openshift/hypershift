@@ -208,10 +208,7 @@ func (c *controlPlaneWorkload[T]) setLabels(podTemplate *corev1.PodTemplateSpec,
 
 // setControlPlaneIsolation configures tolerations and NodeAffinity rules to prefer Nodes with controlPlaneNodeLabel and clusterNodeLabel.
 func (c *controlPlaneWorkload[T]) setControlPlaneIsolation(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
-	isolateAsRequestServing := false
-	if c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology {
-		isolateAsRequestServing = true
-	}
+	isolateAsRequestServing := c.IsRequestServing() && hcp.Annotations[hyperv1.TopologyAnnotation] == hyperv1.DedicatedRequestServingComponentsTopology
 
 	// set Tolerations
 	podTemplate.Spec.Tolerations = []corev1.Toleration{
@@ -345,7 +342,7 @@ func (c *controlPlaneWorkload[T]) setColocation(podTemplate *corev1.PodTemplateS
 // If required is true, the rule is set as RequiredDuringSchedulingIgnoredDuringExecution, otherwise it is set as
 // PreferredDuringSchedulingIgnoredDuringExecution.
 func (c *controlPlaneWorkload[T]) setMultizoneSpread(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
-	multiZoneSpreadLabels := podTemplate.ObjectMeta.Labels
+	multiZoneSpreadLabels := podTemplate.Labels
 	multiZoneRequired := true
 	switch hcp.Spec.Platform.Type {
 	// On OpenStack and Kubevirt we can't spread across zones in certain cases

@@ -92,13 +92,13 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 	})
 
 	util.UpdateVolume(kubeconfigVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
-		v.VolumeSource.Secret.SecretName = manifests.HCCOKubeconfigSecret("").Name
+		v.Secret.SecretName = manifests.HCCOKubeconfigSecret("").Name
 	})
 	util.UpdateVolume(rootCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
-		v.VolumeSource.ConfigMap.Name = manifests.RootCAConfigMap("").Name
+		v.ConfigMap.Name = manifests.RootCAConfigMap("").Name
 	})
 	util.UpdateVolume(clusterSignerCAVolumeName, deployment.Spec.Template.Spec.Volumes, func(v *corev1.Volume) {
-		v.VolumeSource.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
+		v.ConfigMap.Name = manifests.KubeletClientCABundle("").Name
 	})
 
 	if isExternalInfraKubevirt(hcp) {

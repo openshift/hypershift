@@ -58,7 +58,7 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 	hcu.log.Info("Updating health checks")
 
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
-	err := hcu.Client.Get(ctx, hcu.HostedControlPlane, hostedControlPlane)
+	err := hcu.Get(ctx, hcu.HostedControlPlane, hostedControlPlane)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil

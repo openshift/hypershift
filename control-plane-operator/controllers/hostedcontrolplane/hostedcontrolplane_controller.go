@@ -53,7 +53,7 @@ import (
 	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
-	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
+	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto" //nolint:misspell
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
 	oauthapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth_apiserver"
@@ -353,7 +353,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Fetch the hostedControlPlane instance
 	hostedControlPlane := &hyperv1.HostedControlPlane{}
-	err := r.Client.Get(ctx, req.NamespacedName, hostedControlPlane)
+	err := r.Get(ctx, req.NamespacedName, hostedControlPlane)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -919,7 +919,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
 	pullSecret := common.PullSecret(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return nil, err
 	}
 	lookupCtx, lookupCancel := context.WithTimeout(ctx, 2*time.Minute)
@@ -950,7 +950,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	// releaseImage might be overridden by spec.controlPlaneReleaseImage
 	// User facing components should reflect the version from spec.releaseImage
 	pullSecret := common.PullSecret(hostedControlPlane.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 		return ctrl.Result{}, err
 	}
 	// UserReleaseProvider doesn't include registry overrides as they should not get propagated to the data plane.
@@ -973,7 +973,7 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	}
 
 	// Get the latest HCP in memory before we patch the status
-	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(hostedControlPlane), hostedControlPlane); err != nil {
+	if err = r.Get(ctx, client.ObjectKeyFromObject(hostedControlPlane), hostedControlPlane); err != nil {
 		return reconcile.Result{}, err
 	}
 
@@ -1257,7 +1257,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	p := konnectivity.NewKonnectivityServiceParams(hcp)
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
-		//lint:ignore ST1005 Konnectivity is proper name
+		//nolint:staticcheck // Konnectivity is proper name
 		return fmt.Errorf("Konnectivity service strategy not specified")
 	}
 	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
@@ -1720,14 +1720,14 @@ func (r *HostedControlPlaneReconciler) reconcileKubeadminPassword(ctx context.Co
 	kubeadminPasswordSecret := common.KubeadminPasswordSecret(hcp.Namespace)
 	if explicitOauthConfig {
 		// delete kubeadminPasswordSecret if it exist
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
+		if err := r.Get(ctx, client.ObjectKeyFromObject(kubeadminPasswordSecret), kubeadminPasswordSecret); err != nil {
 			if apierrors.IsNotFound(err) {
 				return nil
 			}
 			return err
 		}
 
-		return r.Client.Delete(ctx, kubeadminPasswordSecret)
+		return r.Delete(ctx, kubeadminPasswordSecret)
 	}
 
 	var kubeadminPassword string
@@ -1847,7 +1847,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	}
 
 	totalKASClientCABundle := pkimanifests.TotalKASClientCABundle(hcp.Namespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(totalKASClientCABundle), totalKASClientCABundle); err != nil && !apierrors.IsNotFound(err) {
+	if err := r.Get(ctx, client.ObjectKeyFromObject(totalKASClientCABundle), totalKASClientCABundle); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to fetch KAS total client CA bundle: %w", err)
 	}
 
@@ -2247,7 +2247,7 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 	}
 	r.Log.Info("Retrieving tls secret", "name", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name)
 	var src corev1.Secret
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name}, &src); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hcp.GetNamespace(), Name: hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name}, &src); err != nil {
 		return fmt.Errorf("failed to get etcd client cert %s: %w", hcp.Spec.Etcd.Unmanaged.TLS.ClientSecret.Name, err)
 	}
 	if _, ok := src.Data["etcd-client.crt"]; !ok {
@@ -2424,7 +2424,7 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 	sshKey := ""
 	if len(hcp.Spec.SSHKey.Name) > 0 {
 		var sshKeySecret corev1.Secret
-		err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
+		err := r.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.SSHKey.Name}, &sshKeySecret)
 		if err != nil {
 			return fmt.Errorf("failed to get SSH key secret %s: %w", hcp.Spec.SSHKey.Name, err)
 		}

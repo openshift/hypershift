@@ -56,7 +56,7 @@ type HAProxy struct {
 
 func (r *HAProxy) isHAProxyIgnitionConfigManaged(ctx context.Context, hcluster *hyperv1.HostedCluster) (m bool, cpoImage string, err error) {
 	var pullSecret corev1.Secret
-	if err := r.Client.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Namespace: hcluster.Namespace, Name: hcluster.Spec.PullSecret.Name}, &pullSecret); err != nil {
 		return false, "", fmt.Errorf("failed to get pull secret: %w", err)
 	}
 	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
@@ -163,7 +163,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 				Namespace: sharedingress.RouterNamespace,
 			},
 		}
-		if err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
+		if err := r.Get(ctx, crclient.ObjectKeyFromObject(sharedIngressRouteSVC), sharedIngressRouteSVC); err != nil {
 			return "", err
 		}
 		if len(sharedIngressRouteSVC.Status.LoadBalancer.Ingress) < 1 {
@@ -521,12 +521,12 @@ func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv
 		oldHAProxyIgnitionConfig := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "ignition-config-apiserver-haproxy"},
 		}
-		err := r.Client.Get(ctx, crclient.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
+		err := r.Get(ctx, crclient.ObjectKeyFromObject(oldHAProxyIgnitionConfig), oldHAProxyIgnitionConfig)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return "", fmt.Errorf("failed to get CPO-managed haproxy ignition config: %w", err)
 		}
 		if err == nil {
-			if err := r.Client.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
+			if err := r.Delete(ctx, oldHAProxyIgnitionConfig); err != nil && !apierrors.IsNotFound(err) {
 				return "", fmt.Errorf("failed to delete the CPO-managed haproxy ignition config: %w", err)
 			}
 		}

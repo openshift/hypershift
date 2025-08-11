@@ -71,7 +71,7 @@ func ReconcileServiceStatus(svc *corev1.Service, route *routev1.Route, strategy 
 			return
 		}
 		if route.Spec.Host == "" {
-			message = fmt.Sprintf("OAuth service route does not contain valid host; %v since creation", duration.ShortHumanDuration(time.Since(route.ObjectMeta.CreationTimestamp.Time)))
+			message = fmt.Sprintf("OAuth service route does not contain valid host; %v since creation", duration.ShortHumanDuration(time.Since(route.CreationTimestamp.Time)))
 			return
 		}
 		port = RouteExternalPort

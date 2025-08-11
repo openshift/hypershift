@@ -195,7 +195,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		log:                          opts.Log,
 		isCloudAPI:                   proxy.IsCloudAPI,
 	}
-	proxy.proxyResolver.guestClusterResolver = &guestClusterResolver{
+	proxy.guestClusterResolver = &guestClusterResolver{
 		client:               opts.Client,
 		konnectivityDialFunc: proxy.DialContext,
 		log:                  opts.Log,

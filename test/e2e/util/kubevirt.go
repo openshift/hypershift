@@ -11,18 +11,17 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
 
 type KubeVirtInfra struct {
 	ctx           context.Context
-	mgmtClient    crclient.Client
+	mgmtClient    client.Client
 	hostedCluster *hyperv1.HostedCluster
 	nadName       string
 }
 
-func NewKubeVirtInfra(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) KubeVirtInfra {
+func NewKubeVirtInfra(ctx context.Context, mgmtClient client.Client, hostedCluster *hyperv1.HostedCluster) KubeVirtInfra {
 	return KubeVirtInfra{
 		ctx:           ctx,
 		mgmtClient:    mgmtClient,
@@ -43,7 +42,7 @@ func (k KubeVirtInfra) NADName() string {
 	return k.nadName
 }
 
-func (k KubeVirtInfra) MGMTClient() crclient.Client {
+func (k KubeVirtInfra) MGMTClient() client.Client {
 	return k.mgmtClient
 }
 
@@ -55,7 +54,7 @@ func (k KubeVirtInfra) HostedCluster() *hyperv1.HostedCluster {
 	return k.hostedCluster
 }
 
-func (k KubeVirtInfra) DiscoverClient() (crclient.Client, error) {
+func (k KubeVirtInfra) DiscoverClient() (client.Client, error) {
 	cm := kvinfra.NewKubevirtInfraClientMap()
 	clusterClient, err := cm.DiscoverKubevirtClusterClient(k.ctx, k.mgmtClient, k.hostedCluster.Spec.InfraID, k.hostedCluster.Spec.Platform.Kubevirt.Credentials, k.Namespace(), k.hostedCluster.Namespace)
 	if err != nil {

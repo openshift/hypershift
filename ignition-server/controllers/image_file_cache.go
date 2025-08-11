@@ -113,7 +113,11 @@ func calcFileChecksum(file string) (checksum, error) {
 		log.Error(err, "failed to open file", "file", file)
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close file", "file", file)
+		}
+	}()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
@@ -129,7 +133,11 @@ func returnCacheFile(fullCacheFileName string, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("failed to open cache file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close cache file", "file", fullCacheFileName)
+		}
+	}()
 	if _, err := io.Copy(out, file); err != nil {
 		return fmt.Errorf("failed to copy cache file: %w", err)
 	}

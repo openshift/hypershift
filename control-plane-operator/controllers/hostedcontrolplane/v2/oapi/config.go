@@ -88,7 +88,7 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 	}
 
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		cfg.StorageConfig.EtcdConnectionInfo.URLs = []string{hcp.Spec.Etcd.Unmanaged.Endpoint}
+		cfg.StorageConfig.URLs = []string{hcp.Spec.Etcd.Unmanaged.Endpoint}
 	}
 
 	if len(featureGates) > 0 {

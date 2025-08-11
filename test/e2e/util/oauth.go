@@ -131,7 +131,11 @@ func WaitForOAuthToken(t *testing.T, ctx context.Context, oauthRoute *routev1.Ro
 			t.Logf("Waiting for OAuth token request to succeed")
 			return false, nil
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Logf("failed to close response body: %v", err)
+			}
+		}()
 
 		if resp.StatusCode != http.StatusFound {
 			t.Logf("Waiting for OAuth token request status code %v, got %v", http.StatusFound, resp.StatusCode)

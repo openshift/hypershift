@@ -128,8 +128,8 @@ func TestAdaptDeployment(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(ContainElement(
 				WithTransform(func(vol corev1.Volume) volumeKey {
 					secretName := ""
-					if vol.VolumeSource.Secret != nil {
-						secretName = vol.VolumeSource.Secret.SecretName
+					if vol.Secret != nil {
+						secretName = vol.Secret.SecretName
 					}
 					return volumeKey{
 						Name:       kubeconfigVolumeName,

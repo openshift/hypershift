@@ -111,12 +111,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get kubeadmin password secret: %v", err)
 		}
-		delete(deployment.Spec.Template.ObjectMeta.Annotations, KubeadminSecretHashAnnotation)
+		delete(deployment.Spec.Template.Annotations, KubeadminSecretHashAnnotation)
 	} else {
-		if deployment.Spec.Template.ObjectMeta.Annotations == nil {
-			deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = map[string]string{}
 		}
-		deployment.Spec.Template.ObjectMeta.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
+		deployment.Spec.Template.Annotations[KubeadminSecretHashAnnotation] = kubeadminPasswordSecret.Annotations[KubeadminSecretHashAnnotation]
 	}
 
 	return nil

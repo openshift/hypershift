@@ -146,7 +146,9 @@ func getOCPVersion(releaseURL string) (ocpVersion, error) {
 	if err != nil {
 		return version, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return version, err
@@ -205,7 +207,9 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
@@ -326,7 +330,9 @@ func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client 
 	if err != nil {
 		return ocpVersion{}, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ocpVersion{}, err

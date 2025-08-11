@@ -507,8 +507,14 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			for k, v := range tc.envVars {
-				os.Setenv(k, v)
-				defer os.Unsetenv(k)
+				if err := os.Setenv(k, v); err != nil {
+					t.Fatalf("Failed to set environment variable %s: %v", k, err)
+				}
+				defer func(key string) {
+					if unsetErr := os.Unsetenv(key); unsetErr != nil {
+						t.Logf("Failed to unset environment variable %s: %v", key, unsetErr)
+					}
+				}(k)
 			}
 
 			openStack := OpenStack{

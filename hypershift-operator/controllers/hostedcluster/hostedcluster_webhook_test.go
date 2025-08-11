@@ -506,7 +506,7 @@ func customKubeVirtServiceMap() []v1beta1.ServicePublishingStrategyMapping {
 		// none of the kubevirt defaults use nodeport, so this
 		// is an easy way to make a service map different than
 		// the default
-		entry.ServicePublishingStrategy.NodePort = &v1beta1.NodePortPublishingStrategy{}
+		entry.NodePort = &v1beta1.NodePortPublishingStrategy{}
 		custom = append(custom, entry)
 	}
 

@@ -27,13 +27,21 @@ func fetchProxyCA(publicAddr, privateAddr string, privateKey []byte) (string, er
 	if err != nil {
 		return "", fmt.Errorf("failed to dial: %w", err)
 	}
-	defer client.Close()
+	defer func() {
+		if closeErr := client.Close(); closeErr != nil {
+			log.Printf("Failed to close SSH client: %v", closeErr)
+		}
+	}()
 
 	session, err := client.NewSession()
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
-	defer session.Close()
+	defer func() {
+		if closeErr := session.Close(); closeErr != nil {
+			log.Printf("Failed to close SSH session: %v", closeErr)
+		}
+	}()
 
 	var b bytes.Buffer
 	session.Stdout = &b

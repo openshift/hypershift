@@ -120,7 +120,7 @@ func enqueueSecret(listCRRs func(namespace string) ([]*certificatesv1alpha1.Cert
 			return nil
 		}
 		// if this is a copied signer, queue the CRR that copied it
-		for _, owner := range secret.ObjectMeta.OwnerReferences {
+		for _, owner := range secret.OwnerReferences {
 			if owner.Kind == "CertificateRevocationRequest" {
 				key, err := cache.MetaNamespaceKeyFunc(&metav1.ObjectMeta{
 					Namespace: secret.Namespace,
@@ -491,7 +491,7 @@ func (c *CertificateRevocationController) generateNewSignerCertificate(ctx conte
 		// SSA would allow us to simply send this indiscriminately, but regeneration takes time, and if we're
 		// reconciling after we've sent this annotation once and send it again, all we do is kick another round
 		// of regeneration, which is not helpful
-		if val, ok := current.ObjectMeta.Annotations[certrotation.CertificateNotAfterAnnotation]; !ok || val != "force-regeneration" {
+		if val, ok := current.Annotations[certrotation.CertificateNotAfterAnnotation]; !ok || val != "force-regeneration" {
 			secretCfg := corev1applyconfigurations.Secret(signer.Name, signer.Namespace).
 				WithAnnotations(map[string]string{
 					certrotation.CertificateNotAfterAnnotation: "force-regeneration",
@@ -594,8 +594,8 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
 		}
 		certCfg := rest.AnonymousClientConfig(adminCfg)
-		certCfg.TLSClientConfig.CertData = currentCertPEM
-		certCfg.TLSClientConfig.KeyData = currentKeyPEM
+		certCfg.CertData = currentCertPEM
+		certCfg.KeyData = currentKeyPEM
 
 		testClient, err := kubernetes.NewForConfig(certCfg)
 		if err != nil {
@@ -652,7 +652,7 @@ func (c *CertificateRevocationController) generateNewLeafCertificates(ctx contex
 	var currentIssuer string
 	for _, secret := range secrets {
 		if secret.Name == signer.Name {
-			currentIssuer = secret.ObjectMeta.Annotations[certrotation.CertificateIssuer]
+			currentIssuer = secret.Annotations[certrotation.CertificateIssuer]
 			break
 		}
 	}
@@ -663,7 +663,7 @@ func (c *CertificateRevocationController) generateNewLeafCertificates(ctx contex
 	}
 
 	for _, secret := range secrets {
-		issuer, set := secret.ObjectMeta.Annotations[certrotation.CertificateIssuer]
+		issuer, set := secret.Annotations[certrotation.CertificateIssuer]
 		if !set {
 			continue
 		}
@@ -866,8 +866,8 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
 		}
 		certCfg := rest.AnonymousClientConfig(adminCfg)
-		certCfg.TLSClientConfig.CertData = oldCertPEM
-		certCfg.TLSClientConfig.KeyData = oldKeyPEM
+		certCfg.CertData = oldCertPEM
+		certCfg.KeyData = oldKeyPEM
 
 		testClient, err := kubernetes.NewForConfig(certCfg)
 		if err != nil {

@@ -288,7 +288,7 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 
 	if o.RootVolumeVolumeMode != "" {
 		vm := corev1.PersistentVolumeMode(o.RootVolumeVolumeMode)
-		platform.RootVolume.KubevirtVolume.Persistent.VolumeMode = &vm
+		platform.RootVolume.Persistent.VolumeMode = &vm
 	}
 
 	if o.Memory != "" {

@@ -527,7 +527,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
 	g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(template), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
-	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
+	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.Annotations))
 }
 
 func TestMachineTemplateBuilders(t *testing.T) {
@@ -1402,7 +1402,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 			// Make sure the templates are populates in the control plane namespace
 			templateList := &capiaws.AWSMachineTemplateList{}
-			err := capi.Client.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
+			err := capi.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(templateList.Items).To(HaveLen(2))
 
@@ -1414,7 +1414,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check that old machine templates are deleted.
 				templateList := &capiaws.AWSMachineTemplateList{}
-				err := capi.Client.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
+				err := capi.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
 				g.Expect(err).NotTo(HaveOccurred())
 				// Expect templates which does not match the ref to be deleted.
 				g.Expect(templateList.Items).To(HaveLen(1))
@@ -1422,7 +1422,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check MachineDeployment.
 				md := &capiv1.MachineDeployment{}
-				err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
+				err = capi.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(md.Spec.Replicas).To(Equal(ptr.To[int32](3)))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
@@ -1471,19 +1471,19 @@ func TestCAPIReconcile(t *testing.T) {
 				// Check MachineHealthCheck
 				if tt.nodePool.Spec.Management.AutoRepair {
 					mhc := &capiv1.MachineHealthCheck{}
-					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
+					err = capi.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
 					g.Expect(err).NotTo(HaveOccurred())
 					g.Expect(mhc.Spec.ClusterName).To(Equal(capiClusterName))
 				} else {
 					mhc := &capiv1.MachineHealthCheck{}
-					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
+					err = capi.Get(t.Context(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
 					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 
 				if tt.sameUserData {
 					// Get the MachineDeployment.
 					md := &capiv1.MachineDeployment{}
-					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
+					err = capi.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Update MachineDeployment status to indicate rollout is complete.
@@ -1492,11 +1492,11 @@ func TestCAPIReconcile(t *testing.T) {
 					md.Status.ReadyReplicas = *tt.nodePool.Spec.Replicas
 					md.Status.AvailableReplicas = *tt.nodePool.Spec.Replicas
 					md.Status.ObservedGeneration = md.Generation
-					err = capi.Client.Update(t.Context(), md)
+					err = capi.Update(t.Context(), md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					md = &capiv1.MachineDeployment{}
-					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
+					err = capi.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Re-run reconcile.
@@ -1566,11 +1566,11 @@ func TestPause(t *testing.T) {
 
 	// Create MachineDeployment and MachineSet.
 	md := capi.machineDeployment()
-	err := capi.Client.Create(t.Context(), md)
+	err := capi.Create(t.Context(), md)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	ms := capi.machineSet()
-	err = capi.Client.Create(t.Context(), ms)
+	err = capi.Create(t.Context(), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// Test Pause
@@ -1578,12 +1578,12 @@ func TestPause(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// Verify MachineDeployment is paused.
-	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(md), md)
+	err = capi.Get(t.Context(), client.ObjectKeyFromObject(md), md)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 
 	// Verify MachineSet is paused
-	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
+	err = capi.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 }

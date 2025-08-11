@@ -29,7 +29,6 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
-	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -43,13 +42,10 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -59,14 +55,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
-	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
@@ -138,7 +132,7 @@ func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client c
 
 		if err := client.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
 			t.Logf("failed to patch object %s, will retry: %v", original.GetName(), err)
-			if errors.IsConflict(err) {
+			if apierrors.IsConflict(err) {
 				return false, nil
 			}
 			return false, err
@@ -157,7 +151,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Delete(ctx, ns, &crclient.DeleteOptions{}); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				return true, nil
 			}
 			t.Logf("Failed to delete namespace: %s, will retry: %v", namespace, err)
@@ -175,7 +169,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				return true, nil
 			}
 			t.Logf("Failed to get namespace: %s. %v", namespace, err)
@@ -661,7 +655,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-		guestClient := kubeclient.NewForConfigOrDie(guestConfig)
+		guestClient := kubernetes.NewForConfigOrDie(guestConfig)
 
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
@@ -721,7 +715,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string) bool {
+func isLeaderElectionFailure(ctx context.Context, guestClient *kubernetes.Clientset, pod *corev1.Pod, containerName string) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -732,7 +726,9 @@ func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Client
 	if err != nil {
 		return false
 	}
-	defer podLogs.Close()
+	defer func() {
+		_ = podLogs.Close()
+	}()
 
 	buf := new(bytes.Buffer)
 	_, err = buf.ReadFrom(podLogs)
@@ -972,7 +968,7 @@ func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crcli
 		if err == nil {
 			t.Errorf("pod admitted when rejection was expected")
 		}
-		if !kapierror.IsForbidden(err) {
+		if !apierrors.IsForbidden(err) {
 			t.Errorf("forbidden error expected, got %s", err)
 		}
 	})
@@ -991,7 +987,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 		}
 		for _, route := range routes.Items {
 			original := route.DeepCopy()
-			util.AddHCPRouteLabel(&route)
+			hyperutil.AddHCPRouteLabel(&route)
 			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {
 				t.Errorf("route %s is missing the label to use the per-HCP router: %s", route.Name, diff)
 			}
@@ -1008,7 +1004,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			g := NewWithT(t)
-			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
+			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, crclient.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -1016,7 +1012,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			g := NewWithT(t)
 
 			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
-			err := c.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
+			err := c.Get(ctx, crclient.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			kasAddress := ""
@@ -1111,7 +1107,7 @@ func getComponentName(pod *corev1.Pod) string {
 func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponents []string, namespace string, labels map[string]string) error {
 	// Get all Pods with wanted label.
 	podList := &corev1.PodList{}
-	err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(labels))
+	err := c.List(ctx, podList, crclient.InNamespace(namespace), crclient.MatchingLabels(labels))
 	if err != nil {
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
@@ -1143,8 +1139,8 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
-		client.InNamespace(namespace),
-		client.MatchingLabels{"app": component}); err != nil {
+		crclient.InNamespace(namespace),
+		crclient.MatchingLabels{"app": component}); err != nil {
 		return "", fmt.Errorf("failed to list Pods: %w", err)
 	}
 	if len(podList.Items) < 1 {
@@ -1334,14 +1330,14 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	}
 
 	ds.Name = dsName
-	ds.ObjectMeta.Labels = make(map[string]string)
-	ds.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+	ds.Labels = make(map[string]string)
+	ds.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
 
 	ds.Spec.Selector.MatchLabels["name"] = dsName
 	ds.Spec.Selector.MatchLabels["hypershift.openshift.io/nodePool"] = nodePool.Name
 
-	ds.Spec.Template.ObjectMeta.Labels["name"] = dsName
-	ds.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
+	ds.Spec.Template.Labels["name"] = dsName
+	ds.Spec.Template.Labels["hypershift.openshift.io/nodePool"] = nodePool.Name
 
 	// Set NodeSelector for the DS
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
@@ -1438,7 +1434,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		}
 
 		hcpPods := &corev1.PodList{}
-		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
+		if err := hostClient.List(ctx, hcpPods, &crclient.ListOptions{
 			Namespace: hcpNs,
 		}); err != nil {
 			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
@@ -1475,7 +1471,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 				continue
 			}
 
-			annotationValue := pod.ObjectMeta.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
+			annotationValue := pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey]
 			for _, volume := range pod.Spec.Volumes {
 				// Check the pod's volumes, if they are emptyDir or hostPath,
 				// they should include that volume in the annotation
@@ -1523,7 +1519,7 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 
 		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 1*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			webhook := &admissionregistrationv1.ValidatingWebhookConfiguration{}
-			if err := guestClient.Get(ctx, client.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && errors.IsNotFound(err) {
+			if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && apierrors.IsNotFound(err) {
 				// webhook has been deleted
 				return true, nil
 			}
@@ -2110,7 +2106,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 }
 
 func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
-	if !util.IsPublicHC(hc) {
+	if !hyperutil.IsPublicHC(hc) {
 		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
@@ -2118,7 +2114,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 		CPOAtLeast(t, Version418, hc)
 		g := NewWithT(t)
 		t.Log("Checking that all ValidatingAdmissionPolicies are present")
-		var validatingAdmissionPolicies k8sadmissionv1.ValidatingAdmissionPolicyList
+		var validatingAdmissionPolicies admissionregistrationv1.ValidatingAdmissionPolicyList
 		if err := guestClient.List(ctx, &validatingAdmissionPolicies); err != nil {
 			t.Errorf("Failed to list ValidatingAdmissionPolicies: %v", err)
 		}
@@ -2149,7 +2145,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 				Name: "cluster",
 			},
 		}
-		err := guestClient.Get(ctx, client.ObjectKeyFromObject(apiServer), apiServer)
+		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(apiServer), apiServer)
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster apiserver configuration: %v", err))
 		g.Expect(apiServer).NotTo(BeNil(), "Apiserver configuration is nil")
 		apiServerCP := apiServer.DeepCopy()
@@ -2166,7 +2162,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 				Name: "cluster",
 			},
 		}
-		err := guestClient.Get(ctx, client.ObjectKeyFromObject(network), network)
+		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(network), network)
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
 		g.Expect(network).NotTo(BeNil(), "network configuration is nil")
 		cpNetwork := network.DeepCopy()
@@ -2183,7 +2179,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 					Name: "cluster",
 				},
 			}
-			err := guestClient.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub)
+			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(operatorHub), operatorHub)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
 			g.Expect(operatorHub).NotTo(BeNil(), "OperatorHub configuration is nil")
 			operatorHubCP := operatorHub.DeepCopy()
@@ -2395,7 +2391,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	serviceStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
 	g.Expect(serviceStrategy).ToNot(BeNil())
 	if serviceStrategy.Type == hyperv1.Route && serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
@@ -2438,7 +2434,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	serviceStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
 	g.Expect(serviceStrategy).ToNot(BeNil())
 	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
@@ -2766,7 +2762,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 			[]Predicate[*hyperv1.HostedCluster]{
 				func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
 					imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
-					payloadArch, err := util.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
+					payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
 					if err != nil {
 						return false, "failed to get hc payload arch", err
 					}
@@ -3175,7 +3171,7 @@ func EnsureNodeTuningCapabilityDisabled(ctx context.Context, t *testing.T, clien
 			for _, cm := range configMapList.Items {
 				// Check for ConfigMaps that might be related to node tuning
 				if strings.Contains(cm.Name, "tuned") || strings.Contains(cm.Name, "node-tuning") ||
-					(cm.Labels != nil && (cm.Labels["tuned.openshift.io/tuned"] != "" || cm.Labels["hypershift.openshift.io/nto-generated-machine-config"] != "")) {
+					(cm.Labels != nil && (cm.Labels["tuned.openshift.io/tuned"] != "" || cm.Labels["hypershift.openshift.io/not-generated-machine-config"] != "")) {
 					t.Errorf("Found tuned-related ConfigMap %s/%s in guest cluster when NodeTuning capability is disabled", cm.Namespace, cm.Name)
 				}
 			}
@@ -3337,7 +3333,7 @@ func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Clie
 	t.Logf("Created pod %s in namespace %s", pod.Name, pod.Namespace)
 	g.Eventually(func() error {
 		pod := &corev1.Pod{}
-		err := guestClient.Get(ctx, client.ObjectKey{Name: fmt.Sprintf("%s-pod", name), Namespace: namespace}, pod)
+		err := guestClient.Get(ctx, crclient.ObjectKey{Name: fmt.Sprintf("%s-pod", name), Namespace: namespace}, pod)
 		if err != nil {
 			return err
 		}

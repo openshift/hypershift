@@ -85,9 +85,10 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 	tokenFileMountPath := "/var/run/secrets/openshift/serviceaccount"
 
 	var audience string
-	if tokenType == CloudToken {
+	switch tokenType {
+	case CloudToken:
 		audience = "openshift"
-	} else if tokenType == KubeAPIServerToken {
+	case KubeAPIServerToken:
 		audience = hcp.Spec.IssuerURL
 	}
 	args := []string{

@@ -106,7 +106,11 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() {
+				if closeErr := file.Close(); closeErr != nil {
+					fmt.Fprintf(os.Stderr, "Failed to close output file: %v\n", closeErr)
+				}
+			}()
 			out = file
 		} else {
 			out = cmd.OutOrStdout()
@@ -245,7 +249,7 @@ func render(objects []crclient.Object, format string, out io.Writer) error {
 				return err
 			}
 			if i < len(objects)-1 {
-				fmt.Fprintln(out, "---")
+				_, _ = fmt.Fprintln(out, "---")
 			}
 		}
 		return nil

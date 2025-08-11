@@ -182,7 +182,7 @@ func (r *NodePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	// Fetch the nodePool instance
 	nodePool := &hyperv1.NodePool{}
-	err := r.Client.Get(ctx, req.NamespacedName, nodePool)
+	err := r.Get(ctx, req.NamespacedName, nodePool)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("not found", "request", req.String())
@@ -354,7 +354,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
 	}
 
-	// Only reconcile NTO if NodeTuning capability is enabled
+	// Only reconcile nto if NodeTuning capability is enabled
 	if capabilities.IsNodeTuningCapabilityEnabled(hcluster.Spec.Capabilities) {
 		if err := r.ntoReconcile(ctx, nodePool, configGenerator, controlPlaneNamespace); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile NTO: %w", err)
@@ -894,7 +894,7 @@ func (r *NodePoolReconciler) listSecrets(ctx context.Context, nodePool *hyperv1.
 	return filtered, nil
 }
 func isAutomatedMachineManagement(nodePool *hyperv1.NodePool) bool {
-	return !(isIBMUPI(nodePool) || isPlatformNone(nodePool))
+	return !isIBMUPI(nodePool) && !isPlatformNone(nodePool)
 }
 
 func isIBMUPI(nodePool *hyperv1.NodePool) bool {
@@ -938,7 +938,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 // getPullSecretBytes retrieves the pull secret bytes from the hosted cluster
 func (r *NodePoolReconciler) getPullSecretBytes(ctx context.Context, hostedCluster *hyperv1.HostedCluster) ([]byte, error) {
 	pullSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.PullSecret.Name}, pullSecret); err != nil {
 		return nil, fmt.Errorf("cannot get pull secret %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.PullSecret.Name, err)
 	}
 	if _, hasKey := pullSecret.Data[corev1.DockerConfigJsonKey]; !hasKey {
@@ -965,7 +965,7 @@ func getPullSecretName(ctx context.Context, crclient client.Client, hostedCluste
 
 func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hostedCluster *hyperv1.HostedCluster) (*corev1.ConfigMap, error) {
 	additionalTrustBundle := &corev1.ConfigMap{}
-	if err := r.Client.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
+	if err := r.Get(ctx, client.ObjectKey{Namespace: hostedCluster.Namespace, Name: hostedCluster.Spec.AdditionalTrustBundle.Name}, additionalTrustBundle); err != nil {
 		return additionalTrustBundle, fmt.Errorf("cannot get additionalTrustBundle %s/%s: %w", hostedCluster.Namespace, hostedCluster.Spec.AdditionalTrustBundle.Name, err)
 	}
 	if _, hasKey := additionalTrustBundle.Data["ca-bundle.crt"]; !hasKey {
@@ -1019,7 +1019,7 @@ func aggregateMachineReasonsAndMessages(messageMap map[string][]string, numMachi
 	msgBuilder := &strings.Builder{}
 	reasons := make([]string, len(messageMap))
 
-	msgBuilder.WriteString(fmt.Sprintf("%d of %d machines are not %s\n", numNotReady, numMachines, state))
+	fmt.Fprintf(msgBuilder, "%d of %d machines are not %s\n", numNotReady, numMachines, state)
 
 	// as map order is not deterministic, we must sort the reasons in order to get deterministic reason and message, so
 	// we won't need to update the nodepool condition just because we've got different order from the map, the machine

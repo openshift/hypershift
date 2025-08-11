@@ -1678,7 +1678,11 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpCABundleFile.Name())
+	defer func() {
+		if removeErr := os.Remove(tmpCABundleFile.Name()); removeErr != nil {
+			t.Logf("Failed to remove temp file %s: %v", tmpCABundleFile.Name(), removeErr)
+		}
+	}()
 
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
@@ -2704,7 +2708,7 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			err := r.defaultClusterIDsIfNeeded(t.Context(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			err = r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Get(t.Context(), crclient.ObjectKeyFromObject(test.hc), resultHC)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
@@ -2905,7 +2909,7 @@ func TestIsUpgradeable(t *testing.T) {
 			},
 			releaseImageLoookup: func(ctx context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
 				releaseImage := testutils.InitReleaseImageOrDie("4.15.0")
-				releaseImage.ObjectMeta.Name = "4.13.1" // patch with z-stream
+				releaseImage.Name = "4.13.1" // patch with z-stream
 				return releaseImage, nil
 			},
 			upgrading: true,
@@ -4393,7 +4397,7 @@ func TestReconcileComponents(t *testing.T) {
 
 	}
 
-	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+	if err := cpContext.ValidateUpdateEvents(1); err != nil {
 		t.Fatalf("update loop detected: %v", err)
 	}
 }

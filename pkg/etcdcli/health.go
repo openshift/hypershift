@@ -96,10 +96,8 @@ func checkSingleMemberHealth(ctx context.Context, member *etcdserverpb.Member) h
 	// If the endpoint is for a learner member then we should skip testing the connection
 	// via the member list call as learners don't support that.
 	// The learner's connection would get tested in the health check below
-	skipConnectionTest := false
-	if member.IsLearner {
-		skipConnectionTest = true
-	}
+	skipConnectionTest := member.IsLearner
+
 	cli, err := newEtcdClientWithClientOpts([]string{member.ClientURLs[0]}, skipConnectionTest)
 	if err != nil {
 		return healthCheck{

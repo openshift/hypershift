@@ -18,7 +18,7 @@ func IsDeploymentReady(_ context.Context, deployment *appsv1.Deployment) bool {
 		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.UpdatedReplicas ||
 		ptr.Deref(deployment.Spec.Replicas, 0) != deployment.Status.Replicas ||
 		deployment.Status.UnavailableReplicas != 0 ||
-		deployment.ObjectMeta.Generation != deployment.Status.ObservedGeneration {
+		deployment.Generation != deployment.Status.ObservedGeneration {
 		return false
 	}
 
@@ -30,7 +30,7 @@ func IsStatefulSetReady(_ context.Context, statefulSet *appsv1.StatefulSet) bool
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.ReadyReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.UpdatedReplicas ||
 		ptr.Deref(statefulSet.Spec.Replicas, 0) != statefulSet.Status.Replicas ||
-		statefulSet.ObjectMeta.Generation != statefulSet.Status.ObservedGeneration {
+		statefulSet.Generation != statefulSet.Status.ObservedGeneration {
 		return false
 	}
 

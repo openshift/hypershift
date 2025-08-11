@@ -264,7 +264,7 @@ func NTORelabelConfigs(set MetricsSet) []prometheusoperatorv1.RelabelConfig {
 		return []prometheusoperatorv1.RelabelConfig{
 			{
 				Action:       "keep",
-				Regex:        "nto_profile_calculated_total",
+				Regex:        "not_profile_calculated_total",
 				SourceLabels: []prometheusoperatorv1.LabelName{"__name__"},
 			},
 		}

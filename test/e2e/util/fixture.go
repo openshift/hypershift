@@ -58,7 +58,7 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 // createCluster calls the correct cluster create CLI function based on the
 // cluster platform.
 func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, outputDir string) error {
-	validCoreOpts, err := opts.RawCreateOptions.Validate(ctx)
+	validCoreOpts, err := opts.Validate(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to validate core options: %w", err)
 	}

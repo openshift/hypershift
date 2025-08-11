@@ -1436,7 +1436,7 @@ func TestControlPlaneComponents(t *testing.T) {
 		SkipCertificateSigning: true,
 	}
 	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
-		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
+		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureSet = featureSet
 		// This needs to be defined here, to avoid loopDetector reporting a no-op update, as changing the featureset will actually cause an update.
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
@@ -1500,7 +1500,7 @@ func TestControlPlaneComponents(t *testing.T) {
 
 		}
 
-		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
+		if err := cpContext.ValidateUpdateEvents(1); err != nil {
 			t.Fatalf("update loop detected: %v", err)
 		}
 	}
