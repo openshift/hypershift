@@ -7,6 +7,9 @@ spec:
   jobTemplate:
     spec:
       template:
+        metadata:
+          labels:
+            app: olm-collect-profiles
         spec:
           serviceAccountName: olm-collect-profiles
           priorityClassName: hypershift-control-plane

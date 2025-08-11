@@ -12,6 +12,7 @@ spec:
         hypershift.openshift.io/release-image: ""
       creationTimestamp: null
       labels:
+        app: featuregate-generator
         hypershift.openshift.io/hosted-control-plane: ""
         hypershift.openshift.io/need-management-kas-access: "true"
     spec:

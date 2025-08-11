@@ -161,6 +161,9 @@ func NewParams(hcp *hyperv1.HostedControlPlane, version string, releaseImageProv
 }
 
 func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
+	podLabels := selectorLabels()
+	// Set the app label for the pod but do not add to MatchLabels since it is immutable
+	podLabels["app"] = "cluster-image-registry-operator"
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: selectorLabels(),
@@ -170,7 +173,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, params Params) error {
 		},
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels: selectorLabels(),
+				Labels: podLabels,
 			},
 			Spec: corev1.PodSpec{
 				AutomountServiceAccountToken: ptr.To(false),
