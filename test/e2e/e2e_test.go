@@ -236,7 +236,7 @@ func main(m *testing.M) int {
 	}
 
 	// Everything's okay to run tests
-	log.Info("executing e2e tests", "options", globalOpts)
+	log.Info("executing e2e tests")
 	return m.Run()
 }
 
