@@ -265,11 +265,12 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		Credentials: awscmdutil.AWSCredentialsOptions{
 			AWSCredentialsFile: o.ConfigurableClusterOptions.AWSCredentialsFile,
 		},
-		Region:         o.ConfigurableClusterOptions.Region,
-		EndpointAccess: o.ConfigurableClusterOptions.AWSEndpointAccess,
-		IssuerURL:      o.IssuerURL,
-		MultiArch:      o.ConfigurableClusterOptions.AWSMultiArch,
-		PublicOnly:     true,
+		Region:                 o.ConfigurableClusterOptions.Region,
+		EndpointAccess:         o.ConfigurableClusterOptions.AWSEndpointAccess,
+		IssuerURL:              o.IssuerURL,
+		MultiArch:              o.ConfigurableClusterOptions.AWSMultiArch,
+		PublicOnly:             true,
+		UseROSAManagedPolicies: true,
 	}
 	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
