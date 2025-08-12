@@ -1568,7 +1568,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
 			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1583,27 +1583,27 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			g.Eventually(func() error {
 				// Check RBAC in kube-system and openshift-config namespace
 				role := hccomanifests.GlobalPullSecretSyncerRole(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
 					return err
 				}
 
 				roleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
 					return err
 				}
 
 				openshiftConfigRole := hccomanifests.GlobalPullSecretSyncerRole(pullSecretNamespace)
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: openshiftConfigRole.Name, Namespace: openshiftConfigRole.Namespace}, openshiftConfigRole); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRole.Name, Namespace: openshiftConfigRole.Namespace}, openshiftConfigRole); err != nil {
 					return err
 				}
 
 				openshiftConfigRoleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(pullSecretNamespace)
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: openshiftConfigRoleBinding.Name, Namespace: openshiftConfigRoleBinding.Namespace}, openshiftConfigRoleBinding); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRoleBinding.Name, Namespace: openshiftConfigRoleBinding.Namespace}, openshiftConfigRoleBinding); err != nil {
 					return err
 				}
 
 				serviceAccount := hccomanifests.GlobalPullSecretSyncerServiceAccount()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
 					return err
 				}
 
@@ -1615,7 +1615,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if the DaemonSet is present in the DataPlane", func(t *testing.T) {
 			g.Eventually(func() error {
 				daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
 					return err
 				}
 				dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
@@ -1627,7 +1627,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if we can pull restricted images, should fail", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
@@ -1648,7 +1648,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Modify the additional-pull-secret secret in the DataPlane
 		t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
 			additionalPullSecret := hccomanifests.AdditionalPullSecret()
-			err := guestClient.Get(ctx, client.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
+			err := guestClient.Get(ctx, crclient.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
 			additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
 			err = guestClient.Update(ctx, additionalPullSecret)
@@ -1659,7 +1659,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
 			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1674,7 +1674,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if we can pull other restricted images, should succeed", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
@@ -1701,7 +1701,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					if !apierrors.IsNotFound(err) {
 						return err
 					}
@@ -1774,7 +1774,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		}
 
 		g := NewWithT(t)
-		if !util.IsPublicHC(entryHostedCluster) {
+		if !hyperutil.IsPublicHC(entryHostedCluster) {
 			return
 		}
 
@@ -1804,7 +1804,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			// Get the latest version of the object
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return err
 			}
 
@@ -1845,7 +1845,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		_ = WaitForCustomKubeconfig(t, ctx, mgmtClient, entryHostedCluster)
 
 		// Get HC and HCP updated
-		err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), hc)
+		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get updated HostedCluster")
 
 		hcp := &hyperv1.HostedControlPlane{}
@@ -1929,7 +1929,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			if err != nil {
 				return false
 			}
-			return util.IsDeploymentReady(ctx, kubeAPIServerDeployment)
+			return hyperutil.IsDeploymentReady(ctx, kubeAPIServerDeployment)
 		}, kasDeploymentTimeout, 10*time.Second).Should(BeTrue(), "failed to ensure KAS Deployment is ready")
 
 		// KAS deployment readiness should ensure certificate configuration is loaded
@@ -1947,7 +1947,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			// Get KASCustomKubeconfig secret from HCP Namespace
 			t.Log("Checking CustomAdminKubeconfigs are present")
 			hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-			err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret")
 			g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "KASCustomKubeconfig is nil")
 
@@ -1998,7 +1998,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			// Get the latest version of the object
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return err
 			}
 			// Apply our changes to the latest version
@@ -2053,7 +2053,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			g := NewWithT(t)
 			t.Log("Checking CustomAdminKubeconfig are removed")
 			hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-			err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
 			g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HCP namespace")
 
 			// Get KASCustomKubeconfig secret from HC Namespace
@@ -2087,7 +2087,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		// Delete NamedCertificates from the KAS
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return fmt.Errorf("failed to get latest HostedCluster: %v", err)
 			}
 			latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{}
@@ -2948,7 +2948,7 @@ func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClie
 	})
 }
 
-func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubeclient.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
+func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mgmtClient crclient.Client, guestClient *kubernetes.Clientset, hc *hyperv1.HostedCluster, allowedCIDRs []string, shouldBeReachable bool) {
 	err := UpdateObject(t, ctx, mgmtClient, hc, func(obj *hyperv1.HostedCluster) {
 		if obj.Spec.Networking.APIServer == nil {
 			obj.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{}

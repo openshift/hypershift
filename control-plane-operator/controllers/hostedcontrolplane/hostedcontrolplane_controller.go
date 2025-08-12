@@ -1257,8 +1257,7 @@ func (r *HostedControlPlaneReconciler) reconcileKonnectivityServerService(ctx co
 	p := konnectivity.NewKonnectivityServiceParams(hcp)
 	serviceStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.Konnectivity)
 	if serviceStrategy == nil {
-		//nolint:staticcheck // Konnectivity is proper name
-		return fmt.Errorf("Konnectivity service strategy not specified")
+		return fmt.Errorf("konnectivity service strategy not specified")
 	}
 	konnectivityServerService := manifests.KonnectivityServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, konnectivityServerService, func() error {

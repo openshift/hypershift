@@ -37,6 +37,7 @@ type ClusterSizingConfigurationSpec struct {
 	// Sizes holds the different t-shirt size classes into which guest clusters will be sorted.
 	// Each size class applies to guest clusters using node count criteria; it is required that
 	// the entire interval between [0,+inf) be covered by the set of sizes provided here.
+	// +kubebuilder:validation:MaxItems=10
 	Sizes []SizeConfiguration `json:"sizes,omitempty"`
 
 	// +kubebuilder:validation:Optional
@@ -69,6 +70,7 @@ type SizeConfiguration struct {
 	// +kubebuilder:validation:Required
 
 	// Name is the t-shirt size name.
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name"`
 
 	// +kubebuilder:validation:Required
@@ -111,7 +113,6 @@ type Effects struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Pattern=`^\d+(B|KiB|MiB|GiB|TiB)?$`
 	// +kubebuilder:validation:MaxLength=20
-
 	// KASGoMemLimit is the value to set for the $GOMEMLIMIT of the Kube APIServer container
 	// Expected format is a number followed by a unit (B, KiB, MiB, GiB, TiB). See the Go runtime library for more
 	// information on the format - https://pkg.go.dev/runtime#hdr-Environment_Variables.
@@ -120,21 +121,24 @@ type Effects struct {
 	// +kubebuilder:validation:Optional
 
 	// ControlPlanePriorityClassName is the priority class to use for most control plane pods
+	// +kubebuilder:validation:MaxLength=255
 	ControlPlanePriorityClassName *string `json:"controlPlanePriorityClassName,omitempty"`
 
 	// +kubebuilder:validation:Optional
-
 	// EtcdPriorityClassName is the priority class to use for etcd pods
+	// +kubebuilder:validation:MaxLength=255
 	EtcdPriorityClassName *string `json:"etcdPriorityClassName,omitempty"`
 
 	// +kubebuilder:validation:Optional
 
 	// APICriticalPriorityClassName is the priority class for pods in the API request serving path.
 	// This includes Kube API Server, OpenShift APIServer, etc.
+	// +kubebuilder:validation:MaxLength=255
 	APICriticalPriorityClassName *string `json:"APICriticalPriorityClassName,omitempty"`
 
 	// +kubebuilder:validation:Optional
 	// ResourceRequests allows specifying resource requests for control plane pods.
+	// +kubebuilder:validation:MaxItems=100
 	ResourceRequests []ResourceRequest `json:"resourceRequests,omitempty"`
 
 	// +kubebuilder:validation:Optional
@@ -211,10 +215,12 @@ type TransitionDelayConfiguration struct {
 
 type ResourceRequest struct {
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=255
 	// DeploymentName is the name of the deployment to which the resource request applies.
 	DeploymentName string `json:"deploymentName"`
 
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=255
 	// ContainerName is the name of the container to which the resource request applies.
 	ContainerName string `json:"containerName"`
 
@@ -234,7 +240,7 @@ type ClusterSizingConfigurationStatus struct {
 	// +listMapKey=type
 	// +patchMergeKey=type
 	// +patchStrategy=merge
-
+	// +kubebuilder:validation:MaxItems=10
 	// Conditions contain details about the various aspects of cluster sizing.
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }

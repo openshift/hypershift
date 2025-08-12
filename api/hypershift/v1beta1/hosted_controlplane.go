@@ -137,7 +137,7 @@ type HostedControlPlaneSpec struct {
 
 	// fips specifies if the nodes for the cluster will be running in FIPS mode
 	// +optional
-	FIPS bool `json:"fips"`
+	FIPS bool `json:"fips"` //nolint:kubeapilinter
 
 	// kubeconfig specifies the name and key for the kubeconfig secret
 	// +optional
@@ -317,7 +317,7 @@ type HostedControlPlaneStatus struct {
 	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
 	// +required
 	// +kubebuilder:default=false
-	Ready bool `json:"ready"`
+	Ready bool `json:"ready"` //nolint:kubeapilinter
 
 	// initialized denotes whether or not the control plane has
 	// provided a kubeadm-config.
@@ -326,14 +326,14 @@ type HostedControlPlaneStatus struct {
 	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
 	// +required
 	// +kubebuilder:default=false
-	Initialized bool `json:"initialized"`
+	Initialized bool `json:"initialized"` //nolint:kubeapilinter
 
 	// externalManagedControlPlane indicates to cluster-api that the control plane
 	// is managed by an external service.
 	// https://github.com/kubernetes-sigs/cluster-api/blob/65e5385bffd71bf4aad3cf34a537f11b217c7fab/controllers/machine_controller.go#L468
 	// +optional
 	// +kubebuilder:default=true
-	ExternalManagedControlPlane *bool `json:"externalManagedControlPlane,omitempty"`
+	ExternalManagedControlPlane *bool `json:"externalManagedControlPlane,omitempty"` //nolint:kubeapilinter
 
 	// controlPlaneEndpoint contains the endpoint information by which
 	// external clients can access the control plane.  This is populated
