@@ -40,6 +40,13 @@ type ProviderType string
 const (
 	ProviderAzure    ProviderType = "azure"
 	ProviderKeycloak ProviderType = "keycloak"
+
+	ExternalOIDCUIDExpressionPrefix        = "testuid-"
+	ExternalOIDCUIDExpressionSubfix        = "-uidtest"
+	ExternalOIDCExtraKeyBar                = "extratest.openshift.com/bar"
+	ExternalOIDCExtraKeyBarValueExpression = "extra-test-mark"
+	ExternalOIDCExtraKeyFoo                = "extratest.openshift.com/foo"
+	ExternalOIDCExtraKeyFooValueExpression = "claims.email" // This is a variable, not a string literal
 )
 
 type ExtOIDCConfig struct {
@@ -122,16 +129,16 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 						},
 					},
 					UID: &configv1.TokenClaimOrExpressionMapping{
-						Expression: `"testuid-" + claims.sub + "-uidtest"`,
+						Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
 					},
 					Extra: []configv1.ExtraMapping{
 						{
-							Key:             "extratest.openshift.com/bar",
-							ValueExpression: `"extra-test-mark"`,
+							Key:             ExternalOIDCExtraKeyBar,
+							ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
 						},
 						{
-							Key:             "extratest.openshift.com/foo",
-							ValueExpression: "claims.email",
+							Key:             ExternalOIDCExtraKeyFoo,
+							ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
 						},
 					},
 				},
