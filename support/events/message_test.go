@@ -1,7 +1,6 @@
 package events
 
 import (
-	"context"
 	"sort"
 	"testing"
 	"time"
@@ -97,7 +96,7 @@ func TestErrorMessages(t *testing.T) {
 			client := fake.NewClientBuilder().WithIndex(&corev1.Event{}, "involvedObject.uid", func(object client.Object) []string {
 				return []string{string(object.(*corev1.Event).InvolvedObject.UID)}
 			}).WithLists(eventList).Build()
-			collector := NewMessageCollector(context.Background(), client)
+			collector := NewMessageCollector(t.Context(), client)
 			result, err := collector.ErrorMessages(fakeObj)
 			g.Expect(err).ToNot(HaveOccurred())
 			sort.Strings(result)

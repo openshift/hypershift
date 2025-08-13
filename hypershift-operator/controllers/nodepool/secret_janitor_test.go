@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -37,7 +36,7 @@ import (
 )
 
 func TestSecretJanitor_Reconcile(t *testing.T) {
-	ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 	mockCtrl := gomock.NewController(t)
 
 	theTime, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.999999999Z")
@@ -406,7 +405,7 @@ func TestShouldKeepOldUserData(t *testing.T) {
 				tc.releaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(releaseImage, nil).AnyTimes()
 			}
 
-			shouldKeepOldUserData, err := r.shouldKeepOldUserData(context.Background(), tc.hc)
+			shouldKeepOldUserData, err := r.shouldKeepOldUserData(t.Context(), tc.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(shouldKeepOldUserData).To(Equal(tc.expected))
 		})

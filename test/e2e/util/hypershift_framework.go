@@ -26,6 +26,8 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -45,6 +47,8 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	ExtOIDCConfig *ExtOIDCConfig
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -113,7 +117,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		validateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
 }
 
@@ -126,6 +130,10 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
 			}
+		}
+
+		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
+			ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 		}
 	})
 }
@@ -158,6 +166,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
+		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
+			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
+		}
 		ValidateMetrics(t, context.Background(), hostedCluster, []string{
 			hcmetrics.SilenceAlertsMetricName,
 			hcmetrics.LimitedSupportEnabledMetricName,
@@ -166,6 +177,8 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			HypershiftOperatorInfoName,
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
+			karpenterassets.KarpenterBuildInfoMetricName,
+			karpenterassets.KarpenterOperatorInfoMetricName,
 		}, true)
 	})
 }
@@ -246,6 +259,37 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		err = h.client.Create(h.ctx, serviceAccountSigningKeySecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
+		// create external oidc secret and configmap
+		if opts.ExtOIDCConfig != nil {
+			consoleClientSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.ConsoleClientSecretName,
+					Namespace: namespace.Name,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					"clientSecret": opts.ExtOIDCConfig.ConsoleClientSecretValue,
+				},
+			}
+			err := h.client.Create(h.ctx, consoleClientSecret)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
+
+			caData, err := os.ReadFile(opts.ExtOIDCConfig.IssuerCABundleFile)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
+
+			oidcCAConfigmap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.IssuerCAConfigmapName,
+					Namespace: namespace.Name,
+				},
+				Data: map[string]string{
+					"ca-bundle.crt": string(caData),
+				},
+			}
+			err = h.client.Create(h.ctx, oidcCAConfigmap)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
+		}
+
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {
 			if originalBeforeApply != nil {
@@ -270,6 +314,10 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 								},
 							},
 						},
+					}
+
+					if opts.ExtOIDCConfig != nil {
+						v.Spec.Configuration.Authentication = opts.ExtOIDCConfig.GetAuthenticationConfig()
 					}
 				}
 			}

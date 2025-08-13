@@ -7,25 +7,36 @@ set -x
 # For Red Hat developers, it is best to create your KV and the managed identities in a resource group that
 # is persistent in your tenant/subscription.
 
-# Constants
-PREFIX="<your-prefix-here>"
-PERSISTENT_RG_NAME="os4-common"
-LOCATION="eastus"
-KV_NAME="<your-key-vault-name-here>"
+# These SPs are created by default within the persistent RG so they can be reused across HCs.
+# This is preferred to avoid quotas issues.
+if [[ -f "${CP_OUTPUT_FILE}" ]]; then
+    echo "CP_OUTPUT_FILE '${CP_OUTPUT_FILE}' already exists. Exiting early."
+    exit 0
+fi
+
+# Prerequisites.
+PREFIX="${PREFIX:-}"
+SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:-}
+LOCATION=${LOCATION:-}
+
+# Local.
+KV_NAME="${PREFIX}"
 AZURE_DISK_SP_NAME="azure-disk-$PREFIX"
 AZURE_FILE_SP_NAME="azure-file-$PREFIX"
-NODEPOOL_MGMT="nodepool-mgmt-$PREFIX"
+
 CLOUD_PROVIDER_SP_NAME="cloud-provider-$PREFIX"
-CNCC_NAME="cncc-$PREFIX"
 CONTROL_PLANE_SP_NAME="cpo-$PREFIX"
 IMAGE_REGISTRY_SP_NAME="ciro-$PREFIX"
 INGRESS_SP_NAME="ingress-$PREFIX"
-CP_OUTPUT_FILE=<output file for control plane service principals>
-ACCOUNT_DETAILS=$(az account show --query '{subscriptionId: id, tenantId: tenantId}' -o json)
-SUBSCRIPTION_ID=$(echo "$ACCOUNT_DETAILS" | jq -r '.subscriptionId')
+CNCC_SP_NAME="cncc-$PREFIX"
+
+NODEPOOL_MGMT="nodepool-mgmt-$PREFIX"
+VELERO_SP_NAME="velero-$PREFIX"
+CP_OUTPUT_FILE=${CP_OUTPUT_FILE:-}
 
 # Create Key Vault
-export USER_ACCOUNT_ID=$(az ad signed-in-user show | jq -r .id)
+USER_ACCOUNT_ID=$(az ad signed-in-user show | jq -r .id)
 az keyvault create --name $KV_NAME --resource-group $PERSISTENT_RG_NAME --location $LOCATION --enable-rbac-authorization
 az role assignment create --assignee ${USER_ACCOUNT_ID} --scope /subscriptions/${SUBSCRIPTION_ID}/resourceGroups/${PERSISTENT_RG_NAME}/providers/Microsoft.KeyVault/vaults/${KV_NAME} --role "Key Vault Administrator"
 
@@ -36,8 +47,10 @@ disk=$(az ad sp create-for-rbac --name "${AZURE_DISK_SP_NAME}" --create-cert --c
 file=$(az ad sp create-for-rbac --name "${AZURE_FILE_SP_NAME}" --create-cert --cert "${AZURE_FILE_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${AZURE_FILE_SP_NAME}'}" -o json)
 imageRegistry=$(az ad sp create-for-rbac --name "${IMAGE_REGISTRY_SP_NAME}" --create-cert --cert "${IMAGE_REGISTRY_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${IMAGE_REGISTRY_SP_NAME}'}" -o json)
 ingress=$(az ad sp create-for-rbac --name "${INGRESS_SP_NAME}" --create-cert --cert "${INGRESS_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${INGRESS_SP_NAME}'}" -o json)
-network=$(az ad sp create-for-rbac --name "${CNCC_NAME}" --create-cert --cert "${CNCC_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CNCC_NAME}'}" -o json)
+network=$(az ad sp create-for-rbac --name "${CNCC_SP_NAME}" --create-cert --cert "${CNCC_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${CNCC_SP_NAME}'}" -o json)
 nodePoolManagement=$(az ad sp create-for-rbac --name "${NODEPOOL_MGMT}" --create-cert --cert "${NODEPOOL_MGMT}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${NODEPOOL_MGMT}'}" -o json)
+velero=$(az ad sp create-for-rbac --name "${VELERO_SP_NAME}" --create-cert --cert "${VELERO_SP_NAME}" --keyvault "${KV_NAME}" --query "{clientID: appId, certificateName: '${VELERO_SP_NAME}'}" -o json)
+
 
 # Set Names
 CERT_NAMES=(
@@ -45,16 +58,17 @@ CERT_NAMES=(
     "${AZURE_FILE_SP_NAME}"
     "${IMAGE_REGISTRY_SP_NAME}"
     "${CLOUD_PROVIDER_SP_NAME}"
-    "${CNCC_NAME}"
+    "${CNCC_SP_NAME}"
     "${CONTROL_PLANE_SP_NAME}"
     "${INGRESS_SP_NAME}"
     "${NODEPOOL_MGMT}"
+    "${VELERO_SP_NAME}"
 )
 
 # Create Secret JSON Files
 for CERT_NAME in "${CERT_NAMES[@]}"; do
     echo "Processing certificate: $CERT_NAME"
-    
+
     CERT_DETAILS=$(az keyvault secret show --vault-name $KV_NAME --name $CERT_NAME --query "{value: value, notBefore: attributes.notBefore, expires: attributes.expires}" -o json)
     CLIENT_SECRET=$(echo $CERT_DETAILS | jq -r '.value')
     NOT_BEFORE=$(echo $CERT_DETAILS | jq -r '.notBefore')
@@ -87,6 +101,7 @@ for CERT_NAME in "${CERT_NAMES[@]}"; do
     JSON_FILE="${CERT_NAME}.json"
 
     az keyvault secret set --name "${CERT_NAME}-json" --vault-name $KV_NAME --file $JSON_FILE
+done
 
 # Create Managed Identities File
 cat <<EOF > "${CP_OUTPUT_FILE}"
@@ -132,15 +147,21 @@ cat <<EOF > "${CP_OUTPUT_FILE}"
         "tenantID": "$(az account show --query tenantId -o tsv)"
     },
     "network": {
-        "certificateName": "${CNCC_NAME}",
+        "certificateName": "${CNCC_SP_NAME}",
         "clientID": "$(echo "$network" | jq -r '.clientID')",
-        "credentialsSecretName": "${CNCC_NAME}-json",
+        "credentialsSecretName": "${CNCC_SP_NAME}-json",
         "objectEncoding": "utf-8"
     },
     "nodePoolManagement": {
         "certificateName": "${NODEPOOL_MGMT}",
         "clientID": "$(echo "$nodePoolManagement" | jq -r '.clientID')",
         "credentialsSecretName": "${NODEPOOL_MGMT}-json",
+        "objectEncoding": "utf-8"
+    },
+    "velero": {
+        "certificateName": "${VELERO_SP_NAME}",
+        "clientID": "$(echo "$velero" | jq -r '.clientID')",
+        "credentialsSecretName": "${VELERO_SP_NAME}-json",
         "objectEncoding": "utf-8"
     }
 }

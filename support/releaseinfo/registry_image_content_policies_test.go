@@ -1,7 +1,6 @@
 package releaseinfo
 
 import (
-	"context"
 	"os"
 	"sync"
 	"testing"
@@ -45,7 +44,7 @@ func TestProviderWithOpenShiftImageRegistryOverridesDecorator_Lookup(t *testing.
 		t.Fatalf("failed to read manifests file: %v", err)
 	}
 	// Call the Lookup method and validate GetMirroredReleaseImage.
-	_, err = provider.Lookup(context.Background(), canonicalReleaseImage, pullSecret)
+	_, err = provider.Lookup(t.Context(), canonicalReleaseImage, pullSecret)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(provider.GetMirroredReleaseImage()).To(Equal(mirroredReleaseImage))
 }

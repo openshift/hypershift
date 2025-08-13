@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -78,6 +79,21 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	for k, v := range source.Data {
 		cm.Data[k] = v
 	}
+}
+
+func UpdateObject[T client.Object](ctx context.Context, c client.Client, obj T, mutate func() error) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+			return err
+		}
+
+		original := obj.DeepCopyObject().(T)
+		if err := mutate(); err != nil {
+			return err
+		}
+
+		return c.Patch(ctx, obj, client.MergeFrom(original))
+	})
 }
 
 func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
@@ -243,13 +259,13 @@ func HashSimple(o interface{}) string {
 }
 
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
-// The struct is first marshalled to JSON before hashing
+// The struct is first marshaled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
 	return HashStructWithJSONMapper(data, nil)
 }
 
 // HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
-// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// The struct is first marshaled to JSON before hashing. You can provide a JSONMapper that transforms the marshaled
 // JSON before computing the hash or nil if no transformation is needed.
 func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)
@@ -622,7 +638,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {
 			return overrideImage, nil
 		}

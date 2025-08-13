@@ -120,7 +120,7 @@ func TestReconcileKarpenterUserDataSecret(t *testing.T) {
 		},
 	}
 
-	releaseImage, err := releaseProvider.Lookup(context.Background(), "release-4.18", nil)
+	releaseImage, err := releaseProvider.Lookup(t.Context(), "release-4.18", nil)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	nodePool := &hyperv1.NodePool{
@@ -132,10 +132,10 @@ func TestReconcileKarpenterUserDataSecret(t *testing.T) {
 		},
 	}
 
-	err = r.reconcileKarpenterUserDataSecret(context.Background(), hostedCluster, releaseImage, nodePool, releaseProvider, imageMetadataProvider)
+	err = r.reconcileKarpenterUserDataSecret(t.Context(), hostedCluster, releaseImage, nodePool, releaseProvider, imageMetadataProvider)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	userData, err := getUserDataSecret(context.Background(), fakeClient, nodePool, controlplaneNamespace)
+	userData, err := getUserDataSecret(t.Context(), fakeClient, nodePool, controlplaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(userData.Data).NotTo(BeNil())

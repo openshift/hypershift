@@ -1,7 +1,6 @@
 package azure
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -164,7 +163,7 @@ func TestReconcile(t *testing.T) {
 			g := NewGomegaWithT(t)
 			c := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.sizingConfig).Build()
 			if test.hc != nil {
-				err := c.Create(context.Background(), test.hc)
+				err := c.Create(t.Context(), test.hc)
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 			r := &Scheduler{
@@ -178,7 +177,7 @@ func TestReconcile(t *testing.T) {
 				req.Name = "non-existent-hosted-cluster"
 				req.Namespace = "non-existent-namespace"
 			}
-			result, err := r.Reconcile(context.Background(), req)
+			result, err := r.Reconcile(t.Context(), req)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(test.expectErrText))
@@ -192,7 +191,7 @@ func TestReconcile(t *testing.T) {
 			}
 			if test.expectAnnotations != nil {
 				actual := &hyperv1.HostedCluster{}
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(test.hc), actual)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(test.hc), actual)
 				g.Expect(err).ToNot(HaveOccurred())
 				for key, value := range test.expectAnnotations {
 					g.Expect(actual.Annotations).To(HaveKeyWithValue(key, value))

@@ -1,7 +1,6 @@
 package kasbootstrap
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -360,11 +359,11 @@ func TestReconcileFeatureGate(t *testing.T) {
 			c := builder.WithObjects([]client.Object{&tc.clusterVersion, &tc.existingFeatureGate}...).
 				WithStatusSubresource(&tc.existingFeatureGate).Build()
 
-			err := reconcileFeatureGate(context.TODO(), c, &tc.renderedFeatureGate)
+			err := reconcileFeatureGate(t.Context(), c, &tc.renderedFeatureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			var updatedFeatureGate configv1.FeatureGate
-			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, &updatedFeatureGate)
+			err = c.Get(t.Context(), client.ObjectKey{Name: "cluster"}, &updatedFeatureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(updatedFeatureGate.Status.FeatureGates).To(ConsistOf(tc.expectedFeatureGates))
 		})
@@ -400,7 +399,7 @@ func TestApplyBootstrapResources(t *testing.T) {
 			builder := fake.NewClientBuilder().WithScheme(configScheme)
 			c := builder.Build()
 
-			err := applyBootstrapResources(context.TODO(), c, tc.filesPath)
+			err := applyBootstrapResources(t.Context(), c, tc.filesPath)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				return
@@ -408,7 +407,7 @@ func TestApplyBootstrapResources(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			crdList := &apiextensionsv1.CustomResourceDefinitionList{}
-			err = c.List(context.TODO(), crdList)
+			err = c.List(t.Context(), crdList)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// we expect 2 CRDs to be created.
@@ -416,12 +415,12 @@ func TestApplyBootstrapResources(t *testing.T) {
 
 			// we expect the feature gate to be created.
 			featureGate := &configv1.FeatureGate{}
-			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, featureGate)
+			err = c.Get(t.Context(), client.ObjectKey{Name: "cluster"}, featureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// we expect the hcco-role-binding to be created.
 			roleBinding := &rbacv1.ClusterRoleBinding{}
-			err = c.Get(context.TODO(), client.ObjectKey{Name: "hcco-cluster-admin"}, roleBinding)
+			err = c.Get(t.Context(), client.ObjectKey{Name: "hcco-cluster-admin"}, roleBinding)
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 	}

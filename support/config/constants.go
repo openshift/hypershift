@@ -52,6 +52,16 @@ const (
 
 	// DefaultMachineNetwork is the default network CIDR for the machine network.
 	DefaultMachineNetwork = "10.0.0.0/16"
+
+	// Constants related to supported OCP versions.
+	ConfigMapVersionsKey      = "supported-versions"
+	ConfigMapServerVersionKey = "server-version"
+	SupportedVersionsLabel    = "hypershift.openshift.io/supported-versions"
+	DefaultReleaseStream      = "4-stable-multi"
+
+	// Constants related to HyperShift operator image.
+	HypershiftImageBase = "quay.io/hypershift/hypershift-operator"
+	HypershiftImageTag  = "latest"
 )
 
 // Managed Azure Related Constants
@@ -61,11 +71,7 @@ const (
 	// management cluster's resource group in Azure.
 	AROHCPKeyVaultManagedIdentityClientID = "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
 
-	ManagedAzureCredentialsFilePath = "MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH"
-	// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-	ManagedAzureClientIdEnvVarKey            = "ARO_HCP_MI_CLIENT_ID"
-	ManagedAzureTenantIdEnvVarKey            = "ARO_HCP_TENANT_ID"
-	ManagedAzureCertificatePathEnvVarKey     = "ARO_HCP_CLIENT_CERTIFICATE_PATH"
+	ManagedAzureCredentialsFilePath          = "MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH"
 	ManagedAzureSecretProviderClassEnvVarKey = "ARO_HCP_SECRET_PROVIDER_CLASS"
 	ManagedAzureCertificateMountPath         = "/mnt/certs"
 	ManagedAzureCredentialsMountPathForKMS   = "/mnt/kms"

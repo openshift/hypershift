@@ -325,7 +325,7 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual key usage %d differs from expected %d", cert.KeyUsage, cfg.KeyUsages))
 	}
 
-	// subjectDiff ignores the "Names" field, as it contains the parsed attributes but is ignored during marshalling.
+	// subjectDiff ignores the "Names" field, as it contains the parsed attributes but is ignored during marshaling.
 	subjectDiff := cmp.Diff(cert.Subject, cfg.Subject, cmpopts.SortSlices(stringLessFN), cmpopts.IgnoreFields(pkix.Name{}, "Names"))
 	if subjectDiff != "" {
 		errs = append(errs, fmt.Errorf("actual subject differs from expected: %s", subjectDiff))

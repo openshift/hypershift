@@ -1,7 +1,6 @@
 package upsert
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -72,7 +71,7 @@ func TestApplyManifest(t *testing.T) {
 	}
 
 	client := fake.NewClientBuilder().WithObjects(existingDeployment).Build()
-	result, err := (&applyProvider{}).ApplyManifest(context.Background(), client, deployment)
+	result, err := (&applyProvider{}).ApplyManifest(t.Context(), client, deployment)
 	if err != nil {
 		t.Fatalf("ApplyManifest failed: %v", err)
 	}

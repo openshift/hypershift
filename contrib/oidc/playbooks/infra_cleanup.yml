@@ -1,0 +1,66 @@
+---
+- name: Cleanup OIDC Resources
+  hosts: localhost
+  gather_facts: false
+  vars:
+    region: us-east-1
+    key_name: my-oidc-key
+    instance_name: oidc-fedora
+    security_group_name: oidc-sg
+
+  tasks:
+    - name: Read instance ID if file exists
+      ansible.builtin.slurp:
+        src: instance-id.txt
+      register: instance_id_file
+      ignore_errors: true
+
+    - name: Terminate EC2 instance
+      amazon.aws.ec2_instance:
+        instance_ids: "{{ (instance_id_file.content | b64decode).strip() }}"
+        region: "{{ region }}"
+        state: absent
+        wait: true
+      when: instance_id_file is succeeded
+      register: terminate_result
+
+    - name: Delete instance ID file
+      ansible.builtin.file:
+        path: instance-id.txt
+        state: absent
+      when: instance_id_file is succeeded
+
+    - name: Delete hostname file
+      ansible.builtin.file:
+        path: hostname.txt
+        state: absent
+      when: instance_id_file is succeeded
+
+    - name: Delete security group
+      amazon.aws.ec2_security_group:
+        name: "{{ security_group_name }}"
+        region: "{{ region }}"
+        state: absent
+      register: sg_delete_result
+      retries: 4
+      delay: 15
+      until: sg_delete_result is not failed
+      ignore_errors: true
+
+    - name: Delete key pair
+      amazon.aws.ec2_key:
+        name: "{{ key_name }}"
+        region: "{{ region }}"
+        state: absent
+      register: key_delete_result
+
+    - name: Delete private key file
+      ansible.builtin.file:
+        path: "{{ key_name }}.pem"
+        state: absent
+      when: key_delete_result is succeeded
+
+    - name: Delete security group ID file
+      ansible.builtin.file:
+        path: sg-id.txt
+        state: absent

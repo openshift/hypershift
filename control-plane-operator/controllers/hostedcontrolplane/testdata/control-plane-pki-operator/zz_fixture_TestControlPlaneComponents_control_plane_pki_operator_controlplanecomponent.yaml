@@ -29,4 +29,3 @@ status:
   - group: ""
     kind: ServiceAccount
     name: control-plane-pki-operator
-  version: 4.18.0

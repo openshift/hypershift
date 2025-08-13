@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"context"
 	"fmt"
 	"math/rand/v2"
 	"testing"
@@ -85,12 +84,12 @@ func TestNodeReaper(t *testing.T) {
 			}
 			req := reconcile.Request{}
 			req.Name = nodeName
-			_, err := r.Reconcile(context.Background(), req)
+			_, err := r.Reconcile(t.Context(), req)
 			g := NewGomegaWithT(t)
 			g.Expect(err).ToNot(HaveOccurred())
 			if test.expectDelete {
 				n := &corev1.Node{}
-				err := r.Get(context.Background(), client.ObjectKeyFromObject(node()), n)
+				err := r.Get(t.Context(), client.ObjectKeyFromObject(node()), n)
 				g.Expect(err).ToNot(BeNil())
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
@@ -250,7 +249,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 			req := reconcile.Request{}
 			req.Name = hostedcluster().Name
 			req.Namespace = hostedcluster().Namespace
-			_, err := r.Reconcile(context.Background(), req)
+			_, err := r.Reconcile(t.Context(), req)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -258,14 +257,14 @@ func TestHostedClusterScheduler(t *testing.T) {
 			}
 			if test.checkScheduledCluster {
 				actual := hostedcluster()
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(actual), actual)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(actual), actual)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(actual.Annotations).To(HaveKey(hyperv1.HostedClusterScheduledAnnotation))
 			}
 			if test.checkScheduledNodes {
 				hc := hostedcluster()
 				nodeList := &corev1.NodeList{}
-				err := c.List(context.Background(), nodeList)
+				err := c.List(t.Context(), nodeList)
 				g.Expect(err).ToNot(HaveOccurred())
 				scheduledNodeIndices := []int{}
 				for i, node := range nodeList.Items {
@@ -616,7 +615,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			req := reconcile.Request{}
 			req.Name = hostedcluster().Name
 			req.Namespace = hostedcluster().Namespace
-			_, err := r.Reconcile(context.Background(), req)
+			_, err := r.Reconcile(t.Context(), req)
 			if test.expectError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -624,7 +623,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			}
 			if test.checkScheduledCluster {
 				actual := hostedcluster()
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(actual), actual)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(actual), actual)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(actual.Annotations).To(HaveKey(hyperv1.HostedClusterScheduledAnnotation))
 				sizeLabel := actual.Labels[hyperv1.HostedClusterSizeLabel]
@@ -639,7 +638,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			if test.checkScheduledNodes {
 				hc := hostedcluster()
 				nodeList := &corev1.NodeList{}
-				err := c.List(context.Background(), nodeList)
+				err := c.List(t.Context(), nodeList)
 				g.Expect(err).ToNot(HaveOccurred())
 				scheduledNodeIndices := []int{}
 				for i, node := range nodeList.Items {
@@ -661,7 +660,7 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			}
 			if test.expectPlaceholder {
 				deployment := placeholderDeployment(test.hc)
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(deployment), deployment)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(deployment), deployment)
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 		})
@@ -686,7 +685,7 @@ func TestTakenNodePairLabels(t *testing.T) {
 	r := DedicatedServingComponentSchedulerAndSizer{
 		Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(baselineNodes...).Build(),
 	}
-	baseline, err := r.takenNodePairLabels(context.Background())
+	baseline, err := r.takenNodePairLabels(t.Context())
 	g.Expect(err).ToNot(HaveOccurred())
 
 	for i := 0; i < 10; i++ {
@@ -699,7 +698,7 @@ func TestTakenNodePairLabels(t *testing.T) {
 		r := DedicatedServingComponentSchedulerAndSizer{
 			Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(nodes...).Build(),
 		}
-		result, err := r.takenNodePairLabels(context.Background())
+		result, err := r.takenNodePairLabels(t.Context())
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(result).To(Equal(baseline))
 	}
@@ -816,7 +815,7 @@ func TestFilterNodeEvents(t *testing.T) {
 			r := DedicatedServingComponentSchedulerAndSizer{
 				Client: fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(test.baselineNodes...).Build(),
 			}
-			actual := r.filterNodeEvents(context.Background(), test.incomingNode)
+			actual := r.filterNodeEvents(t.Context(), test.incomingNode)
 			g.Expect(actual).To(Equal(test.expected))
 		})
 	}

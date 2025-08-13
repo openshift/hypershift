@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -33,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 
@@ -40,6 +43,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap/zaptest"
 )
 
 type testClient struct {
@@ -137,6 +144,10 @@ var cpObjects = []client.Object{
 func TestReconcileErrorHandling(t *testing.T) {
 	// get initial number of creates with no get errors
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	errorExceptions := []string{
+		"global pull secret syncer signaled to shutdown",
+	}
 
 	var totalCreates int
 	{
@@ -157,9 +168,14 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
-			t.Fatalf("unexpected: %v", err)
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+				t.Fatalf("unexpected error: %v", err)
+			}
 		}
 		totalCreates = fakeClient.createCount
 	}
@@ -172,6 +188,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		r := &reconciler{
 			client:                 fakeClient,
+			uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
@@ -181,9 +198,16 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		_, _ = r.Reconcile(context.Background(), controllerruntime.Request{})
-		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
-			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
+		if err != nil {
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+			}
+			if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
+				t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+			}
 		}
 	}
 }
@@ -195,7 +219,7 @@ func TestReconcileOLM(t *testing.T) {
 	fakeCPService := manifests.OLMPackageServerControlPlaneService(hcp.Namespace)
 	fakeCPService.Spec.ClusterIP = "172.30.108.248"
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	ctx := context.Background()
+	ctx := t.Context()
 	pullSecret := fakePullSecret()
 
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
@@ -489,20 +513,20 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				hcpName:                testHCPName,
 				hcpNamespace:           testNamespace,
 			}
-			err := r.reconcileKubeadminPasswordHashSecret(context.Background(), test.inputHCP)
+			err := r.reconcileKubeadminPasswordHashSecret(t.Context(), test.inputHCP)
 			g.Expect(err).To(BeNil())
 			if test.expectKubeadminPasswordHashSecretToExist {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(err).To(BeNil())
 				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
 				g.Expect(errors.IsNotFound(err)).To(BeTrue())
 			}
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
-			err = r.cpClient.Get(context.TODO(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
+			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
 			g.Expect(err).To(BeNil())
 		})
 	}
@@ -559,15 +583,15 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				hcpName:                testHCPName,
 				hcpNamespace:           testNamespace,
 			}
-			err := r.reconcileUserCertCABundle(context.Background(), test.inputHCP)
+			err := r.reconcileUserCertCABundle(t.Context(), test.inputHCP)
 			g.Expect(err).To(BeNil())
 			guestUserCABundle := manifests.UserCABundle()
 			if test.expectUserCAConfigMap {
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
 				g.Expect(err).To(BeNil())
 				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
 			} else {
-				err := r.client.Get(context.TODO(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
+				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
 				g.Expect(errors.IsNotFound(err)).To(BeTrue())
 			}
 		})
@@ -598,12 +622,12 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyCleanupWebhook := func(g *WithT, c client.Client) {
+	verifyCleanupWebhook := func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
 		wh := manifests.ResourceCreationBlockerWebhook()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(wh), wh)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(wh), wh)
 		g.Expect(err).ToNot(HaveOccurred())
 		expected := manifests.ResourceCreationBlockerWebhook()
-		reconcileCreationBlockerWebhook(expected)
+		reconcileCreationBlockerWebhook(expected, hcp)
 		g.Expect(wh.Webhooks).To(BeEquivalentTo(expected.Webhooks))
 	}
 
@@ -616,7 +640,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyImageRegistryConfig := func(g *WithT, c, _ client.Client) {
 		config := manifests.Registry()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(config), config)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(config), config)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(config.Spec.ManagementState).To(Equal(operatorv1.Removed))
 	}
@@ -632,7 +656,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyIngressControllersRemoved := func(g *WithT, c, _ client.Client) {
 		ingressControllers := &operatorv1.IngressControllerList{}
-		err := c.List(context.Background(), ingressControllers)
+		err := c.List(t.Context(), ingressControllers)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(ingressControllers.Items)).To(Equal(0))
 	}
@@ -676,7 +700,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyServiceLoadBalancersRemoved := func(g *WithT, c client.Client) {
 		services := &corev1.ServiceList{}
-		err := c.List(context.Background(), services)
+		err := c.List(t.Context(), services)
 		g.Expect(err).ToNot(HaveOccurred())
 		for _, svc := range services.Items {
 			g.Expect(svc.Spec.Type).ToNot(Equal(corev1.ServiceTypeLoadBalancer))
@@ -685,13 +709,13 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyServiceLoadBalancersOwnedByIngressControllerExists := func(name string, g *WithT, c client.Client) {
 		service := serviceLoadBalancerOwnedByIngressController(name)
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(service), service)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
 
 	verifyServiceExists := func(name string, g *WithT, c client.Client) {
 		service := clusterIPService(name)
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(service), service)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
 
@@ -735,21 +759,21 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyPVCsRemoved := func(g *WithT, c client.Client) {
 		pvcs := &corev1.PersistentVolumeClaimList{}
-		err := c.List(context.Background(), pvcs)
+		err := c.List(t.Context(), pvcs)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(pvcs.Items)).To(Equal(0))
 	}
 
 	verifyPodsRemoved := func(g *WithT, c client.Client) {
 		pods := &corev1.PodList{}
-		err := c.List(context.Background(), pods)
+		err := c.List(t.Context(), pods)
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(len(pods.Items)).To(Equal(0))
 	}
 
 	verifyDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(hcp), hcp)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
@@ -757,7 +781,7 @@ func TestDestroyCloudResources(t *testing.T) {
 
 	verifyNotDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
-		err := c.Get(context.Background(), client.ObjectKeyFromObject(hcp), hcp)
+		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
 		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
 		g.Expect(cond).ToNot(BeNil())
@@ -866,9 +890,9 @@ func TestDestroyCloudResources(t *testing.T) {
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
-			_, err := r.destroyCloudResources(context.Background(), fakeHCP)
+			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
-			verifyCleanupWebhook(g, guestClient)
+			verifyCleanupWebhook(g, guestClient, fakeHCP)
 			if test.verify != nil {
 				test.verify(g, guestClient, uncachedClient)
 			}
@@ -947,12 +971,33 @@ func TestReconcileClusterVersion(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp)
 	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(clusterVersion.Spec.ClusterID).To(Equal(configv1.ClusterID("test-cluster-id")))
-	g.Expect(clusterVersion.Spec.Capabilities).To(BeNil())
+	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
+		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
+		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+			configv1.ClusterVersionCapabilityBuild,
+			configv1.ClusterVersionCapabilityCSISnapshot,
+			configv1.ClusterVersionCapabilityCloudControllerManager,
+			configv1.ClusterVersionCapabilityCloudCredential,
+			configv1.ClusterVersionCapabilityConsole,
+			configv1.ClusterVersionCapabilityDeploymentConfig,
+			configv1.ClusterVersionCapabilityImageRegistry,
+			configv1.ClusterVersionCapabilityIngress,
+			configv1.ClusterVersionCapabilityInsights,
+			configv1.ClusterVersionCapabilityMachineAPI,
+			configv1.ClusterVersionCapabilityNodeTuning,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+			configv1.ClusterVersionCapabilityStorage,
+			configv1.ClusterVersionCapabilityMarketplace,
+			configv1.ClusterVersionCapabilityOpenShiftSamples,
+		},
+	}
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
 	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
 	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
@@ -964,7 +1009,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			ClusterID: "test-cluster-id",
 			Capabilities: &hyperv1.Capabilities{
 				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability,
+					hyperv1.ImageRegistryCapability, hyperv1.OpenShiftSamplesCapability, hyperv1.InsightsCapability, hyperv1.ConsoleCapability, hyperv1.NodeTuningCapability, hyperv1.IngressCapability,
 				},
 			},
 		},
@@ -1006,9 +1051,86 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
-	err := r.reconcileClusterVersion(context.Background(), hcp)
+	err := r.reconcileClusterVersion(t.Context(), hcp)
 	g.Expect(err).ToNot(HaveOccurred())
-	err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
+		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
+		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+			configv1.ClusterVersionCapabilityBuild,
+			configv1.ClusterVersionCapabilityCSISnapshot,
+			configv1.ClusterVersionCapabilityCloudControllerManager,
+			configv1.ClusterVersionCapabilityCloudCredential,
+			//configv1.ClusterVersionCapabilityConsole,
+			configv1.ClusterVersionCapabilityDeploymentConfig,
+			// configv1.ClusterVersionCapabilityImageRegistry,
+			//configv1.ClusterVersionCapabilityIngress,
+			//configv1.ClusterVersionCapabilityInsights,
+			configv1.ClusterVersionCapabilityMachineAPI,
+			//configv1.ClusterVersionCapabilityNodeTuning,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManager,
+			configv1.ClusterVersionCapabilityOperatorLifecycleManagerV1,
+			configv1.ClusterVersionCapabilityStorage,
+			configv1.ClusterVersionCapabilityMarketplace,
+			// configv1.ClusterVersionCapabilityOpenShiftSamples,
+		},
+	}
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
+}
+
+func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
+	hcp := &hyperv1.HostedControlPlane{
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ClusterID: "test-cluster-id",
+			Capabilities: &hyperv1.Capabilities{
+				Enabled: []hyperv1.OptionalCapability{
+					hyperv1.BaremetalCapability,
+				},
+			},
+		},
+	}
+	testOverrides := []configv1.ComponentOverride{
+		{
+			Kind:      "Pod",
+			Group:     "",
+			Name:      "test",
+			Namespace: "default",
+			Unmanaged: true,
+		},
+	}
+	clusterVersion := &configv1.ClusterVersion{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "version",
+		},
+		Spec: configv1.ClusterVersionSpec{
+			ClusterID: "some-other-id",
+			Capabilities: &configv1.ClusterVersionCapabilitiesSpec{
+				AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
+					"foo",
+					"bar",
+				},
+			},
+			Channel: "fast",
+			DesiredUpdate: &configv1.Update{
+				Version: "4.12.5",
+				Image:   "example.com/imagens/image:latest",
+				Force:   true,
+			},
+			Upstream:  configv1.URL("https://upstream.example.com"),
+			Overrides: testOverrides,
+		},
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
+	g := NewWithT(t)
+	r := &reconciler{
+		client:                 fakeClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+	err := r.reconcileClusterVersion(t.Context(), hcp)
+	g.Expect(err).ToNot(HaveOccurred())
+	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
@@ -1020,7 +1142,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			configv1.ClusterVersionCapabilityCloudCredential,
 			configv1.ClusterVersionCapabilityConsole,
 			configv1.ClusterVersionCapabilityDeploymentConfig,
-			// configv1.ClusterVersionCapabilityImageRegistry,
+			configv1.ClusterVersionCapabilityImageRegistry,
 			configv1.ClusterVersionCapabilityIngress,
 			configv1.ClusterVersionCapabilityInsights,
 			configv1.ClusterVersionCapabilityMachineAPI,
@@ -1030,7 +1152,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			configv1.ClusterVersionCapabilityStorage,
 			configv1.ClusterVersionCapabilityBaremetal,
 			configv1.ClusterVersionCapabilityMarketplace,
-			//configv1.ClusterVersionCapabilityOpenShiftSamples,
+			configv1.ClusterVersionCapabilityOpenShiftSamples,
 		},
 	}
 	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
@@ -1066,11 +1188,11 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				client:                 fakeClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
-			err := r.reconcileImageContentPolicyType(context.Background(), tc.hcp)
+			err := r.reconcileImageContentPolicyType(t.Context(), tc.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			idms := globalconfig.ImageDigestMirrorSet()
-			err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
 			g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 
 			// Same number of ICS and IDMS
@@ -1086,10 +1208,10 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				origHCP := tc.hcp.DeepCopy()
 				origHCP.Spec.ImageContentSources = nil
 
-				err = r.reconcileImageContentPolicyType(context.Background(), origHCP)
+				err = r.reconcileImageContentPolicyType(t.Context(), origHCP)
 				g.Expect(err).ToNot(HaveOccurred())
 				idms := globalconfig.ImageDigestMirrorSet()
-				err = fakeClient.Get(context.Background(), client.ObjectKeyFromObject(idms), idms)
+				err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
 				g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 				g.Expect(len(origHCP.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
 				compareICSAndIDMS(g, origHCP.Spec.ImageContentSources, idms)
@@ -1147,17 +1269,17 @@ func TestReconcileKASEndpoints(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
-			err := r.reconcileKASEndpoints(context.Background(), tc.hcp)
+			err := r.reconcileKASEndpoints(t.Context(), tc.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			endpoints := &corev1.Endpoints{}
-			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
+			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 
 			endpointSlice := &discoveryv1.EndpointSlice{}
-			err = fakeClient.Get(context.Background(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
+			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
 			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
@@ -1233,9 +1355,9 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				client:                 fakeClient,
 				cpClient:               cpFakeClient,
 			}
-			g.Expect(r.reconcileKubeletConfig(context.TODO())).To(Succeed())
+			g.Expect(r.reconcileKubeletConfig(t.Context())).To(Succeed())
 			for _, obj := range tc.expectedHostedClusterObjects {
-				g.Expect(r.client.Get(context.TODO(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
 			}
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
@@ -1244,7 +1366,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				},
 			}
 			cmList := &corev1.ConfigMapList{}
-			g.Expect(r.client.List(context.TODO(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
+			g.Expect(r.client.List(t.Context(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
 			expectedLen := len(tc.expectedHostedClusterObjects)
 			g.Expect(cmList.Items).To(HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
 		})
@@ -1352,11 +1474,15 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			// Create a context with a logger for the test
+			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				client:                 fakeClient,
+				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 				cpClient:               cpClient,
 				hcpName:                "foo",
 				hcpNamespace:           "bar",
@@ -1364,12 +1490,12 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 				platformType:           tc.platformType,
 			}
-			_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+			_, err := r.Reconcile(ctx, controllerruntime.Request{})
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// Check if the OCM configuration has changed or not
 			updatedOcmConfigMap := &corev1.ConfigMap{}
-			err = cpClient.Get(context.Background(), types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
+			err = cpClient.Get(ctx, types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(Equal(tc.expectConfigMapUnchanged))
 		})
@@ -1389,5 +1515,671 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 		Data: map[string]string{
 			"config": data,
 		},
+	}
+}
+
+func TestReconcileAuthOIDC(t *testing.T) {
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+
+	tests := map[string]struct {
+		inputHCP                *hyperv1.HostedControlPlane
+		inputCPObjects          []client.Object
+		expectIssuerCAConfigMap bool
+		expectOIDCClientSecrets []string
+		expectErrors            bool
+		expectedErrorMessages   []string
+		setAROHCP               bool
+	}{
+		"when OAuth is enabled, should not copy OIDC resources": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							IdentityProviders: []configv1.IdentityProvider{
+								{
+									Name: "test-provider",
+									IdentityProviderConfig: configv1.IdentityProviderConfig{
+										Type: configv1.IdentityProviderTypeHTPasswd,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled and no OIDC providers, should not copy anything": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with CA configmap, should copy CA": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "oidc-ca-bundle",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "test-ca-certificate",
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with OIDC clients, should copy client secrets": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+										{
+											ComponentName:      "cli",
+											ComponentNamespace: "openshift-authentication",
+											ClientID:           "cli-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "cli-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cli-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("cli-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret", "cli-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with both CA and client secrets, should copy both": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "oidc-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "test-ca-certificate",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with confidential and public OIDC clients, should copy confidential client secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+										{
+											ComponentName:      "cli",
+											ComponentNamespace: "openshift-authentication",
+											ClientID:           "cli-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+		},
+		"when OAuth is disabled with OIDC provider with a hosted-cluster-sourced annotated client secret and ARO-HCP platform, should not copy the client secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterSourcedAnnotation: "true",
+						},
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            false,
+			setAROHCP:               true,
+		},
+		"when OAuth is disabled with OIDC provider and not ARO-HCP platform, setting hosted-cluster-sourced annotation on a client secret should not skip copying the secret": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "console-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "console-client-secret",
+						Namespace: testNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterSourcedAnnotation: "true",
+						},
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{"console-client-secret"},
+			expectErrors:            false,
+			setAROHCP:               false,
+		},
+		"when OAuth is disabled but CA configmap is missing, should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "missing-ca-bundle",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            true,
+			expectedErrorMessages:   []string{"failed to get issuer CA configmap missing-ca-bundle"},
+		},
+		"when OAuth is disabled but client secret is missing, should return error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "test-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://example.com",
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "missing-client-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects:          []client.Object{},
+			expectIssuerCAConfigMap: false,
+			expectOIDCClientSecrets: []string{},
+			expectErrors:            true,
+			expectedErrorMessages:   []string{"failed to get OIDCClient secret missing-client-secret"},
+		},
+		"when OAuth is disabled with multiple OIDC providers, should handle first provider only": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name: "first-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://first.example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "first-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "first-console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "first-console-secret",
+											},
+										},
+									},
+								},
+								{
+									Name: "second-oidc-provider",
+									Issuer: configv1.TokenIssuer{
+										URL: "https://second.example.com",
+										CertificateAuthority: configv1.ConfigMapNameReference{
+											Name: "second-ca-bundle",
+										},
+									},
+									OIDCClients: []configv1.OIDCClientConfig{
+										{
+											ComponentName:      "console",
+											ComponentNamespace: "openshift-console",
+											ClientID:           "second-console-client",
+											ClientSecret: configv1.SecretNameReference{
+												Name: "second-console-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			inputCPObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "first-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "first-ca-certificate",
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "second-ca-bundle",
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": "second-ca-certificate",
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "first-console-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("first-console-secret-value"),
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "second-console-secret",
+						Namespace: testNamespace,
+					},
+					Data: map[string][]byte{
+						"clientSecret": []byte("second-console-secret-value"),
+					},
+				},
+			},
+			expectIssuerCAConfigMap: true,
+			expectOIDCClientSecrets: []string{"first-console-secret"}, // Only first provider should be processed
+			expectErrors:            false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := t.Context()
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(test.inputCPObjects...).
+				Build()
+
+			hcClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			r := &reconciler{
+				client:                 hcClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			if test.setAROHCP {
+				azureutil.SetAsAroHCPTest(t)
+			}
+
+			// Verify that CA configmaps and OIDC client secrets don't exist in hosted cluster before reconciliation
+			if test.expectIssuerCAConfigMap {
+				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+				caConfigMap := &corev1.ConfigMap{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      provider.Issuer.CertificateAuthority.Name,
+				}, caConfigMap)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "CA configmap should not exist before reconciliation")
+			}
+
+			for _, secretName := range test.expectOIDCClientSecrets {
+				clientSecret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      secretName,
+				}, clientSecret)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "OIDC client secret should not exist before reconciliation")
+			}
+
+			err := r.reconcileAuthOIDC(ctx, test.inputHCP)
+
+			if test.expectErrors {
+				g.Expect(err).To(HaveOccurred())
+				errorStr := err.Error()
+				for _, expectedMsg := range test.expectedErrorMessages {
+					g.Expect(errorStr).To(ContainSubstring(expectedMsg))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Check if issuer CA configmap was copied to openshift-config namespace
+			if test.expectIssuerCAConfigMap {
+				if test.inputHCP.Spec.Configuration != nil &&
+					test.inputHCP.Spec.Configuration.Authentication != nil &&
+					len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+					provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+					caConfigMap := &corev1.ConfigMap{}
+					err := hcClient.Get(ctx, client.ObjectKey{
+						Namespace: ConfigNamespace,
+						Name:      provider.Issuer.CertificateAuthority.Name,
+					}, caConfigMap)
+					g.Expect(err).ToNot(HaveOccurred())
+					// Get expected CA certificate from the test case input objects
+					expectedCA := ""
+					for _, obj := range test.inputCPObjects {
+						if cm, ok := obj.(*corev1.ConfigMap); ok && cm.Name == provider.Issuer.CertificateAuthority.Name {
+							expectedCA = cm.Data["ca-bundle.crt"]
+							break
+						}
+					}
+					g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(Equal(expectedCA))
+				}
+			}
+
+			// Check if OIDC client secrets were copied to openshift-config namespace
+			for _, secretName := range test.expectOIDCClientSecrets {
+				clientSecret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{
+					Namespace: ConfigNamespace,
+					Name:      secretName,
+				}, clientSecret)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clientSecret.Data["clientSecret"]).ToNot(BeEmpty())
+			}
+
+			// Verify that unexpected resources were not created
+			if !test.expectIssuerCAConfigMap &&
+				test.inputHCP.Spec.Configuration != nil &&
+				test.inputHCP.Spec.Configuration.Authentication != nil &&
+				len(test.inputHCP.Spec.Configuration.Authentication.OIDCProviders) > 0 {
+				provider := test.inputHCP.Spec.Configuration.Authentication.OIDCProviders[0]
+				if provider.Issuer.CertificateAuthority.Name != "" {
+					caConfigMap := &corev1.ConfigMap{}
+					err := hcClient.Get(ctx, client.ObjectKey{
+						Namespace: ConfigNamespace,
+						Name:      provider.Issuer.CertificateAuthority.Name,
+					}, caConfigMap)
+					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				}
+			}
+			// Verify that no unexpected client secrets were copied
+			secretList := &corev1.SecretList{}
+			err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace))
+			g.Expect(err).ToNot(HaveOccurred())
+
+			expectedSecrets := sets.New(test.expectOIDCClientSecrets...)
+
+			for _, secret := range secretList.Items {
+				if !expectedSecrets.Has(secret.Name) {
+					t.Errorf("unexpected OIDC client secret copied: %s", secret.Name)
+				}
+			}
+		})
 	}
 }

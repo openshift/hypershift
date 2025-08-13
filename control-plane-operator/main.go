@@ -26,17 +26,18 @@ import (
 	konnectivityhttpsproxy "github.com/openshift/hypershift/konnectivity-https-proxy"
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
+	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -68,7 +69,7 @@ func main() {
 	basename := filepath.Base(os.Args[0])
 	cmd := commandFor(basename)
 
-	cmd.Version = version.GetRevision()
+	cmd.Version = supportedversion.GetRevision()
 
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -95,6 +96,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = etcddefrag.NewStartCommand()
 	case "sync-fg-configmap":
 		cmd = syncfgconfigmap.NewRunCommand()
+	case "sync-global-pullsecret":
+		cmd = syncglobalpullsecret.NewRunCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -147,6 +150,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(etcdbackup.NewStartCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
+	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
 	return cmd
 }
 
@@ -193,7 +197,7 @@ func NewStartCommand() *cobra.Command {
 			"replacement when --registry-overrides is used.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		setupLog.Info("Starting hypershift-controlplane-manager", "version", version.String())
+		setupLog.Info("Starting hypershift-controlplane-manager", "version", supportedversion.String())
 		ctx := ctrl.SetupSignalHandler()
 
 		restConfig := ctrl.GetConfigOrDie()
@@ -466,7 +470,7 @@ func NewStartCommand() *cobra.Command {
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 			ImageMetadataProvider:                   imageMetaDataProvider,
-		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate); err != nil {
+		}).SetupWithManager(mgr, upsert.New(enableCIDebugOutput).CreateOrUpdate, hcp); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "hosted-control-plane")
 			os.Exit(1)
 		}

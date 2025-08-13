@@ -1,7 +1,6 @@
 package validations
 
 import (
-	"context"
 	"testing"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -114,7 +113,7 @@ func TestValidateAuthenticationSpec(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := ValidateAuthenticationSpec(context.TODO(), nil, tc.authentication, "foo", []string{})
+			err := ValidateAuthenticationSpec(t.Context(), nil, tc.authentication, "foo", []string{})
 			require.Equal(t, err != nil, tc.shouldError, "expected error state mismatch", "expected an error?", tc.shouldError, "received", err)
 		})
 	}

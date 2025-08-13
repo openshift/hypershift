@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -62,7 +62,7 @@ func NewStartCommand() *cobra.Command {
 	}))
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		log.Info("Starting availability-prober", "version", version.String())
+		log.Info("Starting availability-prober", "version", supportedversion.String())
 		url, err := url.Parse(opts.target)
 		if err != nil {
 			log.Error(err, fmt.Sprintf("failed to parse %q as url", opts.target))

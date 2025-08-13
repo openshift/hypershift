@@ -1,7 +1,6 @@
 package karpenter
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -167,7 +166,7 @@ func TestKarpenterDeletion(t *testing.T) {
 				ReleaseProvider:  mockedProvider,
 			}
 
-			ctx := log.IntoContext(context.Background(), testr.New(t))
+			ctx := log.IntoContext(t.Context(), testr.New(t))
 
 			// first reconcile should initiate deletions
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(tc.hcp)})

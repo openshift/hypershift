@@ -39,6 +39,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -199,6 +200,16 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
 	}
+
+	ct, err := client.New(opts.CPCluster.GetConfig(), client.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	hcp := manifests.HostedControlPlane(opts.Namespace, opts.HCPName)
+	if err = ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+
 	resourcesToWatch := []client.Object{
 		&imageregistryv1.Config{},
 		&corev1.ConfigMap{},
@@ -228,17 +239,23 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&admissionregistrationv1.MutatingWebhookConfiguration{},
 		&admissionregistrationv1.ValidatingWebhookConfiguration{},
 		&prometheusoperatorv1.PrometheusRule{},
-		&operatorv1.IngressController{},
 		&discoveryv1.EndpointSlice{},
 	}
+
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		resourcesToWatch = append(resourcesToWatch, &operatorv1.IngressController{})
+	}
+
 	for _, r := range resourcesToWatch {
 		if err := c.Watch(source.Kind[client.Object](opts.Manager.GetCache(), r, eventHandler())); err != nil {
 			return fmt.Errorf("failed to watch %T: %w", r, err)
 		}
 	}
+
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &hyperv1.HostedControlPlane{}, eventHandler())); err != nil {
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
+
 	// HCCO needs to watch for KubeletConfig ConfigMaps on the Control plane cluster (MNG cluster)
 	// and mirrors them to the hosted cluster so the operators on the hosted cluster
 	// could access the data in the mirrored ConfigMaps.
@@ -352,12 +369,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling guest cluster namespaces")
-	if err := r.reconcileNamespaces(ctx); err != nil {
+	if err := r.reconcileNamespaces(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile namespaces: %w", err))
 	}
 
 	log.Info("reconciling guest cluster rbac")
-	if err := r.reconcileRBAC(ctx); err != nil {
+	if err := r.reconcileRBAC(ctx, hcp); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
@@ -444,10 +461,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			}
 		}
 	}
-
-	log.Info("reconciling ingress controller")
-	if err := r.reconcileIngressController(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
+	// Reconcile the IngressController resource only if the ingress capability is enabled.
+	// Skip this step if the user explicitly disabled ingress.
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		log.Info("reconciling ingress controller")
+		if err := r.reconcileIngressController(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile ingress controller: %w", err))
+		}
 	}
 
 	log.Info("reconciling oauth client secrets")
@@ -550,7 +570,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling network operator")
 	networkOperator := networkoperator.NetworkOperator()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type)
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, util.IsDisableMultiNetwork(hcp))
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
@@ -724,7 +744,6 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
 	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
-		originalHCP := hcp.DeepCopy()
 		condition := &metav1.Condition{
 			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
 			Reason: hyperv1.RecoveryFinishedReason,
@@ -736,9 +755,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 			condition.Message = fmt.Sprintf("Hosted cluster recovery not finished: %v", err)
 
 			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-			if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
+				return nil
+			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 			}
+
 			return ctrl.Result{RequeueAfter: 120 * time.Second}, errors.NewAggregate(errs)
 		}
 
@@ -746,7 +768,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		condition.Status = metav1.ConditionTrue
 		condition.Message = "Hosted cluster recovery finished"
 		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if _, err := r.CreateOrUpdate(ctx, r.client, hcp, func() error {
+			return nil
+		}); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
 		}
 	}
@@ -947,7 +971,7 @@ func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *
 	return nil
 }
 
-func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
+func (r *reconciler) reconcileNamespaces(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	namespaceManifests := []struct {
 		manifest  func() *corev1.Namespace
 		reconcile func(*corev1.Namespace) error
@@ -968,6 +992,9 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context) error {
 	var errs []error
 	for _, m := range namespaceManifests {
 		ns := m.manifest()
+		if ns.Name == "openshift-ingress" && !capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			continue
+		}
 		if _, err := r.CreateOrUpdate(ctx, r.client, ns, func() error {
 			if m.reconcile != nil {
 				return m.reconcile(ns)
@@ -997,11 +1024,31 @@ func (m manifestAndReconcile[o]) upsert(ctx context.Context, client client.Clien
 	return nil
 }
 
-type manifestReconciler interface {
-	upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
+// getKey returns a unique identifier string for the manifest object,
+// combining Kind, Name, and optionally Namespace (if the object is namespaced).
+// This is useful for mapping capabilities to specific manifests while
+// avoiding conflicts between objects with the same name in different scopes
+// or of different kinds (e.g., Role vs RoleBinding).
+//
+// - For namespaced objects: "<namespace>/<name>/<kind>"
+// - For cluster-scoped objects: "<name>/<kind>"
+func (m manifestAndReconcile[o]) getKey() string {
+	obj := m.manifest()
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	ns := obj.GetNamespace()
+	name := obj.GetName()
+	if ns != "" {
+		return fmt.Sprintf("%s/%s/%s", ns, name, gvk.Kind)
+	}
+	return fmt.Sprintf("%s/%s", name, gvk.Kind) // cluster-scoped
 }
 
-func (r *reconciler) reconcileRBAC(ctx context.Context) error {
+type manifestReconciler interface {
+	upsert(ctx context.Context, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error
+	getKey() string
+}
+
+func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	rbacReconciler := []manifestReconciler{
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.CSRApproverClusterRole, reconcile: rbac.ReconcileCSRApproverClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.IngressToRouteControllerClusterRole, reconcile: rbac.ReconcileIngressToRouteControllerClusterRole},
@@ -1056,6 +1103,11 @@ func (r *reconciler) reconcileRBAC(ctx context.Context) error {
 
 	var errs []error
 	for _, m := range rbacReconciler {
+		mKey := m.getKey()
+		capability, found := manifests.RbacCapabilityMap[mKey]
+		if found && capability == hyperv1.IngressCapability && !capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			continue
+		}
 		if err := m.upsert(ctx, r.client, r.CreateOrUpdate); err != nil {
 			errs = append(errs, err)
 		}
@@ -1182,27 +1234,34 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		// Copy OIDCClient Secrets into openshift-config namespace
 		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
 			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
-				var src corev1.Secret
-				err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
-				if err != nil {
-					errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
-					continue
-				}
-				dest := corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      oidcClient.ClientSecret.Name,
-						Namespace: ConfigNamespace,
-					},
-				}
-				_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
-					if dest.Data == nil {
-						dest.Data = map[string][]byte{}
+				if oidcClient.ClientSecret.Name != "" {
+					var src corev1.Secret
+					err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
+					if err != nil {
+						errs = append(errs, fmt.Errorf("failed to get OIDCClient secret %s: %w", oidcClient.ClientSecret.Name, err))
+						continue
 					}
-					dest.Data["clientSecret"] = src.Data["clientSecret"]
-					return nil
-				})
-				if err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+					if azureutil.IsAroHCP() && util.HasAnnotationWithValue(&src, hyperv1.HostedClusterSourcedAnnotation, "true") {
+						// This is a day-2 secret. We shouldn't copy it, instead it'll be provided by the end-user on the hosted cluster.
+						continue
+					}
+					dest := corev1.Secret{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      oidcClient.ClientSecret.Name,
+							Namespace: ConfigNamespace,
+						},
+					}
+					_, err = r.CreateOrUpdate(ctx, r.client, &dest, func() error {
+						if dest.Data == nil {
+							dest.Data = map[string][]byte{}
+						}
+						dest.Data["clientSecret"] = src.Data["clientSecret"]
+						return nil
+					})
+					if err != nil {
+						errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
+
+					}
 				}
 			}
 		}
@@ -1277,12 +1336,9 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	clusterVersion := &configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}}
 	if _, err := r.CreateOrUpdate(ctx, r.client, clusterVersion, func() error {
 		clusterVersion.Spec.ClusterID = configv1.ClusterID(hcp.Spec.ClusterID)
-		clusterVersion.Spec.Capabilities = nil
-		if capabilities.HasDisabledCapabilities(hcp.Spec.Capabilities) {
-			clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
-				BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
-				AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
-			}
+		clusterVersion.Spec.Capabilities = &configv1.ClusterVersionCapabilitiesSpec{
+			BaselineCapabilitySet:         configv1.ClusterVersionCapabilitySetNone,
+			AdditionalEnabledCapabilities: capabilities.CalculateEnabledCapabilities(hcp.Spec.Capabilities),
 		}
 		clusterVersion.Spec.Upstream = hcp.Spec.UpdateService
 		clusterVersion.Spec.Channel = hcp.Spec.Channel
@@ -1536,15 +1592,20 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}
 			return nil
 		}
-		for arn, secret := range map[string]*corev1.Secret{
-			hcp.Spec.Platform.AWS.RolesRef.IngressARN: manifests.AWSIngressCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.StorageARN: manifests.AWSStorageCloudCredsSecret(),
-		} {
-			err := syncSecret(secret, arn)
-			if err != nil {
+		roleMap := map[string]*corev1.Secret{}
+
+		roleMap[hcp.Spec.Platform.AWS.RolesRef.StorageARN] = manifests.AWSStorageCloudCredsSecret()
+
+		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			roleMap[hcp.Spec.Platform.AWS.RolesRef.IngressARN] = manifests.AWSIngressCloudCredsSecret()
+		}
+
+		for arn, secret := range roleMap {
+			if err := syncSecret(secret, arn); err != nil {
 				errs = append(errs, err)
 			}
 		}
+
 		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 			err := syncSecret(
 				manifests.AWSImageRegistryCloudCredsSecret(),
@@ -1568,18 +1629,22 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		// overriding the Azure credentials authentication method to always use client certificate authentication. This secret is just created
 		// so that the ingress controller does not fail. The data in the secret is never used by the ingress controller due to the aforementioned
 		// override to use client certificate authentication.
-		ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
-		if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
-			secretData["azure_client_id"] = []byte("fakeClientID")
-			ingressCredentialSecret.Data = secretData
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile guest cluster ingress operator secret: %w", err))
+		//
+		// Skip this step if the user explicitly disabled ingress.
+		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			ingressCredentialSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-ingress-operator", Name: "cloud-credentials"}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, ingressCredentialSecret, func() error {
+				secretData["azure_client_id"] = []byte("fakeClientID")
+				ingressCredentialSecret.Data = secretData
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile guest cluster ingress operator secret: %w", err))
+			}
 		}
 
 		azureDiskCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-disk-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, azureDiskCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.DiskMSIClientID)
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.DiskMSIClientID)
 			azureDiskCSISecret.Data = secretData
 			return nil
 		}); err != nil {
@@ -1589,7 +1654,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 			imageRegistrySecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-image-registry", Name: "installer-cloud-credentials"}}
 			if _, err := r.CreateOrUpdate(ctx, r.client, imageRegistrySecret, func() error {
-				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
+				secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.ImageRegistryMSIClientID)
 				imageRegistrySecret.Data = secretData
 				return nil
 			}); err != nil {
@@ -1599,7 +1664,7 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 
 		azureFileCSISecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: "openshift-cluster-csi-drivers", Name: "azure-file-credentials"}}
 		if _, err := r.CreateOrUpdate(ctx, r.client, azureFileCSISecret, func() error {
-			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.ManagedIdentities.DataPlane.FileMSIClientID)
+			secretData["azure_client_id"] = []byte(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane.FileMSIClientID)
 			azureFileCSISecret.Data = secretData
 			return nil
 		}); err != nil {
@@ -1634,26 +1699,31 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			return err
 		}
 
-		var ingressCredentials corev1.Secret
-		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name}, &ingressCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to get ingress operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name, err))
-			return errs
-		}
+		// fetch the user-supplied ingress cloud credentials Secret,
+		// transform and apply it as the "cloud-credentials" Secret in the openshift-ingress-operator namespace,
+		// which is required by the ingress operator in the guest cluster.
+		// Skip this step if the user explicitly disabled ingress.
+		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			var ingressCredentials corev1.Secret
+			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name}, &ingressCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to get ingress operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.IngressOperatorCloudCreds.Name, err))
+				return errs
+			}
 
-		cloudCredentials := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "openshift-ingress-operator",
-				Name:      "cloud-credentials",
-			},
+			cloudCredentials := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "openshift-ingress-operator",
+					Name:      "cloud-credentials",
+				},
+			}
+			err = createPowerVSSecret(&ingressCredentials, cloudCredentials)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile powervs ingress cloud credentials secret %w", err))
+			}
 		}
-		err = createPowerVSSecret(&ingressCredentials, cloudCredentials)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile powervs ingress cloud credentials secret %w", err))
-		}
-
 		var storageCredentials corev1.Secret
-		err = r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name}, &storageCredentials)
+		err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: hcp.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name}, &storageCredentials)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("failed to get storage operator cloud credentials secret %s from hcp namespace : %w", hcp.Spec.Platform.PowerVS.StorageOperatorCloudCreds.Name, err))
 			return errs
@@ -2085,7 +2155,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	log := ctrl.LoggerFrom(ctx)
 	remaining := sets.New[string]()
 	log.Info("Ensuring resource creation is blocked in cluster")
-	if err := r.ensureResourceCreationIsBlocked(ctx); err != nil {
+	if err := r.ensureResourceCreationIsBlocked(ctx, hcp); err != nil {
 		return remaining, err
 	}
 	var errs []error
@@ -2101,18 +2171,20 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 			log.Info("Image registry is removed")
 		}
 	}
-	log.Info("Ensuring ingress controllers are removed")
-	removed, err := r.ensureIngressControllersRemoved(ctx, hcp)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	if !removed {
-		remaining.Insert("ingress-controllers")
-	} else {
-		log.Info("Ingress controllers are removed")
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		log.Info("Ensuring ingress controllers are removed")
+		removed, err := r.ensureIngressControllersRemoved(ctx, hcp)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		if !removed {
+			remaining.Insert("ingress-controllers")
+		} else {
+			log.Info("Ingress controllers are removed")
+		}
 	}
 	log.Info("Ensuring load balancers are removed")
-	removed, err = r.ensureServiceLoadBalancersRemoved(ctx)
+	removed, err := r.ensureServiceLoadBalancersRemoved(ctx)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -2121,6 +2193,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	} else {
 		log.Info("Load balancers are removed")
 	}
+
 	log.Info("Ensuring persistent volumes are removed")
 	removed, err = r.ensurePersistentVolumesRemoved(ctx)
 	if err != nil {
@@ -2290,10 +2363,10 @@ func isAllowedWebhookUrl(disallowedUrls []string, url string) bool {
 	return true
 }
 
-func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error {
+func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	wh := manifests.ResourceCreationBlockerWebhook()
 	if _, err := r.CreateOrUpdate(ctx, r.client, wh, func() error {
-		reconcileCreationBlockerWebhook(wh)
+		reconcileCreationBlockerWebhook(wh, hcp)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile resource cleanup webhook: %w", err)
@@ -2301,11 +2374,44 @@ func (r *reconciler) ensureResourceCreationIsBlocked(ctx context.Context) error 
 	return nil
 }
 
-func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebhookConfiguration) {
+func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebhookConfiguration, hcp *hyperv1.HostedControlPlane) {
 	failurePolicy := admissionregistrationv1.Fail
 	sideEffectClass := admissionregistrationv1.SideEffectClassNone
 	allScopes := admissionregistrationv1.AllScopes
 	equivalentMatch := admissionregistrationv1.Equivalent
+
+	// Base rules
+	rules := []admissionregistrationv1.RuleWithOperations{
+		{
+			Operations: []admissionregistrationv1.OperationType{
+				admissionregistrationv1.Create,
+			},
+			Rule: admissionregistrationv1.Rule{
+				APIGroups:   []string{""},
+				APIVersions: []string{"v1"},
+				Resources: []string{
+					"pods", "persistentvolumeclaims", "persistentvolumes", "services",
+				},
+				Scope: &allScopes,
+			},
+		},
+	}
+
+	// Only add the ingresscontrollers blocking rule if ingress capability is enabled.
+	// This rule prevents re-creation of ingresscontrollers during cleanup,
+	// but if ingress was never enabled, no need to explicitly block it.
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		rules = append(rules, admissionregistrationv1.RuleWithOperations{
+			Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+			Rule: admissionregistrationv1.Rule{
+				APIGroups:   []string{"operator.openshift.io"},
+				APIVersions: []string{"v1"},
+				Resources:   []string{"ingresscontrollers"},
+				Scope:       &allScopes,
+			},
+		})
+	}
+
 	wh.Webhooks = []admissionregistrationv1.ValidatingWebhook{
 		{
 			AdmissionReviewVersions: []string{"v1"},
@@ -2318,38 +2424,8 @@ func reconcileCreationBlockerWebhook(wh *admissionregistrationv1.ValidatingWebho
 					Port:      ptr.To[int32](443),
 				},
 			},
-			FailurePolicy: &failurePolicy,
-			Rules: []admissionregistrationv1.RuleWithOperations{
-				{
-					Operations: []admissionregistrationv1.OperationType{
-						admissionregistrationv1.Create,
-					},
-					Rule: admissionregistrationv1.Rule{
-						APIGroups:   []string{""},
-						APIVersions: []string{"v1"},
-						Resources: []string{
-							"pods",
-							"persistentvolumeclaims",
-							"persistentvolumes",
-							"services",
-						},
-						Scope: &allScopes,
-					},
-				},
-				{
-					Operations: []admissionregistrationv1.OperationType{
-						admissionregistrationv1.Create,
-					},
-					Rule: admissionregistrationv1.Rule{
-						APIGroups:   []string{"operator.openshift.io"},
-						APIVersions: []string{"v1"},
-						Resources: []string{
-							"ingresscontrollers",
-						},
-						Scope: &allScopes,
-					},
-				},
-			},
+			FailurePolicy:     &failurePolicy,
+			Rules:             rules,
 			MatchPolicy:       &equivalentMatch,
 			SideEffects:       &sideEffectClass,
 			TimeoutSeconds:    ptr.To[int32](30),

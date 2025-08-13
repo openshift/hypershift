@@ -40,7 +40,7 @@ func TestLabelEnforcingClientEnforcesLabel(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			client := &LabelEnforcingClient{
 				Client: fake.NewClientBuilder().Build(),
 				labels: map[string]string{CacheLabelSelectorKey: CacheLabelSelectorValue},
@@ -115,7 +115,7 @@ func TestLabelEnforcingUpsertProvider(t *testing.T) {
 		APIClient: client,
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	result, err := provider.CreateOrUpdate(ctx, &clientWithSelector, obj, func() error {
 		obj.Data = map[string][]byte{"some-key": []byte("some-value")}
 		return nil

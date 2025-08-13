@@ -14,6 +14,7 @@ import (
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
@@ -353,8 +354,11 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		return ctrl.Result{}, fmt.Errorf("failed to create token: %w", err)
 	}
 
-	if err := r.ntoReconcile(ctx, nodePool, configGenerator, controlPlaneNamespace); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile NTO: %w", err)
+	// Only reconcile NTO if NodeTuning capability is enabled
+	if capabilities.IsNodeTuningCapabilityEnabled(hcluster.Spec.Capabilities) {
+		if err := r.ntoReconcile(ctx, nodePool, configGenerator, controlPlaneNamespace); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile NTO: %w", err)
+		}
 	}
 
 	// If reconciliation is paused we return before modifying any state

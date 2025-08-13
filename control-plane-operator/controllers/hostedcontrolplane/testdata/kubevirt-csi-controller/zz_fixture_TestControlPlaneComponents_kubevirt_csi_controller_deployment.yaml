@@ -32,6 +32,7 @@ spec:
         app: kubevirt-csi-driver
         hypershift.openshift.io/control-plane-component: kubevirt-csi-controller
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
     spec:
       affinity:
         nodeAffinity:
@@ -58,7 +59,7 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
-      automountServiceAccountToken: false
+      automountServiceAccountToken: true
       containers:
       - args:
         - --endpoint=$(CSI_ENDPOINT)
@@ -173,6 +174,26 @@ spec:
         image: csi-external-snapshotter
         imagePullPolicy: IfNotPresent
         name: csi-snapshotter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/run/secrets/tenantcluster
+          name: service-account-kubeconfig
+      - args:
+        - --v=5
+        - --csi-address=/csi/csi.sock
+        - --kubeconfig=/var/run/secrets/tenantcluster/kubeconfig
+        - --timeout=3m
+        - --handle-volume-inuse-error=false
+        image: csi-external-resizer
+        imagePullPolicy: IfNotPresent
+        name: csi-resizer
         resources:
           requests:
             cpu: 10m

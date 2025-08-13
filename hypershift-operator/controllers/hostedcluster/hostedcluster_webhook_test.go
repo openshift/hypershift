@@ -1,7 +1,6 @@
 package hostedcluster
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -78,7 +77,7 @@ func TestValidateKVHostedClusterCreate(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			hcVal := &hostedClusterValidator{}
-			warnings, err := hcVal.ValidateCreate(context.Background(), testCase.hc)
+			warnings, err := hcVal.ValidateCreate(tt.Context(), testCase.hc)
 
 			if testCase.expectError && err == nil {
 				t.Error("should return error but didn't")
@@ -169,7 +168,7 @@ func TestValidateKVHostedClusterUpdate(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			hcVal := &hostedClusterValidator{}
-			warnings, err := hcVal.ValidateUpdate(context.Background(), testCase.oldHC, testCase.newHC)
+			warnings, err := hcVal.ValidateUpdate(tt.Context(), testCase.oldHC, testCase.newHC)
 
 			if testCase.expectError && err == nil {
 				t.Error("should return error but didn't")
@@ -204,6 +203,14 @@ func TestValidateJsonAnnotation(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name: "valid remove without value",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "remove","path": "/spec/template/metadata/annotations/kubevirt.io~1allow-pod-bridge-network-live-migration"}]`,
+			},
+			expectError: false,
+		},
+
+		{
 			name: "not an array",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `{"op": "replace","path": "/spec/domain/cpu/cores","value": 3}`,
@@ -235,6 +242,13 @@ func TestValidateJsonAnnotation(t *testing.T) {
 			name: "missing value",
 			annotations: map[string]string{
 				v1beta1.JSONPatchAnnotation: `[{"op": "replace","path": "/spec/domain/cpu/cores"}]`,
+			},
+			expectError: true,
+		},
+		{
+			name: "bad operation",
+			annotations: map[string]string{
+				v1beta1.JSONPatchAnnotation: `[{"op": "delete","path": "/spec/domain/cpu/cores", "value": "1"}]`,
 			},
 			expectError: true,
 		},
@@ -345,7 +359,7 @@ func TestValidateKVNodePoolCreate(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			npVal := &nodePoolValidator{}
-			warnings, err := npVal.ValidateCreate(context.Background(), testCase.np)
+			warnings, err := npVal.ValidateCreate(tt.Context(), testCase.np)
 
 			if testCase.expectError && err == nil {
 				t.Error("should return error but didn't")
@@ -463,7 +477,7 @@ func TestValidateKVNodePoolUpdate(t *testing.T) {
 	} {
 		t.Run(testCase.name, func(tt *testing.T) {
 			npVal := &nodePoolValidator{}
-			warnings, err := npVal.ValidateUpdate(context.Background(), testCase.oldNP, testCase.newNP)
+			warnings, err := npVal.ValidateUpdate(tt.Context(), testCase.oldNP, testCase.newNP)
 
 			if testCase.expectError && err == nil {
 				t.Error("should return error but didn't")
@@ -549,7 +563,7 @@ func TestKubevirtClusterServiceDefaulting(t *testing.T) {
 		t.Run(testCase.name, func(tt *testing.T) {
 			d := hostedClusterDefaulter{}
 			hc := testCase.hc.DeepCopy()
-			err := d.Default(context.Background(), hc)
+			err := d.Default(t.Context(), hc)
 			if err != nil {
 				tt.Errorf("unexpected error: %v", err)
 			}
@@ -622,7 +636,7 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 		t.Run(testCase.name, func(tt *testing.T) {
 			d := nodePoolDefaulter{}
 			np := testCase.np.DeepCopy()
-			err := d.Default(context.Background(), np)
+			err := d.Default(t.Context(), np)
 			if err != nil {
 				tt.Errorf("unexpected error: %v", err)
 			}

@@ -23,6 +23,9 @@ status:
   - group: ""
     kind: Secret
     name: karpenter-credentials
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: karpenter-operator
   - group: rbac.authorization.k8s.io
     kind: Role
     name: karpenter-operator
@@ -32,4 +35,3 @@ status:
   - group: ""
     kind: ServiceAccount
     name: karpenter-operator
-  version: 4.18.0

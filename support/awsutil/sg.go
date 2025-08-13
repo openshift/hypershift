@@ -6,6 +6,8 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	"github.com/pkg/errors"
 )
 
 func DefaultWorkerSGEgressRules() []*ec2.IpPermission {
@@ -226,4 +228,62 @@ func GetSecurityGroupById(ec2Client ec2iface.EC2API, id string) (*ec2.SecurityGr
 		return nil, nil
 	}
 	return describeSGResult.SecurityGroups[0], nil
+}
+
+func UpdateResourceTags(ec2Client ec2iface.EC2API, resourceID string, create, remove map[string]string) error {
+	// If we have anything to create or update
+	if len(create) > 0 {
+		createTagsInput := MapToEC2Tags(create)
+		input := &ec2.CreateTagsInput{
+			Resources: []*string{aws.String(resourceID)},
+			Tags:      createTagsInput,
+		}
+
+		// Create/Update tags in AWS.
+		if _, err := ec2Client.CreateTags(input); err != nil {
+			return errors.Wrapf(err, "failed to create tags for resource %q: %+v", resourceID, create)
+		}
+	}
+
+	// If we have anything to remove
+	if len(remove) > 0 {
+		removeTagsInput := MapToEC2Tags(remove)
+		// Create the DeleteTags input
+		input := &ec2.DeleteTagsInput{
+			Resources: []*string{aws.String(resourceID)},
+			Tags:      removeTagsInput,
+		}
+
+		// Delete tags in AWS.
+		if _, err := ec2Client.DeleteTags(input); err != nil {
+			return errors.Wrapf(err, "failed to delete tags for resource %q: %v", resourceID, remove)
+		}
+	}
+
+	return nil
+}
+
+func MapToEC2Tags(m map[string]string) []*ec2.Tag {
+	if len(m) == 0 {
+		return nil
+	}
+	tags := make([]*ec2.Tag, 0, len(m))
+	for k, v := range m {
+		tags = append(tags, &ec2.Tag{
+			Key:   aws.String(k),
+			Value: aws.String(v),
+		})
+	}
+	return tags
+}
+
+func EC2TagsToMap(tags []*ec2.Tag) map[string]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	m := make(map[string]string)
+	for _, tag := range tags {
+		m[*tag.Key] = *tag.Value
+	}
+	return m
 }

@@ -2,7 +2,6 @@ package karpenter
 
 import (
 	"bytes"
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -130,7 +129,7 @@ func TestAuthorizeClientCSR(t *testing.T) {
 				},
 			}
 
-			authorized, err := r.authorize(context.Background(), csr, fakeEC2Client)
+			authorized, err := r.authorize(t.Context(), csr, fakeEC2Client)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.wantErr))
@@ -230,7 +229,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 				},
 			}
 
-			authorized, err := r.authorize(context.Background(), csr, fakeEC2Client)
+			authorized, err := r.authorize(t.Context(), csr, fakeEC2Client)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.wantErr))

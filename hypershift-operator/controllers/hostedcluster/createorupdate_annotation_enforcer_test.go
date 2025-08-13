@@ -1,7 +1,6 @@
 package hostedcluster
 
 import (
-	"context"
 	"testing"
 
 	"github.com/openshift/hypershift/support/upsert"
@@ -123,11 +122,11 @@ func TestCreateOrUpdateWithAnnotationFactory(t *testing.T) {
 			obj := tc.obj
 			client := fake.NewClientBuilder().WithObjects(obj).Build()
 			providerFactory := createOrUpdateWithAnnotationFactory(upsert.New(false))
-			if _, err := providerFactory(req)(context.Background(), client, obj, tc.mutateFN(obj)); err != nil {
+			if _, err := providerFactory(req)(t.Context(), client, obj, tc.mutateFN(obj)); err != nil {
 				t.Fatalf("CreateOrUpdate failed: %v", err)
 			}
 
-			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(obj), obj); err != nil {
+			if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(obj), obj); err != nil {
 				t.Fatalf("failed to get object from client after running CreateOrUpdate: %v", err)
 			}
 			actualMeta := obj.(metav1.Object)

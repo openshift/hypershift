@@ -1,7 +1,7 @@
 # Create an Azure cluster with Additional Options
 This document describes how to set up an Azure cluster with Hypershift with additional options.
 
-Creating an Azure cluster with Hypershift without any additional flag options can be found [here](create-azure-cluster_on_aks.md).
+Creating an Azure cluster with Hypershift without any additional flag options can be found [here](create-azure-cluster-on-aks.md).
 
 ## Prerequisites
 All sections assume you are:

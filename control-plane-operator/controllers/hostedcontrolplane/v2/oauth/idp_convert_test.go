@@ -1,7 +1,6 @@
 package oauth
 
 import (
-	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
@@ -184,7 +183,7 @@ func TestOpenIDProviderConversion(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fake.NewClientBuilder().WithObjects(idpSecret).Build()
-			outIDP, err := convertProviderConfigToIDPData(context.TODO(),
+			outIDP, err := convertProviderConfigToIDPData(t.Context(),
 				tc.idp, nil, 0, volumeMountInfo, client, namespace, true)
 			g := NewWithT(t)
 			if tc.outErr != nil {
@@ -361,7 +360,7 @@ users:
 			).Build()
 
 			// Run function.
-			transport, err := transportForCARef(context.Background(), client, namespace, caName, caKey, false)
+			transport, err := transportForCARef(t.Context(), client, namespace, caName, caKey, false)
 			g.Expect(err).ToNot(HaveOccurred())
 			tr := transport.(*http.Transport)
 

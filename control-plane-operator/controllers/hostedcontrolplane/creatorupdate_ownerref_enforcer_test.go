@@ -1,7 +1,6 @@
 package hostedcontrolplane
 
 import (
-	"context"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -74,11 +73,11 @@ func TestCreateOrUpdateWithOwnerRefFactory(t *testing.T) {
 			}
 			client := fake.NewClientBuilder().WithObjects(obj).Build()
 			providerFactory := createOrUpdateWithOwnerRefFactory(upsert.New(false).CreateOrUpdate)
-			if _, err := providerFactory(hcp)(context.Background(), client, obj, tc.mutateFN(obj)); err != nil {
+			if _, err := providerFactory(hcp)(t.Context(), client, obj, tc.mutateFN(obj)); err != nil {
 				t.Fatalf("CreateOrUpdate failed: %v", err)
 			}
 
-			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(obj), obj); err != nil {
+			if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(obj), obj); err != nil {
 				t.Fatalf("failed to get object from client after running CreateOrUpdate: %v", err)
 			}
 			if diff := cmp.Diff(tc.expected, obj.GetOwnerReferences()); diff != "" {

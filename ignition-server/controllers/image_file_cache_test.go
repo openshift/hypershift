@@ -85,7 +85,7 @@ func TestImageFileCache(t *testing.T) {
 
 func getImageFile(t *testing.T, sut *imageFileCache, imageRef string, imageFile string) (string, error) {
 	var buff bytes.Buffer
-	sutErr := sut.extractImageFile(context.Background(), imageRef, []byte("pull-secret"), imageFile, &buff)
+	sutErr := sut.extractImageFile(t.Context(), imageRef, []byte("pull-secret"), imageFile, &buff)
 	return buff.String(), sutErr
 }
 

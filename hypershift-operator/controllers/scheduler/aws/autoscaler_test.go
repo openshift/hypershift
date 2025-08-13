@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -87,7 +86,7 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actual, requeueAfter := hostedClusterMachineSetsToScaleDown(context.Background(), test.hostedCluster, test.machineSets, test.machines, test.nodes)
+			actual, requeueAfter := hostedClusterMachineSetsToScaleDown(t.Context(), test.hostedCluster, test.machineSets, test.machines, test.nodes)
 			g.Expect(actual).To(testutil.MatchExpected(test.expected))
 			g.Expect(requeueAfter).To(Equal(test.expectRequeueAfter))
 		})
@@ -858,7 +857,7 @@ func TestNonRequestServingMachineSetsToScale(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actual := nonRequestServingMachineSetsToScale(context.Background(), cfg, test.hostedClusters, test.machineSets)
+			actual := nonRequestServingMachineSetsToScale(t.Context(), cfg, test.hostedClusters, test.machineSets)
 			g.Expect(actual).To(testutil.MatchExpected(test.expect, cmp.AllowUnexported(machineSetReplicas{})))
 		})
 	}

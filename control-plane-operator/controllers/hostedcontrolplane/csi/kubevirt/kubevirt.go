@@ -129,6 +129,7 @@ func reconcileCustomTenantStorageClass(sc *storagev1.StorageClass, infraSCName s
 		"bus":                   "scsi",
 		"infraStorageClassName": infraSCName,
 	}
+	sc.AllowVolumeExpansion = ptr.To(true)
 
 	return nil
 }
@@ -141,6 +142,7 @@ func reconcileDefaultTenantStorageClass(sc *storagev1.StorageClass) error {
 	sc.Parameters = map[string]string{
 		"bus": "scsi",
 	}
+	sc.AllowVolumeExpansion = ptr.To(true)
 
 	return nil
 }

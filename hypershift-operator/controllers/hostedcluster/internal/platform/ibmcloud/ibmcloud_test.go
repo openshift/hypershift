@@ -1,7 +1,6 @@
 package ibmcloud
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -135,7 +134,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 			g := NewGomegaWithT(t)
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			fakeReconciler := IBMCloud{}
-			actualinfraCR, err := fakeReconciler.ReconcileCAPIInfraCR(context.Background(), fakeClient, controllerutil.CreateOrUpdate, test.inputHostedCluster, test.inputControlPlaneNamespace, test.inputAPIEndpoint)
+			actualinfraCR, err := fakeReconciler.ReconcileCAPIInfraCR(t.Context(), fakeClient, controllerutil.CreateOrUpdate, test.inputHostedCluster, test.inputControlPlaneNamespace, test.inputAPIEndpoint)
 			g.Expect(err).To(Not(HaveOccurred()))
 			if diff := cmp.Diff(actualinfraCR, test.expectedObject); diff != "" {
 				t.Errorf("actual and expected differ: %s", diff)

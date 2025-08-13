@@ -1,0 +1,112 @@
+---
+- name: Set up OIDC Instance
+  hosts: localhost
+  force_handlers: true
+  gather_facts: false
+  vars:
+    region: us-east-1
+    instance_type: t3.medium
+    key_name: my-oidc-key
+    instance_name: oidc-fedora
+    security_group_name: oidc-sg
+    vpc_id: vpc-034bba4f54e741a87
+    subnet_id: subnet-06c11b91dd28a97f3
+    ami_id: ami-09722669c73b517f6
+
+  handlers:
+    - name: Save private key
+      ansible.builtin.copy:
+        content: "{{ key_pair_result.key.private_key }}"
+        dest: "{{ key_name }}.pem"
+        mode: '0400'
+    - name: Save instance ID
+      ansible.builtin.copy:
+        content: "{{ ec2.instances[0].instance_id }}"
+        dest: instance-id.txt
+        mode: '0644'
+    - name: Save security group ID
+      ansible.builtin.copy:
+        content: "{{ security_group.group_id }}"
+        dest: sg-id.txt
+        mode: '0644'
+    - name: Save instance hostname
+      ansible.builtin.copy:
+        content: "{{ ec2.instances[0].public_dns_name }}"
+        dest: hostname.txt
+        mode: '0644'
+
+  tasks:
+    - name: Create SSH key pair
+      amazon.aws.ec2_key:
+        name: "{{ key_name }}"
+        region: "{{ region }}"
+      register: key_pair_result
+      notify: Save private key
+
+    - name: Create security group
+      amazon.aws.ec2_security_group:
+        name: "{{ security_group_name }}"
+        description: "OIDC Provider SG"
+        vpc_id: "{{ vpc_id }}"
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: 0.0.0.0/0
+            rule_desc: Allow SSH
+          - proto: tcp
+            ports:
+              - 80
+            cidr_ip: 0.0.0.0/0
+            rule_desc: Allow HTTP
+          - proto: tcp
+            ports:
+              - 443
+            cidr_ip: 0.0.0.0/0
+            rule_desc: Allow HTTPS
+      register: security_group
+      notify: Save security group ID
+
+    - name: Launch EC2 instance
+      amazon.aws.ec2_instance:
+        name: "{{ instance_name }}"
+        key_name: "{{ key_name }}"
+        security_group: "{{ security_group.group_id }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ ami_id }}"
+        region: "{{ region }}"
+        vpc_subnet_id: "{{ subnet_id }}"
+        network:
+          assign_public_ip: true
+        wait: true
+        count: 1
+        state: running
+      register: ec2
+      notify:
+        - Save instance ID
+        - Save instance hostname
+
+    - name: Wait for SSH to come up
+      ansible.builtin.wait_for:
+        host: "{{ ec2.instances[0].public_dns_name }}"
+        port: 22
+        delay: 10
+        timeout: 320
+
+    - name: Add host to inventory
+      ansible.builtin.add_host:
+        name: "{{ ec2.instances[0].public_dns_name }}"
+        groups: oidc_servers
+        ansible_user: fedora
+        ansible_ssh_private_key_file: "{{ key_name }}.pem"
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no"
+
+    - name: Flush all handlers
+      ansible.builtin.meta: flush_handlers
+
+    - name: Wait for instance to be reachable
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 10
+      delegate_to: "{{ ec2.instances[0].public_dns_name }}"

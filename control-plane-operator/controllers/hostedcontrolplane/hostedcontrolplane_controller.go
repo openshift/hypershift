@@ -3,12 +3,14 @@ package hostedcontrolplane
 import (
 	"context"
 	crand "crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +39,7 @@ import (
 	clusterpolicyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/clusterpolicy"
 	cnov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cno"
 	configoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/configoperator"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
@@ -126,6 +129,12 @@ import (
 )
 
 const (
+	// LastAppliedSecurityGroupTagsAnnotation is an annotation that stores the last applied security group tags for the hosted cluster.
+	// This is used to track changes to security group tags and ensure that tags changes are applied to the default security group.
+	// The value is a JSON string containing the tags.
+	// Example: {"Name": "my-cluster", "Environment": "production"}
+	LastAppliedSecurityGroupTagsAnnotation = "hypershift.openshift.io/last-applied-security-group-tags"
+
 	finalizer                              = "hypershift.openshift.io/finalizer"
 	DefaultAdminKubeconfigKey              = "kubeconfig"
 	ImageStreamAutoscalerImage             = "cluster-autoscaler"
@@ -149,6 +158,8 @@ type HostedControlPlaneReconciler struct {
 
 	// SetDefaultSecurityContext is used to configure Security Context for containers
 	SetDefaultSecurityContext bool
+	// DefaultSecurityContextUID is the UID to use for the default security context
+	DefaultSecurityContextUID int64
 
 	// CertRotationScale determines how quickly we rotate certificates - should only be set faster in testing
 	CertRotationScale time.Duration
@@ -170,7 +181,7 @@ type HostedControlPlaneReconciler struct {
 	azureCredentialsLoaded                  sync.Map
 }
 
-func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN) error {
+func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
@@ -193,11 +204,26 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.ec2Client, r.awsSession = GetEC2Client()
 
-	r.registerComponents()
+	r.registerComponents(hcp)
+
+	uidInput := os.Getenv(controlplaneoperator.DefaultSecurityContextUIDEnvVar)
+	if uidInput == "" {
+		r.Log.Info("DEFAULT_SECURITY_CONTEXT_UID is not set. This should never happen, unless you are running a HO which doesn't support this CPO")
+		r.DefaultSecurityContextUID = component.DefaultSecurityContextUID
+		return nil
+	}
+
+	uid, err := strconv.ParseInt(uidInput, 10, 64)
+	if err != nil {
+		return fmt.Errorf("failed to parse %q: %w", controlplaneoperator.DefaultSecurityContextUIDEnvVar, err)
+	}
+	r.DefaultSecurityContextUID = uid
+
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) registerComponents() {
+func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedControlPlane) {
+
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
 		etcdv2.NewComponent(),
@@ -214,7 +240,7 @@ func (r *HostedControlPlaneReconciler) registerComponents() {
 		oauthv2.NewComponent(),
 		routecmv2.NewComponent(),
 		clusterpolicyv2.NewComponent(),
-		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+		configoperatorv2.NewComponent(r.ReleaseProvider.GetRegistryOverrides(), r.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), hcp.Spec.Capabilities),
 		awsccmv2.NewComponent(),
 		azureccmv2.NewComponent(),
 		kubevirtccmv2.NewComponent(),
@@ -809,22 +835,18 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		}
 		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
 	case serviceStrategy.Type == hyperv1.Route:
-		externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
-		if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
-			return fmt.Errorf("failed to get kube apiserver external route: %w", err)
-		}
-		if len(externalRoute.Status.Ingress) == 0 || externalRoute.Status.Ingress[0].RouterCanonicalHostname == "" {
-			return fmt.Errorf("APIServer external route not admitted")
-		}
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
+			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
+			if err := r.Get(ctx, client.ObjectKeyFromObject(externalRoute), externalRoute); err != nil {
+				return fmt.Errorf("failed to get kube apiserver external route: %w", err)
+			}
 
-		endpoint := externalRoute.Status.Ingress[0].RouterCanonicalHostname
-		port := 443
-		if sharedingress.UseSharedIngress() {
-			endpoint = externalRoute.Spec.Host
-			port = sharedingress.ExternalDNSLBPort
+			endpoint, port, err := kas.GetHealthcheckEndpointForRoute(externalRoute, hcp)
+			if err != nil {
+				return err
+			}
+			return healthCheckKASEndpoint(endpoint, port)
 		}
-		return healthCheckKASEndpoint(endpoint, port)
-
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
 		port := config.KASSVCPort
@@ -880,7 +902,7 @@ func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx 
 		}
 	}
 
-	if hyperazureutil.IsAroHCP() {
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
 			return err
 		}
@@ -1063,7 +1085,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 
 	r.Log.Info("Reconciling default security group")
 	if err := r.reconcileDefaultSecurityGroup(ctx, hcp); err != nil {
-		return fmt.Errorf("failed to reconcile default security group")
+		return fmt.Errorf("failed to reconcile default security group: %w", err)
 	}
 
 	cpContext := component.ControlPlaneContext{
@@ -1075,6 +1097,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		ReleaseImageProvider:      releaseImageProvider,
 		UserReleaseImageProvider:  userReleaseImageProvider,
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		DefaultSecurityContextUID: r.DefaultSecurityContextUID,
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		ImageMetadataProvider:     r.ImageMetadataProvider,
@@ -1275,7 +1298,7 @@ func (r *HostedControlPlaneReconciler) reconcileOAuthServerService(ctx context.C
 	p := oauth.NewOAuthServiceParams(hcp)
 	oauthServerService := manifests.OauthServerService(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r.Client, oauthServerService, func() error {
-		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy)
+		return oauth.ReconcileService(oauthServerService, p.OwnerRef, serviceStrategy, hcp.Spec.Platform.Type)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile OAuth service: %w", err)
 	}
@@ -1369,7 +1392,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
 	exposeKASThroughRouter := util.IsRouteKAS(hcp)
@@ -1502,14 +1525,14 @@ func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPrivateHCP(hcp) {
+	if !util.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() {
+	if !util.IsPublicHCP(hcp) || !util.IsRouteKAS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
@@ -1543,7 +1566,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 		return "", 0, "", errors.New("APIServer service strategy not specified")
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
 		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
@@ -1727,14 +1750,16 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile root CA: %w", err)
 	}
 
-	observedDefaultIngressCert := manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get observed default ingress cert: %w", err)
+	var observedDefaultIngressCert *corev1.ConfigMap
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		observedDefaultIngressCert = manifests.IngressObservedDefaultIngressCertCA(hcp.Namespace)
+		if err := r.Get(ctx, client.ObjectKeyFromObject(observedDefaultIngressCert), observedDefaultIngressCert); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get observed default ingress cert: %w", err)
+			}
+			observedDefaultIngressCert = nil
 		}
-		observedDefaultIngressCert = nil
 	}
-
 	rootCAConfigMap := manifests.RootCAConfigMap(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, rootCAConfigMap, func() error {
 		return pki.ReconcileRootCAConfigMap(rootCAConfigMap, p.OwnerRef, rootCASecret, observedDefaultIngressCert)
@@ -1926,12 +1951,15 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile konnectivity agent cert: %w", err)
 	}
 
-	// Ingress Cert
-	ingressCert := manifests.IngressCert(hcp.Namespace)
-	if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
-		return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+	// Reconcile ingress serving certificate only if Ingress capability is enabled.
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Ingress Cert
+		ingressCert := manifests.IngressCert(hcp.Namespace)
+		if _, err := createOrUpdate(ctx, r, ingressCert, func() error {
+			return pki.ReconcileIngressCert(ingressCert, rootCASecret, p.OwnerRef, p.IngressSubdomain)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingress cert secret: %w", err)
+		}
 	}
 
 	var userCABundles []client.ObjectKey
@@ -1998,20 +2026,21 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile machine config server cert secret: %w", err)
 		}
 	}
-
-	// Cluster Node Tuning Operator metrics Serving Cert
-	NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
-	NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
-	err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
-	if err != nil {
-		r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+	var err error
+	if capabilities.IsNodeTuningCapabilityEnabled(hcp.Spec.Capabilities) {
+		// Cluster Node Tuning Operator metrics Serving Cert
+		NodeTuningOperatorServingCert := manifests.ClusterNodeTuningOperatorServingCertSecret(hcp.Namespace)
+		NodeTuningOperatorService := manifests.ClusterNodeTuningOperatorMetricsService(hcp.Namespace)
+		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, NodeTuningOperatorService, NodeTuningOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
+			return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
+		}
 	}
-	if _, err = createOrUpdate(ctx, r, NodeTuningOperatorServingCert, func() error {
-		return pki.ReconcileNodeTuningOperatorServingCertSecret(NodeTuningOperatorServingCert, rootCASecret, p.OwnerRef)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile node tuning operator serving cert: %w", err)
-	}
-
 	// OLM PackageServer Cert
 	packageServerCertSecret := manifests.OLMPackageServerCertSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, packageServerCertSecret, func() error {
@@ -2065,28 +2094,30 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	//   issues in cases where you are upgrading an older CPO prior to us adding the feature to reconcile the serving
 	//   cert secret ourselves.
 
-	// Multus Admission Controller Serving Cert
-	multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
-	if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
-		}
-	}
-
-	// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
-	// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
-	if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
-		multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
-
-		err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
-		if err != nil {
-			return err
+	// Multus Admission Controller Serving Cert - only if Multus is not disabled
+	if !util.IsDisableMultiNetwork(hcp) {
+		multusAdmissionControllerService := manifests.MultusAdmissionControllerService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(multusAdmissionControllerService), multusAdmissionControllerService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve multus-admission-controller service: %w", err)
+			}
 		}
 
-		if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
-			return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+		// If the service doesn't have the service ca annotation, delete any previous secret with the annotation and
+		// reconcile the secret with our own rootCA; otherwise, skip reconciling the secret with our own rootCA.
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(multusAdmissionControllerService); !hasServiceCAAnnotation {
+			multusAdmissionControllerServingCertSecret := manifests.MultusAdmissionControllerServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, multusAdmissionControllerServingCertSecret)
+			if err != nil {
+				return err
+			}
+
+			if _, err = createOrUpdate(ctx, r, multusAdmissionControllerServingCertSecret, func() error {
+				return pki.ReconcileMultusAdmissionControllerServingCertSecret(multusAdmissionControllerServingCertSecret, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile multus admission controller serving cert: %w", err)
+			}
 		}
 	}
 
@@ -2283,9 +2314,12 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 	if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
 		// CNO manages overall multus-admission-controller deployment. CPO manages restarts.
 		// TODO: why is this not done in CNO?
-		multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
-		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
-			return fmt.Errorf("failed to restart multus admission controller: %w", err)
+		// Only restart multus deployment if Multus is not disabled
+		if !util.IsDisableMultiNetwork(hcp) {
+			multusDeployment := manifests.MultusAdmissionControllerDeployment(hcp.Namespace)
+			if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, multusDeployment, restartAnnotation); err != nil {
+				return fmt.Errorf("failed to restart multus admission controller: %w", err)
+			}
 		}
 
 		// CNO manages overall network-node-identity deployment. CPO manages restarts.
@@ -2353,7 +2387,7 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 
 	p, err := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
 	if err != nil {
-		return fmt.Errorf("failed to initialise machine config server parameters config: %w", err)
+		return fmt.Errorf("failed to initialize machine config server parameters config: %w", err)
 	}
 
 	cm := manifests.MachineConfigServerConfig(hcp.Namespace)
@@ -2797,10 +2831,52 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		// Not AWS platform, skip
 		return nil
 	}
+
 	if hcp.Status.Platform != nil && hcp.Status.Platform.AWS != nil && hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID != "" {
-		// Security group has already been created, nothing to do
+		// Security group has already been created, update tags if necessary and return.
+		lastAppliedTags, err := getLastAppliedSecurityGroupTags(hcp)
+		if err != nil {
+			return fmt.Errorf("failed to get last applied security group tags annotation: %w", err)
+		}
+
+		// if we failed to apply the annotation prviously, fallback to fetching the current tags from the SG resource directly.
+		if lastAppliedTags == nil {
+			sg, err := supportawsutil.GetSecurityGroupById(r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			if err != nil {
+				return fmt.Errorf("failed to get default security group: %w", err)
+			}
+			lastAppliedTags = supportawsutil.EC2TagsToMap(sg.Tags)
+		}
+
+		desiredTags := awsSecurityGroupTags(hcp)
+		changed, deleted, isDifferent := util.MapsDiff(lastAppliedTags, desiredTags)
+		if !isDifferent {
+			return nil
+		}
+
+		logger.Info("Security group tags have changed", "changed", changed, "deleted", deleted)
+		if err := supportawsutil.UpdateResourceTags(r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID, changed, deleted); err != nil {
+			if supportawsutil.IsPermissionsError(err) {
+				logger.Info("insufficient permissions to update security group tags", "sg", hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+				return nil
+			}
+			return err
+		}
+
+		// Update the last-applied-security-group-tags annotation on the HCP with the tags applied to the SG.
+		// This is used to track changes to the tags and update them if necessary.
+		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
+			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, desiredTags); err != nil {
+				return fmt.Errorf("failed to update last applied security group tags annotation")
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
+		}
+
 		return nil
 	}
+
 	validProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 	if validProvider == nil || validProvider.Status != metav1.ConditionTrue {
 		logger.Info("Identity provider not ready. Skipping security group creation.")
@@ -2809,7 +2885,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 	originalHCP := hcp.DeepCopy()
 	var condition *metav1.Condition
-	sgID, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
+	sgID, appliedTags, creationErr := createAWSDefaultSecurityGroup(ctx, r.ec2Client, hcp)
 	if creationErr != nil {
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
@@ -2818,6 +2894,18 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 			Reason:  hyperv1.AWSErrorReason,
 		}
 	} else {
+		// Ensure the last-applied-security-group-tags annotation is set on the HCP on SG creation.
+		// This is used to track changes to the tags and update them if necessary.
+		if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
+			if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, appliedTags); err != nil {
+				return fmt.Errorf("failed to update last applied security group tags annotation")
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to update HostedControlPlane object: %w", err)
+		}
+		originalHCP = hcp.DeepCopy()
+
 		condition = &metav1.Condition{
 			Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
 			Status:  metav1.ConditionTrue,
@@ -2856,13 +2944,12 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, map[string]string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	var (
-		vpcID          = hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
-		infraID        = hcp.Spec.InfraID
-		additionalTags = hcp.Spec.Platform.AWS.ResourceTags
+		vpcID   = hcp.Spec.Platform.AWS.CloudProviderConfig.VPC
+		infraID = hcp.Spec.InfraID
 	)
 
 	// Validate VPC exists
@@ -2871,15 +2958,15 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
-		return "", fmt.Errorf("failed to describe vpc %s, code %s", vpcID, supportawsutil.AWSErrorCode(err))
+		return "", nil, fmt.Errorf("failed to describe vpc %s, code %s", vpcID, supportawsutil.AWSErrorCode(err))
 	}
 	if len(vpcResult.Vpcs) == 0 {
-		return "", fmt.Errorf("vpc %s not found", vpcID)
+		return "", nil, fmt.Errorf("vpc %s not found", vpcID)
 	}
 
 	if len(hcp.Spec.Networking.MachineNetwork) == 0 {
 		// Should never happen
-		return "", errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
+		return "", nil, errors.New("failed to extract machine CIDR while creating default security group: hostedcontrolplane.spec.networking.machineNetwork length is 0")
 	}
 	machineCIDRs := make([]string, len(hcp.Spec.Networking.MachineNetwork))
 	for i, mNet := range hcp.Spec.Networking.MachineNetwork {
@@ -2889,7 +2976,7 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	// Search for an existing default worker security group and create one if not found
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
-		return "", fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
+		return "", nil, fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
 	}
 	sgID := ""
 	var sg *ec2.SecurityGroup
@@ -2897,41 +2984,11 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 		sg = describeSGResult.SecurityGroups[0]
 		sgID = awssdk.StringValue(sg.GroupId)
 	}
+
+	var tags map[string]string
 	if sgID == "" {
 		// Create a security group if one is not found
-
-		tagKeys := sets.NewString()
-		var tags []*ec2.Tag
-		for _, tag := range additionalTags {
-			tagKeys.Insert(tag.Key)
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String(tag.Key),
-				Value: awssdk.String(tag.Value),
-			})
-		}
-		clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
-		if !tagKeys.Has(clusterKey) {
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String(clusterKey),
-				Value: awssdk.String("owned"),
-			})
-		}
-		if !tagKeys.Has("Name") {
-			tags = append(tags, &ec2.Tag{
-				Key:   awssdk.String("Name"),
-				Value: awssdk.String(awsSecurityGroupName(infraID)),
-			})
-		}
-
-		if hcp.Spec.AutoNode != nil && hcp.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
-			hcp.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
-			if !tagKeys.Has("karpenter.sh/discovery") {
-				tags = append(tags, &ec2.Tag{
-					Key:   awssdk.String("karpenter.sh/discovery"),
-					Value: awssdk.String(infraID),
-				})
-			}
-		}
+		tags = awsSecurityGroupTags(hcp)
 
 		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 			GroupName:   awssdk.String(awsSecurityGroupName(infraID)),
@@ -2940,12 +2997,12 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			TagSpecifications: []*ec2.TagSpecification{
 				{
 					ResourceType: awssdk.String("security-group"),
-					Tags:         tags,
+					Tags:         supportawsutil.MapToEC2Tags(tags),
 				},
 			},
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to create security group, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		sgID = awssdk.StringValue(createSGResult.GroupId)
 
@@ -2954,17 +3011,20 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 			GroupIds: []*string{awssdk.String(sgID)},
 		}
 		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
-			return "", fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
-			return "", fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
 		sg = describeSGResult.SecurityGroups[0]
 		logger.Info("Created security group", "id", sgID)
+	} else {
+		tags = supportawsutil.EC2TagsToMap(sg.Tags)
 	}
+
 	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, awssdk.StringValue(sg.OwnerId))
 	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       awssdk.String(sgID),
@@ -2972,11 +3032,68 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2AP
 	})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) != "InvalidPermission.Duplicate" {
-			return "", fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
+			return "", nil, fmt.Errorf("failed to set security group ingress rules, code: %s", supportawsutil.AWSErrorCode(err))
 		}
 		logger.Info("WARNING: got duplicate permissions error when setting security group ingress permissions", "sgID", sgID)
 	}
-	return sgID, nil
+	return sgID, tags, nil
+}
+
+func updateLastAppliedSecurityGroupTagsAnnotation(hcp *hyperv1.HostedControlPlane, tags map[string]string) error {
+	if hcp.Annotations == nil {
+		hcp.Annotations = make(map[string]string)
+	}
+
+	jsonTags, err := json.Marshal(tags)
+	if err != nil {
+		return err
+	}
+
+	hcp.Annotations[LastAppliedSecurityGroupTagsAnnotation] = string(jsonTags)
+	return nil
+}
+
+func getLastAppliedSecurityGroupTags(hcp *hyperv1.HostedControlPlane) (map[string]string, error) {
+	tagsAnnotation, ok := hcp.Annotations[LastAppliedSecurityGroupTagsAnnotation]
+	if !ok {
+		return nil, nil
+	}
+
+	tags := make(map[string]string)
+	if err := json.Unmarshal([]byte(tagsAnnotation), &tags); err != nil {
+		return nil, err
+	}
+	return tags, nil
+}
+
+func awsSecurityGroupTags(hcp *hyperv1.HostedControlPlane) map[string]string {
+	var (
+		infraID        = hcp.Spec.InfraID
+		additionalTags = hcp.Spec.Platform.AWS.ResourceTags
+	)
+
+	tags := map[string]string{}
+	for _, tag := range additionalTags {
+		tags[tag.Key] = tag.Value
+	}
+
+	clusterKey := fmt.Sprintf("kubernetes.io/cluster/%s", infraID)
+	if _, exist := tags[clusterKey]; !exist {
+		tags[clusterKey] = "owned"
+	}
+
+	if _, exist := tags["Name"]; !exist {
+		tags["Name"] = awsSecurityGroupName(infraID)
+	}
+
+	if hcp.Spec.AutoNode != nil && hcp.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+		hcp.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+		if _, exist := tags["karpenter.sh/discovery"]; !exist {
+			tags["karpenter.sh/discovery"] = infraID
+		}
+	}
+
+	return tags
 }
 
 func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
@@ -3259,7 +3376,7 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	// We need to only store the Azure credentials once and reuse them after that.
 	storedCreds, found := r.azureCredentialsLoaded.Load(key)
 	if !found {
-		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
+		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
 		if err != nil {
 			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)

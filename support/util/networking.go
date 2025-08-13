@@ -133,3 +133,14 @@ func GetAdvertiseAddress(hcp *hyperv1.HostedControlPlane, ipv4DefaultAddress, ip
 
 	return advertiseAddress
 }
+
+// IsDisableMultiNetwork returns true if multus/multi-network is disabled for the hosted control plane.
+// When DisableMultiNetwork is nil, it defaults to false (multus enabled).
+func IsDisableMultiNetwork(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.OperatorConfiguration != nil &&
+		hcp.Spec.OperatorConfiguration.ClusterNetworkOperator != nil &&
+		hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork != nil {
+		return *hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork
+	}
+	return false
+}

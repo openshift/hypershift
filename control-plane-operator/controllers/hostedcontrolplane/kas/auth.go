@@ -295,7 +295,7 @@ func validateExtraMappingExpression(expression string) error {
 func HCPAuthConfigToAPIServerAuthConfig(authConfig *AuthenticationConfiguration) (*apiserver.AuthenticationConfiguration, error) {
 	outBytes, err := json.Marshal(authConfig)
 	if err != nil {
-		return nil, fmt.Errorf("marshalling HCP auth config to JSON: %v", err)
+		return nil, fmt.Errorf("marshaling HCP auth config to JSON: %v", err)
 	}
 
 	apiserverAuthConfig := &apiserver.AuthenticationConfiguration{}

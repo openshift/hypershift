@@ -76,6 +76,7 @@ var (
 		&appsv1.ReplicaSet{},
 		&appsv1.StatefulSet{},
 		&batchv1.Job{},
+		&batchv1.CronJob{},
 		&corev1.ConfigMap{},
 		&corev1.Endpoints{},
 		&corev1.Event{},

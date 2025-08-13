@@ -352,6 +352,9 @@ github.com/clarketm/json
 # github.com/coreos/go-semver v0.3.1
 ## explicit; go 1.8
 github.com/coreos/go-semver/semver
+# github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
+## explicit
+github.com/coreos/go-systemd/dbus
 # github.com/coreos/go-systemd/v22 v22.5.0
 ## explicit; go 1.12
 github.com/coreos/go-systemd/v22/daemon
@@ -517,6 +520,9 @@ github.com/go-playground/validator/v10
 # github.com/gobuffalo/flect v1.0.3
 ## explicit; go 1.16
 github.com/gobuffalo/flect
+# github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2
+## explicit; go 1.12
+github.com/godbus/dbus
 # github.com/gogo/protobuf v1.3.2
 ## explicit; go 1.15
 github.com/gogo/protobuf/gogoproto
@@ -740,7 +746,7 @@ github.com/opencontainers/runc/libcontainer/user
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20250423170806-6bababe9164e
+# github.com/openshift/api v0.0.0-20250609083529-2b129d95495e
 ## explicit; go 1.23.0
 github.com/openshift/api
 github.com/openshift/api/annotations
@@ -839,7 +845,7 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 ## explicit; go 1.21
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
@@ -854,7 +860,7 @@ github.com/openshift/cluster-node-tuning-operator/pkg/performanceprofile/control
 ## explicit; go 1.12
 github.com/openshift/custom-resource-status/conditions/v1
 # github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7 => ./api
-## explicit; go 1.23.6
+## explicit; go 1.24.0
 github.com/openshift/hypershift/api/certificates
 github.com/openshift/hypershift/api/certificates/v1alpha1
 github.com/openshift/hypershift/api/hypershift/v1beta1
@@ -2211,7 +2217,7 @@ k8s.io/kubelet/config/v1beta1
 # k8s.io/pod-security-admission v0.32.2
 ## explicit; go 1.23.0
 k8s.io/pod-security-admission/admission/api
-k8s.io/pod-security-admission/admission/api/v1beta1
+k8s.io/pod-security-admission/admission/api/v1
 k8s.io/pod-security-admission/api
 # k8s.io/utils v0.0.0-20241210054802-24370beab758
 ## explicit; go 1.18

@@ -141,6 +141,10 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 
+	if err := setupOperatorInfoMetric(managementCluster); err != nil {
+		return fmt.Errorf("failed to setup operator info metric: %w", err)
+	}
+
 	if err := mgr.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start manager: %w", err)
 	}

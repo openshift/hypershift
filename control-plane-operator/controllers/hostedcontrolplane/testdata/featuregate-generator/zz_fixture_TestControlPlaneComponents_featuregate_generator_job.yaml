@@ -24,6 +24,7 @@ spec:
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
+        app: featuregate-generator
         hypershift.openshift.io/control-plane-component: featuregate-generator
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
         hypershift.openshift.io/need-management-kas-access: "true"

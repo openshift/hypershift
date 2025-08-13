@@ -66,7 +66,7 @@ func TestExtractMCOBinaries(t *testing.T) {
 			}(tempDir)
 
 			// Set up the necessary variables for testing.
-			ctx := context.Background()
+			ctx := t.Context()
 			mcoImage := "fake"
 			pullSecret := []byte{}
 			binDir := filepath.Join(tempDir, "bin")

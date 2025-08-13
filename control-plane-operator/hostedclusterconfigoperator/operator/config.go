@@ -8,6 +8,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
+	resourcemanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -78,11 +81,57 @@ type HostedClusterConfigOperatorConfig struct {
 	kubeClient kubeclient.Interface
 }
 
-func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
+func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpName string) ctrl.Manager {
+	ct, err := client.New(cpConfig, client.Options{Scheme: hyperapi.Scheme})
+	if err != nil {
+		panic(fmt.Sprintf("failed to create client: %v", err))
+	}
+	hcp := resourcemanifests.HostedControlPlane(namespace, hcpName)
+	if err = ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		panic(fmt.Sprintf("unable to get HCP: %v", err))
+	}
+
 	cfg.UserAgent = config.HCCOUserAgent
 	allSelector := cache.ByObject{
 		Label: labels.Everything(),
 	}
+
+	byObject := map[client.Object]cache.ByObject{
+		&corev1.Namespace{}:           allSelector,
+		&configv1.Infrastructure{}:    allSelector,
+		&configv1.DNS{}:               allSelector,
+		&configv1.Ingress{}:           allSelector,
+		&operatorv1.Network{}:         allSelector,
+		&configv1.Network{}:           allSelector,
+		&configv1.Proxy{}:             allSelector,
+		&configv1.Build{}:             allSelector,
+		&configv1.Image{}:             allSelector,
+		&configv1.Project{}:           allSelector,
+		&configv1.ClusterVersion{}:    allSelector,
+		&configv1.FeatureGate{}:       allSelector,
+		&configv1.ClusterOperator{}:   allSelector,
+		&configv1.OperatorHub{}:       allSelector,
+		&operatorv1.CloudCredential{}: allSelector,
+		&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
+		&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
+		&operatorv1.Storage{}:               allSelector,
+		&operatorv1.CSISnapshotController{}: allSelector,
+		&operatorv1.ClusterCSIDriver{}:      allSelector,
+
+		// Needed for inplace upgrader.
+		&corev1.Node{}: allSelector,
+
+		// Needed for resource cleanup
+		&corev1.Service{}:               allSelector,
+		&corev1.PersistentVolume{}:      allSelector,
+		&corev1.PersistentVolumeClaim{}: allSelector,
+		&imageregistryv1.Config{}:       allSelector,
+	}
+
+	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+		byObject[&operatorv1.IngressController{}] = allSelector
+	}
+
 	leaseDuration := time.Second * 60
 	renewDeadline := time.Second * 40
 	retryPeriod := time.Second * 15
@@ -113,38 +162,7 @@ func Mgr(cfg, cpConfig *rest.Config, namespace string) ctrl.Manager {
 		},
 		Cache: cache.Options{
 			DefaultLabelSelector: cacheLabelSelector(),
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Namespace{}:           allSelector,
-				&configv1.Infrastructure{}:    allSelector,
-				&configv1.DNS{}:               allSelector,
-				&configv1.Ingress{}:           allSelector,
-				&operatorv1.Network{}:         allSelector,
-				&configv1.Network{}:           allSelector,
-				&configv1.Proxy{}:             allSelector,
-				&configv1.Build{}:             allSelector,
-				&configv1.Image{}:             allSelector,
-				&configv1.Project{}:           allSelector,
-				&configv1.ClusterVersion{}:    allSelector,
-				&configv1.FeatureGate{}:       allSelector,
-				&configv1.ClusterOperator{}:   allSelector,
-				&configv1.OperatorHub{}:       allSelector,
-				&operatorv1.CloudCredential{}: allSelector,
-				&admissionregistrationv1.ValidatingWebhookConfiguration{}: allSelector,
-				&admissionregistrationv1.MutatingWebhookConfiguration{}:   allSelector,
-				&operatorv1.Storage{}:               allSelector,
-				&operatorv1.CSISnapshotController{}: allSelector,
-				&operatorv1.ClusterCSIDriver{}:      allSelector,
-
-				// Needed for inplace upgrader.
-				&corev1.Node{}: allSelector,
-
-				// Needed for resource cleanup
-				&corev1.Service{}:               allSelector,
-				&corev1.PersistentVolume{}:      allSelector,
-				&corev1.PersistentVolumeClaim{}: allSelector,
-				&operatorv1.IngressController{}: allSelector,
-				&imageregistryv1.Config{}:       allSelector,
-			},
+			ByObject:             byObject,
 		},
 		Scheme: api.Scheme,
 	})

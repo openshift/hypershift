@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/conditions"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -92,6 +93,13 @@ const (
 
 	ClusterSizeOverrideMetricName = "hypershift_cluster_size_override_instances"
 	clusterSizeOverrideMetricHelp = "Number of HostedClusters with a cluster size override annotation"
+
+	HostedClusterManagedAzureInfoMetricName = "hosted_cluster_managed_azure_info"
+	HostedClusterManagedAzureInfoMetricHelp = "Reports Azure managed (ARO) specific information about the given HostedCluster"
+	HostedClusterManagedAzureResourceType   = "hcpOpenShiftClusters"
+
+	HostedClusterAzureInfoMetricName = "hosted_cluster_azure_info"
+	HostedClusterAzureInfoMetricHelp = "Reports Azure information about the given HostedCluster"
 )
 
 // semantically constant - not supposed to be changed at runtime
@@ -185,6 +193,22 @@ var (
 	clusterSizeOverrideMetricDesc = prometheus.NewDesc(
 		ClusterSizeOverrideMetricName, clusterSizeOverrideMetricHelp,
 		append(hclusterLabels, "environment", "internal_id", "size"), nil)
+
+	managedAzureHostedClusterInfoDesc = prometheus.NewDesc(
+		HostedClusterManagedAzureInfoMetricName, HostedClusterManagedAzureInfoMetricHelp,
+		append(hclusterLabels,
+			"location",
+			"microsoft_subscription_id",
+			"microsoft_resource_group_name",
+			"microsoft_resource_type",
+			"microsoft_resource_id"), nil)
+
+	azureHostedClusterInfoDesc = prometheus.NewDesc(
+		HostedClusterAzureInfoMetricName, HostedClusterAzureInfoMetricHelp,
+		append(hclusterLabels,
+			"location",
+			"microsoft_subscription_id",
+			"microsoft_resource_group_name"), nil)
 )
 
 type hostedClustersMetricsCollector struct {
@@ -504,6 +528,36 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 							append(hclusterLabelValues, metricLabels["environment"], metricLabels["internal_id"], sizeOverride)...,
 						)
 					}
+				}
+			}
+
+			if hcluster.Spec.Platform.Azure != nil {
+				azInfo := hcluster.Spec.Platform.Azure
+				subID := azInfo.SubscriptionID
+				resGroup := azInfo.ResourceGroupName
+				if azureutil.IsAroHCP() {
+					// see https://github.com/Azure/ARO-HCP/blob/4134b5bb53782858047a0493f31b250c811eb84c/api/redhatopenshift/resource-manager/Microsoft.RedHatOpenShift/hcpclusters/preview/2024-06-10-preview/openapi.json#L131
+					resourceID := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s/providers/Microsoft.RedHatOpenshift/hcpOpenShiftClusters/%s",
+						subID, resGroup, hcluster.Name)
+					ch <- prometheus.MustNewConstMetric(
+						managedAzureHostedClusterInfoDesc,
+						prometheus.GaugeValue,
+						1.0,
+						append(hclusterLabelValues,
+							azInfo.Location,
+							subID,
+							resGroup,
+							HostedClusterManagedAzureResourceType,
+							resourceID)...)
+				} else {
+					ch <- prometheus.MustNewConstMetric(
+						azureHostedClusterInfoDesc,
+						prometheus.GaugeValue,
+						1.0,
+						append(hclusterLabelValues,
+							azInfo.Location,
+							subID,
+							resGroup)...)
 				}
 			}
 

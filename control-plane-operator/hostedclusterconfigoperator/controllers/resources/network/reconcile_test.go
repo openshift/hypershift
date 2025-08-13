@@ -8,6 +8,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	operatorv1 "github.com/openshift/api/operator/v1"
+
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileDefaultIngressController(t *testing.T) {
@@ -17,17 +19,19 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 
 	fakePort := uint32(11111)
 	testsCases := []struct {
-		name              string
-		inputNetwork      *operatorv1.Network
-		inputNetworkType  hyperv1.NetworkType
-		inputPlatformType hyperv1.PlatformType
-		expectedNetwork   *operatorv1.Network
+		name                string
+		inputNetwork        *operatorv1.Network
+		inputNetworkType    hyperv1.NetworkType
+		inputPlatformType   hyperv1.PlatformType
+		disableMultiNetwork bool
+		expectedNetwork     *operatorv1.Network
 	}{
 		{
-			name:              "KubeVirt with OVNKubernetes uses unique default geneve port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OVNKubernetes,
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			name:                "KubeVirt with OVNKubernetes uses unique default geneve port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -44,10 +48,11 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "KubeVirt with OpenShiftSDN uses unique default vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			name:                "KubeVirt with OpenShiftSDN uses unique default vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -77,8 +82,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					},
 				},
 			},
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -109,8 +115,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					},
 				},
 			},
-			inputNetworkType:  hyperv1.OVNKubernetes,
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -142,8 +149,9 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 					},
 				},
 			},
-			inputNetworkType:  hyperv1.OVNKubernetes,
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -161,10 +169,11 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		},
 
 		{
-			name:              "KubeVirt with non SDN network does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  "fake",
-			inputPlatformType: hyperv1.KubevirtPlatform,
+			name:                "KubeVirt with non SDN network does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    "fake",
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -175,10 +184,11 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "AWS with SDN does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.AWSPlatform,
+			name:                "AWS with SDN does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -189,10 +199,27 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "None with SDN does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.NonePlatform,
+			name:                "DisableMultiNetwork sets disableMultiNetwork to true",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.Other,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: true,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DisableMultiNetwork: ptr.To(true),
+				},
+			},
+		},
+		{
+			name:                "DisableMultiNetwork false does not set disableMultiNetwork",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.Other,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -203,10 +230,11 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "IBM with SDN does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.IBMCloudPlatform,
+			name:                "None with SDN does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.NonePlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -217,10 +245,11 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "Azure with SDN does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.AzurePlatform,
+			name:                "IBM with SDN does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.IBMCloudPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -231,10 +260,26 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
-			name:              "Agent with SDN does not set unique vxlan port",
-			inputNetwork:      NetworkOperator(),
-			inputNetworkType:  hyperv1.OpenShiftSDN,
-			inputPlatformType: hyperv1.AgentPlatform,
+			name:                "Azure with SDN does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AzurePlatform,
+			disableMultiNetwork: false,
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
+		{
+			name:                "Agent with SDN does not set unique vxlan port",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AgentPlatform,
+			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{
 				ObjectMeta: NetworkOperator().ObjectMeta,
 				Spec: operatorv1.NetworkSpec{
@@ -248,7 +293,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType)
+			ReconcileNetworkOperator(tc.inputNetwork, tc.inputNetworkType, tc.inputPlatformType, tc.disableMultiNetwork)
 			g.Expect(tc.inputNetwork).To(BeEquivalentTo(tc.expectedNetwork))
 		})
 	}

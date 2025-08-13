@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -398,7 +397,7 @@ func TestNodepoolDeletionDoesntRequireHCluster(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
 	if err := c.Delete(ctx, nodePool); err != nil {
 		t.Fatalf("failed to delete nodepool: %v", err)
@@ -507,7 +506,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 				Client: client,
 			}
 
-			got, err := r.createValidGeneratedPayloadCondition(context.Background(), tc.tokenSecret, 1)
+			got, err := r.createValidGeneratedPayloadCondition(t.Context(), tc.tokenSecret, 1)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(got).To(BeEquivalentTo(tc.expectedCondition))
 		})
@@ -594,7 +593,7 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 				},
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
 
 			tc.image, tc.err = defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.releaseImage)
@@ -693,7 +692,7 @@ func TestGetHostedClusterVersion(t *testing.T) {
 				},
 			}
 
-			version, err := r.getHostedClusterVersion(context.Background(), hc, nil)
+			version, err := r.getHostedClusterVersion(t.Context(), hc, nil)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			g.Expect(version).ToNot(BeNil())
@@ -1288,7 +1287,7 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 				},
 			}
 
-			gg.Expect(r.setMachineAndNodeConditions(context.Background(), np, hc)).To(Succeed())
+			gg.Expect(r.setMachineAndNodeConditions(t.Context(), np, hc)).To(Succeed())
 
 			cond := FindStatusCondition(np.Status.Conditions, hyperv1.NodePoolAllMachinesReadyConditionType)
 			gg.Expect(cond).ToNot(BeNil())

@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -19,6 +21,8 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
@@ -53,7 +57,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when capabilities.disabled is set to ImageRegistry it should pass",
+						name: "when capabilities.disabled is set to a supported capability it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -75,7 +79,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						name: "when capabilities.disabled is set to an invalid capability it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Capabilities = &hyperv1.Capabilities{
 								Disabled: []hyperv1.OptionalCapability{
@@ -83,7 +87,120 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\"",
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.disabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Storage"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.enabled is set to a supported capability it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.BaremetalCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capabilities.enabled is set to an invalid capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("AnInvalidCapability"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"AnInvalidCapability\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when capabilities.enabled is set to an unsupported capability it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Storage"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"Storage\": supported values: \"ImageRegistry\", " +
+							"\"openshift-samples\", \"Insights\", \"baremetal\"",
+					},
+					{
+						name: "when the same capability is added to both enabled and disabled, it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Insights"),
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.OptionalCapability("Insights"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Capabilities can not be both enabled and disabled at once.",
+					},
+					{
+						name: "when Ingress capability is disabled but Console capability is enabled, it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.ConsoleCapability,
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "Ingress capability can only be disabled if Console capability is also disabled",
+					},
+					{
+						name: "when both Ingress and Console capabilities are disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+									hyperv1.ConsoleCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when neither Ingress nor Console capability is disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ImageRegistryCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when Ingress capability is enabled but Console capability is disabled, it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Capabilities = &hyperv1.Capabilities{
+								Enabled: []hyperv1.OptionalCapability{
+									hyperv1.IngressCapability,
+								},
+								Disabled: []hyperv1.OptionalCapability{
+									hyperv1.ConsoleCapability,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
 					},
 					{
 						name: "when baseDomain has invalid chars it should fail",
@@ -477,6 +594,64 @@ func TestOnCreateAPIUX(t *testing.T) {
 					mutateInput            func(*hyperv1.HostedCluster)
 					expectedErrorSubstring string
 				}{
+					{
+						name: "when servicePublishingStrategy is loadBalancer for kas and the hostname clashes with one of configuration.apiServer.servingCerts.namedCertificates it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+								{
+									Service: hyperv1.APIServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.LoadBalancer,
+										LoadBalancer: &hyperv1.LoadBalancerPublishingStrategy{
+											Hostname: "kas.duplicated.hostname.com",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Ignition,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "127.0.0.1",
+										},
+									},
+								},
+								{
+									Service: hyperv1.Konnectivity,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956::14",
+										},
+									},
+								},
+								{
+									Service: hyperv1.OAuthServer,
+									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+										Type: hyperv1.NodePort,
+										NodePort: &hyperv1.NodePortPublishingStrategy{
+											Address: "fd2e:6f44:5dd8:c956:0000:0000:0000:0014",
+										},
+									},
+								},
+							}
+							hc.Spec.Configuration = &hyperv1.ClusterConfiguration{
+								APIServer: &configv1.APIServerSpec{
+									ServingCerts: configv1.APIServerServingCerts{
+										NamedCertificates: []configv1.APIServerNamedServingCert{
+											{
+												Names: []string{
+													"anything",
+													"kas.duplicated.hostname.com",
+												},
+											},
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates",
+					},
 					{
 						name: "when servicePublishingStrategy is nodePort and addresses valid hostname, IPv4 and IPv6 it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
@@ -936,6 +1111,310 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when autoscaling scaleDown is not configured properly it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when scaling is ScaleUpOnly and scaleDown is set it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								Scaling: hyperv1.ScaleUpOnly,
+								ScaleDown: &hyperv1.ScaleDownConfig{
+									DelayAfterAddSeconds: ptr.To(int32(300)),
+								},
+							}
+						},
+						expectedErrorSubstring: "scaleDown can only be set when scaling is ScaleUpAndScaleDown",
+					},
+					{
+						name: "when scaling is ScaleUpAndScaleDown and scaleDown is set it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								Scaling: hyperv1.ScaleUpAndScaleDown,
+								ScaleDown: &hyperv1.ScaleDownConfig{
+									DelayAfterAddSeconds: ptr.To(int32(300)),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when balancingIgnoredLabels contains invalid label keys it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when balancingIgnoredLabels contains invalid label key with special characters it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"invalid@label",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains invalid label key starting with dash it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"-invalid-label",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains invalid label key ending with dash it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"invalid-label-",
+								},
+							}
+						},
+						expectedErrorSubstring: "Each balancingIgnoredLabels item must be a valid label key",
+					},
+					{
+						name: "when balancingIgnoredLabels contains valid label keys it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+								BalancingIgnoredLabels: []string{
+									"valid-label",
+									"valid.prefix.com/valid-suffix",
+									"topology.ebs.csi.aws.com/zone",
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when Azure authentication configuration is not properly configured it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when azureAuthenticationConfigType is ManagedIdentities but managedIdentities field is missing it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "ManagedIdentities",
+									// Missing managedIdentities field
+								},
+							}
+						},
+						expectedErrorSubstring: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is WorkloadIdentities but workloadIdentities field is missing it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "WorkloadIdentities",
+									// Missing workloadIdentities field
+								},
+							}
+						},
+						expectedErrorSubstring: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is ManagedIdentities but workloadIdentities field is present it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "ManagedIdentities",
+									WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+										ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+										CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-5678-9012-123456789012"},
+									},
+									// Missing managedIdentities field but has workloadIdentities
+								},
+							}
+						},
+						expectedErrorSubstring: "managedIdentities is required when azureAuthenticationConfigType is ManagedIdentities, and forbidden otherwise",
+					},
+					{
+						name: "when azureAuthenticationConfigType is WorkloadIdentities but managedIdentities field is present it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.AzurePlatform
+							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+								Location:          "eastus",
+								ResourceGroupName: "test-rg",
+								VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+								SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+								SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+								SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+								TenantID:          "87654321-4321-8765-2109-876543210987",
+								AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+									AzureAuthenticationConfigType: "WorkloadIdentities",
+									ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+										ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+											ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+												Name:     "test-kv",
+												TenantID: "87654321-4321-8765-2109-876543210987",
+											},
+											CloudProvider: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "cp-secret",
+											},
+											NodePoolManagement: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "npm-secret",
+											},
+											ControlPlaneOperator: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "cpo-secret",
+											},
+											ImageRegistry: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "ir-secret",
+											},
+											Ingress: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "ingress-secret",
+											},
+											Network: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "network-secret",
+											},
+											Disk: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "disk-secret",
+											},
+											File: hyperv1.ManagedIdentity{
+												ClientID:              "12345678-1234-5678-9012-123456789012",
+												ObjectEncoding:        "utf-8",
+												CredentialsSecretName: "file-secret",
+											},
+										},
+										DataPlane: hyperv1.DataPlaneManagedIdentities{
+											ImageRegistryMSIClientID: "12345678-1234-5678-9012-123456789012",
+											DiskMSIClientID:          "12345678-1234-5678-9012-123456789012",
+											FileMSIClientID:          "12345678-1234-5678-9012-123456789012",
+										},
+									},
+									// Missing workloadIdentities field but has managedIdentities
+								},
+							}
+						},
+						expectedErrorSubstring: "workloadIdentities is required when azureAuthenticationConfigType is WorkloadIdentities, and forbidden otherwise",
+					},
+				},
+			},
+			{
+				name: "when operator configuration is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when disableMultiNetwork is set to false it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(false),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when disableMultiNetwork is true and networkType is Other it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.Other,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(true),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when disableMultiNetwork is true and networkType is not Other it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OVNKubernetes,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(true),
+								},
+							}
+						},
+						expectedErrorSubstring: "disableMultiNetwork can only be set to true when networkType is 'Other'",
+					},
+					{
+						name: "when disableMultiNetwork is false and networkType is OVNKubernetes it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: hyperv1.OVNKubernetes,
+							}
+							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+									DisableMultiNetwork: ptr.To(false),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -1255,8 +1734,87 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
+
+		// ensure KAS DNS name is configured with a KAS Serving cert
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
+
+		if globalOpts.Platform == hyperv1.AzurePlatform {
+			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+		}
+		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
+}
+
+// TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
+// Without the prefix, this e2e wouldn't run now.
+func TestCreateClusterDefaultSecurityContextUID(t *testing.T) {
+	t.Parallel()
+	if globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platform Azure")
+	}
+	if e2eutil.IsLessThan(e2eutil.Version420) {
+		t.Skip("test only supported on version 4.20 and higher")
+	}
+
+	g := NewWithT(t)
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	labelSelector := labels.SelectorFromSet(labels.Set{
+		"hypershift.openshift.io/hosted-control-plane": "true",
+	})
+
+	var namespaces []*corev1.Namespace
+	client, err := e2eutil.GetClient()
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
+	e2eutil.EventuallyObjects(t, ctx, "At least 3 Control Plane Namespaces",
+		func(ctx context.Context) ([]*corev1.Namespace, error) {
+			nsList := &corev1.NamespaceList{}
+			err := client.List(ctx, nsList, &crclient.ListOptions{
+				LabelSelector: labelSelector,
+			})
+
+			namespaces = make([]*corev1.Namespace, len(nsList.Items))
+			for i := range nsList.Items {
+				namespaces[i] = &nsList.Items[i]
+			}
+			return namespaces, err
+		},
+		[]e2eutil.Predicate[[]*corev1.Namespace]{
+			func(namespaces []*corev1.Namespace) (done bool, reasons string, err error) {
+				return len(namespaces) >= 3, fmt.Sprintf("expected at least 3 namespaces, got %v", len(namespaces)), nil
+			},
+		},
+		nil,
+		e2eutil.WithTimeout(30*time.Minute), e2eutil.WithInterval(4*time.Minute), e2eutil.WithDelayedStart(),
+	)
+
+	// Validate that each namespace has a unique SecurityContext UID.
+	g.Expect(len(namespaces)).To(BeNumerically(">=", 3), "expected at least 3 namespaces, got %v", len(namespaces))
+	uidMap := make(map[int64]bool, len(namespaces))
+	for _, ns := range namespaces {
+		uid, ok := ns.Annotations["hypershift.openshift.io/default-security-context-uid"]
+		g.Expect(ok).To(BeTrue(), "namespace %s missing SCC UID annotation", ns.Name)
+
+		expectedUID, err := strconv.ParseInt(uid, 10, 64)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't parse SCC UID", ns.Name, uid)
+
+		podList := &corev1.PodList{}
+		err = client.List(ctx, podList, &crclient.ListOptions{Namespace: ns.Name})
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't list pods in namespace %s", ns.Name)
+
+		g.Expect(uidMap[expectedUID]).To(BeFalse(), "namespace %s has duplicate SecurityContext UID %s", ns.Name, uid)
+		uidMap[expectedUID] = true
+	}
+
+	for _, ns := range namespaces {
+		uid := ns.Annotations["hypershift.openshift.io/default-security-context-uid"]
+		t.Logf("Namespace %s has SecurityContext UID %s", ns.Name, uid)
+	}
+	t.Logf("Successfully validated that all %d control plane namespaces have unique SecurityContext UIDs", len(namespaces))
 }
 
 func TestCreateClusterRequestServingIsolation(t *testing.T) {
@@ -1318,11 +1876,20 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 					},
 				},
 			}
+			// Disable Console only for versions >= 4.20 due to OCPBUGS-57129 — the HyperShift-specific deployment is missing the capability.openshift.io/name: Console annotation.
+			// Additionally, due to OCPBUGS-58422, we currently allow disabling Ingress only if Console is also disabled, so Ingress is also disabled for versions >= 4.20.
+			disabledCaps := []hyperv1.OptionalCapability{
+				hyperv1.ImageRegistryCapability,
+				hyperv1.OpenShiftSamplesCapability,
+				hyperv1.InsightsCapability,
+				hyperv1.NodeTuningCapability,
+			}
+			if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version420) {
+				disabledCaps = append(disabledCaps, hyperv1.ConsoleCapability, hyperv1.IngressCapability)
+			}
+
 			hc.Spec.Capabilities = &hyperv1.Capabilities{
-				Disabled: []hyperv1.OptionalCapability{
-					hyperv1.ImageRegistryCapability,
-					hyperv1.OpenShiftSamplesCapability,
-				},
+				Disabled: disabledCaps,
 			}
 		}
 	}
@@ -1353,13 +1920,26 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// ensure openshift-samples component is disabled
 		e2eutil.EnsureOpenshiftSamplesCapabilityDisabled(ctx, t, g, clients)
 
-		// ensure KAS DNS name is configured with a KAS Serving cert
-		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		// ensure insights component is disabled
+		e2eutil.EnsureInsightsCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure console component is disabled
+		e2eutil.EnsureConsoleCapabilityDisabled(ctx, t, g, clients)
+
+		// ensure NodeTuning component is disabled
+		e2eutil.EnsureNodeTuningCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
+
+		// ensure ingress component is disabled
+		e2eutil.EnsureIngressCapabilityDisabled(ctx, t, clients, mgtClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
 	t.Parallel()
+
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		t.Skip("test not supported on platform Azure")
+	}
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -44,13 +43,13 @@ func TestReconcileCredentials(t *testing.T) {
 	controlPlaneNamespace := "test"
 	client := fake.NewClientBuilder().Build()
 
-	err := platform.ReconcileCredentials(context.Background(),
+	err := platform.ReconcileCredentials(t.Context(),
 		client, upsert.New(false).CreateOrUpdate,
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	roleBinding := &rbacv1.RoleBinding{}
-	err = client.Get(context.Background(), types.NamespacedName{
+	err = client.Get(t.Context(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
 		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
 	}, roleBinding)
@@ -77,32 +76,32 @@ func TestDeleteCredentials(t *testing.T) {
 	client := fake.NewClientBuilder().Build()
 
 	// test noop
-	err := platform.DeleteCredentials(context.Background(),
+	err := platform.DeleteCredentials(t.Context(),
 		client,
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Create the creds
-	err = platform.ReconcileCredentials(context.Background(),
+	err = platform.ReconcileCredentials(t.Context(),
 		client, upsert.New(false).CreateOrUpdate,
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	// Verify the roleBinding exists
 	roleBinding := &rbacv1.RoleBinding{}
-	err = client.Get(context.Background(), types.NamespacedName{
+	err = client.Get(t.Context(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
 		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
 	}, roleBinding)
 	g.Expect(err).ToNot(HaveOccurred())
 
-	err = platform.DeleteCredentials(context.Background(),
+	err = platform.DeleteCredentials(t.Context(),
 		client,
 		hostedCluster, controlPlaneNamespace)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	roleBinding = &rbacv1.RoleBinding{}
-	err = client.Get(context.Background(), types.NamespacedName{
+	err = client.Get(t.Context(), types.NamespacedName{
 		Namespace: hostedCluster.Spec.Platform.Agent.AgentNamespace,
 		Name:      fmt.Sprintf("%s-%s", CredentialsRBACPrefix, controlPlaneNamespace),
 	}, roleBinding)
@@ -187,7 +186,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).Build()
-			goInfraCR, err := Agent{}.ReconcileCAPIInfraCR(context.Background(), client, controllerutil.CreateOrUpdate, test.hostedCluster, test.controlPlaneNamespace, test.APIEndpoint)
+			goInfraCR, err := Agent{}.ReconcileCAPIInfraCR(t.Context(), client, controllerutil.CreateOrUpdate, test.hostedCluster, test.controlPlaneNamespace, test.APIEndpoint)
 			g.Expect(err).To(Not(HaveOccurred()))
 			if diff := cmp.Diff(goInfraCR, test.expectedObject); diff != "" {
 				t.Errorf("got and expected differ: %s", diff)

@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -57,16 +56,6 @@ func TestNewToken(t *testing.T) {
 		},
 	}
 
-	proxyTrustedCABundle := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "proxy-trusted-ca",
-			Namespace: hcNamespace,
-		},
-		Data: map[string]string{
-			"ca-bundle.crt": "proxy-trusted-ca-bundle",
-		},
-	}
-
 	ignitionServerCACert := ignitionserver.IgnitionCACertSecret(controlplaneNamespace)
 	ignitionServerCACert.Data = map[string][]byte{
 		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
@@ -116,88 +105,6 @@ func TestNewToken(t *testing.T) {
 			},
 			cpoCapabilities: &CPOCapabilities{},
 			expectedError:   "",
-		},
-		{
-			name: "when proxy trusted CA bundle is configured it should create token successfully",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-						Configuration: &hyperv1.ClusterConfiguration{
-							Proxy: &configv1.ProxySpec{
-								HTTPProxy:  "http://proxy.example.com",
-								HTTPSProxy: "https://proxy.example.com",
-								NoProxy:    "example.com,10.0.0.0/8,192.168.0.0/16",
-								TrustedCA: configv1.ConfigMapNameReference{
-									Name: proxyTrustedCABundle.GetName(),
-								},
-							},
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool:              &hyperv1.NodePool{},
-				controlplaneNamespace: controlplaneNamespace,
-			},
-			fakeObjects: []crclient.Object{
-				pullSecret,
-				additionalTrustBundle,
-				ignitionServerCACert,
-				proxyTrustedCABundle,
-			},
-			cpoCapabilities: &CPOCapabilities{},
-			expectedError:   "",
-		},
-		{
-			name: "when proxy trusted CA bundle is configured but missing it should fail",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-						Configuration: &hyperv1.ClusterConfiguration{
-							Proxy: &configv1.ProxySpec{
-								HTTPProxy:  "http://proxy.example.com",
-								HTTPSProxy: "https://proxy.example.com",
-								TrustedCA: configv1.ConfigMapNameReference{
-									Name: "missing-trusted-ca",
-								},
-							},
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool:              &hyperv1.NodePool{},
-				controlplaneNamespace: controlplaneNamespace,
-			},
-			fakeObjects: []crclient.Object{
-				pullSecret,
-				additionalTrustBundle,
-				ignitionServerCACert,
-			},
-			cpoCapabilities: &CPOCapabilities{},
-			expectedError:   "failed to get configMap missing-trusted-ca",
 		},
 		{
 			name: "When missing ignition endpoint it should fail",
@@ -373,7 +280,7 @@ func TestNewToken(t *testing.T) {
 				tc.configGenerator.Client = fakeClient
 			}
 
-			token, err := NewToken(context.Background(), tc.configGenerator, tc.cpoCapabilities)
+			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -523,7 +430,7 @@ func TestTokenCleanupOutdated(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
 			tc.token.Client = fakeClient
 
-			err := tc.token.cleanupOutdated(context.Background())
+			err := tc.token.cleanupOutdated(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
@@ -533,12 +440,12 @@ func TestTokenCleanupOutdated(t *testing.T) {
 
 			// user data secret should be deleted.
 			got := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(userdataSecret), got)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(userdataSecret), got)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 
 			// token secret if exists it should be have an expiration time.
 			got = &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(tokenSecret), got)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(tokenSecret), got)
 			if err != nil {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				return
@@ -598,7 +505,7 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			c := fake.NewClientBuilder().WithObjects(tc.inputSecret).Build()
-			err := setExpirationTimestampOnToken(context.Background(), c, tc.inputSecret, fakeClock.Now)
+			err := setExpirationTimestampOnToken(t.Context(), c, tc.inputSecret, fakeClock.Now)
 			g.Expect(err).To(Not(HaveOccurred()))
 			actualSecretData := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
@@ -606,7 +513,7 @@ func TestSetExpirationTimestampOnToken(t *testing.T) {
 					Namespace: fakeNamespace,
 				},
 			}
-			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(actualSecretData), actualSecretData)
+			err = c.Get(t.Context(), crclient.ObjectKeyFromObject(actualSecretData), actualSecretData)
 			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(actualSecretData.Annotations).To(testutil.MatchExpected(map[string]string{
 				hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: tc.expectedTimestamp,
@@ -636,16 +543,6 @@ func TestTokenReconcile(t *testing.T) {
 		},
 		Data: map[string]string{
 			"ca-bundle.crt": "test-ca-bundle",
-		},
-	}
-
-	proxyTrustedCABundle := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "proxy-trusted-ca",
-			Namespace: hcNamespace,
-		},
-		Data: map[string]string{
-			"ca-bundle.crt": "proxy-trusted-ca-bundle",
 		},
 	}
 
@@ -730,72 +627,6 @@ func TestTokenReconcile(t *testing.T) {
 				DecompressAndDecodeConfig: true,
 			},
 		},
-		{
-			name: "when proxy trusted CA bundle is configured it should include it in ignition config",
-			configGenerator: &ConfigGenerator{
-				hostedCluster: &hyperv1.HostedCluster{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      hcName,
-						Namespace: hcNamespace,
-					},
-					Spec: hyperv1.HostedClusterSpec{
-						PullSecret: corev1.LocalObjectReference{
-							Name: pullSecret.GetName(),
-						},
-						AdditionalTrustBundle: &corev1.LocalObjectReference{
-							Name: additionalTrustBundle.GetName(),
-						},
-						Configuration: &hyperv1.ClusterConfiguration{
-							Proxy: &configv1.ProxySpec{
-								HTTPProxy:  "http://proxy.example.com",
-								HTTPSProxy: "https://proxy.example.com",
-								TrustedCA: configv1.ConfigMapNameReference{
-									Name: proxyTrustedCABundle.GetName(),
-								},
-							},
-						},
-					},
-					Status: hyperv1.HostedClusterStatus{
-						IgnitionEndpoint: "https://example.com",
-					},
-				},
-				nodePool: &hyperv1.NodePool{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "name",
-						Namespace: "namespace",
-					},
-					Spec: hyperv1.NodePoolSpec{
-						Management: hyperv1.NodePoolManagement{
-							UpgradeType: hyperv1.UpgradeTypeReplace,
-						},
-						Release: hyperv1.Release{
-							Image: "image:4.17",
-						},
-					},
-				},
-				controlplaneNamespace: controlplaneNamespace,
-				rolloutConfig: &rolloutConfig{
-					releaseImage: &releaseinfo.ReleaseImage{
-						ImageStream: &imageapi.ImageStream{
-							ObjectMeta: metav1.ObjectMeta{
-								Name: "4.17",
-							},
-						},
-					},
-					globalConfig: "test-global-config",
-					mcoRawConfig: "raw-config",
-				},
-			},
-			fakeObjects: []crclient.Object{
-				pullSecret,
-				additionalTrustBundle,
-				ignitionServerCACert,
-				proxyTrustedCABundle,
-			},
-			cpoCapabilities: &CPOCapabilities{
-				DecompressAndDecodeConfig: true,
-			},
-		},
 	}
 
 	for _, tc := range testCases {
@@ -805,14 +636,14 @@ func TestTokenReconcile(t *testing.T) {
 			fakeClient := fake.NewClientBuilder().WithObjects(tc.fakeObjects...).Build()
 			tc.configGenerator.Client = fakeClient
 
-			token, err := NewToken(context.Background(), tc.configGenerator, tc.cpoCapabilities)
+			token, err := NewToken(t.Context(), tc.configGenerator, tc.cpoCapabilities)
 			g.Expect(err).To(Not(HaveOccurred()))
 
-			err = token.Reconcile(context.Background())
+			err = token.Reconcile(t.Context())
 			g.Expect(err).ToNot(HaveOccurred())
 
 			gotTokenSecret := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.TokenSecret()), gotTokenSecret)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Validate the token secret has all the expected annotations.
@@ -855,7 +686,7 @@ func TestTokenReconcile(t *testing.T) {
 			// Validate the user data secret has all the expected annotations.
 			// Start Generation Here
 			gotUserDataSecret := &corev1.Secret{}
-			err = fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserDataSecret)
+			err = fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(token.UserDataSecret()), gotUserDataSecret)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Validate the user data secret has all the expected annotations.
@@ -909,29 +740,12 @@ func TestTokenReconcile(t *testing.T) {
 					},
 				},
 			}
-			if tc.configGenerator.hostedCluster.Spec.Configuration.Proxy != nil &&
-				tc.configGenerator.hostedCluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-				encodedCACert := base64.StdEncoding.EncodeToString([]byte("proxy-trusted-ca-bundle"))
-				expectedIgnition.Ignition.Security.TLS.CertificateAuthorities = append(expectedIgnition.Ignition.Security.TLS.CertificateAuthorities, ignitionapi.Resource{
-					Source: ptr.To(fmt.Sprintf("data:text/plain;base64,%s", encodedCACert)),
-				})
-			}
 
 			// Validate the userdata[value] returns the expected ignition config
 			var gotIgnition ignitionapi.Config
 			err = json.Unmarshal(gotUserDataSecret.Data["value"], &gotIgnition)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(gotIgnition).To(Equal(expectedIgnition))
-
-			// Add verification for proxy trusted CA bundle
-			if tc.configGenerator.hostedCluster.Spec.Configuration.Proxy != nil &&
-				tc.configGenerator.hostedCluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
-				// Verify proxy trusted CA bundle is included in ignition config
-				g.Expect(gotIgnition.Ignition.Security.TLS.CertificateAuthorities).To(HaveLen(2))
-				g.Expect(gotIgnition.Ignition.Security.TLS.CertificateAuthorities[1].Source).
-					To(Equal(ptr.To(fmt.Sprintf("data:text/plain;base64,%s",
-						base64.StdEncoding.EncodeToString([]byte("proxy-trusted-ca-bundle"))))))
-			}
 		})
 
 	}
@@ -1177,7 +991,7 @@ func TestGetIgnitionCACert(t *testing.T) {
 				},
 			}
 
-			caCert, err := token.getIgnitionCACert(context.Background())
+			caCert, err := token.getIgnitionCACert(t.Context())
 			if tc.expectedError != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.expectedError))

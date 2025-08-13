@@ -1,7 +1,6 @@
 package autoscaler
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -69,7 +68,7 @@ func TestPredicate(t *testing.T) {
 			client := clientBuilder.Build()
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: context.Background(),
+				Context: t.Context(),
 				Client:  client,
 				HCP:     hcp,
 			}
@@ -115,12 +114,88 @@ func TestAdaptDeployment(t *testing.T) {
 				MaxPodGracePeriod:    ptr.To[int32](300),
 				MaxNodeProvisionTime: "20m",
 				PodPriorityThreshold: ptr.To[int32](-5),
+				Scaling:              hyperv1.ScaleUpAndScaleDown,
+				ScaleDown: &hyperv1.ScaleDownConfig{
+					DelayAfterAddSeconds: ptr.To[int32](600),
+				},
 			},
 			ExpectedArgs: []string{
 				"--max-nodes-total=100",
 				"--max-graceful-termination-sec=300",
 				"--max-node-provision-time=20m",
 				"--expendable-pods-priority-cutoff=-5",
+				"--scale-down-delay-after-add=600s",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when scale down is disabled, container has scale down disabled argument",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				Scaling:   hyperv1.ScaleUpOnly,
+				ScaleDown: &hyperv1.ScaleDownConfig{},
+			},
+			ExpectedArgs: []string{
+				"--scale-down-enabled=false",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when scale down is enabled with all options, container has all scale down arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				Scaling: hyperv1.ScaleUpAndScaleDown,
+				ScaleDown: &hyperv1.ScaleDownConfig{
+					DelayAfterAddSeconds:        ptr.To[int32](300),
+					DelayAfterDeleteSeconds:     ptr.To[int32](120),
+					DelayAfterFailureSeconds:    ptr.To[int32](180),
+					UnneededDurationSeconds:     ptr.To[int32](600),
+					UtilizationThresholdPercent: ptr.To[int32](50),
+				},
+			},
+			ExpectedArgs: []string{
+				"--scale-down-enabled=true",
+				"--scale-down-delay-after-add=300s",
+				"--scale-down-delay-after-delete=120s",
+				"--scale-down-delay-after-failure=180s",
+				"--scale-down-unneeded-time=600s",
+				"--scale-down-utilization-threshold=0.50",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when expanders are configured, container has expander arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				Expanders: []hyperv1.ExpanderString{
+					hyperv1.LeastWasteExpander,
+					hyperv1.PriorityExpander,
+					hyperv1.RandomExpander,
+				},
+			},
+			ExpectedArgs: []string{
+				"--expander=least-waste,priority,random",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when balancing ignored labels are configured, container has balancing ignore label arguments",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				BalancingIgnoredLabels: []string{
+					"custom.label/zone",
+					"custom.label/instance-type",
+				},
+			},
+			ExpectedArgs: []string{
+				"--balancing-ignore-label=custom.label/zone",
+				"--balancing-ignore-label=custom.label/instance-type",
+			},
+			expectedReplicas: 1,
+		},
+		{
+			name: "when MaxFreeDifferenceRatioPercent is set, container has max-free-difference-ratio argument",
+			AutoscalerOptions: hyperv1.ClusterAutoscaling{
+				MaxFreeDifferenceRatioPercent: ptr.To[int32](20),
+			},
+			ExpectedArgs: []string{
+				"--max-free-difference-ratio=0.20",
 			},
 			expectedReplicas: 1,
 		},
@@ -132,7 +207,8 @@ func TestAdaptDeployment(t *testing.T) {
 			hcp.Spec.Autoscaling = tc.AutoscalerOptions
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				HCP: hcp,
+				Context: t.Context(),
+				HCP:     hcp,
 			}
 
 			g := NewGomegaWithT(t)
@@ -151,4 +227,32 @@ func TestAdaptDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAdaptDeploymentWithClusterAutoscalerImage(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+			Annotations: map[string]string{
+				hyperv1.ClusterAutoscalerImage: "quay.io/custom/cluster-autoscaler:v1.28.0",
+			},
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: "test-infra-id",
+		},
+	}
+
+	deployment, err := assets.LoadDeploymentManifest(ComponentName)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	err = adaptDeployment(controlplanecomponent.WorkloadContext{
+		Context: t.Context(),
+		HCP:     hcp,
+	}, deployment)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	g.Expect(deployment.Spec.Template.Spec.Containers[0].Image).To(Equal("quay.io/custom/cluster-autoscaler:v1.28.0"))
 }

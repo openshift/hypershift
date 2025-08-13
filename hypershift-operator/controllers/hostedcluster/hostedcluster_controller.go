@@ -1278,7 +1278,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if controlPlaneNamespace.Labels == nil {
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
-		controlPlaneNamespace.Labels["hypershift.openshift.io/hosted-control-plane"] = "true"
+		controlPlaneNamespace.Labels[ControlPlaneNamespaceLabelKey] = "true"
 
 		// Set pod security labels on HCP namespace
 		psaOverride := hcluster.Annotations[hyperv1.PodSecurityAdmissionLabelOverrideAnnotation]
@@ -1300,6 +1300,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		// Enable monitoring for hosted control plane namespaces
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
+		}
+
+		if r.SetDefaultSecurityContext {
+			// Only set the SecurtyContext UID annotation if it's not already set.
+			_, ok := controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation]
+			if !ok {
+				uid, err := getNextAvailableSecurityContextUID(ctx, r.Client)
+				if err != nil {
+					return fmt.Errorf("failed to get next available SecurityContext UID: %w", err)
+				}
+				if controlPlaneNamespace.Annotations == nil {
+					controlPlaneNamespace.Annotations = make(map[string]string)
+				}
+				controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation] = strconv.FormatInt(uid, 10)
+			}
 		}
 
 		// Enable observability operator monitoring
@@ -1379,14 +1394,19 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				hclusterAnnotations := hcluster.GetAnnotations()
 				delete(hclusterAnnotations, hyperv1.HostedClusterRestoredFromBackupAnnotation)
 				hcluster.SetAnnotations(hclusterAnnotations)
-				if err := r.Update(ctx, hcluster); err != nil {
+				_, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+					return nil
+				})
+				if err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to remove annotations %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 				}
 			}
 
 			// Persist status updates
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if _, err := createOrUpdate(ctx, r.Client, hcluster, func() error {
+				return nil
+			}); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
@@ -1575,30 +1595,8 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving the source reference
 	// from the HostedCluster and syncing the CM in the control plane namespace.
-	if hcluster.Spec.AdditionalTrustBundle != nil {
-		var src corev1.ConfigMap
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
-		}
-		if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
-		}
-		dest := controlplaneoperator.UserCABundle(controlPlaneNamespace.Name)
-		_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-			srcData, srcHasData := src.Data["ca-bundle.crt"]
-			if !srcHasData {
-				return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
-			}
-			if dest.Data == nil {
-				dest.Data = map[string]string{}
-			}
-			dest.Data["ca-bundle.crt"] = srcData
-			return nil
-		})
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
-		}
+	if err := r.reconcileAdditionalTrustBundle(ctx, hcluster, createOrUpdate, controlPlaneNamespace.Name); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile the service account signing key if set
@@ -1687,6 +1685,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				}
 				if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, sourceSecret); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to set referenced resource annotation: %w", err)
+				}
+				if err := ensureHostedResourcesAreEmpty(ctx, r.Client, hcluster, sourceSecret); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to validate referenced secret %s/%s: %w", hcluster.Namespace, secretRef, err)
 				}
 				destSecret := &corev1.Secret{}
 				destSecret.Name = sourceSecret.Name
@@ -1924,12 +1925,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	imageProvider := imageprovider.New(releaseImage)
 	imageProvider.ComponentImages()["token-minter"] = utilitiesImage
 	imageProvider.ComponentImages()[hyperutil.AvailabilityProberImageName] = utilitiesImage
+
+	securityContextUID := controlplanecomponent.DefaultSecurityContextUID
+	if r.SetDefaultSecurityContext {
+		securityContextUID, err = strconv.ParseInt(controlPlaneNamespace.Annotations[DefaultSecurityContextUIDAnnnotation], 10, 64)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to parse SecurityContext UID: %w", err)
+		}
+	}
 	cpContext := controlplanecomponent.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
 		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
 		HCP:                       hcp,
 		SetDefaultSecurityContext: r.SetDefaultSecurityContext,
+		DefaultSecurityContextUID: securityContextUID,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		MetricsSet:                r.MetricsSet,
 		ReleaseImageProvider:      imageProvider,
@@ -1968,6 +1978,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// Reconcile platform specific items
 	switch hcluster.Spec.Platform.Type {
+	case hyperv1.KubevirtPlatform:
+		err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)
+		}
 	case hyperv1.AWSPlatform:
 		// Reconcile the AWS OIDC discovery
 		if err := r.reconcileAWSOIDCDocuments(ctx, log, hcluster, hcp); err != nil {
@@ -1994,41 +2009,37 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
-		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-		hcVersion := releaseImageVersion
-		hcVersion.Pre = nil
-		hcVersion.Build = nil
+		if azureutil.IsAroHCP() {
+			// Reconcile CPO SecretProviderClass CR
+			cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
+			if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
+				secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator)
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
+			}
 
-		// Reconcile CPO SecretProviderClass CR
-		cpoSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureCPOSecretProviderClassName, hcp.Namespace)
-		if _, err = createOrUpdate(ctx, r, cpoSecretProviderClass, func() error {
-			// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator, hcVersion.GE(config.Version419))
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
-		}
-
-		// Reconcile CAPZ SecretProviderClass CR
-		nodepoolMgmtSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, hcp.Namespace)
-		if _, err = createOrUpdate(ctx, r, nodepoolMgmtSecretProviderClass, func() error {
-			// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-			secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement, hcVersion.GE(config.Version419))
-			return nil
-		}); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
+			// Reconcile CAPZ SecretProviderClass CR
+			nodepoolMgmtSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureNodePoolMgmtSecretProviderClassName, hcp.Namespace)
+			if _, err = createOrUpdate(ctx, r, nodepoolMgmtSecretProviderClass, func() error {
+				secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement)
+				return nil
+			}); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
+			}
 		}
 
 		if hcluster.Spec.SecretEncryption != nil && hcluster.Spec.SecretEncryption.KMS != nil {
-			// Reconcile KMS SecretProviderClass CR
-			kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
-			if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
-				secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS, hcVersion.GE(config.Version419))
-				return nil
-			}); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+			if azureutil.IsAroHCP() {
+				// Reconcile KMS SecretProviderClass CR
+				kmsSecretProviderClass := cpomanifests.ManagedAzureSecretProviderClass(config.ManagedAzureKMSSecretProviderClassName, hcp.Namespace)
+				if _, err := createOrUpdate(ctx, r, kmsSecretProviderClass, func() error {
+					secretproviderclass.ReconcileManagedAzureSecretProviderClass(kmsSecretProviderClass, hcp, hcp.Spec.SecretEncryption.KMS.Azure.KMS)
+					return nil
+				}); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to reconcile KMS SecretProviderClass: %w", err)
+				}
 			}
-
 		}
 	}
 
@@ -2043,6 +2054,10 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	return result, nil
 }
+
+const (
+	ControlPlaneNamespaceLabelKey = "hypershift.openshift.io/hosted-control-plane"
+)
 
 // annotationsForCertRenewal returns a set of annotations to set based on the current state of the KAS
 // serving certificate. These could include the annotation to restart control plane pods.
@@ -2181,6 +2196,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.OauthLoginURLOverrideAnnotation,
 		hyperv1.KonnectivityAgentImageAnnotation,
 		hyperv1.KonnectivityServerImageAnnotation,
+		hyperv1.ClusterAutoscalerImage,
 		hyperv1.IBMCloudKMSProviderImage,
 		hyperv1.AWSKMSProviderImage,
 		hyperv1.PortierisImageAnnotation,
@@ -2331,6 +2347,8 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 	if hcluster.Spec.AdditionalTrustBundle != nil {
 		hcp.Spec.AdditionalTrustBundle = &corev1.LocalObjectReference{Name: controlplaneoperator.UserCABundle(hcp.Namespace).Name}
+	} else {
+		hcp.Spec.AdditionalTrustBundle = nil
 	}
 	if hcluster.Spec.SecretEncryption != nil {
 		hcp.Spec.SecretEncryption = hcluster.Spec.SecretEncryption.DeepCopy()
@@ -2361,6 +2379,12 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 	}
 
 	hcp.Spec.Capabilities = hcluster.Spec.Capabilities
+
+	if hcluster.Spec.OperatorConfiguration != nil {
+		hcp.Spec.OperatorConfiguration = hcluster.Spec.OperatorConfiguration.DeepCopy()
+	} else {
+		hcp.Spec.OperatorConfiguration = nil
+	}
 
 	return nil
 }
@@ -2414,6 +2438,28 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 	if capiProviderDeploymentSpec == nil {
 		// If there's no capiProviderDeploymentSpec implementation return early.
 		return nil
+	}
+
+	// Fix: Remove existing CAPI provider deployment if it contains outdated labels
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
+	capiProviderDeployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "capi-provider",
+			Namespace: controlPlaneNamespace.Name,
+		},
+	}
+	err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(capiProviderDeployment), capiProviderDeployment)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to fetch capi provider deployment: %w", err)
+		}
+	}
+	if err == nil {
+		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/control-plane-component"] != "capi-provider" {
+			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
+			// Always return an error so we can retry when the cache is updated
+			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
+		}
 	}
 
 	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
@@ -2532,6 +2578,65 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role binding: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileKubevirtCSIClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	// We don't create this ServiceAccount, it's part of the kubevirt CSI manifests, but we can reference it due to eventual consistency
+	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	serviceAccount := cpomanifests.KubevirtCSIDriverInfraSA(hcpns)
+
+	kubevirtCSIClusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-kubevirt-csi-cluster", hcpns),
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err := createOrUpdate(ctx, r.Client, kubevirtCSIClusterRole, func() error {
+		kubevirtCSIClusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"persistentvolumes"},
+				Verbs:     []string{"get"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role: %w", err)
+	}
+
+	kubevirtCSIClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: kubevirtCSIClusterRole.Name,
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err = createOrUpdate(ctx, r.Client, kubevirtCSIClusterRoleBinding, func() error {
+		kubevirtCSIClusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     kubevirtCSIClusterRole.Name,
+		}
+		kubevirtCSIClusterRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile kubevirt CSI cluster role binding: %w", err)
 	}
 
 	return nil
@@ -4642,6 +4747,20 @@ func ensureReferencedResourceAnnotation(ctx context.Context, client client.Clien
 	return nil
 }
 
+func ensureHostedResourcesAreEmpty(ctx context.Context, crclient client.Client, hcluster *hyperv1.HostedCluster, obj client.Object) error {
+	if !azureutil.IsAroHCP() || !hyperutil.HasAnnotationWithValue(obj, hyperv1.HostedClusterSourcedAnnotation, "true") {
+		return nil
+	}
+	var cm corev1.Secret
+	if err := crclient.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: obj.GetName()}, &cm); err != nil {
+		return fmt.Errorf("failed to retrieve secret %s: %w", obj.GetName(), err)
+	}
+	if len(cm.Data) != 0 || len(cm.StringData) != 0 {
+		return fmt.Errorf("secret %s is not empty. Secrets annotated with %s must be empty", cm.GetName(), hyperv1.HostedClusterSourcedAnnotation)
+	}
+	return nil
+}
+
 func isAPIServerRoute(hcluster *hyperv1.HostedCluster) bool {
 	for _, svc := range hcluster.Spec.Services {
 		if svc.Service == hyperv1.APIServer {
@@ -4657,6 +4776,44 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
 		}
+	}
+
+	return nil
+}
+
+// reconcileAdditionalTrustBundle reconciles the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving
+// the source reference from the HostedCluster and syncing the CM in the control plane namespace.
+func (r *HostedClusterReconciler) reconcileAdditionalTrustBundle(ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string) error {
+	dest := controlplaneoperator.UserCABundle(controlPlaneNamespace)
+	if hcluster.Spec.AdditionalTrustBundle == nil {
+		// If the HostedCluster has no additional trust bundle, delete the destination ConfigMap if it exists
+		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
+			return fmt.Errorf("failed to delete unused additionalTrustBundle: %w", err)
+		}
+		return nil
+	}
+
+	var src corev1.ConfigMap
+	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
+	if err != nil {
+		return fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
+	}
+	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
+		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
+	}
+	_, err = createOrUpdate(ctx, r.Client, dest, func() error {
+		srcData, srcHasData := src.Data["ca-bundle.crt"]
+		if !srcHasData {
+			return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
+		}
+		if dest.Data == nil {
+			dest.Data = map[string]string{}
+		}
+		dest.Data["ca-bundle.crt"] = srcData
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
 	}
 
 	return nil

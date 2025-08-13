@@ -351,7 +351,7 @@ func TestImageLookupCacheKeyFn(t *testing.T) {
 }
 
 func TestImageExistsFnGuestCluster(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	tests := []struct {
 		name               string

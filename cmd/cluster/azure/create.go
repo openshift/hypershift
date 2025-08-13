@@ -13,8 +13,8 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -97,6 +97,7 @@ type RawCreateOptions struct {
 	AssignCustomHCPRoles             bool
 	IssuerURL                        string
 	ServiceAccountTokenIssuerKeyPath string
+	MultiArch                        bool
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }
@@ -125,10 +126,6 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 	// Check if the network security group is set and the resource group is not
 	if o.NetworkSecurityGroupID != "" && o.ResourceGroupName == "" {
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
-	}
-
-	if o.ManagedIdentitiesFile == "" {
-		return nil, fmt.Errorf("flag --managed-identities-file is required")
 	}
 
 	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
@@ -254,20 +251,23 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
+			AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+				AzureAuthenticationConfigType: "ManagedIdentities",
+			},
 		},
 	}
 
-	cluster.Spec.Platform.Azure.ManagedIdentities = o.infra.ControlPlaneMIs
-	cluster.Spec.Platform.Azure.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities = o.infra.ControlPlaneMIs
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
 
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
@@ -554,13 +554,18 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
+		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
 	}, nil
 }
 
 // lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
 func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
 	if len(image) == 0 && len(releaseStream) != 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion(releaseStream)
+		client, err := util.GetClient()
+		if err != nil {
+			return "", fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, releaseStream, client)
 		if err != nil {
 			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
 		}

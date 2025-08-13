@@ -9,19 +9,24 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	fakeKubeClient := fakekubeclient.NewSimpleClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
@@ -165,6 +170,7 @@ func TestPrototypeResources(t *testing.T) {
 			ValidatedCreateOptions: &ValidatedCreateOptions{
 				validatedCreateOptions: &validatedCreateOptions{
 					RawCreateOptions: &RawCreateOptions{
+						EnableClusterCapabilities:  []string{string(hyperv1.BaremetalCapability)},
 						DisableClusterCapabilities: []string{string(hyperv1.ImageRegistryCapability)},
 						KubeAPIServerDNSName:       "test-dns-name.example.com",
 					},
@@ -172,16 +178,18 @@ func TestPrototypeResources(t *testing.T) {
 			},
 		},
 	}
-	resources, err := prototypeResources(opts)
+	resources, err := prototypeResources(t.Context(), opts)
 	g.Expect(err).To(BeNil())
 	g.Expect(resources.Cluster.Spec.Capabilities.Disabled).
 		To(Equal([]hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability}))
+	g.Expect(resources.Cluster.Spec.Capabilities.Enabled).
+		To(Equal([]hyperv1.OptionalCapability{hyperv1.BaremetalCapability}))
 	g.Expect(resources.Cluster.Spec.KubeAPIServerDNSName).To(Equal("test-dns-name.example.com"))
 }
 
 func TestValidate(t *testing.T) {
 	g := NewWithT(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	tempDir := t.TempDir()
 
 	pullSecretFile := filepath.Join(tempDir, "pull-secret.json")
@@ -196,7 +204,7 @@ func TestValidate(t *testing.T) {
 		expectedErr string
 	}{
 		{
-			name: "fails with unsupported capability",
+			name: "fails with unsupported disabled capability",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
@@ -204,15 +212,27 @@ func TestValidate(t *testing.T) {
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"UnsupportedCapability"},
 			},
-			expectedErr: "unknown capability: UnsupportedCapability, accepted values are:",
+			expectedErr: "unknown disabled capability: UnsupportedCapability, accepted values are:",
 		},
 		{
-			name: "passes with ImageRegistry capability",
+			name: "fails with unsupported enabled capability",
+			rawOpts: &RawCreateOptions{
+				Name:                      "test-hc",
+				Namespace:                 "test-hc",
+				PullSecretFile:            pullSecretFile,
+				Arch:                      "amd64",
+				EnableClusterCapabilities: []string{"UnsupportedCapability"},
+			},
+			expectedErr: "unknown enabled capability: UnsupportedCapability, accepted values are:",
+		},
+		{
+			name: "passes with valid capabilities being enabled and disabled",
 			rawOpts: &RawCreateOptions{
 				Name:                       "test-hc",
 				Namespace:                  "test-hc",
 				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
+				EnableClusterCapabilities:  []string{"baremetal"},
 				DisableClusterCapabilities: []string{"ImageRegistry"},
 			},
 			expectedErr: "",
@@ -225,6 +245,39 @@ func TestValidate(t *testing.T) {
 				PullSecretFile:             pullSecretFile,
 				Arch:                       "amd64",
 				DisableClusterCapabilities: []string{"openshift-samples"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with Insights capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Insights"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with Console capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes with NodeTuning capability",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"NodeTuning"},
 			},
 			expectedErr: "",
 		},
@@ -250,6 +303,121 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "",
 		},
+		{
+			name: "fails when ingress is disabled but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
+		{
+			name: "passes when both ingress and console are disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when only console is disabled without ingress",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Console"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when ingress and console are disabled along with other capabilities",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "Console", "ImageRegistry"},
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when ingress is disabled with other capabilities but console is not disabled",
+			rawOpts: &RawCreateOptions{
+				Name:                       "test-hc",
+				Namespace:                  "test-hc",
+				PullSecretFile:             pullSecretFile,
+				Arch:                       "amd64",
+				DisableClusterCapabilities: []string{"Ingress", "ImageRegistry"},
+			},
+			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
+		},
+		{
+			name: "passes when disable-multi-network is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when disable-multi-network is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: false,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OVNKubernetes",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OVNKubernetes",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "OpenShiftSDN",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+		},
+		{
+			name: "fails when disable-multi-network is true with network-type=Calico",
+			rawOpts: &RawCreateOptions{
+				Name:                "test-hc",
+				Namespace:           "test-hc",
+				PullSecretFile:      pullSecretFile,
+				Arch:                "amd64",
+				DisableMultiNetwork: true,
+				NetworkType:         "Calico",
+			},
+			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -261,6 +429,119 @@ func TestValidate(t *testing.T) {
 			} else {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(test.expectedErr))
+			}
+		})
+	}
+}
+
+func TestDisableMultiNetworkFlag(t *testing.T) {
+	tests := []struct {
+		name                        string
+		disableMultiNetwork         bool
+		expectedDisableMultiNetwork *bool
+		description                 string
+	}{
+		{
+			name:                        "disable multus flag set to true",
+			disableMultiNetwork:         true,
+			expectedDisableMultiNetwork: ptr.To(true),
+			description:                 "When --disable-multi-network=true is set, DisableMultiNetwork should be true",
+		},
+		{
+			name:                        "disable multus flag set to false",
+			disableMultiNetwork:         false,
+			expectedDisableMultiNetwork: ptr.To(false),
+			description:                 "When --disable-multi-network=false is set, DisableMultiNetwork should be false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								DisableMultiNetwork: tt.disableMultiNetwork,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+
+			// Verify the field is set correctly
+			if tt.disableMultiNetwork {
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration).ToNot(BeNil())
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator).ToNot(BeNil())
+
+				// Both should be non-nil pointers to bool
+				g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+				g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+				g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+			} else {
+				if resources.Cluster.Spec.OperatorConfiguration != nil && resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+					// Both should be non-nil pointers to bool
+					g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).ToNot(BeNil())
+					g.Expect(tt.expectedDisableMultiNetwork).ToNot(BeNil())
+					g.Expect(*resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork).To(Equal(*tt.expectedDisableMultiNetwork), tt.description)
+				}
+				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
+			}
+		})
+	}
+}
+
+func TestValidateVersion(t *testing.T) {
+	tests := []struct {
+		name             string
+		versionCLI       string
+		operatorVersion  string
+		wantError        bool
+		errMessage       string
+		mutateDeployment func(*appsv1.Deployment)
+	}{
+		{
+			name:            "Commit SHAS match",
+			versionCLI:      "abc123",
+			operatorVersion: "abc123",
+			wantError:       false,
+		},
+		{
+			name:            "Mismatching SHAs",
+			versionCLI:      "abc123",
+			operatorVersion: "def456",
+			wantError:       true,
+			errMessage:      "version mismatch detected, CLI: abc123, Operator: def456",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+			supportedVersions := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "supported-versions",
+					Namespace: "hypershift",
+				},
+				Data: map[string]string{
+					config.ConfigMapServerVersionKey: tc.operatorVersion,
+					config.ConfigMapVersionsKey:      `{"versions":[]}`,
+				},
+			}
+			client := fake.NewClientBuilder().WithObjects(supportedVersions).Build()
+			err := validateVersion(ctx, tc.versionCLI, client)
+			if tc.wantError {
+				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tc.name)
+			} else {
+				g.Expect(err).To(BeNil(), "Did not expect error for test case: %s", tc.name)
 			}
 		})
 	}

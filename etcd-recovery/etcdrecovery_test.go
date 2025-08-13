@@ -1,7 +1,6 @@
 package etcdrecovery
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -91,7 +90,7 @@ func TestIsRecoverableMemberHealth(t *testing.T) {
 	for i, test := range tests {
 		t.Run(fmt.Sprintf("test-%d", i), func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			actual := isRecoverableMemberHealth(context.Background(), test.memberHealth)
+			actual := isRecoverableMemberHealth(t.Context(), test.memberHealth)
 			g.Expect(actual).To(Equal(test.expectedRecoverable))
 		})
 	}

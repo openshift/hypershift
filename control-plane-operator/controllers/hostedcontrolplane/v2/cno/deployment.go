@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -78,6 +79,9 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	if util.IsPrivateHCP(hcp) {
 		apiServerAddress = fmt.Sprintf("api.%s.hypershift.local", hcp.Name)
 		apiServerPort = util.APIPortForLocalZone(util.IsLBKAS(hcp))
+	} else if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		apiServerAddress = *hcp.Spec.Networking.APIServer.AdvertiseAddress
+		apiServerPort = *hcp.Spec.Networking.APIServer.Port
 	}
 
 	cnoEnv := []corev1.EnvVar{
@@ -111,6 +115,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		{Name: "NETWORK_CHECK_TARGET_IMAGE", Value: userReleaseImageProvider.GetImage("cluster-network-operator")},
 		{Name: "NETWORKING_CONSOLE_PLUGIN_IMAGE", Value: userReleaseImageProvider.GetImage("networking-console-plugin")},
 		{Name: "CLI_IMAGE", Value: userReleaseImageProvider.GetImage("cli")},
+		{Name: "FRR_K8S_IMAGE", Value: userReleaseImageProvider.GetImage("metallb-frr")},
 	}
 
 	if !util.IsPrivateHCP(hcp) {
@@ -137,7 +142,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 	// If CP is running on kube cluster, pass user ID for CNO to run its managed services with
 	if cpContext.SetDefaultSecurityContext {
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
-			Name: "RUN_AS_USER", Value: strconv.Itoa(config.DefaultSecurityContextUser),
+			Name: "RUN_AS_USER", Value: strconv.Itoa(int(cpContext.DefaultSecurityContextUID)),
 		})
 	}
 
@@ -152,7 +157,7 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 			},
 			corev1.EnvVar{
 				Name:  config.ManagedAzureCredentialsFilePath,
-				Value: hcp.Spec.Platform.Azure.ManagedIdentities.ControlPlane.Network.CredentialsSecretName,
+				Value: hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.CredentialsSecretName,
 			},
 		)
 	}

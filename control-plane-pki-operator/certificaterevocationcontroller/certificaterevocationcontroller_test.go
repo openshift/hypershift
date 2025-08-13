@@ -1,7 +1,6 @@
 package certificaterevocationcontroller
 
 import (
-	"context"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"embed"
@@ -1050,7 +1049,7 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 				},
 				skipKASConnections: true,
 			}
-			a, requeue, err := c.processCertificateRevocationRequest(context.Background(), testCase.crrNamespace, testCase.crrName, testCase.now)
+			a, requeue, err := c.processCertificateRevocationRequest(t.Context(), testCase.crrNamespace, testCase.crrName, testCase.now)
 			if actual, expected := requeue, testCase.expectedRequeue; actual != expected {
 				t.Errorf("incorrect requeue: %v != %v", actual, expected)
 			}

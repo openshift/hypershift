@@ -1,6 +1,8 @@
 package snapshotcontroller
 
 import (
+	"strconv"
+
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
 
@@ -23,7 +25,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller pods as.
 		// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
 		if cpContext.SetDefaultSecurityContext {
-			c.Env = append(c.Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: "1001"})
+			c.Env = append(c.Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: strconv.Itoa(int(cpContext.DefaultSecurityContextUID))})
 		}
 	})
 

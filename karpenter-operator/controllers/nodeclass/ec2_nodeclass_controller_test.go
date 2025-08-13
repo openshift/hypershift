@@ -1,7 +1,6 @@
 package nodeclass
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -231,7 +230,7 @@ func TestGetUserDataSecret(t *testing.T) {
 				Namespace:        tc.namespace,
 			}
 
-			secret, err := r.getUserDataSecret(context.Background(), tc.hcp)
+			secret, err := r.getUserDataSecret(t.Context(), tc.hcp)
 
 			if tc.expectedError != "" {
 				g.Expect(err).To(MatchError(tc.expectedError))

@@ -92,6 +92,7 @@ spec:
         - --controllers=-ttl
         - --controllers=-bootstrapsigner
         - --controllers=-tokencleaner
+        - --controllers=selinux-warning-controller
         - --enable-dynamic-provisioning=true
         - --flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec
         - --pv-recycler-pod-template-filepath-nfs=/etc/kubernetes/recycler-config/recycler-pod.yaml
@@ -108,6 +109,8 @@ spec:
         - --cluster-signing-duration=17520h
         - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
+        - --terminated-pod-gc-threshold=1000
+        - --concurrent-gc-syncs=5
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
         - --node-monitor-grace-period=50s
@@ -241,9 +244,12 @@ spec:
           successThreshold: 1
           timeoutSeconds: 10
         resources:
+          limits:
+            cpu: "1"
+            memory: 1Gi
           requests:
-            cpu: 60m
-            memory: 400Mi
+            cpu: 100m
+            memory: 600Mi
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes

@@ -43,6 +43,9 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		WithManifestAdapter("karpenter-credentials.yaml",
 			component.WithAdaptFunction(adaptCredentialsSecret),
 		).
+		WithManifestAdapter("podmonitor.yaml",
+			component.WithAdaptFunction(adaptPodMonitor),
+		).
 		WithPredicate(predicate).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,

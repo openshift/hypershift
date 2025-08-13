@@ -47,6 +47,7 @@ metadata:
   namespace: clusters
 spec:
   autoscaling: {}
+  capabilities: {}
   configuration: {}
   controllerAvailabilityPolicy: SingleReplica
   dns:
@@ -75,23 +76,31 @@ spec:
       managedIdentities:
         controlPlane:
           cloudProvider:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           controlPlaneOperator:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           disk:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           file:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           imageRegistry:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           ingress:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           managedIdentitiesKeyVault:
             name: ""
             tenantID: ""
           network:
+            credentialsSecretName: ""
             objectEncoding: utf-8
           nodePoolManagement:
+            credentialsSecretName: ""
             objectEncoding: utf-8
         dataPlane:
           diskMSIClientID: ""

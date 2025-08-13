@@ -68,7 +68,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {
-				ctx := context.Background()
+				ctx := t.Context()
 				r := TokenSecretReconciler{
 					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
 					IgnitionProvider: &fakeIgnitionProvider{},
@@ -96,6 +96,8 @@ func TestReconcile(t *testing.T) {
 					Namespace: "test",
 					Annotations: map[string]string{
 						TokenSecretAnnotation: "true",
+						// Use inplace upgrade type to test that the payload is compressed and encoded.
+						TokenSecretNodePoolUpgradeType: string(hyperv1.UpgradeTypeInPlace),
 					},
 					CreationTimestamp: metav1.Now(),
 				},
@@ -107,7 +109,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {
-				ctx := context.Background()
+				ctx := t.Context()
 				r := TokenSecretReconciler{
 					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
 					IgnitionProvider: &fakeIgnitionProvider{},
@@ -148,7 +150,9 @@ func TestReconcile(t *testing.T) {
 				g.Expect(freshSecret.Annotations[TokenSecretTokenGenerationTime]).ToNot(BeEmpty())
 
 				// Validate data for conditions
-				g.Expect(freshSecret.Data[TokenSecretPayloadKey]).To(BeEquivalentTo(fakePayload))
+				inplacePayload, err := util.DecodeAndDecompress(freshSecret.Data[TokenSecretPayloadKey])
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(inplacePayload.String()).To(BeEquivalentTo(fakePayload))
 				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(hyperv1.AsExpectedReason))
 				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Payload generated successfully"))
 
@@ -197,7 +201,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {
-				ctx := context.Background()
+				ctx := t.Context()
 				r := TokenSecretReconciler{
 					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
 					IgnitionProvider: &fakeIgnitionProvider{},
@@ -281,7 +285,7 @@ func TestReconcile(t *testing.T) {
 				},
 			},
 			validation: func(t *testing.T, secret client.Object) {
-				ctx := context.Background()
+				ctx := t.Context()
 				r := TokenSecretReconciler{
 					Client:           fake.NewClientBuilder().WithObjects(secret).Build(),
 					IgnitionProvider: &fakeIgnitionProvider{},
@@ -427,7 +431,7 @@ func TestRotateTokenID(t *testing.T) {
 		PayloadStore:     NewPayloadStore(),
 	}
 
-	err := r.rotateToken(context.Background(), secret, existingValue, time.Now())
+	err := r.rotateToken(t.Context(), secret, existingValue, time.Now())
 	g.Expect(err).ToNot(HaveOccurred())
 
 	freshSecret := &corev1.Secret{
@@ -435,7 +439,7 @@ func TestRotateTokenID(t *testing.T) {
 			Name: secretName,
 		},
 	}
-	err = r.Get(context.Background(), client.ObjectKeyFromObject(freshSecret), freshSecret)
+	err = r.Get(t.Context(), client.ObjectKeyFromObject(freshSecret), freshSecret)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	g.Expect(freshSecret.Annotations[TokenSecretTokenGenerationTime]).ToNot(BeEmpty())
@@ -584,7 +588,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 				IgnitionProvider: &fakeIgnitionProvider{},
 				PayloadStore:     payloadStore,
 			}
-			err := r.processExpiredToken(context.Background(), tc.inputSecret)
+			err := r.processExpiredToken(t.Context(), tc.inputSecret)
 			g.Expect(err).To(Not(HaveOccurred()))
 			for expectedTokenKey := range tc.expectedRemainingEntries {
 				_, ok := payloadStore.Get(expectedTokenKey)
@@ -600,7 +604,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 					Namespace: fakeNamespace,
 				},
 			}
-			err = r.Client.Get(context.Background(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
+			err = r.Client.Get(t.Context(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	}

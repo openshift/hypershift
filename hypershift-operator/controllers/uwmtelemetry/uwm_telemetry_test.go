@@ -1,7 +1,6 @@
 package uwmtelemetry
 
 import (
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"testing"
@@ -310,7 +309,7 @@ func TestReconcile(t *testing.T) {
 			existing: []client.Object{monitoring.MonitoringNamespace()},
 			validate: func(g *WithT, c client.Client) {
 				monitoringConfig := monitoring.MonitoringConfig()
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(monitoringConfig), monitoringConfig)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(monitoringConfig), monitoringConfig)
 				g.Expect(err).ToNot(HaveOccurred())
 				validateMonitoringConfig(g, monitoringConfig)
 			},
@@ -326,15 +325,15 @@ func TestReconcile(t *testing.T) {
 			},
 			validate: func(g *WithT, c client.Client) {
 				monitoringConfig := monitoring.MonitoringConfig()
-				err := c.Get(context.Background(), client.ObjectKeyFromObject(monitoringConfig), monitoringConfig)
+				err := c.Get(t.Context(), client.ObjectKeyFromObject(monitoringConfig), monitoringConfig)
 				g.Expect(err).ToNot(HaveOccurred())
 				validateMonitoringConfig(g, monitoringConfig)
 				uwmConfig := monitoring.UWMConfig()
-				err = c.Get(context.Background(), client.ObjectKeyFromObject(uwmConfig), uwmConfig)
+				err = c.Get(t.Context(), client.ObjectKeyFromObject(uwmConfig), uwmConfig)
 				g.Expect(err).ToNot(HaveOccurred())
 				validateUWMConfig(g, uwmConfig)
 				remoteWriteSecret := monitoring.UWMRemoteWriteSecret()
-				err = c.Get(context.Background(), client.ObjectKeyFromObject(remoteWriteSecret), remoteWriteSecret)
+				err = c.Get(t.Context(), client.ObjectKeyFromObject(remoteWriteSecret), remoteWriteSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 				validateRemoteWriteSecret(g, remoteWriteSecret)
 			},
@@ -356,7 +355,7 @@ func TestReconcile(t *testing.T) {
 			req := ctrl.Request{}
 			req.Name = "operator"
 			req.Namespace = ns
-			_, err := reconciler.Reconcile(context.Background(), req)
+			_, err := reconciler.Reconcile(t.Context(), req)
 			g.Expect(err).ToNot(HaveOccurred())
 			test.validate(g, c)
 		})

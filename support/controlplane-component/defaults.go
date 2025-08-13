@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	DefaultSecurityContextUser = 1001
+	DefaultSecurityContextUID = int64(1001)
 
 	// This is used by NodeAffinity to prefer/tolerate Nodes.
 	controlPlaneLabelTolerationKey = "hypershift.openshift.io/control-plane"
@@ -130,10 +130,13 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 	}
 
 	// set default security context for the pod.
-	// ETCD component is excluded as it fails to create data dir on AKS if we set the default security context.
-	if c.Name() != etcdComponentName && cpContext.SetDefaultSecurityContext {
+	if cpContext.SetDefaultSecurityContext {
+		uid := cpContext.DefaultSecurityContextUID
 		podTemplateSpec.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](DefaultSecurityContextUser),
+			RunAsUser: ptr.To[int64](uid),
+		}
+		if c.Name() == etcdComponentName {
+			podTemplateSpec.Spec.SecurityContext.FSGroup = ptr.To[int64](uid)
 		}
 	}
 

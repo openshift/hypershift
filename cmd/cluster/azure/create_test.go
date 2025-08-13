@@ -1,12 +1,12 @@
 package azure
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
@@ -28,7 +28,7 @@ import (
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 
@@ -57,6 +57,7 @@ func TestCreateCluster(t *testing.T) {
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
+		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal infra: %v", err)

@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"context"
 	"errors"
 	"testing"
 
@@ -132,7 +131,7 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 				Client: client,
 			}
 
-			if err := r.reconcileAWSEndpointServiceStatus(context.Background(), &hyperv1.AWSEndpointService{}, &hyperv1.HostedCluster{
+			if err := r.reconcileAWSEndpointServiceStatus(t.Context(), &hyperv1.AWSEndpointService{}, &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
 						AWS: &hyperv1.AWSPlatformSpec{
@@ -255,7 +254,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 				Client:    client,
 			}
 
-			ctx := log.IntoContext(context.Background(), testr.New(t))
+			ctx := log.IntoContext(t.Context(), testr.New(t))
 			actual, err := r.delete(ctx, obj)
 			if err != nil {
 				if !test.expectErr {

@@ -101,6 +101,8 @@ spec:
           value: 2m0s
         - name: HYPERSHIFT_FEATURESET
           value: CustomNoUpgrade
+        - name: DEFAULT_SECURITY_CONTEXT_UID
+          value: "0"
         - name: METRICS_SET
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: /etc/provider/credentials

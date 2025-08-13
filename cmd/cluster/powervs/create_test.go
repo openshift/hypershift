@@ -1,7 +1,6 @@
 package powervs
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -23,7 +22,7 @@ import (
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 

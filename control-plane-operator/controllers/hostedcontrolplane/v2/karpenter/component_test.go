@@ -1,7 +1,6 @@
 package karpenter
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -60,7 +59,7 @@ func TestPredicate(t *testing.T) {
 			client := clientBuilder.Build()
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: context.Background(),
+				Context: t.Context(),
 				Client:  client,
 				HCP:     hcp,
 			}

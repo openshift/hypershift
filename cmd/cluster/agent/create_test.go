@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,7 +18,7 @@ import (
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 
 	tempDir := t.TempDir()
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
@@ -184,6 +185,11 @@ func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID str
 // IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
 func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+}
+
+// SetAsAroHCPTest sets the proper environment variable for the test, designating this is an ARO-HCP environment
+func SetAsAroHCPTest(t *testing.T) {
+	t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 }
 
 func GetKeyVaultAuthorizedUser() string {

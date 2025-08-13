@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"testing"
 	"unicode/utf8"
 
@@ -542,7 +541,7 @@ func TestGetPullSecretBytes(t *testing.T) {
 
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			pullSecretBytes, err := GetPullSecretBytes(context.TODO(), client, tc.hc)
+			pullSecretBytes, err := GetPullSecretBytes(t.Context(), client, tc.hc)
 			if !tc.expectErr {
 				g.Expect(err).To(BeNil())
 				g.Expect(pullSecretBytes).To(Equal(tc.secret.Data[corev1.DockerConfigJsonKey]))
@@ -565,6 +564,14 @@ func TestGetImageArchitecture(t *testing.T) {
 		expectErr             bool
 	}{
 		{
+			name:                  "Bad pull secret, cache empty; err",
+			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
+			pullSecretBytes:       []byte(""),
+			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
+			expectedArch:          "",
+			expectErr:             true,
+		},
+		{
 			name:                  "Get amd64 from amd64 image; no err",
 			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			pullSecretBytes:       pullSecretBytes,
@@ -580,20 +587,12 @@ func TestGetImageArchitecture(t *testing.T) {
 			expectedArch:          hyperv1.PPC64LE,
 			expectErr:             false,
 		},
-		{
-			name:                  "Bad pull secret; err",
-			image:                 "quay.io/openshift-release-dev/ocp-release:4.16.11-ppc64le",
-			pullSecretBytes:       []byte(""),
-			imageMetadataProvider: &RegistryClientImageMetadataProvider{},
-			expectedArch:          "",
-			expectErr:             true,
-		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			arch, err := getImageArchitecture(context.TODO(), tc.image, tc.pullSecretBytes, tc.imageMetadataProvider)
+			arch, err := getImageArchitecture(t.Context(), tc.image, tc.pullSecretBytes, tc.imageMetadataProvider)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -681,7 +680,7 @@ func TestDetermineHostedClusterPayloadArch(t *testing.T) {
 
 			client := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
 
-			payloadType, err := DetermineHostedClusterPayloadArch(context.TODO(), client, tc.hc, tc.imageMetadataProvider)
+			payloadType, err := DetermineHostedClusterPayloadArch(t.Context(), client, tc.hc, tc.imageMetadataProvider)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {

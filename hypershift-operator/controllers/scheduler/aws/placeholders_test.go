@@ -37,7 +37,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
-	ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log)
 
 	validConfigStatus := schedulingv1alpha1.ClusterSizingConfigurationStatus{
 		Conditions: []metav1.Condition{{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionTrue}},
@@ -177,7 +177,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true), zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
-	ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
+	ctx := ctrl.LoggerInto(t.Context(), ctrl.Log)
 
 	validConfigStatus := schedulingv1alpha1.ClusterSizingConfigurationStatus{
 		Conditions: []metav1.Condition{{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionTrue}},

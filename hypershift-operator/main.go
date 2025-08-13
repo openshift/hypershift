@@ -35,17 +35,18 @@ import (
 	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
+	hosupportedversion "github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
-	"github.com/openshift/hypershift/pkg/version"
+	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/metrics"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -89,11 +90,12 @@ func main() {
 		},
 	}
 
-	cmd.Version = version.String()
+	cmd.Version = supportedversion.String()
 
 	cmd.AddCommand(NewStartCommand())
 	cmd.AddCommand(NewInitCommand())
 	cmd.AddCommand(etcdrecovery.NewRecoveryCommand())
+	cmd.AddCommand(sharedingressconfiggenerator.NewStartCommand())
 
 	if err := cmd.Execute(); err != nil {
 		_, _ = fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -188,7 +190,7 @@ func NewStartCommand() *cobra.Command {
 }
 
 func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
-	log.Info("Starting hypershift-operator-manager", "version", version.String())
+	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "hypershift-operator-manager"
@@ -420,7 +422,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	}
 
 	// Start controller to manage supported versions configmap
-	if err := supportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
+	if err := hosupportedversion.New(mgr.GetClient(), createOrUpdate, opts.Namespace).
 		SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create supported version controller: %w", err)
 	}
@@ -444,6 +446,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		sharedIngress := sharedingress.SharedIngressReconciler{
 			Namespace:                     opts.Namespace,
 			ManagementClusterCapabilities: mgmtClusterCaps,
+			HypershiftOperatorImage:       operatorImage,
 		}
 		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)

@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/util"
@@ -86,12 +87,17 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Kube API server service: %s", strategy.Type)
 	}
-	svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
 	svc.Spec.Ports[0] = portSpec
+
+	if !azureutil.IsAroHCP() {
+		svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
+	}
 	return nil
 }
 
@@ -285,7 +291,9 @@ func ReconcileKonnectivityServerService(svc *corev1.Service, ownerRef config.Own
 			portSpec.NodePort = strategy.NodePort.Port
 		}
 	case hyperv1.Route:
-		svc.Spec.Type = corev1.ServiceTypeClusterIP
+		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform || svc.Spec.Type != corev1.ServiceTypeNodePort {
+			svc.Spec.Type = corev1.ServiceTypeClusterIP
+		}
 	default:
 		return fmt.Errorf("invalid publishing strategy for Konnectivity service: %s", strategy.Type)
 	}

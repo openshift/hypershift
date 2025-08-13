@@ -1,7 +1,6 @@
 package openstack
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,7 +33,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if _, err := test.input.Validate(context.Background(), nil); err != nil {
+		if _, err := test.input.Validate(t.Context(), nil); err != nil {
 			errString = err.Error()
 		}
 		if !strings.Contains(errString, test.expectedError) {
@@ -46,7 +45,7 @@ func TestCreateOptions_Validate(t *testing.T) {
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 

@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -89,7 +88,7 @@ func TestValidateCreateCredentialInfo(t *testing.T) {
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 

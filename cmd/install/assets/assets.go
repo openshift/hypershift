@@ -30,7 +30,7 @@ var recordingRules embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
-// capiResources specifies which CRDs should get labelled with capiLabel
+// capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
 var capiResources = map[string]string{

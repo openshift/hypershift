@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -37,8 +38,8 @@ func NewRollingUpgradeTest(ctx context.Context, mgmtClient crclient.Client, host
 }
 
 func (k *RollingUpgradeTest) Setup(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platforms AWS and Azure")
 	}
 }
 
@@ -52,7 +53,12 @@ func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodeP
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
 	nodePool.Spec.Replicas = &twoReplicas
-	nodePool.Spec.Platform.AWS.InstanceType = "m5.large"
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		nodePool.Spec.Platform.AWS.InstanceType = "m5.large"
+	case hyperv1.AzurePlatform:
+		nodePool.Spec.Platform.Azure.VMSize = "Standard_D2s_v3"
+	}
 	nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
 
 	return nodePool, nil
@@ -61,10 +67,22 @@ func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodeP
 func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 
-	instanceType := "m5.xlarge"
+	var instanceType string
+	var vmSize string
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		instanceType = "m5.xlarge"
+	case hyperv1.AzurePlatform:
+		vmSize = "Standard_D4s_v3"
+	}
 	// change instance type to trigger a rolling upgrade
 	err := e2eutil.UpdateObject(t, k.ctx, k.mgmtClient, &nodePool, func(obj *hyperv1.NodePool) {
-		obj.Spec.Platform.AWS.InstanceType = instanceType
+		switch globalOpts.Platform {
+		case hyperv1.AWSPlatform:
+			obj.Spec.Platform.AWS.InstanceType = instanceType
+		case hyperv1.AzurePlatform:
+			obj.Spec.Platform.Azure.VMSize = vmSize
+		}
 	})
 	g.Expect(err).ToNot(HaveOccurred())
 
@@ -96,13 +114,26 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		e2eutil.WithTimeout(30*time.Minute),
 	)
 
-	// check all aws machines have the new instance type
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
-	awsMachines := &capiaws.AWSMachineList{}
-	err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
-	g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		// check all aws machines have the new instance type
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+		awsMachines := &capiaws.AWSMachineList{}
+		err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+		g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
 
-	for _, machine := range awsMachines.Items {
-		g.Expect(machine.Spec.InstanceType).To(Equal(instanceType))
+		for _, machine := range awsMachines.Items {
+			g.Expect(machine.Spec.InstanceType).To(Equal(instanceType))
+		}
+	case hyperv1.AzurePlatform:
+		// check all azure machines have the new instance type
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+		azureMachines := &capiazure.AzureMachineList{}
+		err = k.mgmtClient.List(k.ctx, azureMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+		g.Expect(err).ToNot(HaveOccurred(), "failed to list azure machines")
+
+		for _, machine := range azureMachines.Items {
+			g.Expect(machine.Spec.VMSize).To(Equal(vmSize))
+		}
 	}
 }

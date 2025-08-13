@@ -18,10 +18,10 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,6 +37,7 @@ type SharedIngressReconciler struct {
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
+	HypershiftOperatorImage       string
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
@@ -77,7 +78,7 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 		Complete(r)
 }
 
-func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
 		return nil
@@ -120,83 +121,18 @@ func (r *SharedIngressReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{}, nil
 }
 
-func (r *SharedIngressReconciler) generateConfig(ctx context.Context) (string, []routev1.Route, error) {
-	hcList := &hyperv1.HostedClusterList{}
-	if err := r.Client.List(ctx, hcList); err != nil {
-		return "", nil, fmt.Errorf("failed to list HCs: %w", err)
-	}
-
-	namespaces := make([]string, 0, len(hcList.Items))
-	svcsNamespaceToClusterID := make(map[string]string)
-	for _, hc := range hcList.Items {
-		hcpNamespace := hc.Namespace + "-" + hc.Name
-		namespaces = append(namespaces, hcpNamespace)
-		svcsNamespaceToClusterID[hcpNamespace] = hc.Spec.ClusterID
-	}
-
-	// This enables traffic from through external DNS.
-	routes := make([]routev1.Route, 0, len(namespaces))
-	for _, ns := range namespaces {
-		routeList := &routev1.RouteList{}
-		if err := r.Client.List(ctx, routeList, client.InNamespace(ns)); err != nil {
-			return "", nil, fmt.Errorf("failed to list routes: %w", err)
-		}
-		routes = append(routes, routeList.Items...)
-	}
-	svcsNameToIP := make(map[string]string)
-	for _, route := range routes {
-		svc := &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      route.Spec.To.Name,
-				Namespace: route.Namespace,
-			},
-		}
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
-			return "", nil, fmt.Errorf("failed to get service %s: %w", svc.Name, err)
-		}
-		svcsNameToIP[route.Namespace+route.Spec.To.Name] = svc.Spec.ClusterIP
-	}
-
-	// This enables traffic from the data plane via kubernetes.svc.
-	svcList := &corev1.ServiceList{}
-	fieldSelector := fields.SelectorFromSet(fields.Set{"metadata.name": "kube-apiserver"})
-	listOptions := &client.ListOptions{
-		FieldSelector: fieldSelector,
-	}
-	if err := r.Client.List(ctx, svcList, listOptions); err != nil {
-		return "", nil, err
-	}
-
-	config, err := generateRouterConfig(svcList, svcsNamespaceToClusterID, routes, svcsNameToIP)
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to generate router config: %w", err)
-	}
-
-	return config, routes, nil
-}
-
 func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecretPresent bool) error {
 	if err := r.reconcileDefaultServiceAccount(ctx, pullSecretPresent); err != nil {
 		return fmt.Errorf("failed to reconcile default service account: %w", err)
 	}
 
-	config, routes, err := r.generateConfig(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to generate router config: %w", err)
-	}
-
-	routerConfig := RouterConfigurationConfigMap()
-	if _, err := r.createOrUpdate(ctx, r.Client, routerConfig, func() error {
-		return ReconcileRouterConfiguration(routerConfig, config)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile router configuration: %w", err)
+	if err := r.reconcileConfigGeneratorControllerRBAC(ctx, pullSecretPresent); err != nil {
+		return fmt.Errorf("failed to reconcile config generator RBAC: %w", err)
 	}
 
 	deployment := RouterDeployment()
 	if _, err := r.createOrUpdate(ctx, r.Client, deployment, func() error {
-		return ReconcileRouterDeployment(deployment,
-			routerConfig,
-		)
+		return ReconcileRouterDeployment(deployment, r.HypershiftOperatorImage)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile router deployment: %w", err)
 	}
@@ -217,15 +153,18 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 			canonicalHostname = svc.Status.LoadBalancer.Ingress[0].IP
 		}
 	}
+
+	routeList := &routev1.RouteList{}
+	// If the hypershift.openshift.io/hosted-control-plane label is not present,
+	// then it means the route should be fulfilled by the management cluster's router.
+	if err := r.Client.List(ctx, routeList, client.HasLabels{util.HCPRouteLabel}); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
+	}
+
 	// "Admit" routes that we manage so that other code depending on routes continues
 	// to work as before.
-	for i := range routes {
-		route := routes[i]
-		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
-			// If the hypershift.openshift.io/hosted-control-plane label is not present,
-			// then it means the route should be fulfilled by the management cluster's router.
-			continue
-		}
+	for i := range routeList.Items {
+		route := routeList.Items[i]
 		originalRoute := route.DeepCopy()
 		ReconcileRouteStatus(&route, canonicalHostname)
 		if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
@@ -279,6 +218,76 @@ func (r *SharedIngressReconciler) reconcileDefaultServiceAccount(ctx context.Con
 	}); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (r *SharedIngressReconciler) reconcileConfigGeneratorControllerRBAC(ctx context.Context, pullSecretPresent bool) error {
+	sa := RouterServiceAccount()
+	if _, err := r.createOrUpdate(ctx, r.Client, sa, func() error {
+		if pullSecretPresent {
+			util.EnsurePullSecret(sa, PullSecret().Name)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile router ServiceAccount: %w", err)
+	}
+
+	cr := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sharedingress-config-generator",
+		},
+	}
+	if _, err := r.createOrUpdate(ctx, r.Client, cr, func() error {
+		cr.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"hypershift.openshift.io"},
+				Resources: []string{"hostedclusters"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"route.openshift.io"},
+				Resources: []string{"routes"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"services"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"events"},
+				Verbs:     []string{"create", "patch", "update"},
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ClusterRole: %w", err)
+	}
+
+	crb := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "sharedingress-config-generator",
+		},
+	}
+	if _, err := r.createOrUpdate(ctx, r.Client, crb, func() error {
+		crb.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     cr.Name,
+		}
+		crb.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      sa.Name,
+				Namespace: sa.Namespace,
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ClusterRoleBinding: %w", err)
+	}
+
 	return nil
 }
 

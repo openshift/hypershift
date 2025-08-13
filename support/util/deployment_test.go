@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -117,7 +116,7 @@ func TestIsDeploymentReady(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		ready := IsDeploymentReady(context.TODO(), tt.deployment)
+		ready := IsDeploymentReady(t.Context(), tt.deployment)
 		if ready != tt.ready {
 			t.Errorf("IsDeploymentReady() deployment %s got ready %t, expected %t", tt.deployment.Name, ready, tt.ready)
 			return
@@ -212,7 +211,7 @@ func TestIsStatefulSetReady(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		ready := IsStatefulSetReady(context.TODO(), tt.statefulSet)
+		ready := IsStatefulSetReady(t.Context(), tt.statefulSet)
 		if ready != tt.ready {
 			t.Errorf("IsStatefulSetReady() statefulset %s got ready %t, expected %t", tt.statefulSet.Name, ready, tt.ready)
 			return
