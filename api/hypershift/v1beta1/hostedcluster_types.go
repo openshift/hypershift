@@ -273,6 +273,10 @@ const (
 
 	// ManagementPlatformAnnotation specifies the infrastructure platform of the underlying management cluster
 	ManagementPlatformAnnotation = "hypershift.openshift.io/management-platform"
+
+	// SkipKASCertificateConflicSANValidation allows skipping the validation of the KAS certificate SANs so they do not conflict with ServicePublishingStrategy Hostname.
+	// This annotation is useful as a escape hatch, that IBM could use.
+	SkipKASConflicSANValidation = "hypershift.openshift.io/skip-kas-conflict-san-validation"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
