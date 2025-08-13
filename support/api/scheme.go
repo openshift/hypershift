@@ -5,6 +5,7 @@ import (
 
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 
@@ -147,5 +148,6 @@ func init() {
 			&karpenterv1.NodePool{},
 			&karpenterv1.NodePoolList{},
 		)
+		_ = hyperkarpenterv1.AddToScheme(scheme)
 	}
 }
