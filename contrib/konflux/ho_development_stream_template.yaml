@@ -23,13 +23,16 @@ spec:
     kind: Component
     metadata:
       annotations:
+        build.appstudio.openshift.io/request: configure-pac
         build.appstudio.openshift.io/pipeline: '{"name":"docker-build-multi-platform-oci-ta","bundle":"latest"}'
-        build.appstudio.openshift.io/status: '{"pac":{"state":"enabled","merge-url":"https://github.com/openshift/hypershift/pull/1","configuration-time":"Mon, 11 Aug 2025 08:59:18 UTC"},"message":"done"}'
+        git-provider: github
+        git-provider-url: https://github.com
         mintmaker.appstudio.redhat.com/disabled: "true"
       name: hypershift-operator-hotfix-{{.versionName}}
     spec:
       application: "hypershift-operator-hotfix-{{.versionName}}"
       componentName: "hypershift-operator-hotfix-{{.versionName}}"
+      containerImage: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-{{.versionName}}"
       source:
         git:
           context: ./
@@ -44,6 +47,8 @@ spec:
       labels:
         appstudio.redhat.com/application: hypershift-operator-hotfix-{{.versionName}}
         appstudio.redhat.com/component: hypershift-operator-hotfix-{{.versionName}}
+      annotations:
+        image-controller.appstudio.redhat.com/update-component-image: 'true'
     spec:
       image:
         name: crt-redhat-acm-tenant/hypershift-operator-hotfix-{{.versionName}}
