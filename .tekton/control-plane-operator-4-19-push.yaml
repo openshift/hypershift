@@ -7,9 +7,14 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "release-4.19"
-  creationTimestamp: null
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push"
+      && target_branch == "release-4.19"
+      && ( "control-plane-operator/***".pathChanged() ||
+           "support/***".pathChanged() ||
+           ".tekton/control-plane-operator*".pathChanged() ||
+           "/Containerfile.control-plane-operator".pathChanged() )
+  creationTimestamp:
   labels:
     appstudio.openshift.io/application: control-plane-operator-4-19
     appstudio.openshift.io/component: control-plane-operator-4-19
@@ -29,6 +34,8 @@ spec:
     - linux/x86_64
   - name: dockerfile
     value: Containerfile.control-plane
+  - name: hermetic
+    value: "true"
   - name: path-context
     value: .
   pipelineSpec:
