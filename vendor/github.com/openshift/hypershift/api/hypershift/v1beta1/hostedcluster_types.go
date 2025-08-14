@@ -301,6 +301,10 @@ const (
 	// SkipControlPlaneNamespaceDeletionAnnotation tells the the hosted cluster controller not to delete the hosted control plane
 	// namespace during hosted cluster deletion when this annotation is set to the value "true".
 	SkipControlPlaneNamespaceDeletionAnnotation = "hypershift.openshift.io/skip-delete-hosted-controlplane-namespace"
+
+	// SkipKASCertificateConflicSANValidation allows skipping the validation of the KAS certificate SANs so they do not conflict with ServicePublishingStrategy Hostname.
+	// This annotation is useful as a escape hatch, that IBM could use.
+	SkipKASConflicSANValidation = "hypershift.openshift.io/skip-kas-conflict-san-validation"
 )
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
