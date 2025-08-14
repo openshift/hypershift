@@ -415,7 +415,7 @@ github.com/gabriel-vasile/mimetype
 github.com/gabriel-vasile/mimetype/internal/charset
 github.com/gabriel-vasile/mimetype/internal/json
 github.com/gabriel-vasile/mimetype/internal/magic
-# github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
+# github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
 ## explicit
 github.com/ghodss/yaml
 # github.com/go-errors/errors v1.5.1
