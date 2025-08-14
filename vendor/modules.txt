@@ -2137,7 +2137,7 @@ k8s.io/kubelet/config/v1beta1
 # k8s.io/pod-security-admission v0.30.2
 ## explicit; go 1.22.0
 k8s.io/pod-security-admission/admission/api
-k8s.io/pod-security-admission/admission/api/v1beta1
+k8s.io/pod-security-admission/admission/api/v1
 k8s.io/pod-security-admission/api
 # k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0
 ## explicit; go 1.18
