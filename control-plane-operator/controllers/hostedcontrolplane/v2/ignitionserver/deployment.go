@@ -2,16 +2,18 @@ package ignitionserver
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"maps"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -19,6 +21,8 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -50,7 +54,12 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 		})
 	}
 
-	registryOverrides, err := ign.getRegistryOverrides(cpContext.ReleaseImageProvider)
+	pullSecret := common.PullSecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return err
+	}
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+	registryOverrides, err := ign.getRegistryOverrides(context.Background(), cpContext.ReleaseImageProvider, pullSecretBytes)
 	if err != nil {
 		return err
 	}
@@ -89,7 +98,7 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 	return nil
 }
 
-func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.ReleaseImageProvider) (map[string]string, error) {
+func (ign *ignitionServer) getRegistryOverrides(ctx context.Context, imageProvider imageprovider.ReleaseImageProvider, pullSecret []byte) (map[string]string, error) {
 	configAPIImage := imageProvider.GetImage("cluster-config-api")
 	machineConfigOperatorImage := imageProvider.GetImage("machine-config-operator")
 
@@ -98,11 +107,11 @@ func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.Rele
 
 	// Determine if we need to override the machine config operator and cluster config operator
 	// images based on image mappings present in management cluster.
-	overrideConfigAPIImage, err := lookupMappedImage(ocpRegistryMapping, configAPIImage)
+	overrideConfigAPIImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecret, registryclient.GetMetadata)
 	if err != nil {
 		return nil, err
 	}
-	overrideMachineConfigOperatorImage, err := lookupMappedImage(ocpRegistryMapping, machineConfigOperatorImage)
+	overrideMachineConfigOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecret, registryclient.GetMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -116,18 +125,4 @@ func (ign *ignitionServer) getRegistryOverrides(imageProvider imageprovider.Rele
 	}
 
 	return registryOverrides, nil
-}
-
-func lookupMappedImage(ocpOverrides map[string][]string, image string) (string, error) {
-	ref, err := reference.Parse(image)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse image (%s): %w", image, err)
-	}
-	for source, replacements := range ocpOverrides {
-		if ref.AsRepository().String() == source {
-			newRef := fmt.Sprintf("%s@%s", replacements[0], ref.ID)
-			return newRef, nil
-		}
-	}
-	return image, nil
 }
