@@ -1,4 +1,4 @@
-FROM quay.io/openshift/origin-base:4.15
+FROM quay.io/openshift/origin-base:4.16
 
 LABEL io.openshift.hypershift.control-plane-operator-skips-haproxy=true
 LABEL io.openshift.hypershift.control-plane-operator-subcommands=true
