@@ -288,6 +288,14 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	if !hcp.DeletionTimestamp.IsZero() {
+		// Relax admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
+		if azureutil.IsAroHCP() {
+			log.Info("Relaxing admission policies for cluster deletion cleanup")
+			if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+				log.Error(err, "Failed to relax registry admission policies during deletion")
+			}
+		}
+
 		if shouldCleanupCloudResources(hcp) {
 			log.Info("Cleaning up hosted cluster cloud resources")
 			return r.destroyCloudResources(ctx, hcp)
