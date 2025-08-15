@@ -731,7 +731,7 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 		})
 	}
 
-	return r.Status().Update(ctx, &hostedControlPlane)
+	return r.Client.Status().Update(ctx, &hostedControlPlane)
 }
 
 // copyFile copies a file named src to dst, preserving attributes.
