@@ -3662,6 +3662,10 @@ func (r *HostedClusterReconciler) validateAWSConfig(hc *hyperv1.HostedCluster) e
 		if !hyperutil.UseDedicatedDNSForKASByHC(hc) && kasPublishingStrategy.Type != hyperv1.LoadBalancer {
 			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported, use Route or LoadBalancer", hyperv1.APIServer, kasPublishingStrategy.Type))
 		}
+		// When using dedicated DNS, the KAS should be exposed as Route.
+		if hyperutil.IsPublicWithDNSByHC(hc) && hyperutil.IsLBKASByHC(hc) {
+			errs = append(errs, fmt.Errorf("service type %v with publishing strategy %v is not supported when any service specifies external DNS, use Route", hyperv1.APIServer, kasPublishingStrategy.Type))
+		}
 	}
 
 	return utilerrors.NewAggregate(errs)
