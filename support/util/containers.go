@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 )
 
 func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)) corev1.Container {
@@ -70,6 +71,11 @@ const (
 	// AvailabilityProberImageName is the name under which components can find the availability prober
 	// image in the release image.
 	AvailabilityProberImageName = "availability-prober"
+
+	// PodTmpDirMountName is a name for a volume created in each pod by the CPO that gives the pods containers a place to mount and write temporary files to.
+	PodTmpDirMountName = "tmp-dir"
+	// PodTmpDirMountPath is the path that each container created by the CPO will mount the volume PodTmpDirMountName at.
+	PodTmpDirMountPath = "/tmp"
 )
 
 func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {
@@ -87,7 +93,20 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 			"--target",
 			target,
 		},
+		SecurityContext: &corev1.SecurityContext{
+			ReadOnlyRootFilesystem: ptr.To(true),
+		},
 	}
+
+	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool {
+		return v.Name == PodTmpDirMountName && v.EmptyDir != nil
+	}) {
+		availabilityProberContainer.VolumeMounts = append(availabilityProberContainer.VolumeMounts, corev1.VolumeMount{
+			Name:      PodTmpDirMountName,
+			MountPath: PodTmpDirMountPath,
+		})
+	}
+
 	if opts.KubeconfigVolumeName != "" {
 		availabilityProberContainer.VolumeMounts = append(availabilityProberContainer.VolumeMounts, corev1.VolumeMount{
 			Name:      opts.KubeconfigVolumeName,
