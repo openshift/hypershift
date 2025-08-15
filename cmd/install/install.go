@@ -354,18 +354,18 @@ func apply(ctx context.Context, out io.Writer, objects []crclient.Object) error 
 			// PriorityClasses can not be patched as the value field is immutable
 			if err := client.Create(ctx, object, &crclient.CreateOptions{}); err != nil {
 				if apierrors.IsAlreadyExists(err) {
-					fmt.Fprintf(out, "already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+					_, _ = fmt.Fprintf(out, "already exists: %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 				} else {
 					return err
 				}
 			} else {
-				fmt.Fprintf(out, "created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
+				_, _ = fmt.Fprintf(out, "created %s %s/%s\n", "PriorityClass", object.GetNamespace(), object.GetName())
 			}
 		} else {
 			if err := client.Patch(ctx, object, crclient.RawPatch(types.ApplyPatchType, objectBytes.Bytes()), crclient.ForceOwnership, crclient.FieldOwner("hypershift")); err != nil {
 				errs = append(errs, err)
 			}
-			fmt.Fprintf(out, "applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
+			_, _ = fmt.Fprintf(out, "applied %s %s/%s\n", object.GetObjectKind().GroupVersionKind().Kind, object.GetNamespace(), object.GetName())
 		}
 	}
 

@@ -646,19 +646,14 @@ spec:
                           If not specified, then Boot diagnostics will be disabled.
                         properties:
                           storageAccountType:
-                            allOf:
-                            - enum:
-                              - Managed
-                              - UserManaged
-                              - Disabled
-                            - enum:
-                              - Managed
-                              - UserManaged
-                              - Disabled
                             default: Disabled
                             description: |-
                               storageAccountType determines if the storage account for storing the diagnostics data
                               should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
+                            enum:
+                            - Managed
+                            - UserManaged
+                            - Disabled
                             type: string
                           userManaged:
                             description: userManaged specifies the diagnostics settings

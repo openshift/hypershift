@@ -335,7 +335,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	// The exception for IBMCloudPlatform is due to the fact that the IBM will include new certificates for HCCO from 4.17 version
-	if !(hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && (releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17)) {
+	isIBM := hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform
+	isPre417 := releaseImageVersion.Major == 4 && releaseImageVersion.Minor < 17
+	if !isIBM || !isPre417 {
 		// Apply new ValidatingAdmissionPolicy to restrict the modification/deletion of certain
 		// objects from the DataPlane which are managed by the HCCO.
 		if err := kas.ReconcileKASValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {

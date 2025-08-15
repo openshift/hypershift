@@ -42,7 +42,7 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 	infra.Status.EtcdDiscoveryDomain = BaseDomain(hcp)
 	infra.Status.InfrastructureName = hcp.Spec.InfraID
 	infra.Status.ControlPlaneTopology = configv1.ExternalTopologyMode
-	infra.Status.Platform = configv1.PlatformType(platformType)
+	infra.Status.Platform = configv1.PlatformType(platformType) //nolint:staticcheck
 	if infra.Status.PlatformStatus == nil {
 		infra.Status.PlatformStatus = &configv1.PlatformStatus{}
 	}

@@ -102,9 +102,9 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 			AvailableUpdates:   clusterVersion.Status.AvailableUpdates,
 			ConditionalUpdates: clusterVersion.Status.ConditionalUpdates,
 		}
-		//lint:ignore SA1019 populate the deprecated property until we can drop it in a later API version
+		//nolint:staticcheck // populate the deprecated property until we can drop it in a later API version
 		hcp.Status.Version = hcp.Status.VersionStatus.Desired.Version
-		//lint:ignore SA1019 populate the deprecated property until we can drop it in a later API version
+		//nolint:staticcheck // populate the deprecated property until we can drop it in a later API version
 		hcp.Status.ReleaseImage = hcp.Status.VersionStatus.Desired.Image
 	}
 

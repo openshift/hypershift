@@ -167,13 +167,13 @@ func convertProviderConfigToIDPData(
 			},
 		}
 		if basicAuthConfig.CA.Name != "" {
-			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+			provider.CA = idpVolumeMounts.ConfigMapPath(i, basicAuthConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
 		}
 		if basicAuthConfig.TLSClientCert.Name != "" {
-			provider.RemoteConnectionInfo.CertFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-key", corev1.TLSCertKey)
+			provider.CertFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientCert.Name, "tls-client-key", corev1.TLSCertKey)
 		}
 		if basicAuthConfig.TLSClientKey.Name != "" {
-			provider.RemoteConnectionInfo.KeyFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+			provider.KeyFile = idpVolumeMounts.SecretPath(i, basicAuthConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
 		}
 
 		data.provider = provider
@@ -286,13 +286,13 @@ func convertProviderConfigToIDPData(
 			UseKeystoneIdentity: true, // force use of keystone ID
 		}
 		if keystoneConfig.CA.Name != "" {
-			provider.RemoteConnectionInfo.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
+			provider.CA = idpVolumeMounts.ConfigMapPath(i, keystoneConfig.CA.Name, "ca", corev1.ServiceAccountRootCAKey)
 		}
 		if keystoneConfig.TLSClientCert.Name != "" {
-			provider.RemoteConnectionInfo.CertInfo.CertFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
+			provider.CertFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientCert.Name, "tls-client-cert", corev1.TLSCertKey)
 		}
 		if keystoneConfig.TLSClientKey.Name != "" {
-			provider.RemoteConnectionInfo.CertInfo.KeyFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
+			provider.KeyFile = idpVolumeMounts.SecretPath(i, keystoneConfig.TLSClientKey.Name, "tls-client-key", corev1.TLSPrivateKeyKey)
 		}
 		data.provider = provider
 		data.challenge = true
@@ -506,6 +506,7 @@ func buildKonnectivityDialer(ctx context.Context, kclient crclient.Client, names
 // discoverOpenIDURLs retrieves basic information about an OIDC server with hostname
 // given by the `issuer` argument
 func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, key, namespace string, ca configv1.ConfigMapNameReference, skipKonnectivityDialer bool) (*osinv1.OpenIDURLs, error) {
+	log := ctrl.LoggerFrom(ctx)
 	issuer = strings.TrimRight(issuer, "/") // TODO make impossible via validation and remove
 	wellKnown := issuer + "/.well-known/openid-configuration"
 
@@ -532,7 +533,11 @@ func discoverOpenIDURLs(ctx context.Context, kclient crclient.Client, issuer, ke
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(err, "failed to close response body")
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("couldn't get %v: unexpected response status %v", wellKnown, resp.StatusCode)
@@ -638,7 +643,11 @@ func checkOIDCPasswordGrantFlow(ctx context.Context,
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Error(err, "failed to close response body")
+		}
+	}()
 
 	respJSON := json.NewDecoder(resp.Body)
 	respMap := map[string]interface{}{}

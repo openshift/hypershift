@@ -146,7 +146,12 @@ func CompressAndEncode(payload []byte) (*bytes.Buffer, error) {
 	// We need to base64-encode our gzipped data, so we can marshal it in and out
 	// of a string since ConfigMaps and Secrets expect a textual representation.
 	base64Enc := base64.NewEncoder(base64.StdEncoding, out)
-	defer base64Enc.Close()
+	defer func() {
+		if err := base64Enc.Close(); err != nil {
+			// Log error but don't fail since we're likely in an error path
+			fmt.Printf("failed to close base64 encoder in defer: %v\n", err)
+		}
+	}()
 
 	err := compress(bytes.NewBuffer(payload), base64Enc)
 	if err != nil {
@@ -193,7 +198,12 @@ func compress(r io.Reader, w io.Writer) error {
 		return fmt.Errorf("could not initialize gzip writer: %w", err)
 	}
 
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil {
+			// Log error but don't fail since we're likely in an error path
+			fmt.Printf("failed to close gzip writer in defer: %v\n", err)
+		}
+	}()
 
 	if _, err := io.Copy(gz, r); err != nil {
 		return fmt.Errorf("could not compress payload: %w", err)
@@ -214,7 +224,12 @@ func decompress(r io.Reader) (*bytes.Buffer, error) {
 		return bytes.NewBuffer(nil), fmt.Errorf("could not initialize gzip reader: %w", err)
 	}
 
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil {
+			// Log error but don't fail since we're likely in an error path
+			fmt.Printf("failed to close gzip reader in defer: %v\n", err)
+		}
+	}()
 
 	data, err := io.ReadAll(gz)
 	if err != nil {
@@ -253,7 +268,7 @@ func InsecureHTTPClient() *http.Client {
 // HashSimple takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
 func HashSimple(o interface{}) string {
 	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
+	_, _ = fmt.Fprintf(hash, "%v", o)
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
 }

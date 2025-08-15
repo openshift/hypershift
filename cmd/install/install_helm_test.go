@@ -29,7 +29,11 @@ func TestHelmCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		if err := os.RemoveAll(tmpDir); err != nil {
+			t.Logf("Warning: failed to remove temp directory %s: %v", tmpDir, err)
+		}
+	}()
 
 	_, err = ExecuteTestHelmCommand([]string{"--output-dir", tmpDir})
 	if err != nil {

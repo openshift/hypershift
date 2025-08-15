@@ -117,7 +117,7 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	kubevirtMachines := &capikubevirt.KubevirtMachineList{}
-	err := r.Client.List(ctx, kubevirtMachines, &client.ListOptions{
+	err := r.List(ctx, kubevirtMachines, &client.ListOptions{
 		Namespace: controlPlaneNamespace,
 	})
 	if err != nil {

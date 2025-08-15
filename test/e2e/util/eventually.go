@@ -124,7 +124,7 @@ func EventuallyObject[T client.Object](t *testing.T, ctx context.Context, object
 
 	if err != nil {
 		t.Errorf("Failed to wait for %s in %s: %v", objective, duration, err)
-		if !(reflect.ValueOf(object).IsZero() || reflect.ValueOf(object).Elem().IsZero()) { // can't use != nil here
+		if !reflect.ValueOf(object).IsZero() && !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
 			// evaluate the predicates one last time to give a summary of *only* the failed ones
 			results, resultsErr := evaluatePredicates(object, predicates)
 			if resultsErr != nil {
@@ -320,7 +320,7 @@ func EventuallyObjects[T client.Object](t *testing.T, ctx context.Context, objec
 		}
 		if opts.dumpConditions {
 			for _, object := range invalidObjects {
-				if !(reflect.ValueOf(object).IsZero() || reflect.ValueOf(object).Elem().IsZero()) { // can't use != nil here
+				if !reflect.ValueOf(object).IsZero() && !reflect.ValueOf(object).Elem().IsZero() { // can't use != nil here
 					conditions, conditionsErr := Conditions(object)
 					if conditionsErr != nil {
 						t.Errorf("failed to extract conditions from %T %s/%s: %v", object, object.GetNamespace(), object.GetName(), conditionsErr)

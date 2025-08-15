@@ -84,7 +84,7 @@ func DecompressStream(archive io.Reader) (io.ReadCloser, error) {
 		readBufWrapper := p.NewReadCloserWrapper(buf, xzReader)
 		return wrapReadCloser(readBufWrapper, cancel), nil
 	default:
-		return nil, fmt.Errorf("Unsupported compression format %s", (&compression).Extension())
+		return nil, fmt.Errorf("unsupported compression format %s", (&compression).Extension())
 	}
 }
 
@@ -142,7 +142,10 @@ func cmdStream(cmd *exec.Cmd, input io.Reader) (io.ReadCloser, error) {
 		if err := cmd.Wait(); err != nil {
 			pipeW.CloseWithError(fmt.Errorf("%s: %s", err, errBuf.String()))
 		} else {
-			pipeW.Close()
+			if err := pipeW.Close(); err != nil {
+				// Log error but can't propagate it since this is in a goroutine
+				fmt.Printf("failed to close pipe writer: %v\n", err)
+			}
 		}
 	}()
 

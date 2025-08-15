@@ -1,7 +1,6 @@
 package kas
 
 import (
-	"os"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -103,8 +102,7 @@ func TestGetHealthcheckEndpoint(t *testing.T) {
 			g := NewWithT(t)
 
 			if tc.useSharedIngress {
-				os.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-				defer os.Unsetenv("MANAGED_SERVICE")
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
 
 			endpoint, port, err := GetHealthcheckEndpointForRoute(tc.route, tc.hcp)

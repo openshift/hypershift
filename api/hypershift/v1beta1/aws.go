@@ -165,7 +165,7 @@ type Volume struct {
 
 	// encrypted indicates whether the EBS volume should be encrypted or not.
 	// +optional
-	Encrypted *bool `json:"encrypted,omitempty"`
+	Encrypted *bool `json:"encrypted,omitempty"` //nolint:kubeapilinter
 
 	// encryptionKey is the KMS key to use for volume encryption.
 	// +optional
@@ -290,7 +290,7 @@ type AWSPlatformSpec struct {
 	// NodePool.Spec.Arch is supported.
 	// +kubebuilder:default=false
 	// +optional
-	MultiArch bool `json:"multiArch"`
+	MultiArch bool `json:"multiArch"` //nolint:kubeapilinter
 
 	// sharedVPC contains fields that must be specified if the HostedCluster must use a VPC that is
 	// created in a different AWS account and is shared with the AWS account where the HostedCluster

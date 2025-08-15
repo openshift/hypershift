@@ -63,7 +63,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 func adaptOAuthConfig(cpContext component.WorkloadContext, cfg *osinv1.OsinServerConfig) {
 	configuration := cpContext.HCP.Spec.Configuration
 
-	cfg.GenericAPIServerConfig.ServingInfo.NamedCertificates = globalconfig.GetConfigNamedCertificates(configuration.GetNamedCertificates(), oauthNamedCertificateMountPathPrefix)
+	cfg.ServingInfo.NamedCertificates = globalconfig.GetConfigNamedCertificates(configuration.GetNamedCertificates(), oauthNamedCertificateMountPathPrefix)
 
 	cfg.ServingInfo.MinTLSVersion = config.MinTLSVersion(configuration.GetTLSSecurityProfile())
 	cfg.ServingInfo.CipherSuites = config.CipherSuites(configuration.GetTLSSecurityProfile())
