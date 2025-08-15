@@ -417,6 +417,23 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.Spec.Template.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
 
+	// Propagate custom pod labels from HostedCluster.Spec.Labels
+	if hcluster.Spec.Labels != nil {
+		for k, v := range hcluster.Spec.Labels {
+			// Do not overwrite critical labels
+			if k == hyperv1.NodePoolNameLabel || k == hyperv1.InfraIDLabel {
+				continue
+			}
+			vmTemplate.Spec.Template.ObjectMeta.Labels[k] = v
+		}
+	}
+
+	// Propagate custom pod tolerations from HostedCluster.Spec.Tolerations
+	if hcluster.Spec.Tolerations != nil {
+		vmTemplate.Spec.Template.Spec.Tolerations = append(vmTemplate.Spec.Template.Spec.Tolerations, hcluster.Spec.Tolerations...)
+	}
+
+
 	vmTemplate.ObjectMeta.Labels[hyperv1.NodePoolNameLabel] = nodePool.Name
 	vmTemplate.ObjectMeta.Labels[hyperv1.InfraIDLabel] = hcluster.Spec.InfraID
 
