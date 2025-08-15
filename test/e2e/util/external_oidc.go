@@ -258,7 +258,9 @@ func ChangeUserForKeycloakExtOIDC(t *testing.T, ctx context.Context, clientCfg *
 
 	response, err := httpClient.PostForm(requestURL, formData)
 	g.Expect(err).NotTo(HaveOccurred())
-	defer response.Body.Close()
+	defer func() {
+		_ = response.Body.Close()
+	}()
 	g.Expect(response.StatusCode).To(Equal(http.StatusOK))
 
 	body, err := io.ReadAll(response.Body)
