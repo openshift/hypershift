@@ -81,7 +81,7 @@ $(GOLANGCI_LINT_PLUGIN): $(TOOLS_DIR)/go.mod # Build custom golangci-lint with k
 	fi
 	# Build custom binary with kubeapilinter module plugin
 	cp .custom-gcl.yml $(TOOLS_DIR)/.custom-gcl.yml
-	cd $(TOOLS_DIR) && ./bin/golangci-lint custom -v
+	cd $(TOOLS_DIR) && GO111MODULE=on GOFLAGS=-mod=mod GOWORK=off ./bin/golangci-lint custom -v
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT_PLUGIN)
