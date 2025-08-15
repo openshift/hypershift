@@ -3554,6 +3554,77 @@ spec:
                         x-kubernetes-validations:
                         - message: disableMultiNetwork is immutable
                           rule: self == oldSelf
+                      ovnKubernetesConfig:
+                        description: |-
+                          ovnKubernetesConfig holds OVN-Kubernetes specific configuration.
+                          This is only consumed when NetworkType is OVNKubernetes.
+                        minProperties: 1
+                        properties:
+                          ipv4:
+                            description: |-
+                              ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
+                              this means no opinions and the default configuration is used. Check individual
+                              fields within ipv4 for details of default values.
+                            minProperties: 1
+                            properties:
+                              internalJoinSubnet:
+                                description: |-
+                                  internalJoinSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+                                  default one is being already used by something else. It must not overlap with
+                                  any other subnet being used by OpenShift or by the node network. The size of the
+                                  subnet must be larger than the number of nodes.
+                                  The current default value is 100.64.0.0/16
+                                  The subnet must be large enough to accommodate one IP per node in your cluster
+                                  The value must be in proper IPV4 CIDR format
+                                maxLength: 18
+                                minLength: 9
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Subnet must be in a valid IPv4 CIDR format
+                                    (e.g., 192.168.1.1/24)
+                                  rule: self.matches('^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$')
+                                    && self.split('/')[0].split('.').all(oct, int(oct)
+                                    >= 0 && int(oct) <= 255)
+                                - message: subnet must be in the range /0 to /30 inclusive
+                                  rule: self.matches('^.*/[0-9]+$') && int(self.split('/')[1])
+                                    <= 30
+                                - message: first IP address octet must not be 0
+                                  rule: self.matches('^[0-9]{1,3}\\..*') && int(self.split('/')[0].split('.')[0])
+                                    > 0
+                              internalTransitSwitchSubnet:
+                                description: |-
+                                  internalTransitSwitchSubnet is a v4 subnet in IPV4 CIDR format used internally
+                                  by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+                                  architecture that connects the cluster routers on each node together to enable
+                                  east west traffic. The subnet chosen should not overlap with other networks
+                                  specified for OVN-Kubernetes as well as other networks used on the host.
+                                  When omitted, this means no opinion and the platform is left to choose a reasonable
+                                  default which is subject to change over time.
+                                  The current default subnet is 100.88.0.0/16
+                                  The subnet must be large enough to accommodate one IP per node in your cluster
+                                  The value must be in proper IPV4 CIDR format
+                                maxLength: 18
+                                minLength: 9
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Subnet must be in a valid IPv4 CIDR format
+                                  rule: self.matches('^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$')
+                                    && self.split('/')[0].split('.').all(oct, int(oct)
+                                    >= 0 && int(oct) <= 255)
+                                - message: subnet must be in the range /0 to /30 inclusive
+                                  rule: self.matches('^.*/[0-9]+$') && int(self.split('/')[1])
+                                    <= 30
+                                - message: first IP address octet must not be 0
+                                  rule: self.matches('^[0-9]{1,3}\\..*') && int(self.split('/')[0].split('.')[0])
+                                    > 0
+                            type: object
+                        type: object
+                        x-kubernetes-validations:
+                        - message: internalJoinSubnet and internalTransitSwitchSubnet
+                            must not be the same
+                          rule: '!has(self.ipv4) || !has(self.ipv4.internalJoinSubnet)
+                            || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet
+                            != self.ipv4.internalTransitSwitchSubnet'
                     type: object
                   clusterVersionOperator:
                     description: clusterVersionOperator specifies the configuration
@@ -6497,6 +6568,8 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
                 || self.networking.networkType == ''Other'''
+            - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
+              rule: self.networking.networkType == 'OVNKubernetes' || !self.?operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig.hasValue()
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:

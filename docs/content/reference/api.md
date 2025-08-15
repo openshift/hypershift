@@ -4259,6 +4259,21 @@ This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Sett
 with any other NetworkType will result in a validation error during cluster creation.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>ovnKubernetesConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">
+OVNKubernetesConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ovnKubernetesConfig holds OVN-Kubernetes specific configuration.
+This is only consumed when NetworkType is OVNKubernetes.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterNetworking { #hypershift.openshift.io/v1beta1.ClusterNetworking }
@@ -9760,6 +9775,99 @@ the guest cluster.</p>
 the management cluster.</p>
 </td>
 </tr></tbody>
+</table>
+###OVNIPv4Config { #hypershift.openshift.io/v1beta1.OVNIPv4Config }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">OVNKubernetesConfig</a>)
+</p>
+<p>
+<p>OVNIPv4Config contains IPv4-specific configuration options for OVN-Kubernetes.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L473-L503">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L473-L503</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>internalTransitSwitchSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalTransitSwitchSubnet is a v4 subnet in IPV4 CIDR format used internally
+by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+architecture that connects the cluster routers on each node together to enable
+east west traffic. The subnet chosen should not overlap with other networks
+specified for OVN-Kubernetes as well as other networks used on the host.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default which is subject to change over time.
+The current default subnet is 100.88.0.0/16
+The subnet must be large enough to accommodate one IP per node in your cluster
+The value must be in proper IPV4 CIDR format</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalJoinSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalJoinSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes.
+The current default value is 100.64.0.0/16
+The subnet must be large enough to accommodate one IP per node in your cluster
+The value must be in proper IPV4 CIDR format</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OVNKubernetesConfig { #hypershift.openshift.io/v1beta1.OVNKubernetesConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec">ClusterNetworkOperatorSpec</a>)
+</p>
+<p>
+<p>OVNKubernetesConfig contains OVN-Kubernetes specific configuration options.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L400-L471">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L400-L471</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ipv4</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNIPv4Config">
+OVNIPv4Config
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
+this means no opinions and the default configuration is used. Check individual
+fields within ipv4 for details of default values.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
 <p>

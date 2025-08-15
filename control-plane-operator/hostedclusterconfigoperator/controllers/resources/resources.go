@@ -569,8 +569,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling network operator")
 	networkOperator := networkoperator.NetworkOperator()
+	var ovnConfig *hyperv1.OVNKubernetesConfig
+	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.ClusterNetworkOperator != nil {
+		ovnConfig = hcp.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
+	}
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkOperator, func() error {
-		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, util.IsDisableMultiNetwork(hcp))
+		networkoperator.ReconcileNetworkOperator(networkOperator, hcp.Spec.Networking.NetworkType, hcp.Spec.Platform.Type, util.IsDisableMultiNetwork(hcp), ovnConfig)
 		return nil
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile network operator: %w", err))
