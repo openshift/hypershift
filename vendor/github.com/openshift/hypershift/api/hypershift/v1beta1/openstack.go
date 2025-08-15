@@ -115,7 +115,7 @@ type OpenStackPlatformSpec struct {
 	// to an external network is not possible or desirable, e.g. if using a provider network.
 	//
 	// +optional
-	DisableExternalNetwork *bool `json:"disableExternalNetwork,omitempty"`
+	DisableExternalNetwork *bool `json:"disableExternalNetwork,omitempty"` //nolint:kubeapilinter
 
 	// tags to set on all resources in cluster which support tags
 	//
