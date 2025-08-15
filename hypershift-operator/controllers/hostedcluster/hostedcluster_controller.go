@@ -369,7 +369,7 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if !reflect.DeepEqual(old, &condition) {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-		return res, utilerrors.NewAggregate([]error{err, r.Client.Status().Update(ctx, hcluster)})
+		return res, utilerrors.NewAggregate([]error{err, r.Status().Update(ctx, hcluster)})
 	}
 
 	return res, err
@@ -414,7 +414,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			freshCondition.ObservedGeneration = hcluster.Generation
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 			// Persist status updates
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if err := r.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
 		}
@@ -441,7 +441,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				freshCondition.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if err := r.Status().Update(ctx, hcluster); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -507,7 +507,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				freshCondition.ObservedGeneration = hcluster.Generation
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if err := r.Status().Update(ctx, hcluster); err != nil {
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -1182,7 +1182,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Persist status updates
-	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+	if err := r.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -1341,7 +1341,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				ObservedGeneration: hcluster.Generation,
 				Message:            err.Error(),
 			})
-			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			if statusErr := r.Status().Update(ctx, hcluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w", err)
@@ -1354,7 +1354,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				ObservedGeneration: hcluster.Generation,
 				Message:            "Required platform credentials are found",
 			})
-			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			if statusErr := r.Status().Update(ctx, hcluster); statusErr != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
 			}
 		}
@@ -2005,7 +2005,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			ObservedGeneration: hcluster.Generation,
 			Message:            "OIDC configuration is valid",
 		})
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		if err := r.Status().Update(ctx, hcluster); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
