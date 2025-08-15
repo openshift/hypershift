@@ -157,6 +157,11 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
 	}
 
+	// Validate ImageTagMirrorSet configuration
+	if err := v.validateImageTagMirrorSet(hc.Spec.ImageTagMirrorSet); err != nil {
+		return nil, err
+	}
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtHostedCluster(ctx, hc)
@@ -174,6 +179,11 @@ func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC
 	hcOld, ok := oldHC.(*hyperv1.HostedCluster)
 	if !ok {
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", oldHC)
+	}
+
+	// Validate ImageTagMirrorSet configuration
+	if err := v.validateImageTagMirrorSet(hc.Spec.ImageTagMirrorSet); err != nil {
+		return nil, err
 	}
 
 	switch hc.Spec.Platform.Type {
@@ -295,6 +305,55 @@ func validateJsonAnnotation(annotations map[string]string) error {
 			_, err = p.Path()
 			if err != nil {
 				return fmt.Errorf("wrong json patch structure in the %q annotation: %w", hyperv1.JSONPatchAnnotation, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateImageTagMirrorSet validates the ImageTagMirrorSet configuration
+func (v hostedClusterValidator) validateImageTagMirrorSet(mirrors []hyperv1.ImageTagMirror) error {
+	seenSources := make(map[string]bool)
+
+	for i, mirror := range mirrors {
+		// Validate source is not empty
+		if mirror.Source == "" {
+			return fmt.Errorf("imageTagMirrorSet[%d]: source cannot be empty", i)
+		}
+
+		// Check for duplicate sources
+		if seenSources[mirror.Source] {
+			return fmt.Errorf("imageTagMirrorSet[%d]: duplicate source '%s' found", i, mirror.Source)
+		}
+		seenSources[mirror.Source] = true
+
+		// Validate mirrors are not empty and don't contain the source
+		if len(mirror.Mirrors) == 0 {
+			return fmt.Errorf("imageTagMirrorSet[%d]: at least one mirror must be specified for source '%s'", i, mirror.Source)
+		}
+
+		seenMirrors := make(map[string]bool)
+		for j, mirrorURL := range mirror.Mirrors {
+			if mirrorURL == "" {
+				return fmt.Errorf("imageTagMirrorSet[%d].mirrors[%d]: mirror URL cannot be empty", i, j)
+			}
+
+			if mirrorURL == mirror.Source {
+				return fmt.Errorf("imageTagMirrorSet[%d].mirrors[%d]: mirror URL '%s' cannot be the same as source", i, j, mirrorURL)
+			}
+
+			if seenMirrors[mirrorURL] {
+				return fmt.Errorf("imageTagMirrorSet[%d].mirrors[%d]: duplicate mirror URL '%s' found", i, j, mirrorURL)
+			}
+			seenMirrors[mirrorURL] = true
+		}
+
+		// Validate mirrorSourcePolicy if provided
+		if mirror.MirrorSourcePolicy != nil {
+			policy := *mirror.MirrorSourcePolicy
+			if policy != hyperv1.NeverContactSource && policy != hyperv1.AllowContactingSource {
+				return fmt.Errorf("imageTagMirrorSet[%d]: invalid mirrorSourcePolicy '%s', must be 'NeverContactSource' or 'AllowContactingSource'", i, policy)
 			}
 		}
 	}

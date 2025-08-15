@@ -17,7 +17,7 @@ func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, sshKey string) *Ig
 		OwnerRef:               config.OwnerRefFrom(hcp),
 		FIPSEnabled:            hcp.Spec.FIPS,
 		SSHKey:                 sshKey,
-		HasImageMirrorPolicies: len(hcp.Spec.ImageContentSources) > 0,
+		HasImageMirrorPolicies: len(hcp.Spec.ImageContentSources) > 0 || len(hcp.Spec.ImageTagMirrorSet) > 0,
 	}
 
 	return params
