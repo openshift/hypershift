@@ -775,6 +775,9 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
 	}
+	if err := r.reconcileControlPlaneUpToDateCondition(ctx, hostedControlPlane, releaseImage); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile controlPlaneUpToDate condition: %w", err)
+	}
 
 	hostedControlPlane.Status.Initialized = true
 
@@ -3457,4 +3460,62 @@ func includeServingCertificates(ctx context.Context, c client.Client, hcp *hyper
 	}
 
 	return newRootCA, nil
+}
+
+func (r *HostedControlPlaneReconciler) reconcileControlPlaneUpToDateCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	var componentErrors []error
+	controlPlaneUpToDateStatus := metav1.ConditionFalse
+
+	// List all components.
+	componentList := &hyperv1.ControlPlaneComponentList{}
+	if err := r.List(ctx, componentList, client.InNamespace(hcp.Namespace)); err != nil {
+		upToDateCondition := metav1.Condition{
+			Type:               string(hyperv1.ControlPlaneUpToDate),
+			Status:             controlPlaneUpToDateStatus,
+			Reason:             "ListControlPlaneComponentsFailed",
+			Message:            fmt.Sprint(fmt.Errorf("failed to list control plane components: %w", err)),
+			ObservedGeneration: hcp.Generation,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, upToDateCondition)
+		return nil
+	}
+
+	// Check if all components version matches HCP spec release version.
+	// Capture any errors for RolloutCompleteCondition and AvailableCondition whether version matches or not.
+	reason := hyperv1.AsExpectedReason
+	for _, component := range componentList.Items {
+		controlPlaneUpToDateStatus = metav1.ConditionTrue
+		if component.Status.Version != releaseImage.Version() {
+			componentErrors = append(componentErrors, fmt.Errorf("component %q version %q does not match expected version %s", component.Name, component.Status.Version, releaseImage.Version()))
+			controlPlaneUpToDateStatus = metav1.ConditionFalse
+			reason = "VersionMismatch"
+		}
+
+		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
+		if availableCondition == nil {
+			componentErrors = append(componentErrors, fmt.Errorf("component %s is not available. Reason: Unknown", component.Name))
+		}
+		if availableCondition != nil && availableCondition.Status != metav1.ConditionTrue {
+			componentErrors = append(componentErrors, fmt.Errorf("component %s is not available. Reason: %s, Message: %s", component.Name, availableCondition.Reason, availableCondition.Message))
+		}
+
+		RolloutCompleteCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		if RolloutCompleteCondition == nil {
+			componentErrors = append(componentErrors, fmt.Errorf("component %s rollout is not complete. Reason: Unknown", component.Name))
+
+		}
+		if RolloutCompleteCondition != nil && RolloutCompleteCondition.Status != metav1.ConditionTrue {
+			componentErrors = append(componentErrors, fmt.Errorf("component %s rollout is not complete. Reason: %s, Message: %s", component.Name, RolloutCompleteCondition.Reason, RolloutCompleteCondition.Message))
+		}
+	}
+
+	upToDateCondition := metav1.Condition{
+		Type:               string(hyperv1.ControlPlaneUpToDate),
+		Status:             controlPlaneUpToDateStatus,
+		Reason:             reason,
+		Message:            fmt.Sprint(utilerrors.NewAggregate(componentErrors)),
+		ObservedGeneration: hcp.Generation,
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, upToDateCondition)
+	return nil
 }
