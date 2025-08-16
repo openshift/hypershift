@@ -27,7 +27,49 @@ func TestAutoscaling(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
+	clusterOpts.NodePoolReplicas = 1
+	var additionalNP *hyperv1.NodePool
+
+	clusterOpts.BeforeApply = func(obj crclient.Object) {
+		if nodepool, ok := obj.(*hyperv1.NodePool); ok {
+			nodepool.Spec.NodeLabels = map[string]string{
+				"custom.ignore.label": "test1",
+			}
+
+			if additionalNP == nil {
+				additionalNP = &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      nodepool.Name + "-additional",
+						Namespace: nodepool.Namespace,
+					},
+				}
+				nodepool.Spec.DeepCopyInto(&additionalNP.Spec)
+
+				additionalNP.Spec.NodeLabels = map[string]string{
+					"custom.ignore.label": "test2",
+				}
+				additionalNP.Spec.Replicas = nil
+				additionalNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+					Min: 1,
+					Max: 3,
+				}
+			}
+		}
+	}
+
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Run("TestAutoscaling", testAutoscaling(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas, clusterOpts.NodePoolReplicas+2))
+
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+
+}
+
+func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, numNodes, max int32) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
 		// Get the newly created NodePool
 		nodepools := &hyperv1.NodePoolList{}
 		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
@@ -41,24 +83,21 @@ func TestAutoscaling(t *testing.T) {
 		// Perform some very basic assertions about the guest cluster
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 		// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
-		numNodes := clusterOpts.NodePoolReplicas
 		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 		// Enable autoscaling.
 		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(nodepool), nodepool)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get nodepool")
 
-		min := numNodes
-		max := min + 1
 		original := nodepool.DeepCopy()
 		nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
-			Min: min,
+			Min: numNodes,
 			Max: max,
 		}
 		nodepool.Spec.Replicas = nil
 		err = mgtClient.Patch(ctx, nodepool, crclient.MergeFrom(original))
 		g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool")
-		t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, min, max)
+		t.Logf("Enabled autoscaling. Namespace: %s, name: %s, min: %v, max: %v", nodepool.Namespace, nodepool.Name, numNodes, max)
 
 		// TODO (alberto): check autoscalingEnabled condition.
 
@@ -70,7 +109,7 @@ func TestAutoscaling(t *testing.T) {
 		g.Expect(ok).Should(BeTrue())
 
 		// Enforce max nodes creation.
-		// 60% - enough that the existing and new nodes will
+		// 50% - enough that the existing and new nodes will
 		// be used, not enough to have more than 1 pod per
 		// node.
 		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.5*float32(bytes)))
@@ -81,8 +120,7 @@ func TestAutoscaling(t *testing.T) {
 
 		// Wait for one more node.
 		// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
-		numNodes = numNodes + 1
-		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
+		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, max, hostedCluster.Spec.Platform.Type)
 
 		// Delete workload.
 		cascadeDelete := metav1.DeletePropagationForeground
@@ -93,15 +131,14 @@ func TestAutoscaling(t *testing.T) {
 		t.Logf("Deleted workload")
 
 		// Wait for one less node.
-		numNodes = numNodes - 1
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
-
+	}
 }
 
 func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, image string) *batchv1.Job {
 	allowPrivilegeEscalation := false
-	runAsNonRoot := true
+	runAsNonRoot := false
+	runAsUser := int64(0)
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "autoscaling-workload",
@@ -136,6 +173,7 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 									},
 								},
 								RunAsNonRoot: &runAsNonRoot,
+								RunAsUser:    &runAsUser,
 								SeccompProfile: &corev1.SeccompProfile{
 									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
