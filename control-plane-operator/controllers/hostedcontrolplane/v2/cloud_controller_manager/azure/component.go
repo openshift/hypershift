@@ -56,8 +56,8 @@ func NewComponent() component.ControlPlaneComponent {
 		).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
-			ServiceAccountNameSpace: "", // Empty means same namespace as deployment
-			ServiceAccountName:      "cloud-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			ServiceAccountName:      "azure-cloud-provider",
 		}).
 		Build()
 

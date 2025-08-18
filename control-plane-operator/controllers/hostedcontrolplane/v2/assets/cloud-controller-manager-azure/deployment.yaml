@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cloud-controller-manager
+  name: azure-cloud-controller-manager
 spec:
   replicas: 1
   revisionHistoryLimit: 2
@@ -44,7 +44,7 @@ spec:
           name: cloud-config
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
-      serviceAccountName: cloud-controller-manager
+      serviceAccountName: azure-cloud-controller-manager
       automountServiceAccountToken: true
       volumes:
       - name: kubeconfig
