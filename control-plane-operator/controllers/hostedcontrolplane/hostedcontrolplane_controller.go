@@ -175,7 +175,7 @@ const (
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
-	azureCredentials = "AzureCredentials"
+	cpoAzureCredentials = "CPOAzureCredentials"
 )
 
 var catalogImages map[string]string
@@ -208,7 +208,7 @@ type HostedControlPlaneReconciler struct {
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
 	ImageMetadataProvider                   util.ImageMetadataProvider
-	azureCredentialsLoaded                  sync.Map
+	cpoAzureCredentialsLoaded               sync.Map
 
 	IsCPOV2 bool
 }
@@ -5841,11 +5841,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		err       error
 	)
 
-	key := hcp.Namespace + azureCredentials
+	key := hcp.Namespace + cpoAzureCredentials
 	log := ctrl.LoggerFrom(ctx)
 
 	// We need to only store the Azure credentials once and reuse them after that.
-	storedCreds, found := r.azureCredentialsLoaded.Load(key)
+	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
 	if !found {
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
@@ -5853,13 +5853,14 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 		}
 
-		r.azureCredentialsLoaded.Store(key, creds)
-		log.Info("Storing new UserAssignedManagedIdentity credentials to authenticate to Azure")
+		r.cpoAzureCredentialsLoaded.Store(key, creds)
+		log.Info("Storing new UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	} else {
 		creds, ok = storedCreds.(azcore.TokenCredential)
 		if !ok {
 			return fmt.Errorf("expected %T to be a TokenCredential", storedCreds)
 		}
+		log.Info("Reusing existing UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	}
 
 	// Retrieve full vnet information from the VNET ID
