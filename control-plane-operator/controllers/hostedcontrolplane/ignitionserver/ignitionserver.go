@@ -9,6 +9,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
@@ -16,7 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -200,11 +201,19 @@ func ReconcileIgnitionServer(ctx context.Context,
 	// Determine if we need to override the machine config operator and cluster config operator
 	// images based on image mappings present in management cluster.
 	ocpRegistryMapping := util.ConvertImageRegistryOverrideStringToMap(openShiftRegistryOverrides)
-	overrideConfigAPIImage, err := lookupMappedImage(ocpRegistryMapping, configAPIImage)
+
+	// Get pull secret for image availability verification
+	pullSecret := common.PullSecret(controlPlaneNamespace)
+	if err := c.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return fmt.Errorf("failed to get pull secret: %w", err)
+	}
+	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+
+	overrideConfigAPIImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecretBytes, registryclient.GetMetadata)
 	if err != nil {
 		return err
 	}
-	overrideMachineConfigOperatorImage, err := lookupMappedImage(ocpRegistryMapping, machineConfigOperatorImage)
+	overrideMachineConfigOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecretBytes, registryclient.GetMetadata)
 	if err != nil {
 		return err
 	}
@@ -908,18 +917,4 @@ EOF
 cp /tmp/manifests/99_feature-gate.yaml %[1]s/99_feature-gate.yaml
 `
 	return fmt.Sprintf(script, workDir, featureGateYAML)
-}
-
-func lookupMappedImage(ocpOverrides map[string][]string, image string) (string, error) {
-	ref, err := reference.Parse(image)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse image (%s): %w", image, err)
-	}
-	for source, replacements := range ocpOverrides {
-		if ref.AsRepository().String() == source {
-			newRef := fmt.Sprintf("%s@%s", replacements[0], ref.ID)
-			return newRef, nil
-		}
-	}
-	return image, nil
 }
