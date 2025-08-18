@@ -98,44 +98,75 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: ptr.To[int64](10),
-				Containers: []corev1.Container{{
-					Name:            "manager",
-					Image:           image,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Args: []string{
-						"--namespace=$(MY_NAMESPACE)",
-						"--leader-elect=true",
-						"--feature-gates=MachinePool=false,ASOAPI=false",
-						"--disable-controllers-or-webhooks=DisableASOSecretController",
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("10Mi"),
+				Containers: []corev1.Container{
+					{
+						Name:            "manager",
+						Image:           image,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Args: []string{
+							"--namespace=$(MY_NAMESPACE)",
+							"--leader-elect=true",
+							"--feature-gates=MachinePool=false,ASOAPI=false",
+							"--disable-controllers-or-webhooks=DisableASOSecretController",
 						},
-					},
-					Env: []corev1.EnvVar{
-						{
-							Name: "MY_NAMESPACE",
-							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{
-									FieldPath: "metadata.namespace",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name: "MY_NAMESPACE",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.namespace",
+									},
 								},
 							},
 						},
-					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "capi-webhooks-tls",
-							MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							ReadOnly:  true,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "capi-webhooks-tls",
+								MountPath: "/tmp/k8s-webhook-server/serving-certs",
+								ReadOnly:  true,
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
 						},
-						{
-							Name:      "svc-kubeconfig",
-							MountPath: "/etc/kubernetes",
+					},
+					{
+						Name:            "token-minter",
+						Image:           p.utilitiesImage,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "token",
+								MountPath: "/var/run/secrets/openshift/serviceaccount",
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
+						},
+						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
+						Args: []string{
+							"--service-account-namespace=kube-system",
+							"--service-account-name=capa-controller-manager",
+							"--token-audience=openshift",
+							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+							"--kubeconfig=/etc/kubernetes/kubeconfig",
+						},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("30Mi"),
+							},
 						},
 					},
-				}},
+				},
 				Volumes: []corev1.Volume{
 					{
 						Name: "capi-webhooks-tls",
