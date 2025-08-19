@@ -149,6 +149,12 @@ const (
 	kmsAzureCredentials = "KMSAzureCredentials"
 )
 
+// azureCredentialEntry holds a credential and its cancel function for proper cleanup
+type azureCredentialEntry struct {
+	credential azcore.TokenCredential
+	cancel     context.CancelFunc
+}
+
 type HostedControlPlaneReconciler struct {
 	client.Client
 
@@ -3261,7 +3267,6 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
 	var (
 		cred azcore.TokenCredential
-		ok   bool
 		err  error
 	)
 
@@ -3283,28 +3288,39 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	if hyperazureutil.IsAroHCP() {
 		key := hcp.Namespace + kmsAzureCredentials
 
-		// We need to only store the Azure credentials once and reuse them after that.
-		storedCreds, found := r.kmsAzureCredentialsLoaded.Load(key)
-		if !found {
-			// Retrieve the KMS UserAssignedCredentials path
-			credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
-			if err != nil {
-				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
-				return
-			}
-			r.kmsAzureCredentialsLoaded.Store(key, cred)
-			log.Info("Storing new UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
-		} else {
-			cred, ok = storedCreds.(azcore.TokenCredential)
-			if !ok {
-				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-					fmt.Sprintf("expected %T to be a TokenCredential", storedCreds))
-				return
-			}
-			log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+			// We need to only store the Azure credentials once and reuse them after that.
+	storedCreds, found := r.kmsAzureCredentialsLoaded.Load(key)
+	if !found {
+		// Retrieve the KMS UserAssignedCredentials path
+		credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+		
+		// Create a context with cancel for proper resource cleanup
+		credCtx, cancel := context.WithCancel(ctx)
+		credential, err := dataplane.NewUserAssignedIdentityCredential(credCtx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
+		if err != nil {
+			cancel() // Clean up context if credential creation fails
+			conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+				fmt.Sprintf("failed to obtain azure client credentials: %v", err))
+			return
 		}
+		
+		entry := azureCredentialEntry{
+			credential: credential,
+			cancel:     cancel,
+		}
+		r.kmsAzureCredentialsLoaded.Store(key, entry)
+		cred = credential
+		log.Info("Storing new UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+	} else {
+		entry, ok := storedCreds.(azureCredentialEntry)
+		if !ok {
+			conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+				fmt.Sprintf("expected %T to be an azureCredentialEntry", storedCreds))
+			return
+		}
+		cred = entry.credential
+		log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+	}
 	}
 
 	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
@@ -3392,9 +3408,9 @@ func (r *HostedControlPlaneReconciler) reconcileSREMetricsConfig(ctx context.Con
 // verifyResourceGroupLocationsMatch verifies the locations match for the VNET, network security group, and managed resource groups
 func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var (
-		creds     azcore.TokenCredential
-		found, ok bool
-		err       error
+		creds azcore.TokenCredential
+		found bool
+		err   error
 	)
 
 	key := hcp.Namespace + cpoAzureCredentials
@@ -3404,18 +3420,28 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
 	if !found {
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
-		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
+		
+		// Create a context with cancel for proper resource cleanup
+		credCtx, cancel := context.WithCancel(ctx)
+		credential, err := dataplane.NewUserAssignedIdentityCredential(credCtx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
 		if err != nil {
+			cancel() // Clean up context if credential creation fails
 			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 		}
 
-		r.cpoAzureCredentialsLoaded.Store(key, creds)
+		entry := azureCredentialEntry{
+			credential: credential,
+			cancel:     cancel,
+		}
+		r.cpoAzureCredentialsLoaded.Store(key, entry)
+		creds = credential
 		log.Info("Storing new UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	} else {
-		creds, ok = storedCreds.(azcore.TokenCredential)
+		entry, ok := storedCreds.(azureCredentialEntry)
 		if !ok {
-			return fmt.Errorf("expected %T to be a TokenCredential", storedCreds)
+			return fmt.Errorf("expected %T to be an azureCredentialEntry", storedCreds)
 		}
+		creds = entry.credential
 		log.Info("Reusing existing UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	}
 
@@ -3474,14 +3500,24 @@ func (r *HostedControlPlaneReconciler) invalidateAzureCredentialCaches(ctx conte
 
 	// Invalidate CPO Azure credentials cache
 	cpoKey := hcp.Namespace + cpoAzureCredentials
-	if _, found := r.cpoAzureCredentialsLoaded.LoadAndDelete(cpoKey); found {
-		log.Info("Invalidated CPO Azure credentials cache", "namespace", hcp.Namespace, "key", cpoKey)
+	if storedEntry, found := r.cpoAzureCredentialsLoaded.LoadAndDelete(cpoKey); found {
+		if entry, ok := storedEntry.(azureCredentialEntry); ok {
+			entry.cancel() // Cancel context to clean up file watchers and goroutines
+			log.Info("Invalidated CPO Azure credentials cache and cancelled context", "namespace", hcp.Namespace, "key", cpoKey)
+		} else {
+			log.Info("Invalidated CPO Azure credentials cache (legacy entry without cancel)", "namespace", hcp.Namespace, "key", cpoKey)
+		}
 	}
 
 	// Invalidate KMS Azure credentials cache
 	kmsKey := hcp.Namespace + kmsAzureCredentials
-	if _, found := r.kmsAzureCredentialsLoaded.LoadAndDelete(kmsKey); found {
-		log.Info("Invalidated KMS Azure credentials cache", "namespace", hcp.Namespace, "key", kmsKey)
+	if storedEntry, found := r.kmsAzureCredentialsLoaded.LoadAndDelete(kmsKey); found {
+		if entry, ok := storedEntry.(azureCredentialEntry); ok {
+			entry.cancel() // Cancel context to clean up file watchers and goroutines
+			log.Info("Invalidated KMS Azure credentials cache and cancelled context", "namespace", hcp.Namespace, "key", kmsKey)
+		} else {
+			log.Info("Invalidated KMS Azure credentials cache (legacy entry without cancel)", "namespace", hcp.Namespace, "key", kmsKey)
+		}
 	}
 }
 
