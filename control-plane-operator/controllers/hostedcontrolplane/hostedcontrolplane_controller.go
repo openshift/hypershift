@@ -3288,39 +3288,39 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	if hyperazureutil.IsAroHCP() {
 		key := hcp.Namespace + kmsAzureCredentials
 
-			// We need to only store the Azure credentials once and reuse them after that.
-	storedCreds, found := r.kmsAzureCredentialsLoaded.Load(key)
-	if !found {
-		// Retrieve the KMS UserAssignedCredentials path
-		credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
-		
-		// Create a context with cancel for proper resource cleanup
-		credCtx, cancel := context.WithCancel(ctx)
-		credential, err := dataplane.NewUserAssignedIdentityCredential(credCtx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
-		if err != nil {
-			cancel() // Clean up context if credential creation fails
-			conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-				fmt.Sprintf("failed to obtain azure client credentials: %v", err))
-			return
+		// We need to only store the Azure credentials once and reuse them after that.
+		storedCreds, found := r.kmsAzureCredentialsLoaded.Load(key)
+		if !found {
+			// Retrieve the KMS UserAssignedCredentials path
+			credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+
+			// Create a context with cancel for proper resource cleanup
+			credCtx, cancel := context.WithCancel(ctx)
+			credential, err := dataplane.NewUserAssignedIdentityCredential(credCtx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
+			if err != nil {
+				cancel() // Clean up context if credential creation fails
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
+				return
+			}
+
+			entry := azureCredentialEntry{
+				credential: credential,
+				cancel:     cancel,
+			}
+			r.kmsAzureCredentialsLoaded.Store(key, entry)
+			cred = credential
+			log.Info("Storing new UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+		} else {
+			entry, ok := storedCreds.(azureCredentialEntry)
+			if !ok {
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("expected %T to be an azureCredentialEntry", storedCreds))
+				return
+			}
+			cred = entry.credential
+			log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
 		}
-		
-		entry := azureCredentialEntry{
-			credential: credential,
-			cancel:     cancel,
-		}
-		r.kmsAzureCredentialsLoaded.Store(key, entry)
-		cred = credential
-		log.Info("Storing new UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
-	} else {
-		entry, ok := storedCreds.(azureCredentialEntry)
-		if !ok {
-			conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-				fmt.Sprintf("expected %T to be an azureCredentialEntry", storedCreds))
-			return
-		}
-		cred = entry.credential
-		log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
-	}
 	}
 
 	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
@@ -3420,7 +3420,7 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
 	if !found {
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
-		
+
 		// Create a context with cancel for proper resource cleanup
 		credCtx, cancel := context.WithCancel(ctx)
 		credential, err := dataplane.NewUserAssignedIdentityCredential(credCtx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
