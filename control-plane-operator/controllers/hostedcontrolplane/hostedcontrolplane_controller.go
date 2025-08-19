@@ -419,6 +419,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 			}
 		}
+
+		// Invalidate Azure credential caches
+		r.invalidateAzureCredentialCaches(ctx, hostedControlPlane)
+
 		return ctrl.Result{}, nil
 	}
 
@@ -3457,6 +3461,28 @@ func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedContro
 	}
 
 	return nil
+}
+
+// invalidateAzureCredentialCaches invalidates the cached Azure credentials for the given hosted control plane
+func (r *HostedControlPlaneReconciler) invalidateAzureCredentialCaches(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	// Only invalidate Azure credential caches if this is an ARO HCP
+	if !hyperazureutil.IsAroHCP() {
+		return
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+
+	// Invalidate CPO Azure credentials cache
+	cpoKey := hcp.Namespace + cpoAzureCredentials
+	if _, found := r.cpoAzureCredentialsLoaded.LoadAndDelete(cpoKey); found {
+		log.Info("Invalidated CPO Azure credentials cache", "namespace", hcp.Namespace, "key", cpoKey)
+	}
+
+	// Invalidate KMS Azure credentials cache
+	kmsKey := hcp.Namespace + kmsAzureCredentials
+	if _, found := r.kmsAzureCredentialsLoaded.LoadAndDelete(kmsKey); found {
+		log.Info("Invalidated KMS Azure credentials cache", "namespace", hcp.Namespace, "key", kmsKey)
+	}
 }
 
 // includeServingCertificates includes additional serving certificates into the provided root CA ConfigMap.
