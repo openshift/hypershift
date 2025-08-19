@@ -739,18 +739,17 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		util.DeploymentAddOpenShiftTrustedCABundleConfigMap(deployment)
 	}
 
-	// set security context
-	if !managementClusterHasCapabilitySecurityContextConstraint {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
-		}
-	}
-
 	deploymentConfig := config.DeploymentConfig{
 		AdditionalLabels: map[string]string{
 			config.NeedManagementKASAccessLabel: "true",
 		},
 	}
+
+	// set security context
+	if !managementClusterHasCapabilitySecurityContextConstraint {
+		deploymentConfig.SetDefaultSecurityContext = true
+	}
+
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
@@ -872,14 +871,12 @@ haproxy -f /tmp/haproxy.conf
 		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
+	deploymentConfig := config.DeploymentConfig{}
 	// set security context
 	if !managementClusterHasCapabilitySecurityContextConstraint {
-		deployment.Spec.Template.Spec.SecurityContext = &corev1.PodSecurityContext{
-			RunAsUser: ptr.To[int64](config.DefaultSecurityContextUser),
-		}
+		deploymentConfig.SetDefaultSecurityContext = true
 	}
 
-	deploymentConfig := config.DeploymentConfig{}
 	deploymentConfig.Scheduling.PriorityClass = config.DefaultPriorityClass
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		deploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]

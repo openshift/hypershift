@@ -19,7 +19,7 @@ type AzureParams struct {
 	SecretProviderClassName string                  `json:"secretProviderClassName"`
 }
 
-func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
+func NewAzureParams(hcp *hyperv1.HostedControlPlane, setDefaultSecurityContext bool) *AzureParams {
 	if hcp.Spec.Platform.Azure == nil {
 		return nil
 	}
@@ -43,8 +43,11 @@ func NewAzureParams(hcp *hyperv1.HostedControlPlane) *AzureParams {
 	if hcp.Annotations[hyperv1.ControlPlanePriorityClass] != "" {
 		p.DeploymentConfig.Scheduling.PriorityClass = hcp.Annotations[hyperv1.ControlPlanePriorityClass]
 	}
+
 	p.DeploymentConfig.SetDefaults(hcp, ccmLabels(), ptr.To(1))
 	p.DeploymentConfig.SetRestartAnnotation(hcp.ObjectMeta)
+
+	p.DeploymentConfig.SetDefaultSecurityContext = setDefaultSecurityContext
 
 	return p
 }

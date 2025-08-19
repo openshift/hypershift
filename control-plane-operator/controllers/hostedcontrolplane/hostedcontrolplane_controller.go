@@ -4973,7 +4973,7 @@ func (r *HostedControlPlaneReconciler) reconcileCloudControllerManager(ctx conte
 		}
 	case hyperv1.AzurePlatform:
 		// Set up the params
-		p := azure.NewAzureParams(hcp)
+		p := azure.NewAzureParams(hcp, r.SetDefaultSecurityContext)
 
 		// Reconcile CCM ServiceAccount
 		ownerRef := config.OwnerRefFrom(hcp)
