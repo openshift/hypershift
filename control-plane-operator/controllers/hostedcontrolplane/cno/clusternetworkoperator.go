@@ -443,8 +443,12 @@ func ReconcileDeployment(dep *appsv1.Deployment, params Params, platformType hyp
 
 	// If CP is running on kube cluster, pass user ID for CNO to run its managed services with
 	if params.DeploymentConfig.SetDefaultSecurityContext {
+		uid, err := config.GetSecurityContextUID()
+		if err != nil {
+			return fmt.Errorf("failed to get security context UID: %w", err)
+		}
 		cnoEnv = append(cnoEnv, corev1.EnvVar{
-			Name: "RUN_AS_USER", Value: strconv.Itoa(config.DefaultSecurityContextUser),
+			Name: "RUN_AS_USER", Value: strconv.Itoa(int(uid)),
 		})
 	}
 

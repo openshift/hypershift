@@ -1,11 +1,15 @@
 package snapshotcontroller
 
 import (
+	"fmt"
+	"strconv"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/snapshotcontroller/assets"
 	assets2 "github.com/openshift/hypershift/support/assets"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -50,7 +54,11 @@ func ReconcileOperatorDeployment(
 	// We set this so cluster-csi-storage-controller operator knows which User ID to run the csi-snapshot-controller pods as.
 	// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
 	if setDefaultSecurityContext {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: "1001"})
+		uid, err := config.GetSecurityContextUID()
+		if err != nil {
+			return fmt.Errorf("failed to get security context UID: %w", err)
+		}
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: strconv.Itoa(int(uid))})
 	}
 
 	params.DeploymentConfig.ApplyTo(deployment)

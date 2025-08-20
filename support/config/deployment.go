@@ -211,7 +211,7 @@ var (
 	DefaultSecurityContextUID       = int64(1001)
 )
 
-func getSecurityContextUID() (int64, error) {
+func GetSecurityContextUID() (int64, error) {
 	uidInput := os.Getenv(DefaultSecurityContextUIDEnvVar)
 	if uidInput == "" {
 		return DefaultSecurityContextUID, nil
@@ -226,7 +226,7 @@ func getSecurityContextUID() (int64, error) {
 
 func (c *DeploymentConfig) setDefaultSecurityContextForPod(spec *corev1.PodSpec, statefulSet bool) {
 	if c.SetDefaultSecurityContext {
-		uid, err := getSecurityContextUID()
+		uid, err := GetSecurityContextUID()
 		if err != nil {
 			uid = DefaultSecurityContextUID
 		}
