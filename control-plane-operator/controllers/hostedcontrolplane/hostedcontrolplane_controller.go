@@ -175,7 +175,8 @@ const (
 	hcpReadyRequeueInterval    = 1 * time.Minute
 	hcpNotReadyRequeueInterval = 15 * time.Second
 
-	azureCredentials = "AzureCredentials"
+	cpoAzureCredentials = "CPOAzureCredentials"
+	kmsAzureCredentials = "KMSAzureCredentials"
 )
 
 var catalogImages map[string]string
@@ -208,7 +209,8 @@ type HostedControlPlaneReconciler struct {
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
 	ImageMetadataProvider                   util.ImageMetadataProvider
-	azureCredentialsLoaded                  sync.Map
+	cpoAzureCredentialsLoaded               sync.Map
+	kmsAzureCredentialsLoaded               sync.Map
 
 	IsCPOV2 bool
 }
@@ -5715,6 +5717,14 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 }
 
 func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) {
+	var (
+		cred azcore.TokenCredential
+		ok   bool
+		err  error
+	)
+
+	log := ctrl.LoggerFrom(ctx)
+
 	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidAzureKMSConfig),
@@ -5728,13 +5738,31 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 	}
 	azureKmsSpec := hcp.Spec.SecretEncryption.KMS.Azure
 
-	// Retrieve the KMS UserAssignedCredentials path
-	credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
-	cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
-	if err != nil {
-		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
-			fmt.Sprintf("failed to obtain azure client credentials: %v", err))
-		return
+	if hyperazureutil.IsAroHCP() {
+		key := hcp.Namespace + kmsAzureCredentials
+
+		// We need to only store the Azure credentials once and reuse them after that.
+		storedCreds, found := r.kmsAzureCredentialsLoaded.Load(key)
+		if !found {
+			// Retrieve the KMS UserAssignedCredentials path
+			credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
+			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
+			if err != nil {
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
+				return
+			}
+			r.kmsAzureCredentialsLoaded.Store(key, cred)
+			log.Info("Storing new UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+		} else {
+			cred, ok = storedCreds.(azcore.TokenCredential)
+			if !ok {
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("expected %T to be a TokenCredential", storedCreds))
+				return
+			}
+			log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
+		}
 	}
 
 	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
@@ -5841,11 +5869,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		err       error
 	)
 
-	key := hcp.Namespace + azureCredentials
+	key := hcp.Namespace + cpoAzureCredentials
 	log := ctrl.LoggerFrom(ctx)
 
 	// We need to only store the Azure credentials once and reuse them after that.
-	storedCreds, found := r.azureCredentialsLoaded.Load(key)
+	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
 	if !found {
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
@@ -5853,13 +5881,14 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 		}
 
-		r.azureCredentialsLoaded.Store(key, creds)
-		log.Info("Storing new UserAssignedManagedIdentity credentials to authenticate to Azure")
+		r.cpoAzureCredentialsLoaded.Store(key, creds)
+		log.Info("Storing new UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	} else {
 		creds, ok = storedCreds.(azcore.TokenCredential)
 		if !ok {
 			return fmt.Errorf("expected %T to be a TokenCredential", storedCreds)
 		}
+		log.Info("Reusing existing UserAssignedManagedIdentity credentials for the CPO to authenticate to Azure")
 	}
 
 	// Retrieve full vnet information from the VNET ID
