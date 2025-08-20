@@ -181,6 +181,12 @@ func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (str
 		removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidMachineTemplateConditionType)
 	}
 
+	// Replace placeholder secret name with actual user data secret for secret-based ignition
+	if kubevirt.IsSecretBasedIgnitionEnabled(nodePool, c.hostedCluster) {
+		userDataSecretName := fmt.Sprintf("user-data-%s-%s", nodePool.GetName(), c.Hash())
+		updateConfigDriveSecretName(spec, userDataSecretName)
+	}
+
 	templateName, err := templateNameGenerator(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate template name: %w", err)
@@ -194,4 +200,15 @@ func (c *CAPI) kubevirtMachineTemplate(templateNameGenerator func(spec any) (str
 	}
 
 	return template, nil
+}
+
+func updateConfigDriveSecretName(spec *capikubevirt.KubevirtMachineTemplateSpec, secretName string) {
+	for i := range spec.Template.Spec.VirtualMachineTemplate.Spec.Template.Spec.Volumes {
+		volume := &spec.Template.Spec.VirtualMachineTemplate.Spec.Template.Spec.Volumes[i]
+		if volume.CloudInitConfigDrive != nil && volume.CloudInitConfigDrive.UserDataSecretRef != nil {
+			if volume.CloudInitConfigDrive.UserDataSecretRef.Name == "user-data-secret-placeholder" {
+				volume.CloudInitConfigDrive.UserDataSecretRef.Name = secretName
+			}
+		}
+	}
 }
