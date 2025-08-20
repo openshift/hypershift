@@ -1,0 +1,94 @@
+---
+description: This rule is helpful when a user asks to create features, epics, stories, tasks, or bug tickets. This rule is also helpful when a user asks to create content for either a features, epics, stories, tasks, or bug tickets.
+alwaysApply: false
+---
+
+# General
+You should try to use a Jira MCP server to create any Jira items or issues.
+
+Any HyperShift feature, epic, story, or task should be created in the Jira project known as Red Hat OpenShift Control Planes also known as CNTRLPLANE.
+
+Any request to make a bug ticket or make the content for a bug ticket should go under the Jira project known as OpenShift Bugs, also known as OCPBUGS.
+
+Set the Jira component to:
+- HyperShift / ARO - when the issue is about ARO HCP
+- HyperShift / ROSA - when the issue is about ROSA HCP
+- HyperShift - when it is not clear if the issue is about a particular HyperShift platform 
+
+When you create a Jira issue, add this label: ai-generated-jira.
+
+By default, set the Security Level to the following: Red Hat Employee.
+
+## Standard Parts of a Jira Issue
+
+### Summary
+A summary is a brief text synopsis of the issue.
+
+It answers the questions - How do we typically refer to this issue?
+
+A summary is needed for the following Jira issue types: Outcomes, Features, Initiatives, Epics, Stories, Spikes, Tasks, Bugs, Tickets, Risks, Sub-Tasks.
+
+### Description
+
+
+## Instructions on specific Jira Issue components
+ <!-- Adapted from https://spaces.redhat.com/spaces/CIAO/pages/195636942/Story+Guidelines -->
+
+### Creating a feature
+TBD
+
+### Creating an epic
+TBD
+
+### Creating a story
+A story describes product functionality from a customer’s perspective.
+
+It is a collaboration tool – a reminder to have a conversation about what the customer needs so the team can design it well & deliver it quickly.  
+
+Stories...
+- Shifts the focus from writing to talking – words are imprecise
+- Supports satisfying customer through early and continuous delivery of valuable software
+- Involves users, domain experts and stakeholders (i.e. customers) in a creative, iterative, collaborative design process
+- Describes concrete business reference scenarios, equally understandable by developers and customers in common, shared language
+- Product Manager / Team Lead ranks stories in teams’ work queue according to relative business value, and team designs iteratively & delivers incrementally
+- Developers and customers in common, shared language
+- The right size for planning – level of detail is based on implementation horizon
+- Three components (3 Cs) of a User Story:   Card, Conversation, Confirmation (Acceptance Criteria)
+
+#### User Story Template
+##### Description
+The description should include:
+
+As a<User/Who>, I want to <Action/What>, so that <Purpose/Why>.
+
+<User/Who> is the description of the person, device, or system that will benefit from or use the output of the story. 
+<Action/What> is what they can do with the system
+<Purpose/Why> is why they want to do the activity.
+
+The description should also include acceptance criteria:
+- Expresses the conditions that need to be satisfied for the customer
+- Provides context for the team, more details of the story, and helps the team know when they are done
+- Provides the details of the story from a testing point of view
+- Written by the Product Owner or dev team members
+- Refined by the agile team during backlog grooming and iteration planning
+
+Formats for Acceptance Criteria
+Test that <criteria>
+- or -
+Demonstrate that <this happens>
+- or -
+Verify that when <a role> does <some action> they get <this result>
+- or -
+Given <a context> when <this event occurs> then <this happens>
+
+Determining Amount of Acceptance Criteria - you have enough AC when:
+- You have enough to size the story
+- Testing will become too convoluted
+- You have made 2-3 revisions of the criteria
+- With more AC, split story into more stories
+
+## Creating a task
+TBD
+
+## Creating a bug ticket
+TBD
