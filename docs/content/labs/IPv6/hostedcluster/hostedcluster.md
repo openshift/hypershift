@@ -104,49 +104,6 @@ rules:
 
 This is a sample of the HostedCluster Object
 
-!!! note
-
-    Please ensure you modify the appropriate fields to align with your laboratory environment.
-
-!!! warning
-
-    Before a day-1 patch you will need to add an annotation in the HostedCluster manifest, pointing to the Hypershift Operator release image inside of the OCP Release:
-
-    - Grab the image payload:
-    ```
-    oc adm release info registry.hypershiftbm.lab:5000/openshift-release-dev/ocp-release:4.14.0-rc.1-x86_64 | grep hypershift
-    ```
-
-    - Output:
-    ```
-    hypershift                                     sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8
-    ```
-
-    - Using the OCP Images namespace, check the digest
-    ```
-    podman pull registry.hypershiftbm.lab:5000/openshift-release-dev/ocp-v4.0-art-dev@sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8
-    ```
-
-    - Output:
-    ```
-    podman pull registry.hypershiftbm.lab:5000/openshift/release@sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8
-    Trying to pull registry.hypershiftbm.lab:5000/openshift/release@sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8...
-    Getting image source signatures
-    Copying blob d8190195889e skipped: already exists
-    Copying blob c71d2589fba7 skipped: already exists
-    Copying blob d4dc6e74b6ce skipped: already exists
-    Copying blob 97da74cc6d8f skipped: already exists
-    Copying blob b70007a560c9 done
-    Copying config 3a62961e6e done
-    Writing manifest to image destination
-    Storing signatures
-    3a62961e6ed6edab46d5ec8429ff1f41d6bb68de51271f037c6cb8941a007fde
-    ```
-
-    Another important consideration is:
-
-    The release image set in the HostedCluster **should use the digest rather than the tag**. (e.g `quay.io/openshift-release-dev/ocp-release@sha256:e3ba11bd1e5e8ea5a0b36a75791c90f29afb0fdbe4125be4e48f69c76a5c47a0`)
-
 ```yaml
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
