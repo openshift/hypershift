@@ -1,14 +1,14 @@
 platforms:
   azure:
     overrides:
-      - version: 4.19.6
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:e0810e84e6c12968847cee3c18311ab3226b1dcd3b176d2606399af7ce187633
       - version: 4.19.7
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:e0810e84e6c12968847cee3c18311ab3226b1dcd3b176d2606399af7ce187633
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:ef4b4fcaec0d781ad497b6060adef2b0dbcd5d5c59eda27a90f0e2f9595128c4
       - version: 4.19.8
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:e0810e84e6c12968847cee3c18311ab3226b1dcd3b176d2606399af7ce187633
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:ef4b4fcaec0d781ad497b6060adef2b0dbcd5d5c59eda27a90f0e2f9595128c4
       - version: 4.19.9
-        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:e0810e84e6c12968847cee3c18311ab3226b1dcd3b176d2606399af7ce187633
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:ef4b4fcaec0d781ad497b6060adef2b0dbcd5d5c59eda27a90f0e2f9595128c4
+      - version: 4.19.10
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:ef4b4fcaec0d781ad497b6060adef2b0dbcd5d5c59eda27a90f0e2f9595128c4
   aws:
     overrides:
     # Beginning of OCPBUGS-48519 overrides 4.15 section
