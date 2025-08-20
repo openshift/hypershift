@@ -5,6 +5,9 @@ metadata:
 spec:
   backoffLimit: 5
   template:
+    metadata:
+      labels:
+        app: featuregate-generator
     spec:
       serviceAccountName: control-plane-operator
       restartPolicy: Never

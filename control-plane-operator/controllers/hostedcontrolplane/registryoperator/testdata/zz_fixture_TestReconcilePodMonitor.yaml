@@ -36,4 +36,5 @@ spec:
       serverName: cluster-image-registry-operator
   selector:
     matchLabels:
+      app: cluster-image-registry-operator
       name: cluster-image-registry-operator

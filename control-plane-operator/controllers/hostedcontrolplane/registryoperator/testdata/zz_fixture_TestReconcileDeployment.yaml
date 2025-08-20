@@ -11,6 +11,7 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
+      app: cluster-image-registry-operator
       name: cluster-image-registry-operator
   strategy:
     type: Recreate
@@ -21,6 +22,7 @@ spec:
         hypershift.openshift.io/release-image: quay.io/ocp-dev/test-release-image:latest
       creationTimestamp: null
       labels:
+        app: cluster-image-registry-operator
         hypershift.openshift.io/hosted-control-plane: test-namespace
         name: cluster-image-registry-operator
     spec:
