@@ -315,7 +315,7 @@ github.com/aws/aws-sdk-go/service/sso/ssoiface
 github.com/aws/aws-sdk-go/service/ssooidc
 github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
-# github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20250619213534-b37141b051bd
 ## explicit; go 1.23.6
 github.com/aws/karpenter-provider-aws/pkg/apis
 github.com/aws/karpenter-provider-aws/pkg/apis/v1
@@ -2353,7 +2353,7 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 ## explicit; go 1.21
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
+# sigs.k8s.io/karpenter v1.2.2
 ## explicit; go 1.23.6
 sigs.k8s.io/karpenter/pkg/apis
 sigs.k8s.io/karpenter/pkg/apis/v1
@@ -2460,4 +2460,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20241018150903-d5cd16872111
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 # sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
-# github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250619213534-b37141b051bd
