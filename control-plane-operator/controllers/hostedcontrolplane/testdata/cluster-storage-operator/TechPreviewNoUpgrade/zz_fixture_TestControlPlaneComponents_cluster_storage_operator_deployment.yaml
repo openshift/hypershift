@@ -157,6 +157,8 @@ spec:
           value: kube-rbac-proxy
         - name: TOOLS_IMAGE
           value: tools
+        - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
+          value: quay.io/openshift/origin-volume-data-source-validator:latest
         image: cluster-storage-operator
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator

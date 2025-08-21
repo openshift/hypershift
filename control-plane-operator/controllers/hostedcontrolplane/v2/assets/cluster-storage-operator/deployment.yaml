@@ -111,6 +111,8 @@ spec:
           value: quay.io/openshift/origin-kube-rbac-proxy:latest
         - name: TOOLS_IMAGE
           value: quay.io/openshift/origin-tools:latest
+        - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
+          value: quay.io/openshift/origin-volume-data-source-validator:latest
         image: cluster-storage-operator
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator
