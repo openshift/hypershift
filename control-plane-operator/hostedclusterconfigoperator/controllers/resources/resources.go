@@ -1711,7 +1711,17 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 		caCertData := openstack.GetCACertFromCredentialsSecret(credentialsSecret)
 		errs = append(errs,
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "openstack-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			// TODO(dkokkino): Remove the manila-cloud-credentials secret from the openshift-cluster-csi-drivers namespace
+			// once https://github.com/openshift/csi-operator/pull/373 merges.The manila-cloud-credentials secret was previously
+			// used by the secretsyncer, which is being removed in that PR. Going forward, Manila will use the manila-cloud-credentials
+			// secret directly in the openshift-manila-csi-driver namespace.
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cluster-csi-drivers", "manila-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
+			// TODO(dkokkino): Remove the manila-cloud-credentials secret from the openshift-manila-csi-driver namespace
+			// once Manila assets have been migrated to the openshift-cluster-csi-drivers namespace.
+			// Progress is tracked in OSASINFRA-3677.
+			// After the migration, Manila could use the shared secret openstack-cloud-credentials
+			// instead of manila-cloud-credentials.
+			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-manila-csi-driver", "manila-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-image-registry", "installer-cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 			r.reconcileOpenStackCredentialsSecret(ctx, hcp.Spec.Platform.OpenStack, "openshift-cloud-network-config-controller", "cloud-credentials", credentialsSecret, caCertData, hcp.Spec.Networking.MachineNetwork),
 		)
