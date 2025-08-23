@@ -57,13 +57,13 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 				}
 			}
 			for _, allowedAddressPair := range port.AllowedAddressPairs {
-				additionalPorts[i].ResolvedPortSpecFields.AllowedAddressPairs = []capiopenstackv1beta1.AddressPair{}
-				additionalPorts[i].ResolvedPortSpecFields.AllowedAddressPairs = append(additionalPorts[i].ResolvedPortSpecFields.AllowedAddressPairs, capiopenstackv1beta1.AddressPair{
+				additionalPorts[i].AllowedAddressPairs = []capiopenstackv1beta1.AddressPair{}
+				additionalPorts[i].AllowedAddressPairs = append(additionalPorts[i].AllowedAddressPairs, capiopenstackv1beta1.AddressPair{
 					IPAddress: allowedAddressPair.IPAddress,
 				})
 			}
 			if port.VNICType != "" {
-				additionalPorts[i].ResolvedPortSpecFields.VNICType = &port.VNICType
+				additionalPorts[i].VNICType = &port.VNICType
 			}
 			// OCPBUGS-54763 was reported because we were initially setting port security every time
 			// but in most cases the network is now owned by the project so the default policy
@@ -72,9 +72,9 @@ func MachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hyperv1.Node
 			// additional port spec.
 			switch port.PortSecurityPolicy {
 			case hyperv1.PortSecurityEnabled:
-				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(false)
+				additionalPorts[i].DisablePortSecurity = ptr.To(false)
 			case hyperv1.PortSecurityDisabled:
-				additionalPorts[i].ResolvedPortSpecFields.DisablePortSecurity = ptr.To(true)
+				additionalPorts[i].DisablePortSecurity = ptr.To(true)
 			}
 		}
 		openStackMachineTemplate.Template.Spec.Ports = append(openStackMachineTemplate.Template.Spec.Ports, additionalPorts...)

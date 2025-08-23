@@ -190,11 +190,11 @@ func reconcileTenantNodeClusterRoleBinding(crb *rbacv1.ClusterRoleBinding, saNam
 func reconcileTenantDaemonset(ds *appsv1.DaemonSet, componentImages map[string]string) error {
 	ds.Spec = *daemonset.Spec.DeepCopy()
 
-	if ds.Spec.Template.ObjectMeta.Annotations == nil {
-		ds.Spec.Template.ObjectMeta.Annotations = map[string]string{}
+	if ds.Spec.Template.Annotations == nil {
+		ds.Spec.Template.Annotations = map[string]string{}
 	}
 
-	ds.Spec.Template.ObjectMeta.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
+	ds.Spec.Template.Annotations["target.workload.openshift.io/management"] = `{"effect": "PreferredDuringScheduling"}`
 	csiDriverImage, exists := componentImages["kubevirt-csi-driver"]
 	if !exists {
 		return fmt.Errorf("unable to detect kubevirt-csi-driver image from release payload")

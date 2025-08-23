@@ -48,6 +48,7 @@ type ManifestProvider interface {
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
 // list of files to extract. It returns a map with file contents or an error.
 func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
+	log := ctrl.LoggerFrom(ctx)
 	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, err
@@ -69,12 +70,22 @@ func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, 
 			if err != nil {
 				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
 			}
-			defer r.Close()
+			defer func() {
+				if closeErr := r.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close blob layer")
+				}
+			}()
 			rc, err := dockerarchive.DecompressStream(r)
 			if err != nil {
 				return err
 			}
-			defer rc.Close()
+			defer func() {
+				if closeErr := rc.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close decompressed layer")
+				}
+			}()
 			tr := tar.NewReader(rc)
 			for {
 				hdr, err := tr.Next()
@@ -125,6 +136,7 @@ func allFound(content map[string][]byte) bool {
 }
 
 func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
+	log := ctrl.LoggerFrom(ctx)
 	_, layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
@@ -139,12 +151,22 @@ func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, f
 			if err != nil {
 				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
 			}
-			defer r.Close()
+			defer func() {
+				if closeErr := r.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close blob layer")
+				}
+			}()
 			rc, err := dockerarchive.DecompressStream(r)
 			if err != nil {
 				return err
 			}
-			defer rc.Close()
+			defer func() {
+				if closeErr := rc.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close decompressed layer")
+				}
+			}()
 			tr := tar.NewReader(rc)
 			for {
 				hdr, err := tr.Next()
@@ -178,6 +200,7 @@ func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, f
 }
 
 func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []byte, pattern string, outputDir string) error {
+	log := ctrl.LoggerFrom(ctx)
 	regex, err := regexp.Compile(pattern)
 	if err != nil {
 		return fmt.Errorf("invalid pattern: %w", err)
@@ -197,12 +220,22 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 			if err != nil {
 				return fmt.Errorf("unable to access the source layer %s: %v", layer.Digest, err)
 			}
-			defer r.Close()
+			defer func() {
+				if closeErr := r.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close blob layer")
+				}
+			}()
 			rc, err := dockerarchive.DecompressStream(r)
 			if err != nil {
 				return err
 			}
-			defer rc.Close()
+			defer func() {
+				if closeErr := rc.Close(); closeErr != nil {
+					err = closeErr
+					log.Error(err, "failed to close decompressed layer")
+				}
+			}()
 			tr := tar.NewReader(rc)
 			for {
 				hdr, err := tr.Next()
@@ -229,10 +262,16 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 						return err
 					}
 					if _, err = io.Copy(dstfd, tr); err != nil {
-						dstfd.Close()
+						if closeErr := dstfd.Close(); closeErr != nil {
+							err = closeErr
+							log.Error(err, "failed to close io.Copy file")
+						}
 						return err
 					}
-					dstfd.Close()
+					if closeErr := dstfd.Close(); closeErr != nil {
+						err = closeErr
+						log.Error(err, "failed to close dstfd file")
+					}
 					written[hdr.Name] = struct{}{}
 				}
 			}
@@ -322,7 +361,7 @@ func IsMultiArchManifestList(ctx context.Context, imageRef string, pullSecret []
 	}
 
 	count := 0
-	for _, arch := range manifestList.ManifestList.Manifests {
+	for _, arch := range manifestList.Manifests {
 		switch arch.Platform.Architecture {
 		case ArchitectureAMD64, ArchitectureS390X, ArchitecturePPC64LE, ArchitectureARM64:
 			count = count + 1
@@ -374,7 +413,7 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 	log := ctrl.LoggerFrom(ctx)
 
 	var foundManifestDesc *manifestlist.ManifestDescriptor
-	for _, manifestDesc := range deserializedManifestList.ManifestList.Manifests {
+	for _, manifestDesc := range deserializedManifestList.Manifests {
 		if osToFind == manifestDesc.Platform.OS && archToFind == manifestDesc.Platform.Architecture {
 			foundManifestDesc = &manifestDesc
 			break
@@ -394,7 +433,7 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
 		}
 
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Digest)
 		log.Info("Found matching manifest for: " + matchingManifestForArch)
 		return matchingManifestForArch, nil
 	}
@@ -405,7 +444,7 @@ func findMatchingManifest(ctx context.Context, imageRef string, deserializedMani
 			return "", fmt.Errorf("failed to parse imageRef %s", imageRef)
 		}
 
-		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Descriptor.Digest)
+		matchingManifestForArch := splitSHA[0] + "@" + string(foundManifestDesc.Digest)
 		log.Info("Found matching manifest for: " + matchingManifestForArch)
 		return matchingManifestForArch, nil
 	}

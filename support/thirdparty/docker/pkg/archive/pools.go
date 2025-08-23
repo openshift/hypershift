@@ -3,6 +3,7 @@ package archive
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"sync"
 )
@@ -47,7 +48,10 @@ func (bufPool *BufioReaderPool) Put(b *bufio.Reader) {
 func (bufPool *BufioReaderPool) NewReadCloserWrapper(buf *bufio.Reader, r io.Reader) io.ReadCloser {
 	return NewReadCloserWrapper(r, func() error {
 		if readCloser, ok := r.(io.ReadCloser); ok {
-			readCloser.Close()
+			if err := readCloser.Close(); err != nil {
+				// Log error but don't fail the cleanup operation
+				fmt.Printf("failed to close reader: %v\n", err)
+			}
 		}
 		bufPool.Put(buf)
 		return nil

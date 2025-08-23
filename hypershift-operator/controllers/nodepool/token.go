@@ -262,7 +262,7 @@ func (t *Token) UserDataSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: t.controlplaneNamespace,
-			Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.ConfigGenerator.nodePool.GetName(), t.ConfigGenerator.Hash()),
+			Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), t.Hash()),
 		},
 	}
 }
@@ -271,7 +271,7 @@ func (t *Token) outdatedUserDataSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: t.controlplaneNamespace,
-			Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.ConfigGenerator.nodePool.GetName(), t.nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]),
+			Name:      fmt.Sprintf("%s-%s-%s", UserDataSecrePrefix, t.nodePool.GetName(), t.nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]),
 		},
 	}
 }
@@ -282,7 +282,7 @@ func (t *Token) TokenSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: t.controlplaneNamespace,
-			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.ConfigGenerator.nodePool.GetName(), t.ConfigGenerator.Hash()),
+			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), t.Hash()),
 		},
 	}
 }
@@ -291,7 +291,7 @@ func (t *Token) outdatedTokenSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: t.controlplaneNamespace,
-			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.ConfigGenerator.nodePool.GetName(), t.nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]),
+			Name:      fmt.Sprintf("%s-%s-%s", TokenSecretPrefix, t.nodePool.GetName(), t.nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion]),
 		},
 	}
 }

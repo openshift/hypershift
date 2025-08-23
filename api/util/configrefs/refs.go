@@ -22,27 +22,27 @@ type ClusterConfiguration interface {
 }
 
 func SecretRefs(cfg ClusterConfiguration) []string {
-	result := sets.NewString()
+	result := sets.New[string]()
 	result = result.Union(apiServerSecretRefs(cfg.GetAPIServer()))
 	result = result.Union(authenticationSecretRefs(cfg.GetAuthentication()))
 	result = result.Union(ingressSecretRefs(cfg.GetIngress()))
 	result = result.Union(oauthSecretRefs(cfg.GetOAuth()))
-	return result.List()
+	return result.UnsortedList()
 }
 
 func ConfigMapRefs(cfg ClusterConfiguration) []string {
-	result := sets.NewString()
+	result := sets.New[string]()
 	result = result.Union(apiServerConfigMapRefs(cfg.GetAPIServer()))
 	result = result.Union(authenticationConfigMapRefs(cfg.GetAuthentication()))
 	result = result.Union(imageConfigMapRefs(cfg.GetImage()))
 	result = result.Union(oauthConfigMapRefs(cfg.GetOAuth()))
 	result = result.Union(proxyConfigMapRefs(cfg.GetProxy()))
 	result = result.Union(schedulerConfigMapRefs(cfg.GetScheduler()))
-	return result.List()
+	return result.UnsortedList()
 }
 
-func apiServerSecretRefs(spec *configv1.APIServerSpec) sets.String {
-	refs := sets.NewString()
+func apiServerSecretRefs(spec *configv1.APIServerSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -54,8 +54,8 @@ func apiServerSecretRefs(spec *configv1.APIServerSpec) sets.String {
 	return refs
 }
 
-func apiServerConfigMapRefs(spec *configv1.APIServerSpec) sets.String {
-	refs := sets.NewString()
+func apiServerConfigMapRefs(spec *configv1.APIServerSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -65,8 +65,8 @@ func apiServerConfigMapRefs(spec *configv1.APIServerSpec) sets.String {
 	return refs
 }
 
-func authenticationSecretRefs(spec *configv1.AuthenticationSpec) sets.String {
-	refs := sets.NewString()
+func authenticationSecretRefs(spec *configv1.AuthenticationSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -92,8 +92,8 @@ func authenticationSecretRefs(spec *configv1.AuthenticationSpec) sets.String {
 	return refs
 }
 
-func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.String {
-	refs := sets.NewString()
+func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -110,8 +110,8 @@ func authenticationConfigMapRefs(spec *configv1.AuthenticationSpec) sets.String 
 	return refs
 }
 
-func ingressSecretRefs(spec *configv1.IngressSpec) sets.String {
-	refs := sets.NewString()
+func ingressSecretRefs(spec *configv1.IngressSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -123,8 +123,8 @@ func ingressSecretRefs(spec *configv1.IngressSpec) sets.String {
 	return refs
 }
 
-func imageConfigMapRefs(spec *configv1.ImageSpec) sets.String {
-	refs := sets.NewString()
+func imageConfigMapRefs(spec *configv1.ImageSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -134,8 +134,8 @@ func imageConfigMapRefs(spec *configv1.ImageSpec) sets.String {
 	return refs
 }
 
-func oauthSecretRefs(spec *configv1.OAuthSpec) sets.String {
-	refs := sets.NewString()
+func oauthSecretRefs(spec *configv1.OAuthSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -193,8 +193,8 @@ func oauthSecretRefs(spec *configv1.OAuthSpec) sets.String {
 	return refs
 }
 
-func oauthConfigMapRefs(spec *configv1.OAuthSpec) sets.String {
-	refs := sets.NewString()
+func oauthConfigMapRefs(spec *configv1.OAuthSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -233,8 +233,8 @@ func oauthConfigMapRefs(spec *configv1.OAuthSpec) sets.String {
 	return refs
 }
 
-func proxyConfigMapRefs(spec *configv1.ProxySpec) sets.String {
-	refs := sets.NewString()
+func proxyConfigMapRefs(spec *configv1.ProxySpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}
@@ -244,8 +244,8 @@ func proxyConfigMapRefs(spec *configv1.ProxySpec) sets.String {
 	return refs
 }
 
-func schedulerConfigMapRefs(spec *configv1.SchedulerSpec) sets.String {
-	refs := sets.NewString()
+func schedulerConfigMapRefs(spec *configv1.SchedulerSpec) sets.Set[string] {
+	refs := sets.New[string]()
 	if spec == nil {
 		return refs
 	}

@@ -42,7 +42,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ reconcile.Request) (reconc
 			RequeueAfter: duration,
 		}, nil
 	}
-	if hcp.ObjectMeta.DeletionTimestamp != nil {
+	if hcp.DeletionTimestamp != nil {
 		return reconcile.Result{}, nil
 	}
 

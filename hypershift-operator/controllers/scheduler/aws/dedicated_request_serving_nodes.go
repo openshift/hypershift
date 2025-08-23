@@ -94,10 +94,10 @@ func (r *DedicatedServingComponentNodeReaper) Reconcile(ctx context.Context, req
 	node := &corev1.Node{}
 	if err := r.Get(ctx, req.NamespacedName, node); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("node not found, aborting reconcile", "name", req.NamespacedName.String())
+			log.Info("node not found, aborting reconcile", "name", req.String())
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get node %q: %w", req.NamespacedName.String(), err)
+		return ctrl.Result{}, fmt.Errorf("failed to get node %q: %w", req.String(), err)
 	}
 
 	if _, hasServingComponentLabel := node.Labels[hyperv1.RequestServingComponentLabel]; !hasServingComponentLabel {
@@ -142,7 +142,7 @@ func (r *DedicatedServingComponentScheduler) SetupWithManager(mgr ctrl.Manager, 
 
 func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	hcluster := &hyperv1.HostedCluster{}
-	log := ctrl.LoggerFrom(ctx, "hostedcluster", req.NamespacedName.String())
+	log := ctrl.LoggerFrom(ctx, "hostedcluster", req.String())
 	err := r.Get(ctx, req.NamespacedName, hcluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {

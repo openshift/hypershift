@@ -411,7 +411,11 @@ func decompress(content []byte) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to uncompress content: %w", err)
 	}
-	defer gr.Close()
+	defer func() {
+		if closeErr := gr.Close(); closeErr != nil {
+			fmt.Printf("Failed to close gzip reader: %v\n", closeErr)
+		}
+	}()
 	data, err := io.ReadAll(gr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read content: %w", err)

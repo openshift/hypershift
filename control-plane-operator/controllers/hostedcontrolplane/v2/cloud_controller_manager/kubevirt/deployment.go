@@ -24,10 +24,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		return fmt.Errorf("\"cluster.x-k8s.io/cluster-name\" label doesn't exist in HostedControlPlane")
 	}
 
-	isExternalInfra := false
-	if hcp.Spec.Platform.Kubevirt != nil && hcp.Spec.Platform.Kubevirt.Credentials != nil {
-		isExternalInfra = true
-	}
+	isExternalInfra := hcp.Spec.Platform.Kubevirt != nil && hcp.Spec.Platform.Kubevirt.Credentials != nil
 
 	if isExternalInfra {
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, buildInfraKubeconfigVolume())

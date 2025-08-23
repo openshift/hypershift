@@ -209,7 +209,6 @@ const (
 type Diagnostics struct {
 	// storageAccountType determines if the storage account for storing the diagnostics data
 	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
-	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
 	// +kubebuilder:default:=Disabled
 	// +unionDiscriminator
 	// +optional
@@ -541,8 +540,6 @@ type ManagedIdentity struct {
 	//
 	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
 	//
-	// +kubebuilder:validation:Enum:=utf-8;hex;base64
-	// +kubebuilder:default:="utf-8"
 	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
