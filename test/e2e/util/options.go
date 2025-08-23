@@ -88,19 +88,25 @@ type Options struct {
 }
 
 type HyperShiftOperatorInstallOptions struct {
-	AWSOidcS3BucketName           string
-	AWSOidcS3Credentials          string
-	AWSOidcS3Region               string
-	AWSPrivateCredentialsFile     string
-	AWSPrivateRegion              string
-	EnableCIDebugOutput           bool
-	ExternalDNSCredentials        string
-	ExternalDNSDomain             string
-	ExternalDNSDomainFilter       string
-	ExternalDNSProvider           string
-	HyperShiftOperatorLatestImage string
-	PlatformMonitoring            string
-	PrivatePlatform               string
+	AWSOidcS3BucketName                    string
+	AWSOidcS3Credentials                   string
+	AWSOidcS3Region                        string
+	AWSPrivateCredentialsFile              string
+	AWSPrivateRegion                       string
+	EnableCIDebugOutput                    bool
+	ExternalDNSCredentials                 string
+	ExternalDNSDomain                      string
+	ExternalDNSDomainFilter                string
+	ExternalDNSProvider                    string
+	HyperShiftOperatorLatestImage          string
+	PlatformMonitoring                     string
+	PrivatePlatform                        string
+	EnableSizeTagging                      bool
+	EnableDedicatedRequestServingIsolation bool
+	EnableCPOOverrides                     bool
+	EnableEtcdRecovery                     bool
+	DryRun                                 bool
+	DryRunDir                              string
 }
 
 type ConfigurableClusterOptions struct {
