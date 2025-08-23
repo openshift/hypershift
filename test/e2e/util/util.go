@@ -25,6 +25,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
@@ -74,6 +75,8 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
 )
@@ -1398,6 +1401,24 @@ func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prome
 	}, nil
 }
 
+// getExportedMetrics exec curl command in HO pod metrics endpoint and return metric values if any
+func getExportedMetrics(ctx context.Context, log logr.Logger, c crclient.Client) (map[string]*dto.MetricFamily, error) {
+	componentName := "operator"
+	containerName := "operator"
+	namespaceName := "hypershift"
+	command := []string{"curl", "http://127.0.0.1:9000/metrics"}
+	cmdOutput, err := RunCommandInPod(ctx, c, componentName, namespaceName, command, containerName, 5*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't obtain any metrics: %v", err)
+	}
+	if len(cmdOutput) == 0 {
+		return nil, fmt.Errorf("no metrics found")
+	}
+	var parser expfmt.TextParser
+	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
+
+}
+
 func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
 	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
 		g := NewWithT(t)
@@ -2202,9 +2223,28 @@ const (
 	HypershiftOperatorInfoName = "hypershift_operator_info"
 )
 
+func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric, labelKey, labelValue string) []*dto.LabelPair {
+	v, ok := metricFamilies[metric]
+	if !ok {
+		return nil
+	}
+	labelPairs := []*dto.LabelPair{}
+	for _, m := range v.Metric {
+		for _, l := range m.GetLabel() {
+			if l == nil {
+				continue
+			}
+			if len(labelKey) == 0 || (l.GetName() == labelKey && l.GetValue() == labelValue) {
+				labelPairs = append(labelPairs, l)
+			}
+		}
+	}
+	return labelPairs
+}
+
 // Verifies that the given metrics are defined for the given hosted cluster if areMetricsExpectedToBePresent is set to true.
 // Verifies that the given metrics are not defined otherwise.
-func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, metricsNames []string, areMetricsExpectedToBePresent bool) {
+func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, metricsNames []string, areMetricsExpectedToBePresent bool) {
 	t.Run("ValidateMetricsAreExposed", func(t *testing.T) {
 		// TODO (alberto) this test should pass in None.
 		// https://gcsweb-ci.apps.ci.l2s4.p1.openshiftapps.com/gcs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/artifacts/e2e-aws/run-e2e/artifacts/TestNoneCreateCluster_PreTeardownClusterDump/
@@ -2214,26 +2254,24 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 			t.Skip("skipping on None platform")
 		}
 
-		if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
-			t.Skip("skipping on Azure platform")
-		}
-
-		g := NewWithT(t)
-
-		prometheusClient, err := NewPrometheusClient(ctx)
-		g.Expect(err).ToNot(HaveOccurred())
-
 		// Polling to prevent races with prometheus scrape interval.
-		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+			mf, err := getExportedMetrics(ctx, NewLogr(t), client)
+			if err != nil {
+				t.Logf("unable to get exportedMetrics: %v", err)
+				return false, nil
+			}
 			for _, metricName := range metricsNames {
-				// Query fo HC specific metrics by hc.name.
-				query := fmt.Sprintf("%v{name=\"%s\"}", metricName, hc.Name)
+				query := metricName
+				labelKey := "name"
+				labelValue := hc.Name
 				if metricName == HypershiftOperatorInfoName {
-					// Query HO info metric
-					query = HypershiftOperatorInfoName
+					query = metricName
+					labelKey, labelValue = "", ""
 				}
 				if strings.HasPrefix(metricName, "hypershift_nodepools") {
-					query = fmt.Sprintf("%v{cluster_name=\"%s\"}", metricName, hc.Name)
+					query = metricName
+					labelKey, labelValue = "cluster_name", hc.Name
 				}
 				// upgrade metric is only available for TestUpgradeControlPlane
 				if metricName == hcmetrics.UpgradingDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
@@ -2246,21 +2284,26 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 						continue
 					}
 					query = metricName
+					labelKey, labelValue = "", ""
 				}
 
-				result, err := RunQueryAtTime(ctx, NewLogr(t), prometheusClient, query, time.Now())
-				if err != nil {
-					return false, err
+				if metricName == hcmetrics.HostedClusterManagedAzureInfoMetricName {
+					if !(azureutil.IsAroHCP()) { // only for ARO
+						continue
+					}
+					query = metricName
+					labelKey, labelValue = "", ""
 				}
 
+				labelPairs := extractDataFromFamilies(mf, query, labelKey, labelValue)
 				if areMetricsExpectedToBePresent {
-					if len(result.Data.Result) < 1 {
+					if len(labelPairs) < 1 {
 						t.Logf("Expected results for metric %q, found none", metricName)
 						return false, nil
 					}
 				} else {
-					if len(result.Data.Result) > 0 {
-						t.Logf("Expected 0 results for metric %q, found %d", metricName, len(result.Data.Result))
+					if len(labelPairs) > 0 {
+						t.Logf("Expected 0 results for metric %q, found %d", metricName, len(labelPairs))
 						return false, nil
 					}
 				}
@@ -2268,7 +2311,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluste
 			return true, nil
 		})
 		if err != nil {
-			t.Errorf("Failed to validate all metrics")
+			t.Errorf("Failed to validate all metrics: %v", err)
 		}
 	})
 }
