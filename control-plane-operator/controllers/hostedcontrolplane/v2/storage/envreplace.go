@@ -57,6 +57,7 @@ var (
 		"MANILA_DRIVER_CONTROL_PLANE_IMAGE":               "csi-driver-manila",
 		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",
 		"KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE":             "kube-rbac-proxy",
+		"VOLUME_DATA_SOURCE_VALIDATOR_IMAGE":              "volume-data-source-validator",
 		"TOOLS_IMAGE":                                     "tools",
 	}
 )
