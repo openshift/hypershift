@@ -646,3 +646,157 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateImageTagMirrorSet(t *testing.T) {
+	tests := []struct {
+		name        string
+		itms        []v1beta1.ImageTagMirror
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid single mirror",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror.example.com/openshift"},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid multiple mirrors",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror1.example.com/openshift", "mirror2.example.com/openshift"},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "valid with mirror source policy",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror.example.com/openshift"},
+					MirrorSourcePolicy: func() *v1beta1.MirrorSourcePolicy {
+						policy := v1beta1.MirrorSourcePolicy("AllowContactingSource")
+						return &policy
+					}(),
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "empty source",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "",
+					Mirrors: []string{"mirror.example.com/openshift"},
+				},
+			},
+			expectError: true,
+			errorMsg:    "source cannot be empty",
+		},
+		{
+			name: "duplicate sources",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror1.example.com/openshift"},
+				},
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror2.example.com/openshift"},
+				},
+			},
+			expectError: true,
+			errorMsg:    "duplicate source",
+		},
+		{
+			name: "invalid mirror source policy",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{"mirror.example.com/openshift"},
+					MirrorSourcePolicy: func() *v1beta1.MirrorSourcePolicy {
+						policy := v1beta1.MirrorSourcePolicy("InvalidPolicy")
+						return &policy
+					}(),
+				},
+			},
+			expectError: true,
+			errorMsg:    "invalid mirrorSourcePolicy",
+		},
+		{
+			name: "empty mirrors list",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: []string{},
+				},
+			},
+			expectError: true, // Empty mirrors list requires at least one mirror
+			errorMsg:    "at least one mirror must be specified",
+		},
+		{
+			name: "nil mirrors list",
+			itms: []v1beta1.ImageTagMirror{
+				{
+					Source:  "quay.io/openshift",
+					Mirrors: nil,
+				},
+			},
+			expectError: true, // Nil mirrors list requires at least one mirror
+			errorMsg:    "at least one mirror must be specified",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			hc := &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					ImageTagMirrorSet: test.itms,
+				},
+			}
+
+			validator := hostedClusterValidator{}
+			err := validator.validateImageTagMirrorSet(hc.Spec.ImageTagMirrorSet)
+
+			if test.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				} else if test.errorMsg != "" && !contains(err.Error(), test.errorMsg) {
+					t.Errorf("expected error message to contain %q, but got %q", test.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+
+			// Note: the validation function doesn't return warnings for ITMS
+		})
+	}
+}
+
+// Helper function to check if a string contains a substring
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
+		(len(s) > len(substr) && s[:len(substr)] == substr) ||
+		(len(s) > len(substr) && s[len(s)-len(substr):] == substr) ||
+		indexOfSubstring(s, substr) >= 0)
+}
+
+func indexOfSubstring(s, substr string) int {
+	if len(substr) == 0 {
+		return 0
+	}
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return i
+		}
+	}
+	return -1
+}

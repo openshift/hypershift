@@ -185,12 +185,12 @@ func (cg *ConfigGenerator) getUserConfigs(ctx context.Context) ([]corev1.ConfigM
 // getCoreConfigs returns a slice with all the configMaps containing MachineConfigs managed by the CPO
 // and necessary for the node pool to function.
 func (cg *ConfigGenerator) getCoreConfigs(ctx context.Context) ([]corev1.ConfigMap, error) {
-	// Generic core config resources: fips, ssh, haproxy for old cpo releases and optionally ImageContentSources.
+	// Generic core config resources: fips, ssh, haproxy for old cpo releases and optionally ImageContentSources/ImageTagMirrorSet.
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
 	expectedCoreConfigResources := 3
-	if len(cg.hostedCluster.Spec.ImageContentSources) > 0 {
-		// additional core config resource created when image content source specified.
+	if len(cg.hostedCluster.Spec.ImageContentSources) > 0 || len(cg.hostedCluster.Spec.ImageTagMirrorSet) > 0 {
+		// additional core config resource created when image mirror policies are specified.
 		expectedCoreConfigResources += 1
 	}
 	if cg.haproxyRawConfig != "" {
