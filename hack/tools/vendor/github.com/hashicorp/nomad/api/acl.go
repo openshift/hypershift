@@ -1,8 +1,12 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package api
 
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -63,6 +67,16 @@ func (a *ACLPolicies) Info(policyName string, q *QueryOptions) (*ACLPolicy, *Que
 	return &resp, wm, nil
 }
 
+// Self is used to query policies attached to a workload identity
+func (a *ACLPolicies) Self(q *QueryOptions) ([]*ACLPolicyListStub, *QueryMeta, error) {
+	var resp []*ACLPolicyListStub
+	wm, err := a.client.query("/v1/acl/policy/self", &resp, q)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, wm, nil
+}
+
 // ACLTokens is used to query the ACL token endpoints.
 type ACLTokens struct {
 	client *Client
@@ -73,8 +87,9 @@ func (c *Client) ACLTokens() *ACLTokens {
 	return &ACLTokens{client: c}
 }
 
-// DEPRECATED: will be removed in Nomad 1.5.0
 // Bootstrap is used to get the initial bootstrap token
+//
+// See BootstrapOpts to set ACL bootstrapping options.
 func (a *ACLTokens) Bootstrap(q *WriteOptions) (*ACLToken, *WriteMeta, error) {
 	var resp ACLToken
 	wm, err := a.client.put("/v1/acl/bootstrap", nil, &resp, q)
@@ -443,18 +458,33 @@ func (a *ACLBindingRules) Get(bindingRuleID string, q *QueryOptions) (*ACLBindin
 }
 
 // ACLOIDC is used to query the ACL OIDC endpoints.
+//
+// Deprecated: ACLOIDC is deprecated, use ACLAuth instead.
 type ACLOIDC struct {
 	client *Client
+	ACLAuth
 }
 
 // ACLOIDC returns a new handle on the ACL auth-methods API client.
+//
+// Deprecated: c.ACLOIDC() is deprecated, use c.ACLAuth() instead.
 func (c *Client) ACLOIDC() *ACLOIDC {
 	return &ACLOIDC{client: c}
 }
 
+// ACLAuth is used to query the ACL auth endpoints.
+type ACLAuth struct {
+	client *Client
+}
+
+// ACLAuth returns a new handle on the ACL auth-methods API client.
+func (c *Client) ACLAuth() *ACLAuth {
+	return &ACLAuth{client: c}
+}
+
 // GetAuthURL generates the OIDC provider authentication URL. This URL should
 // be visited in order to sign in to the provider.
-func (a *ACLOIDC) GetAuthURL(req *ACLOIDCAuthURLRequest, q *WriteOptions) (*ACLOIDCAuthURLResponse, *WriteMeta, error) {
+func (a *ACLAuth) GetAuthURL(req *ACLOIDCAuthURLRequest, q *WriteOptions) (*ACLOIDCAuthURLResponse, *WriteMeta, error) {
 	var resp ACLOIDCAuthURLResponse
 	wm, err := a.client.put("/v1/acl/oidc/auth-url", req, &resp, q)
 	if err != nil {
@@ -465,9 +495,20 @@ func (a *ACLOIDC) GetAuthURL(req *ACLOIDCAuthURLRequest, q *WriteOptions) (*ACLO
 
 // CompleteAuth exchanges the OIDC provider token for a Nomad token with the
 // appropriate claims attached.
-func (a *ACLOIDC) CompleteAuth(req *ACLOIDCCompleteAuthRequest, q *WriteOptions) (*ACLToken, *WriteMeta, error) {
+func (a *ACLAuth) CompleteAuth(req *ACLOIDCCompleteAuthRequest, q *WriteOptions) (*ACLToken, *WriteMeta, error) {
 	var resp ACLToken
 	wm, err := a.client.put("/v1/acl/oidc/complete-auth", req, &resp, q)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &resp, wm, nil
+}
+
+// Login exchanges the third party token for a Nomad token with the appropriate
+// claims attached.
+func (a *ACLAuth) Login(req *ACLLoginRequest, q *WriteOptions) (*ACLToken, *WriteMeta, error) {
+	var resp ACLToken
+	wm, err := a.client.put("/v1/acl/login", req, &resp, q)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -478,6 +519,7 @@ func (a *ACLOIDC) CompleteAuth(req *ACLOIDCCompleteAuthRequest, q *WriteOptions)
 type ACLPolicyListStub struct {
 	Name        string
 	Description string
+	JobACL      *JobACL
 	CreateIndex uint64
 	ModifyIndex uint64
 }
@@ -723,6 +765,9 @@ type ACLAuthMethod struct {
 	// ACLAuthMethodTokenLocalityGlobal for convenience.
 	TokenLocality string
 
+	// TokenNameFormat defines the HIL template to use when building the token name
+	TokenNameFormat string
+
 	// MaxTokenTTL is the maximum life of a token created by this method.
 	MaxTokenTTL time.Duration
 
@@ -738,20 +783,6 @@ type ACLAuthMethod struct {
 	ModifyTime  time.Time
 	CreateIndex uint64
 	ModifyIndex uint64
-}
-
-// ACLAuthMethodConfig is used to store configuration of an auth method.
-type ACLAuthMethodConfig struct {
-	OIDCDiscoveryURL    string
-	OIDCClientID        string
-	OIDCClientSecret    string
-	OIDCScopes          []string
-	BoundAudiences      []string
-	AllowedRedirectURIs []string
-	DiscoveryCaPem      []string
-	SigningAlgs         []string
-	ClaimMappings       map[string]string
-	ListClaimMappings   map[string]string
 }
 
 // MarshalJSON implements the json.Marshaler interface and allows
@@ -793,6 +824,260 @@ func (m *ACLAuthMethod) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ACLAuthMethodConfig is used to store configuration of an auth method.
+type ACLAuthMethodConfig struct {
+	// A list of PEM-encoded public keys to use to authenticate signatures
+	// locally
+	JWTValidationPubKeys []string
+	// JSON Web Key Sets url for authenticating signatures
+	JWKSURL string
+	// The OIDC Discovery URL, without any .well-known component (base path)
+	OIDCDiscoveryURL string
+	// The OAuth Client ID configured with the OIDC provider
+	OIDCClientID string
+	// The OAuth Client Secret configured with the OIDC provider
+	OIDCClientSecret string
+	// Optionally send a signed JWT ("private key jwt") as a client assertion
+	// to the OIDC provider
+	OIDCClientAssertion *OIDCClientAssertion
+	// Enable S256 PKCE challenge verification.
+	OIDCEnablePKCE bool
+	// Disable claims from the OIDC UserInfo endpoint
+	OIDCDisableUserInfo bool
+	// List of OIDC scopes
+	OIDCScopes []string
+	// List of auth claims that are valid for login
+	BoundAudiences []string
+	// The value against which to match the iss claim in a JWT
+	BoundIssuer []string
+	// A list of allowed values for redirect_uri
+	AllowedRedirectURIs []string
+	// PEM encoded CA certs for use by the TLS client used to talk with the
+	// OIDC Discovery URL.
+	DiscoveryCaPem []string
+	// PEM encoded CA cert for use by the TLS client used to talk with the JWKS
+	// URL
+	JWKSCACert string
+	// A list of supported signing algorithms
+	SigningAlgs []string
+	// Duration in seconds of leeway when validating expiration of a token to
+	// account for clock skew
+	ExpirationLeeway time.Duration
+	// Duration in seconds of leeway when validating not before values of a
+	// token to account for clock skew.
+	NotBeforeLeeway time.Duration
+	// Duration in seconds of leeway when validating all claims to account for
+	// clock skew.
+	ClockSkewLeeway time.Duration
+	// Mappings of claims (key) that will be copied to a metadata field
+	// (value).
+	ClaimMappings     map[string]string
+	ListClaimMappings map[string]string
+	// Enables logging of claims and binding-rule evaluations when
+	// debug level logging is enabled.
+	VerboseLogging bool
+}
+
+// MarshalJSON implements the json.Marshaler interface and allows
+// time.Duration fields to be marshaled correctly.
+func (c *ACLAuthMethodConfig) MarshalJSON() ([]byte, error) {
+	type Alias ACLAuthMethodConfig
+	exported := &struct {
+		ExpirationLeeway string
+		NotBeforeLeeway  string
+		ClockSkewLeeway  string
+		*Alias
+	}{
+		ExpirationLeeway: c.ExpirationLeeway.String(),
+		NotBeforeLeeway:  c.NotBeforeLeeway.String(),
+		ClockSkewLeeway:  c.ClockSkewLeeway.String(),
+		Alias:            (*Alias)(c),
+	}
+	if c.ExpirationLeeway == 0 {
+		exported.ExpirationLeeway = ""
+	}
+	if c.NotBeforeLeeway == 0 {
+		exported.NotBeforeLeeway = ""
+	}
+	if c.ClockSkewLeeway == 0 {
+		exported.ClockSkewLeeway = ""
+	}
+	return json.Marshal(exported)
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface and allows
+// time.Duration fields to be unmarshalled correctly.
+func (c *ACLAuthMethodConfig) UnmarshalJSON(data []byte) error {
+	type Alias ACLAuthMethodConfig
+	aux := &struct {
+		ExpirationLeeway any
+		NotBeforeLeeway  any
+		ClockSkewLeeway  any
+		*Alias
+	}{
+		Alias: (*Alias)(c),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	var err error
+	if aux.ExpirationLeeway != nil {
+		switch v := aux.ExpirationLeeway.(type) {
+		case string:
+			if v != "" {
+				if c.ExpirationLeeway, err = time.ParseDuration(v); err != nil {
+					return err
+				}
+			}
+		case float64:
+			c.ExpirationLeeway = time.Duration(v)
+		default:
+			return fmt.Errorf("unexpected ExpirationLeeway type: %v", v)
+		}
+	}
+	if aux.NotBeforeLeeway != nil {
+		switch v := aux.NotBeforeLeeway.(type) {
+		case string:
+			if v != "" {
+				if c.NotBeforeLeeway, err = time.ParseDuration(v); err != nil {
+					return err
+				}
+			}
+		case float64:
+			c.NotBeforeLeeway = time.Duration(v)
+		default:
+			return fmt.Errorf("unexpected NotBeforeLeeway type: %v", v)
+		}
+	}
+	if aux.ClockSkewLeeway != nil {
+		switch v := aux.ClockSkewLeeway.(type) {
+		case string:
+			if v != "" {
+				if c.ClockSkewLeeway, err = time.ParseDuration(v); err != nil {
+					return err
+				}
+			}
+		case float64:
+			c.ClockSkewLeeway = time.Duration(v)
+		default:
+			return fmt.Errorf("unexpected ClockSkewLeeway type: %v", v)
+		}
+	}
+	return nil
+}
+
+// OIDCClientAssertionKeySource specifies what key material should be used
+// to sign an OIDCClientAssertion.
+type OIDCClientAssertionKeySource string
+
+const (
+	// OIDCKeySourceNomad signs the OIDCClientAssertion JWT with Nomad's
+	// internal private key. Its public key is exposed at /.well-known/jwks.json
+	OIDCKeySourceNomad OIDCClientAssertionKeySource = "nomad"
+	// OIDCKeySourcePrivateKey signs the OIDCClientAssertion JWT with
+	// key material defined in OIDCClientAssertion.PrivateKey
+	OIDCKeySourcePrivateKey OIDCClientAssertionKeySource = "private_key"
+	// OIDCKeySourceClientSecret signs the OIDCClientAssertion JWT with
+	// ACLAuthMethod.ClientSecret
+	OIDCKeySourceClientSecret OIDCClientAssertionKeySource = "client_secret"
+)
+
+// OIDCClientAssertion (a.k.a private_key_jwt) is used to send
+// a client_assertion along with an OIDC token request.
+// Reference: https://oauth.net/private-key-jwt/
+// See also: structs.OIDCClientAssertion
+type OIDCClientAssertion struct {
+	// Audience is/are who will be processing the assertion.
+	// Defaults to the parent `ACLAuthMethodConfig`'s `OIDCDiscoveryURL`
+	Audience []string
+
+	// KeySource is where to get the private key to sign the JWT.
+	// It is the one field that *must* be set to enable client assertions.
+	// Available sources:
+	// - "nomad": Use current active key in Nomad's keyring
+	// - "private_key": Use key material in the `PrivateKey` field
+	// - "client_secret": Use the `OIDCClientSecret` inherited from the parent
+	//   `ACLAuthMethodConfig` as an HMAC key
+	KeySource OIDCClientAssertionKeySource
+
+	// KeyAlgorithm is the key's algorithm.
+	// Its default values are based on the `KeySource`:
+	// - "nomad": "RS256" (from Nomad's keyring, must not be changed)
+	// - "private_key": "RS256" (must be RS256, RS384, or RS512)
+	// - "client_secret": "HS256" (must be HS256, HS384, or HS512)
+	KeyAlgorithm string
+
+	// PrivateKey contains external key material provided by users.
+	// `KeySource` must be "private_key" to enable this.
+	PrivateKey *OIDCClientAssertionKey
+
+	// ExtraHeaders are added to the JWT headers, alongside "kid" and "type"
+	// Setting the "kid" header here is not allowed; use `PrivateKey.KeyID`.
+	ExtraHeaders map[string]string
+}
+
+// OIDCClientAssertionKeyIDHeader is the header that the OIDC provider will use
+// to look up the certificate or public key that it needs to verify the
+// private key JWT signature.
+type OIDCClientAssertionKeyIDHeader string
+
+const (
+	OIDCClientAssertionHeaderKid     OIDCClientAssertionKeyIDHeader = "kid"
+	OIDCClientAssertionHeaderX5t     OIDCClientAssertionKeyIDHeader = "x5t"
+	OIDCClientAssertionHeaderX5tS256 OIDCClientAssertionKeyIDHeader = "x5t#S256"
+)
+
+// OIDCClientAssertionKey contains key material provided by users for Nomad
+// to use to sign the private key JWT.
+//
+// PemKey or PemKeyFile must contain an RSA private key in PEM format.
+//
+// PemCert, PemCertFile may contain an x509 certificate created with
+// the Key, used to derive the KeyID. Alternatively, KeyID may be set manually.
+//
+// PemKeyFile and PemCertFile, if set, must be an absolute path to a file
+// present on disk on any Nomad servers that may become cluster leaders.
+type OIDCClientAssertionKey struct {
+	// PemKey is an RSA private key, in pem format. It is used to sign the JWT.
+	// Mutually exclusive with `PemKeyFile`.
+	PemKey string
+	// PemKeyFile is an absolute path to a private key on Nomad servers' disk,
+	// in pem format. It is used to sign the JWT.
+	// Mutually exclusive with `PemKey`.
+	PemKeyFile string
+
+	// KeyIDHeader is which header the provider will use to find the
+	// public key to verify the signed JWT. Its default values vary
+	// based on which of the other required fields is set:
+	// - KeyID: "kid"
+	// - PemCert: "x5t#S256"
+	// - PemCertFile: "x5t#S256"
+	//
+	// Refer to the JWS RFC for information on these headers:
+	// - "kid":  https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.4
+	// - "x5t":  https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.7
+	// - "x5t#S256": https://datatracker.ietf.org/doc/html/rfc7515#section-4.1.8
+	//
+	// If you need to set some other header not supported here,
+	// you may use OIDCClientAssertion.ExtraHeaders.
+	KeyIDHeader OIDCClientAssertionKeyIDHeader
+	// KeyID may be set manually and becomes the "kid" header.
+	// Mutually exclusive with `PemCert` and `PemCertFile`.
+	// Allowed `KeyIDHeader` values: "kid" (the default)
+	KeyID string
+	// PemCert is an x509 certificate, signed by the private key or a CA,
+	// in pem format. It is used to derive an x5t#S256 (or x5t) header.
+	// Mutually exclusive with `PemCertFile` and `KeyID`.
+	// Allowed `KeyIDHeader` values: "x5t", "x5t#S256" (default "x5t#S256")
+	PemCert string
+	// PemCertFile is an absolute path to an x509 certificate on Nomad servers'
+	// disk, signed by the private key or a CA, in pem format.
+	// It is used to derive an x5t#S256 (or x5t) header.
+	// Mutually exclusive with `PemCert` and `KeyID`.
+	// Allowed `KeyIDHeader` values: "x5t", "x5t#S256" (default "x5t#S256")
+	PemCertFile string
+}
+
 // ACLAuthMethodListStub is the stub object returned when performing a listing
 // of ACL auth-methods. It is intentionally minimal due to the unauthenticated
 // nature of the list endpoint.
@@ -818,6 +1103,10 @@ const (
 	// ACLAuthMethodTypeOIDC the ACLAuthMethod.Type and represents an
 	// auth-method which uses the OIDC protocol.
 	ACLAuthMethodTypeOIDC = "OIDC"
+
+	// ACLAuthMethodTypeJWT the ACLAuthMethod.Type and represents an auth-method
+	// which uses the JWT type.
+	ACLAuthMethodTypeJWT = "JWT"
 )
 
 // ACLBindingRule contains a direct relation to an ACLAuthMethod and represents
@@ -946,4 +1235,65 @@ type ACLOIDCCompleteAuthRequest struct {
 	// RedirectURI is the URL that authorization should redirect to. This is a
 	// required parameter.
 	RedirectURI string
+}
+
+// ACLLoginRequest is the request object to begin auth with an external bearer
+// token provider.
+type ACLLoginRequest struct {
+	// AuthMethodName is the name of the auth method being used to login. This
+	// is a required parameter.
+	AuthMethodName string
+	// LoginToken is the token used to login. This is a required parameter.
+	LoginToken string
+}
+
+// ACLIdentity is used to query the ACL identity endpoints.
+type ACLIdentity struct {
+	client *Client
+}
+
+// ACLIdentity returns a new handle on the ACL identity API client.
+func (c *Client) ACLIdentity() *ACLIdentity {
+	return &ACLIdentity{client: c}
+}
+
+// CreateClientIntroductionToken is the API endpoint used to generate a JWT
+// token to be used for introducing a new client node into the cluster.
+func (a *ACLIdentity) CreateClientIntroductionToken(
+	req *ACLIdentityClientIntroductionTokenRequest,
+	writeOpts *WriteOptions) (*ACLIdentityClientIntroductionTokenResponse, *WriteMeta, error) {
+
+	var resp ACLIdentityClientIntroductionTokenResponse
+	wm, err := a.client.put("/v1/acl/identity/client-introduction-token", req, &resp, writeOpts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &resp, wm, nil
+}
+
+// ACLIdentityClientIntroductionTokenRequest is the request object used within
+// the ACL client introduction API request. This is used to generate a JWT token
+// that can be used to register a new client node into the cluster.
+type ACLIdentityClientIntroductionTokenRequest struct {
+
+	// TTL is the requested TTL for the identity token. This is an optional
+	// parameter and if not set, defaults to the server defined default TTL.
+	TTL time.Duration
+
+	// NodeName is the name of the node that is being introduced. This is added
+	// to the token as a claim when present, but is optional.
+	NodeName string
+
+	// NodePool is the name of the node pool that this node belongs to. This is
+	// an optional parameter, and if not set, defaults to "default".
+	NodePool string
+}
+
+// ACLIdentityClientIntroductionTokenResponse is the response object used within
+// the ACL client introduction HTTP endpoint.
+type ACLIdentityClientIntroductionTokenResponse struct {
+
+	// JWT is the signed identity token that can be used as an introduction
+	// token for a new client node to register with the Nomad cluster.
+	JWT string
 }
