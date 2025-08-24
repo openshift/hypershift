@@ -16,6 +16,8 @@ limitations under the License.
 
 /*
 optionalorrequired is a linter to ensure that all fields are marked as either optional or required.
+It also checks for the presence of optional or required markers on type declarations, and forbids this pattern.
+
 By default, it searches for the `+optional` and `+required` markers, and ensures that all fields are marked
 with at least one of these markers.
 
