@@ -129,9 +129,11 @@ type ImageRegistryStatus struct {
 	operatorv1.OperatorStatus `json:",inline"`
 
 	// storageManaged is deprecated, please refer to Storage.managementState
+	// +required
 	StorageManaged bool `json:"storageManaged"`
 	// storage indicates the current applied storage configuration of the
 	// registry.
+	// +required
 	Storage ImageRegistryConfigStorage `json:"storage"`
 }
 
@@ -213,7 +215,6 @@ type ImageRegistryConfigStorageS3 struct {
 	// The minimum value is 5 and the maximum value is 5120 (5 GiB).
 	// +kubebuilder:validation:Minimum=5
 	// +kubebuilder:validation:Maximum=5120
-	// +openshift:enable:FeatureGate=ChunkSizeMiB
 	// +optional
 	ChunkSizeMiB int32 `json:"chunkSizeMiB,omitempty"`
 	// encrypt specifies whether the registry stores the image in encrypted
@@ -483,7 +484,7 @@ type EncryptionAlibaba struct {
 	// +kubebuilder:validation:Enum="KMS";"AES256"
 	// +kubebuilder:default="AES256"
 	// +optional
-	Method AlibabaEncryptionMethod `json:"method"`
+	Method AlibabaEncryptionMethod `json:"method,omitempty"`
 
 	// kms (key management service) is an encryption type that holds the struct for KMS KeyID
 	// +optional
