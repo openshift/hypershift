@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift/api
 
-go 1.21
+go 1.23
+
+toolchain go1.24.6
 
 require (
 	github.com/openshift/api v0.0.0-20240214165302-89248c87b7fc
@@ -24,7 +26,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.120.1 // indirect
 	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
-	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
+	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
