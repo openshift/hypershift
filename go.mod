@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift
 
-go 1.20
+go 1.23
+
+toolchain go1.24.6
 
 require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
@@ -238,7 +240,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk v0.2.1 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.1.2 // indirect
-	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
+	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/kustomize/api v0.15.0 // indirect
 	sigs.k8s.io/kustomize/kyaml v0.15.0 // indirect
