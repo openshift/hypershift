@@ -1,5 +1,5 @@
-//go:build !noasm && gc && amd64 && !arm64
-// +build !noasm,gc,amd64,!arm64
+//go:build !noasm && gc && arm64 && !amd64
+// +build !noasm,gc,arm64,!amd64
 
 package sha1cd
 
@@ -10,11 +10,11 @@ import (
 	shared "github.com/pjbgf/sha1cd/internal"
 )
 
-// blockAMD64 hashes the message p into the current state in dig.
+// blockARM64 hashes the message p into the current state in dig.
 // Both m1 and cs are used to store intermediate results which are used by the collision detection logic.
 //
 //go:noescape
-func blockAMD64(dig *digest, p sliceHeader, m1 []uint32, cs [][5]uint32)
+func blockARM64(dig *digest, p sliceHeader, m1 []uint32, cs [][5]uint32)
 
 func block(dig *digest, p []byte) {
 	m1 := [shared.Rounds]uint32{}
@@ -29,14 +29,14 @@ func block(dig *digest, p []byte) {
 			cap:  shared.Chunk,
 		}
 
-		blockAMD64(dig, ips, m1[:], cs[:])
+		blockARM64(dig, ips, m1[:], cs[:])
 
 		col := checkCollision(m1, cs, dig.h)
 		if col {
 			dig.col = true
 
-			blockAMD64(dig, ips, m1[:], cs[:])
-			blockAMD64(dig, ips, m1[:], cs[:])
+			blockARM64(dig, ips, m1[:], cs[:])
+			blockARM64(dig, ips, m1[:], cs[:])
 		}
 
 		p = p[shared.Chunk:]
