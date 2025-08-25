@@ -109,7 +109,32 @@ type CapacityReservationOptions struct {
 	// +kubebuilder:validation:Enum:=OnDemand;CapacityBlocks
 	// +optional
 	MarketType MarketType `json:"marketType,omitempty"`
+
+	// preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+	// "": No preference (platform default)
+	// "Open": The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+	// "None": The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+	// "CapacityReservationsOnly": The instance will only run if matched or targeted to a Capacity Reservation
+	//
+	// +kubebuilder:validation:Enum="";None;CapacityReservationsOnly;Open
+	// +optional
+	Preference CapacityReservationPreference `json:"preference,omitempty"`
 }
+
+// CapacityReservationPreference describes the preferred use of capacity reservations
+// of an instance
+type CapacityReservationPreference string
+
+const (
+	// CapacityReservationPreferenceNone the instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+	CapacityReservationPreferenceNone CapacityReservationPreference = "None"
+
+	// CapacityReservationPreferenceOnly the instance will only run if matched or targeted to a Capacity Reservation
+	CapacityReservationPreferenceOnly CapacityReservationPreference = "CapacityReservationsOnly"
+
+	// CapacityReservationPreferenceOpen the instance may make use of open Capacity Reservations that match its AZ and InstanceType.
+	CapacityReservationPreferenceOpen CapacityReservationPreference = "Open"
+)
 
 // AWSResourceReference is a reference to a specific AWS resource by ID or filters.
 // Only one of ID or Filters may be specified. Specifying more than one will result in

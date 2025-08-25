@@ -64,11 +64,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: Specification of machine health check policy
+            description: spec is the specification of machine health check policy
             properties:
               clusterName:
                 description: clusterName is the name of the Cluster this object belongs
                   to.
+                maxLength: 63
                 minLength: 1
                 type: string
               maxUnhealthy:
@@ -76,7 +77,8 @@ spec:
                 - type: integer
                 - type: string
                 description: |-
-                  Any further remediation is only allowed if at most "MaxUnhealthy" machines selected by
+                  maxUnhealthy specifies the maximum number of unhealthy machines allowed.
+                  Any further remediation is only allowed if at most "maxUnhealthy" machines selected by
                   "selector" are not healthy.
 
                   Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/issues/10722 for more details.
@@ -146,8 +148,8 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               selector:
-                description: Label selector to match machines whose health will be
-                  exercised
+                description: selector is a label selector to match machines whose
+                  health will be exercised
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -204,11 +206,18 @@ spec:
                     status for at least the timeout value, a node is considered unhealthy.
                   properties:
                     status:
+                      description: status of the condition, one of True, False, Unknown.
                       minLength: 1
                       type: string
                     timeout:
+                      description: |-
+                        timeout is the duration that a node must be in a given status for,
+                        after which the node is considered unhealthy.
+                        For example, with a value of "1h", the node must match the status
+                        for at least 1 hour before being considered unhealthy.
                       type: string
                     type:
+                      description: type of Node condition
                       minLength: 1
                       type: string
                   required:
@@ -216,16 +225,20 @@ spec:
                   - timeout
                   - type
                   type: object
+                maxItems: 100
                 type: array
               unhealthyRange:
                 description: |-
+                  unhealthyRange specifies the range of unhealthy machines allowed.
                   Any further remediation is only allowed if the number of machines selected by "selector" as not healthy
-                  is within the range of "UnhealthyRange". Takes precedence over MaxUnhealthy.
+                  is within the range of "unhealthyRange". Takes precedence over maxUnhealthy.
                   Eg. "[3-5]" - This means that remediation will be allowed only when:
                   (a) there are at least 3 unhealthy machines (and)
                   (b) there are at most 5 unhealthy machines
 
                   Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/issues/10722 for more details.
+                maxLength: 32
+                minLength: 1
                 pattern: ^\[[0-9]+-[0-9]+\]$
                 type: string
             required:
@@ -233,7 +246,8 @@ spec:
             - selector
             type: object
           status:
-            description: Most recently observed status of MachineHealthCheck resource
+            description: status is the most recently observed status of MachineHealthCheck
+              resource
             properties:
               conditions:
                 description: conditions defines current service state of the MachineHealthCheck.
@@ -243,27 +257,32 @@ spec:
                   properties:
                     lastTransitionTime:
                       description: |-
-                        Last time the condition transitioned from one status to another.
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
                         This should be when the underlying condition changed. If that is not known, then using the time when
                         the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
                       description: |-
-                        A human readable message indicating details about the transition.
+                        message is a human readable message indicating details about the transition.
                         This field may be empty.
+                      maxLength: 10240
+                      minLength: 1
                       type: string
                     reason:
                       description: |-
-                        The reason for the condition's last transition in CamelCase.
+                        reason is the reason for the condition's last transition in CamelCase.
                         The specific API may choose whether or not this field is considered a guaranteed API.
                         This field may be empty.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     severity:
                       description: |-
                         severity provides an explicit classification of Reason code, so the users or machines can immediately
                         understand the current situation and act accordingly.
                         The Severity field MUST be set only when Status=False.
+                      maxLength: 32
                       type: string
                     status:
                       description: status of the condition, one of True, False, Unknown.
@@ -273,6 +292,8 @@ spec:
                         type of condition in CamelCase or in foo.example.com/CamelCase.
                         Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                   required:
                   - lastTransitionTime
@@ -281,14 +302,14 @@ spec:
                   type: object
                 type: array
               currentHealthy:
-                description: total number of healthy machines counted by this machine
-                  health check
+                description: currentHealthy is the total number of healthy machines
+                  counted by this machine health check
                 format: int32
                 minimum: 0
                 type: integer
               expectedMachines:
-                description: total number of machines counted by this machine health
-                  check
+                description: expectedMachines is the total number of machines counted
+                  by this machine health check
                 format: int32
                 minimum: 0
                 type: integer
@@ -308,7 +329,10 @@ spec:
                 description: targets shows the current list of machines the machine
                   health check is watching
                 items:
+                  maxLength: 253
+                  minLength: 1
                   type: string
+                maxItems: 10000
                 type: array
               v1beta2:
                 description: v1beta2 groups all the fields that will be added or modified
