@@ -1181,6 +1181,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
 	}
 
+	// Copy the configuration status from the hostedcontrolplane
+	if hcp != nil {
+		hcluster.Status.Configuration = hcp.Status.Configuration
+	}
+
 	// Persist status updates
 	if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 		if apierrors.IsConflict(err) {
