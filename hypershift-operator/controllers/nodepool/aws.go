@@ -152,6 +152,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 			} else {
 				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
 			}
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 		}
 	}
 
