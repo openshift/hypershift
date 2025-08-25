@@ -20,8 +20,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	supportforwarder "github.com/openshift/hypershift/support/forwarder"
-	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagev1 "github.com/openshift/api/image/v1"
@@ -172,8 +170,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		return fmt.Errorf("failed to get hosted cluster %s/%s: %w", opts.Namespace, opts.Name, err)
 	}
 	cpNamespace := manifests.HostedControlPlaneNamespace(opts.Namespace, opts.Name)
-	localPort := rand.Intn(45000-32767) + 32767
-	kubeconfigFileName, err := createGuestKubeconfig(ctx, c, cpNamespace, localPort, opts.Log)
+	kubeconfigFileName, err := createGuestKubeconfig(ctx, c, cpNamespace, opts.Log)
 	if err != nil {
 		return err
 	}
@@ -183,43 +180,10 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 		}
 	}()
 
-	target := opts.ArtifactDir + "/hostedcluster-" + opts.Name
-
-	podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
-	if err != nil {
-		return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
+	target := filepath.Join(opts.ArtifactDir, "/hostedcluster-"+opts.Name)
+	if err := os.MkdirAll(target, 0755); err != nil {
+		return err
 	}
-
-	restConfig, err := util.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get a config for management cluster: %w", err)
-	}
-
-	if len(opts.ImpersonateAs) > 0 {
-		restConfig.Impersonate = restclient.ImpersonationConfig{
-			UserName: opts.ImpersonateAs,
-		}
-	}
-
-	kubeClient, err := kubeclient.NewForConfig(restConfig)
-	if err != nil {
-		return fmt.Errorf("failed to get a kubernetes client: %w", err)
-	}
-	forwarderOutput := &bytes.Buffer{}
-	forwarder := supportforwarder.PortForwarder{
-		Namespace: podToForward.Namespace,
-		PodName:   podToForward.Name,
-		Config:    restConfig,
-		Client:    kubeClient,
-		Out:       forwarderOutput,
-		ErrOut:    forwarderOutput,
-	}
-	podPort := supportutil.KASPodPortFromHostedCluster(hostedCluster)
-	forwarderStop := make(chan struct{})
-	if err := forwarder.ForwardPorts([]string{fmt.Sprintf("%d:%d", localPort, podPort)}, forwarderStop); err != nil {
-		return fmt.Errorf("cannot forward kube apiserver port: %w, output: %s", err, forwarderOutput.String())
-	}
-	defer close(forwarderStop)
 
 	opts.Log.Info("Dumping guestcluster", "target", target)
 	if err := DumpGuestCluster(ctx, opts.Log, kubeconfigFileName, target); err != nil {
@@ -230,7 +194,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	return nil
 }
 
-func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace string, localPort int, log logr.Logger) (string, error) {
+func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace string, log logr.Logger) (string, error) {
 
 	localhostKubeconfigSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -262,7 +226,7 @@ func createGuestKubeconfig(ctx context.Context, c client.Client, cpNamespace str
 	}
 
 	for k := range localhostKubeconfig.Clusters {
-		localhostKubeconfig.Clusters[k].Server = fmt.Sprintf("https://localhost:%d", localPort)
+		localhostKubeconfig.Clusters[k].Server = fmt.Sprintf("https://kube-apiserver.%s.svc.cluster.local:6443", cpNamespace)
 	}
 	localhostKubeconfigYaml, err := clientcmd.Write(*localhostKubeconfig)
 	if err != nil {
