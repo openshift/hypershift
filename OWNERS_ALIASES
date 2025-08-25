@@ -1,0 +1,30 @@
+aliases:
+  tech-leads:
+    - csrwng
+    - enxebre
+    - sjenning
+  core-approvers:
+    - bryan-cox
+    - csrwng
+    - enxebre
+    - jparrill
+    - muraee
+    - sjenning
+  core-reviewers:
+    - bryan-cox
+    - csrwng
+    - devguyio
+    - enxebre
+    - jparrill
+    - muraee
+    - sdminonne
+    - sjenning
+  kubevirt-approvers:
+    - davidvossel
+    - nirarg
+  kubevirt-reviewers:
+    - davidvossel
+    - nirarg
+  ibm-reviewers:
+    - hasueki
+    - rtheis
