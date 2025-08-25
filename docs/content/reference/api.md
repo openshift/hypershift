@@ -3803,7 +3803,52 @@ When omitted, this means no opinion and the platform is left to choose a reasona
 The current default value is CapacityBlocks.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>preference</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationPreference">
+CapacityReservationPreference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+&ldquo;&rdquo;: No preference (platform default)
+&ldquo;Open&rdquo;: The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+&ldquo;None&rdquo;: The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+&ldquo;CapacityReservationsOnly&rdquo;: The instance will only run if matched or targeted to a Capacity Reservation</p>
+</td>
+</tr>
 </tbody>
+</table>
+###CapacityReservationPreference { #hypershift.openshift.io/v1beta1.CapacityReservationPreference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+</p>
+<p>
+<p>CapacityReservationPreference describes the preferred use of capacity reservations
+of an instance</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>CapacityReservationPreferenceNone the instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads</p>
+</td>
+</tr><tr><td><p>&#34;CapacityReservationsOnly&#34;</p></td>
+<td><p>CapacityReservationPreferenceOnly the instance will only run if matched or targeted to a Capacity Reservation</p>
+</td>
+</tr><tr><td><p>&#34;Open&#34;</p></td>
+<td><p>CapacityReservationPreferenceOpen the instance may make use of open Capacity Reservations that match its AZ and InstanceType.</p>
+</td>
+</tr></tbody>
 </table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>

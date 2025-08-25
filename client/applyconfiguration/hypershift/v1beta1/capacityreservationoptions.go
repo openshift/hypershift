@@ -24,8 +24,9 @@ import (
 // CapacityReservationOptionsApplyConfiguration represents a declarative configuration of the CapacityReservationOptions type for use
 // with apply.
 type CapacityReservationOptionsApplyConfiguration struct {
-	ID         *string                       `json:"id,omitempty"`
-	MarketType *hypershiftv1beta1.MarketType `json:"marketType,omitempty"`
+	ID         *string                                          `json:"id,omitempty"`
+	MarketType *hypershiftv1beta1.MarketType                    `json:"marketType,omitempty"`
+	Preference *hypershiftv1beta1.CapacityReservationPreference `json:"preference,omitempty"`
 }
 
 // CapacityReservationOptionsApplyConfiguration constructs a declarative configuration of the CapacityReservationOptions type for use with
@@ -47,5 +48,13 @@ func (b *CapacityReservationOptionsApplyConfiguration) WithID(value string) *Cap
 // If called multiple times, the MarketType field is set to the value of the last call.
 func (b *CapacityReservationOptionsApplyConfiguration) WithMarketType(value hypershiftv1beta1.MarketType) *CapacityReservationOptionsApplyConfiguration {
 	b.MarketType = &value
+	return b
+}
+
+// WithPreference sets the Preference field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Preference field is set to the value of the last call.
+func (b *CapacityReservationOptionsApplyConfiguration) WithPreference(value hypershiftv1beta1.CapacityReservationPreference) *CapacityReservationOptionsApplyConfiguration {
+	b.Preference = &value
 	return b
 }

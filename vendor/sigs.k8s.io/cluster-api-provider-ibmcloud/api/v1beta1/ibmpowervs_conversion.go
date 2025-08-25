@@ -193,3 +193,23 @@ func Convert_v1beta2_IBMPowerVSMachineSpec_To_v1beta1_IBMPowerVSMachineSpec(in *
 
 	return autoConvert_v1beta2_IBMPowerVSMachineSpec_To_v1beta1_IBMPowerVSMachineSpec(in, out, s)
 }
+
+func Convert_v1beta2_IBMPowerVSClusterSpec_To_v1beta1_IBMPowerVSClusterSpec(in *infrav1beta2.IBMPowerVSClusterSpec, out *IBMPowerVSClusterSpec, s apiconversion.Scope) error {
+	if in.ServiceInstance != nil && in.ServiceInstance.ID != nil {
+		out.ServiceInstanceID = *in.ServiceInstance.ID
+	}
+	return autoConvert_v1beta2_IBMPowerVSClusterSpec_To_v1beta1_IBMPowerVSClusterSpec(in, out, s)
+}
+
+func Convert_v1beta2_IBMPowerVSClusterStatus_To_v1beta1_IBMPowerVSClusterStatus(in *infrav1beta2.IBMPowerVSClusterStatus, out *IBMPowerVSClusterStatus, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMPowerVSClusterStatus_To_v1beta1_IBMPowerVSClusterStatus(in, out, s)
+}
+
+func Convert_v1beta2_IBMPowerVSImageSpec_To_v1beta1_IBMPowerVSImageSpec(in *infrav1beta2.IBMPowerVSImageSpec, out *IBMPowerVSImageSpec, s apiconversion.Scope) error {
+	return autoConvert_v1beta2_IBMPowerVSImageSpec_To_v1beta1_IBMPowerVSImageSpec(in, out, s)
+}
+
+func Convert_v1beta2_IBMPowerVSMachineStatus_To_v1beta1_IBMPowerVSMachineStatus(in *infrav1beta2.IBMPowerVSMachineStatus, out *IBMPowerVSMachineStatus, s apiconversion.Scope) error {
+	// CAPI V1Beta2 was added in CAPIBM v1beta2
+	return autoConvert_v1beta2_IBMPowerVSMachineStatus_To_v1beta1_IBMPowerVSMachineStatus(in, out, s)
+}
