@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,oas-trust-anchor
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,oas-trust-anchor,tmp-dir
         component.hypershift.openshift.io/config-hash: 19dc307e41f50a7352ebd36a829b997b
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -125,6 +125,8 @@ spec:
           requests:
             cpu: 100m
             memory: 200Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           failureThreshold: 30
           httpGet:
@@ -158,6 +160,8 @@ spec:
           name: serving-cert
         - mountPath: /var/log/openshift-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
         workingDir: /var/log/openshift-apiserver
       - args:
         - -c
@@ -184,10 +188,14 @@ spec:
           requests:
             cpu: 5m
             memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/log/openshift-apiserver
           name: work-logs
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         command:
@@ -202,6 +210,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -210,6 +220,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -310,4 +322,6 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

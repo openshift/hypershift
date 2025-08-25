@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs,tmp-dir
         component.hypershift.openshift.io/config-hash: 1252551487ecf31a87ecf31acb8019bfd6265674
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -250,6 +250,8 @@ spec:
           requests:
             cpu: 100m
             memory: 600Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
@@ -270,6 +272,8 @@ spec:
           name: server-crt
         - mountPath: /etc/kubernetes/certs/service-signer
           name: service-signer
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -326,4 +330,6 @@ spec:
           defaultMode: 420
           name: recycler-config
         name: recycler-config
+      - emptyDir: {}
+        name: tmp-dir
 status: {}
