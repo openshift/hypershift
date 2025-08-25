@@ -9,11 +9,13 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,17 +32,19 @@ import (
 )
 
 type Azure struct {
+	utilitiesImage    string
 	capiProviderImage string
 	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string, payloadVersion *semver.Version) *Azure {
+func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *Azure {
 	if payloadVersion != nil {
 		payloadVersion.Pre = nil
 		payloadVersion.Build = nil
 	}
 
 	return &Azure{
+		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
 		payloadVersion:    payloadVersion,
 	}
@@ -191,7 +195,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 			},
 		)
 	}
-
+	util.AvailabilityProber(kas.InClusterKASReadyURL(hcluster.Spec.Platform.Type), a.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 
