@@ -33,8 +33,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -48,6 +51,8 @@ var (
 	crdEC2NodeClass = supportassets.MustCRD(assets.ReadFile, "karpenter.k8s.aws_ec2nodeclasses.yaml")
 
 	crdOpenshiftEC2NodeClass = supportassets.MustCRD(assets.ReadFile, "karpenter.hypershift.openshift.io_openshiftec2nodeclasses.yaml")
+
+	crdNamespacedName = client.ObjectKey{Name: assets.EC2NodeClassDefault}
 )
 
 type EC2NodeClassReconciler struct {
@@ -85,8 +90,11 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 				return nil
 			},
 		)).
-		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{})
-
+		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{}).
+		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
+		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapToEC2NodeClasses),
+			r.userDataSecretPredicate()))
 	return bldr.Complete(r)
 }
 
@@ -111,12 +119,12 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	openshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
-	if err := r.guestClient.Get(ctx, req.NamespacedName, openshiftEC2NodeClass); err != nil {
+	if err := r.guestClient.Get(ctx, crdNamespacedName, openshiftEC2NodeClass); err != nil {
 		if apierrors.IsNotFound(err) {
-			log.Info("openshiftEC2NodeClass not found, aborting reconcile", "name", req.NamespacedName)
+			log.Info("openshiftEC2NodeClass not found, aborting reconcile", "name", crdNamespacedName)
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get openshiftEC2NodeClass %q: %w", req.NamespacedName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get openshiftEC2NodeClass %q: %w", crdNamespacedName, err)
 	}
 
 	ec2NodeClass := &awskarpenterv1.EC2NodeClass{
@@ -393,4 +401,49 @@ func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedCon
 	}
 
 	return &hcpList.Items[0], nil
+}
+
+// userDataSecretPredicate only returns true on creates/updates on the userData secret tied to the karpenter hyperv1.NodePool
+func (r *EC2NodeClassReconciler) userDataSecretPredicate() predicate.Predicate {
+	filterKarpenterSecret := func(obj client.Object) bool {
+		if obj.GetNamespace() != r.Namespace {
+			return false
+		}
+		if secret, ok := obj.(*corev1.Secret); ok {
+			if nodePoolLabel, exists := secret.Annotations[hyperv1.NodePoolLabel]; exists {
+				if util.ParseNamespacedName(nodePoolLabel).Name == "karpenter" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	userDataSecretPredicate := predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return filterKarpenterSecret(e.Object) },
+		UpdateFunc:  func(e event.UpdateEvent) bool { return filterKarpenterSecret(e.ObjectNew) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
+	return userDataSecretPredicate
+}
+
+// mapToEC2NodeClasses maps a request to reconcile all EC2NodeClass resources
+func (r *EC2NodeClassReconciler) mapToEC2NodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
+	ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+	if err := r.guestClient.List(ctx, ec2NodeClassList); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "failed to list EC2NodeClass")
+		return []reconcile.Request{}
+	}
+
+	var requests []reconcile.Request
+	for _, nodeClass := range ec2NodeClassList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Name:      nodeClass.Name,
+				Namespace: nodeClass.Namespace,
+			},
+		})
+	}
+
+	return requests
 }

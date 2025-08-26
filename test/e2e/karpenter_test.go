@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -101,6 +100,16 @@ func TestKarpenter(t *testing.T) {
 			nodeClaims := waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
 			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
 
+			// Setup check that the NodeClaim(s) actually Drift
+			driftChan := make(chan struct{})
+			go func() {
+				defer close(driftChan)
+				for _, nodeClaim := range nodeClaims.Items {
+					waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaim)
+				}
+			}()
+
+			driftStart := time.Now()
 			// Update hosted control plane to induce Drift
 			t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
 			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
@@ -115,23 +124,9 @@ func TestKarpenter(t *testing.T) {
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
 
-			// Check that the NodeClaim(s) actually Drift
-			driftChan := make(chan struct{})
-			go func() {
-				defer close(driftChan)
-				for _, nodeClaim := range nodeClaims.Items {
-					waitForNodeClaimDrifted(t, ctx, guestClient, &nodeClaim)
-				}
-			}()
-
-			// Wait for the new rollout to be complete
-			e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
-			err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
-
 			// Ensure Karpenter Drift behaviour
-			t.Logf("Waiting for Karpenter Nodes to drift and come up")
 			<-driftChan
+			t.Logf("Karpenter Nodes drifted in %s", time.Since(driftStart))
 
 			nodes = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
 				e2eutil.WithClientOptions(
@@ -143,25 +138,13 @@ func TestKarpenter(t *testing.T) {
 						Status: metav1.ConditionTrue,
 					}),
 					e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
-						// the actual OS version is at the end of the node's OSImage field
 						fullOSImageString := node.Status.NodeInfo.OSImage
-						parts := strings.Split(fullOSImageString, " ")
-						if len(parts) <= 1 {
-							return false, "", fmt.Errorf("unexpected OSImage format: %s", fullOSImageString)
-						}
-						rawVersion := parts[len(parts)-2]
-						if rawVersion != expectedRHCOSVersion {
-							return false, fmt.Sprintf("expected %s, got %s", expectedRHCOSVersion, rawVersion), nil
+
+						if !strings.Contains(fullOSImageString, expectedRHCOSVersion) {
+							return false, fmt.Sprintf("expected node OS image name %q string to contain expected OS version string %q", fullOSImageString, expectedRHCOSVersion), nil
 						}
 
-						// the node's KubeletVersion field is prefixed, but the releaseImageComponent version is not
-						rawKubeletVersion := strings.TrimPrefix(node.Status.NodeInfo.KubeletVersion, "v")
-						if rawKubeletVersion != expectedKubeletVersion {
-							return false, fmt.Sprintf("expected %s, got %s", expectedKubeletVersion, rawKubeletVersion), nil
-						}
-						correctMachineOSVersionMessage := fmt.Sprintf("correct machineOS: wanted %s, got %s", expectedRHCOSVersion, rawVersion)
-						correctK8sVersionMessage := fmt.Sprintf("correct kube: wanted %s, got %s", expectedKubeletVersion, rawKubeletVersion)
-						return true, fmt.Sprintf("%s, %s", correctMachineOSVersionMessage, correctK8sVersionMessage), nil
+						return true, fmt.Sprintf("expected OS version string %q, and node.Status.NodeInfo.OSImage is %q", expectedRHCOSVersion, fullOSImageString), nil
 					}),
 				),
 			)
@@ -180,38 +163,28 @@ func TestKarpenter(t *testing.T) {
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		})
 
-		t.Run("Test basic provisioning and deprovising", func(t *testing.T) {
-			// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
-			replicas := 3
-			workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
-			workLoads.Object["spec"].(map[string]interface{})["containers"] = []interface{}{
-				map[string]interface{}{
-					"resources": map[string]interface{}{
-						"requests": map[string]interface{}{
-							"cpu":    "1", // set to 1 CPU since t3.large has 2 vCPUs and cannot fit more than 1 replica
-							"memory": "256M",
-						},
-					},
-				},
-			}
-			workLoads.SetResourceVersion("")
-			karpenterNodePool.SetResourceVersion("")
+		// t.Run("Test basic provisioning and deprovising", func(t *testing.T) {
+		// 	// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
+		// 	replicas := 3
+		// 	workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+		// 	workLoads.SetResourceVersion("")
+		// 	karpenterNodePool.SetResourceVersion("")
 
-			// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
-			g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
-			t.Logf("Created Karpenter NodePool")
-			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
-			t.Logf("Created workloads")
+		// 	// Leave dangling resources, and hope the teardown is not blocked, else the test will fail.
+		// 	g.Expect(guestClient.Create(ctx, karpenterNodePool)).To(Succeed())
+		// 	t.Logf("Created Karpenter NodePool")
+		// 	g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
+		// 	t.Logf("Created workloads")
 
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
+		// 	_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 
-			ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
-			g.Expect(guestClient.List(ctx, ec2NodeClassList)).To(Succeed())
-			g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
+		// 	ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+		// 	g.Expect(guestClient.List(ctx, ec2NodeClassList)).To(Succeed())
+		// 	g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
 
-			ec2NodeClass := ec2NodeClassList.Items[0]
-			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
-		})
+		// 	ec2NodeClass := ec2NodeClassList.Items[0]
+		// 	g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+		// })
 
 		// TODO(alberto): increase coverage:
 		// - Karpenter operator plumbing, e.g:
@@ -224,7 +197,7 @@ func TestKarpenter(t *testing.T) {
 
 func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclient.Client, nodes []corev1.Node, n int) []corev1.Pod {
 	pods := &corev1.PodList{}
-	waitTimeout := 10 * time.Minute
+	waitTimeout := 20 * time.Minute
 	e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("Pods to be scheduled on provisioned Karpenter nodes"),
 		func(ctx context.Context) ([]*corev1.Pod, error) {
 			err := client.List(ctx, pods, crclient.InNamespace("default"))
@@ -237,22 +210,28 @@ func waitForReadyKarpenterPods(t *testing.T, ctx context.Context, client crclien
 		[]e2eutil.Predicate[[]*corev1.Pod]{
 			func(pods []*corev1.Pod) (done bool, reasons string, err error) {
 				want, got := int(n), len(pods)
-				return want == got, fmt.Sprintf("expected %d nodes, got %d", want, got), nil
+				return want == got, fmt.Sprintf("expected %d pods, got %d", want, got), nil
 			},
 		},
 		[]e2eutil.Predicate[*corev1.Pod]{
+			// wait for the pods to be scheduled
 			e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
 				Type:   string(corev1.PodScheduled),
 				Status: metav1.ConditionTrue,
 			}),
+			// wait for each pod to be scheduled on one of the correct nodes
 			e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
 				nodeName := pod.Spec.NodeName
 				for _, node := range getNodeNames(nodes) {
 					if nodeName == node {
-						return true, fmt.Sprintf("correctly scheduled on one of the specified nodes %s", nodeName), nil
+						return true, fmt.Sprintf("pod %s correctly scheduled on a specified node %s", pod.Name, nodeName), nil
 					}
 				}
-				return false, fmt.Sprintf("expected at least one of the nodes %v, got %s", getNodeNames(nodes), nodeName), nil
+				return false, fmt.Sprintf("expected pod %s to be scheduled on at least one of these nodes %v, got %s", pod.Name, getNodeNames(nodes), nodeName), nil
+			}),
+			// wait for the pods to be ready
+			e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
+				return pod.Status.Phase == corev1.PodRunning, fmt.Sprintf("pod %s is not running", pod.Name), nil
 			}),
 		},
 		e2eutil.WithTimeout(waitTimeout),

@@ -5,6 +5,7 @@ import (
 )
 
 const DefaultKarpenterProviderAWSImage = "public.ecr.aws/karpenter/controller:1.2.3"
+const EC2NodeClassDefault = "default"
 
 const (
 	// Karpenter Metrics

@@ -3361,6 +3361,12 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 		case *hyperv1.NodePool:
 			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: typedObj.Spec.ClusterName, Namespace: typedObj.Namespace}}}
 		case *corev1.Secret:
+			// reconcile the karpenter token rotations to the userData secret, since the ignition-server/tokensecret_controller does not control it
+			if hcAnnotation, exists := typedObj.Annotations[hyperutil.HostedClusterAnnotation]; exists {
+				if hyperutil.ParseNamespacedName(hcAnnotation).Name == "karpenter" {
+					return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
+				}
+			}
 			if typedObj.Name == manifests.KASServingCertSecret("").Name {
 				for _, ownerRef := range typedObj.OwnerReferences {
 					if ownerRef.Kind == "HostedControlPlane" {

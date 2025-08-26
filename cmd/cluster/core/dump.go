@@ -13,6 +13,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	scheduling "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
@@ -28,6 +29,8 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
+
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -54,6 +57,7 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
 	"github.com/go-logr/logr"
@@ -95,6 +99,13 @@ var (
 		&cdiv1beta1.DataVolume{},
 		&kubevirtv1.VirtualMachine{},
 		&kubevirtv1.VirtualMachineInstance{},
+	}
+
+	karpenterResources = []client.Object{
+		&karpenterv1.NodeClaim{},
+		&karpenterv1.NodePool{},
+		&awskarpenterv1.EC2NodeClass{},
+		&hyperkarpenterv1.OpenshiftEC2NodeClass{},
 	}
 )
 
@@ -491,6 +502,31 @@ func DumpGuestCluster(ctx context.Context, log logr.Logger, kubeconfig string, d
 		&admissionregistrationv1.ValidatingAdmissionPolicy{},
 		&admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
 	)
+
+	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+	if err != nil {
+		return fmt.Errorf("failed to build rest config from kubeconfig: %w", err)
+	}
+	kubeClient := kubeclient.NewForConfigOrDie(cfg)
+	kubeDiscoveryClient := kubeClient.Discovery()
+
+	// TODO(maxcao13): move this to the management cluster dump once we do Karpenter API namespacing work.
+	// https://issues.redhat.com/browse/AUTOSCALE-268
+	// Dump Karpenter resources if they exist in the guest cluster.
+	for _, resource := range karpenterResources {
+		gvks, _, err := hyperapi.Scheme.ObjectKinds(resource)
+		if err != nil || len(gvks) == 0 {
+			return fmt.Errorf("failed to resolve GVK for %T: %w", resource, err)
+		}
+		gvk := gvks[0]
+		resourceRegistered, err := isResourceRegistered(kubeDiscoveryClient, gvk)
+		if err != nil {
+			return err
+		}
+		if resourceRegistered {
+			resources = append(resources, resource)
+		}
+	}
 
 	resourceList := strings.Join(resourceTypes(resources), ",")
 	cmd.Run(ctx, resourceList)
