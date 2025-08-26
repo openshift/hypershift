@@ -3639,11 +3639,7 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 			// Skip pods that are known exceptions for SecurityContext UID validation
 			name := pod.Name
 			switch {
-			case strings.HasPrefix(name, "azure-disk-csi-driver-controller"),
-				strings.HasPrefix(name, "azure-file-csi-driver-controller"),
-				strings.HasPrefix(name, "azure-disk-csi-driver-operator"),
-				strings.HasPrefix(name, "azure-file-csi-driver-operator"),
-				strings.HasPrefix(name, "network-node-identity"),
+			case strings.HasPrefix(name, "network-node-identity"),
 				strings.HasPrefix(name, "ovnkube-control-plane"):
 				continue
 			}
