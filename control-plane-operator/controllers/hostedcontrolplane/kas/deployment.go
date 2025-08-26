@@ -39,6 +39,7 @@ var (
 	volumeMounts = util.PodVolumeMounts{
 		kasContainerBootstrap().Name: {
 			kasVolumeBootstrapManifests().Name:  "/work",
+			kasVolumeLocalhostKubeconfig().Name: "/var/secrets/localhost-kubeconfig",
 			kasVolumeHCCOLocalhostKubeconfig().Name: "/var/secrets/hcco-kubeconfig",
 		},
 		kasContainerBootstrapRender().Name: {
@@ -357,6 +358,10 @@ func buildKASContainerNewBootstrap(image string) func(c *corev1.Container) {
 		c.Env = []corev1.EnvVar{
 			{
 				Name:  "KUBECONFIG",
+				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeLocalhostKubeconfig().Name), KubeconfigKey),
+			},
+			{
+				Name:  "KUBECONFIG_HCCO",
 				Value: path.Join(volumeMounts.Path(kasContainerBootstrap().Name, kasVolumeHCCOLocalhostKubeconfig().Name), KubeconfigKey),
 			},
 		}

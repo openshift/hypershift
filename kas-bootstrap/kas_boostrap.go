@@ -17,6 +17,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	wait "k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/clientcmd"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,9 +80,18 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to parse featureGate file: %w", err)
 	}
 
+	hccoCFG, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG_HCCO"))
+	if err != nil {
+		return fmt.Errorf("failed to get HCCO config: %w", err)
+	}
+	hccoClient, err := client.New(hccoCFG, client.Options{Scheme: configScheme})
+	if err != nil {
+		return fmt.Errorf("failed to create client with HCCO kubeconfig: %w", err)
+	}
+
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := reconcileFeatureGate(ctx, c, renderedFeatureGate); err != nil {
+			if err := reconcileFeatureGate(ctx, hccoClient, renderedFeatureGate); err != nil {
 				logger.Error(err, "failed to reconcile featureGate, retrying")
 				return false, nil
 			}
