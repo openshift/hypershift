@@ -100,6 +100,21 @@ hypershift:
 product-cli:
 	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
 
+.PHONY: product-cli-release
+product-cli-release:
+	@for OS in linux; do for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
+	@for OS in darwin windows; do for ARCH in amd64 arm64; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
+
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
