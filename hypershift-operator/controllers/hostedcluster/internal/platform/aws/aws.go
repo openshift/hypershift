@@ -7,10 +7,8 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -262,7 +260,6 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 			},
 		},
 	}
-	util.AvailabilityProber(kas.InClusterKASReadyURL(hcp.Spec.Platform.Type), p.utilitiesImage, &deploymentSpec.Template.Spec)
 	return deploymentSpec, nil
 }
 
