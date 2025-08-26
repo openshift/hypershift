@@ -2895,7 +2895,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 
 func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureAppLabel", func(t *testing.T) {
-		AtLeast(t, Version420)
+		AtLeast(t, Version419)
 
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		podList := &corev1.PodList{}
