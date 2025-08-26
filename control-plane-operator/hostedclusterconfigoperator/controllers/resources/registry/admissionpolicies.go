@@ -48,7 +48,12 @@ func ReconcileRegistryConfigValidatingAdmissionPolicies(ctx context.Context, hcp
 	return nil
 }
 
+// reconcileRegistryConfigManagementStateValidatingAdmissionPolicy reconciles the Validating Admission Policy
+// that controls access to the Image Registry config managementState field.
+//
+// During normal operation, it prevents users from setting managementState to 'Removed' except for the HCCO user.
 func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+	log := ctrl.LoggerFrom(ctx)
 	registryConfigManagementStateAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameManagementState}
 	registryConfigManagementStateAPIVersion := []string{imageregistryv1.GroupVersion.Version}
 	registryConfigManagementStateAPIGroup := []string{imageregistryv1.GroupVersion.Group}
@@ -56,7 +61,11 @@ func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context
 		"configs",
 	}
 
-	denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed'"
+	// During normal operation, prevent users from setting managementState to Removed
+	// but allow the HCCO user
+	log.Info("Cluster is active, enforcing registry management state admission policy")
+	denyRemovedManagementStateValidation.Expression = "object.spec.managementState != 'Removed' || request.userInfo.username == 'system:hosted-cluster-config'"
+
 	registryConfigManagementStateAdmissionPolicy.Validations = []k8sadmissionv1.Validation{denyRemovedManagementStateValidation}
 	registryConfigManagementStateAdmissionPolicy.MatchConstraints = constructPolicyMatchConstraints(registryConfigManagementStateResources, registryConfigManagementStateAPIVersion, registryConfigManagementStateAPIGroup, []k8sadmissionv1.OperationType{"CREATE", "UPDATE"})
 	if err := registryConfigManagementStateAdmissionPolicy.reconcileAdmissionPolicy(ctx, client, createOrUpdate); err != nil {
