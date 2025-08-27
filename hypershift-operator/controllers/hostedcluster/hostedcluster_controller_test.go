@@ -3502,38 +3502,155 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 
 func TestValidateSliceNetworkCIDRs(t *testing.T) {
 	tests := []struct {
-		name    string
-		mn      []hyperv1.MachineNetworkEntry
-		cn      []hyperv1.ClusterNetworkEntry
-		sn      []hyperv1.ServiceNetworkEntry
-		wantErr bool
+		name        string
+		mn          []hyperv1.MachineNetworkEntry
+		cn          []hyperv1.ClusterNetworkEntry
+		sn          []hyperv1.ServiceNetworkEntry
+		networkType hyperv1.NetworkType
+		ovnConfig   *hyperv1.OVNKubernetesConfig
+		wantErr     bool
 	}{
 		{
-			name:    "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
-			wantErr: true,
+			name:        "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     true,
 		},
 		{
-			name:    "given different IPv6 network CIDRs, it should success",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			name:        "given different IPv6 network CIDRs, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     false,
+		},
+		{
+			name:        "given a conflicting IPv4 clusterNetwork overlapped with serviceNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     true,
+		},
+		{
+			name:        "given different IPv4 network CIDRs, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     false,
+		},
+		{
+			name:        "When OVN-Kubernetes with valid InternalJoinSubnet, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "100.64.0.0/16",
+				},
+			},
 			wantErr: false,
 		},
 		{
-			name:    "given a conflicting IPv4 clusterNetwork overlapped with serviceNetwork, it should fail",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			name:        "When OVN-Kubernetes with valid InternalTransitSwitchSubnet, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalTransitSwitchSubnet: "100.65.0.0/16",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes with both valid subnets, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "100.64.0.0/16",
+					InternalTransitSwitchSubnet: "100.65.0.0/16",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes InternalJoinSubnet overlaps with MachineNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.0.0/16",
+				},
+			},
 			wantErr: true,
 		},
 		{
-			name:    "given different IPv4 network CIDRs, it should success",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			name:        "When OVN-Kubernetes InternalTransitSwitchSubnet overlaps with ClusterNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalTransitSwitchSubnet: "10.129.0.0/16",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes subnets overlap with each other, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "100.64.0.0/16",
+					InternalTransitSwitchSubnet: "100.64.0.0/24",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes with empty subnet strings, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "",
+					InternalTransitSwitchSubnet: "",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When network type is not OVN-Kubernetes, OVN config should be ignored",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.0.0/16",
+				},
+			},
 			wantErr: false,
 		},
 	}
@@ -3547,12 +3664,24 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
+						NetworkType:    tt.networkType,
 						MachineNetwork: tt.mn,
 						ClusterNetwork: tt.cn,
 						ServiceNetwork: tt.sn,
 					},
 				},
 			}
+
+			// Set OVN configuration if provided
+			if tt.ovnConfig != nil {
+				//OperatorConfiguration
+				hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+						OVNKubernetesConfig: tt.ovnConfig,
+					},
+				}
+			}
+
 			err := validateSliceNetworkCIDRs(hc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateSliceNetworkCIDRs() wantErr %v, err %v", tt.wantErr, err)
