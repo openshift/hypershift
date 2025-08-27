@@ -47,7 +47,6 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secret.yaml",
 			component.WithAdaptFunction(adaptConfigSecret),
-			component.WithPredicate(isAroHCP),
 		).
 		WithManifestAdapter(
 			"config-secretprovider.yaml",

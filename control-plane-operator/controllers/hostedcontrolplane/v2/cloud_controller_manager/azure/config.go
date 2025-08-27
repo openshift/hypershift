@@ -39,8 +39,11 @@ func adaptConfigSecret(cpContext component.WorkloadContext, secret *corev1.Secre
 		return err
 	}
 
-	cfg.UseManagedIdentityExtension = false
-	cfg.UseInstanceMetadata = false
+	if azureutil.IsAroHCP() {
+		cfg.UseManagedIdentityExtension = false
+		cfg.UseInstanceMetadata = false
+	}
+
 	serializedConfig, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to serialize cloudconfig: %w", err)
