@@ -18,6 +18,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
+	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
@@ -1991,15 +1992,28 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 }
 
 func TestCreateClusterCustomConfig(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platform AWS and Azure")
 	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
+	var (
+		kmsKeyArn                      *string
+		kmsKeyInfo                     *azureutil.AzureEncryptionKey
+		kmsUserAssignedCredsSecretName string
+		err                            error
+	)
+
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+	// Configure KMS settings for Azure platform (this test specifically tests KMS functionality)
+	if globalOpts.Platform == hyperv1.AzurePlatform {
+		clusterOpts.AzurePlatform.EncryptionKeyID = globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID
+		clusterOpts.AzurePlatform.KMSUserAssignedCredsSecretName = globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName
+	}
 
 	clusterOpts.BeforeApply = func(o crclient.Object) {
 		switch hc := o.(type) {
@@ -2029,18 +2043,45 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		}
 	}
 
-	// find kms key ARN using alias
-	kmsKeyArn, err := e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
-	if err != nil || kmsKeyArn == nil {
-		t.Fatal("failed to retrieve kms key arn")
-	}
+	switch globalOpts.Platform {
+	case hyperv1.AWSPlatform:
+		// find kms key ARN using alias
+		kmsKeyArn, err = e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
+		if err != nil || kmsKeyArn == nil {
+			t.Fatal("failed to retrieve kms key arn: %w", err)
+		}
+		clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+	case hyperv1.AzurePlatform:
+		if globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID == "" {
+			t.Fatal("azure encryption key id is required")
+		}
+		if globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName == "" {
+			t.Fatal("azure kms user assigned creds secret name is required")
+		}
 
-	clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
+		kmsUserAssignedCredsSecretName = globalOpts.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName
+		kmsKeyInfo, err = azureutil.GetAzureEncryptionKeyInfo(globalOpts.ConfigurableClusterOptions.AzureEncryptionKeyID)
+		if err != nil {
+			t.Fatal("failed to get azure encryption key info: %w", err)
+		}
+	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
-		g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+		switch globalOpts.Platform {
+		case hyperv1.AWSPlatform:
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN).ToNot(BeEmpty())
+		case hyperv1.AzurePlatform:
+			g.Expect(hostedCluster.Spec.SecretEncryption).ToNot(BeNil(), "SecretEncryption must be set")
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS).ToNot(BeNil(), "SecretEncryption.KMS must be set")
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure).ToNot(BeNil(), "KMS.Azure must be set")
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName).To(Equal(kmsKeyInfo.KeyVaultName))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyName).To(Equal(kmsKeyInfo.KeyName))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVersion).To(Equal(kmsKeyInfo.KeyVersion))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName).To(Equal(kmsUserAssignedCredsSecretName))
+			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.Azure.KMS.ObjectEncoding).To(Equal(hyperv1.ObjectEncodingFormat("utf-8")))
+		}
 
 		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
 		e2eutil.EnsureSecretEncryptedUsingKMSV2(t, ctx, hostedCluster, guestClient)
