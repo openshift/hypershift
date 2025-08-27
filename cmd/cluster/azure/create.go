@@ -2,7 +2,6 @@ package azure
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -233,17 +232,6 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		return nil, fmt.Errorf("failed to unmarshal --azure-creds file: %w", err)
 	}
 
-	if o.WorkloadIdentitiesFile != "" {
-		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)
-		}
-		output.workloadIdentities = &hyperv1.AzureWorkloadIdentities{}
-		if err := json.Unmarshal(workloadIdentitiesRaw, output.workloadIdentities); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
-		}
-	}
-
 	return output, nil
 }
 
@@ -278,11 +266,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	// Configure authentication based on whether workload identities or managed identities are provided
-	if o.workloadIdentities != nil {
+	if o.infra.WorkloadIdentities != nil {
 		// Self-managed Azure with workload identities
 		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
 			AzureAuthenticationConfigType: "WorkloadIdentities",
-			WorkloadIdentities:            o.workloadIdentities,
+			WorkloadIdentities:            o.infra.WorkloadIdentities,
 		}
 	} else {
 		// Managed Azure with managed identities
@@ -588,6 +576,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		DNSZoneRG:                   azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
+		WorkloadIdentitiesFile:      azureOpts.WorkloadIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
