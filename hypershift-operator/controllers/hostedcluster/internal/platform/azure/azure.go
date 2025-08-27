@@ -32,17 +32,19 @@ import (
 )
 
 type Azure struct {
+	utilitiesImage    string
 	capiProviderImage string
 	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string, payloadVersion *semver.Version) *Azure {
+func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *Azure {
 	if payloadVersion != nil {
 		payloadVersion.Pre = nil
 		payloadVersion.Build = nil
 	}
 
 	return &Azure{
+		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
 		payloadVersion:    payloadVersion,
 	}
@@ -132,37 +134,8 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 								ReadOnly:  true,
 							},
 							{
-								Name:      "svc-kubeconfig",
+								Name:      "kubeconfig",
 								MountPath: "/etc/kubernetes",
-							},
-						},
-					},
-					{
-						Name:            "token-minter",
-						Image:           p.utilitiesImage,
-						ImagePullPolicy: corev1.PullIfNotPresent,
-						VolumeMounts: []corev1.VolumeMount{
-							{
-								Name:      "token",
-								MountPath: "/var/run/secrets/openshift/serviceaccount",
-							},
-							{
-								Name:      "svc-kubeconfig",
-								MountPath: "/etc/kubernetes",
-							},
-						},
-						Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
-						Args: []string{
-							"--service-account-namespace=kube-system",
-							"--service-account-name=capa-controller-manager",
-							"--token-audience=openshift",
-							"--token-file=/var/run/secrets/openshift/serviceaccount/token",
-							"--kubeconfig=/etc/kubernetes/kubeconfig",
-						},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceCPU:    resource.MustParse("10m"),
-								corev1.ResourceMemory: resource.MustParse("30Mi"),
 							},
 						},
 					},
@@ -177,7 +150,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						},
 					},
 					{
-						Name: "svc-kubeconfig",
+						Name: "kubeconfig",
 						VolumeSource: corev1.VolumeSource{
 							Secret: &corev1.SecretVolumeSource{
 								DefaultMode: &defaultMode,
@@ -186,7 +159,9 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 						},
 					},
 				},
-			}}}
+			},
+		},
+	}
 
 	if azureutil.IsAroHCP() {
 		managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
@@ -225,6 +200,26 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		)
 	}
 
+	// For self-managed Azure with workload identity, instruct Azure SDK to use the minted SA token
+	if !azureutil.IsAroHCP() && hcluster.Spec.Platform.Azure != nil &&
+		hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		deploymentSpec.Template.Spec.Containers[0].Env = append(
+			deploymentSpec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_FEDERATED_TOKEN_FILE",
+				Value: "/var/run/secrets/openshift/serviceaccount/token",
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_ID",
+				Value: string(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.NodePoolManagement.ClientID),
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_TENANT_ID",
+				Value: hcluster.Spec.Platform.Azure.TenantID,
+			},
+		)
+	}
+
 	return deploymentSpec, nil
 }
 
@@ -245,26 +240,6 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 		// Create credentials for each control plane operator using workload identity client IDs
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
-
-		// Cloud Controller Manager credentials
-		cloudProviderCreds := manifests.AzureCloudProviderCredentials(controlPlaneNamespace)
-		if _, err := createOrUpdate(ctx, c, cloudProviderCreds, func() error {
-			secretData := make(map[string][]byte)
-			for k, v := range baseSecretData {
-				secretData[k] = v
-			}
-			secretData["azure_client_id"] = []byte(workloadIdentities.CloudProvider.ClientID)
-
-			// Add cloud.conf for the cloud controller manager
-			if err := addCloudConfigToSecret(secretData, hcluster); err != nil {
-				return fmt.Errorf("failed to add cloud config: %w", err)
-			}
-
-			cloudProviderCreds.Data = secretData
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile cloud provider credentials: %w", err)
-		}
 
 		// Ingress Operator credentials (only if capability enabled)
 		if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) {
