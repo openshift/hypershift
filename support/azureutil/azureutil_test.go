@@ -267,3 +267,68 @@ func TestCreateVolumeForAzureSecretStoreProviderClass(t *testing.T) {
 		})
 	}
 }
+
+func TestGetAzureEncryptionKeyInfo(t *testing.T) {
+	tests := []struct {
+		name           string
+		id             string
+		wantVaultHost  string
+		wantKeyName    string
+		wantKeyVersion string
+		wantErr        bool
+	}{
+		{
+			name:           "When given a valid key id it should parse fields",
+			id:             "https://example-kms.vault.azure.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-kms",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantErr:        false,
+		},
+		{
+			name:    "When key id missing version it should error",
+			id:      "https://example-kms.vault.azure.net/keys/example-key",
+			wantErr: true,
+		},
+		{
+			name:    "When key id path not under /keys it should error",
+			id:      "https://example-kms.vault.azure.net/secrets/example-key/1234abcd",
+			wantErr: true,
+		},
+		{
+			name:    "When key id has trailing slash it should error",
+			id:      "https://example-kms.vault.azure.net/keys/example-key/1234abcd/",
+			wantErr: true,
+		},
+		{
+			name:           "Parses govcloud suffix correctly",
+			id:             "https://example-kms.vault.usgovcloudapi.net/keys/example-key/1234abcd",
+			wantVaultHost:  "example-kms",
+			wantKeyName:    "example-key",
+			wantKeyVersion: "1234abcd",
+			wantErr:        false,
+		},
+		{
+			name:    "Missing scheme should error",
+			id:      "example-kms.vault.azure.net/keys/example-key/1234abcd",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got, err := GetAzureEncryptionKeyInfo(tt.id)
+			if tt.wantErr {
+				g.Expect(err).To(Not(BeNil()))
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).To(BeNil())
+			g.Expect(got).To(Not(BeNil()))
+			g.Expect(got.KeyVaultName).To(Equal(tt.wantVaultHost))
+			g.Expect(got.KeyName).To(Equal(tt.wantKeyName))
+			g.Expect(got.KeyVersion).To(Equal(tt.wantKeyVersion))
+		})
+	}
+}

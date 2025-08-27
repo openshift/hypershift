@@ -338,6 +338,9 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
+	// Propagate Azure KMS fields so SecretEncryption.KMS is configured during create
+	opts.EncryptionKeyID = o.ConfigurableClusterOptions.AzureEncryptionKeyID
+	opts.KMSUserAssignedCredsSecretName = o.ConfigurableClusterOptions.AzureKMSUserAssignedCredsSecretName
 	if len(o.ConfigurableClusterOptions.Zone) != 0 {
 		zones := strings.Split(o.ConfigurableClusterOptions.Zone.String(), ",")
 		// Assign all Azure zones to guest cluster
