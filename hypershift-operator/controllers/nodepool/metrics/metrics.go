@@ -11,6 +11,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/clock"
@@ -130,8 +131,9 @@ var (
 
 type nodePoolsMetricsCollector struct {
 	client.Client
-	ec2Client ec2iface.EC2API
-	clock     clock.Clock
+	ec2Client     ec2iface.EC2API
+	pricingClient pricingiface.PricingAPI
+	clock         clock.Clock
 
 	ec2InstanceTypeToVCpusCount map[string]int32
 

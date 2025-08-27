@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/pricing"
+	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
@@ -33,6 +36,7 @@ type nodePoolParams struct {
 
 type Ec2ClientMock struct {
 	ec2iface.EC2API
+	Expected []string
 }
 
 func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
@@ -60,6 +64,15 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 	}
 
 	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
+}
+
+type mockPricingClient struct {
+	pricingiface.PricingAPI
+}
+
+func (m *mockPricingClient) DescribeServices(input *pricing.DescribeServicesInput) (*pricing.DescribeServicesOutput, error) {
+	//	    // mock response/functionality
+	return nil, fmt.Errorf("an error, nothing to describe here")
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
