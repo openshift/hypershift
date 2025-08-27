@@ -40,7 +40,15 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	arch := nodePool.Spec.Arch
 	if nodePool.Spec.Platform.AWS.AMI != "" {
 		ami = nodePool.Spec.Platform.AWS.AMI
+	} else if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
+		// Use Windows AMI mapping when ImageType is set to Windows
+		var err error
+		ami, err = getWindowsAMI(region, arch, releaseImage)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't discover a Windows AMI for release image: %w", err)
+		}
 	} else {
+		// Default behavior for Linux/RHCOS AMIs
 		// TODO: Should the region be included in the NodePool platform information?
 		var err error
 		ami, err = defaultNodePoolAMI(region, arch, releaseImage)
@@ -256,8 +264,28 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			// User-defined AMIs cannot be validated
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+		} else if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
+			// Validate Windows AMI mapping
+			ami, err := getWindowsAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
+			if err != nil {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolValidPlatformImageType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedReason,
+					Message:            fmt.Sprintf("Couldn't discover a Windows AMI for release image %q: %s", nodePool.Spec.Release.Image, err.Error()),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return fmt.Errorf("couldn't discover a Windows AMI for release image: %w", err)
+			}
+			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+				Type:               hyperv1.NodePoolValidPlatformImageType,
+				Status:             corev1.ConditionTrue,
+				Reason:             hyperv1.AsExpectedReason,
+				Message:            fmt.Sprintf("Bootstrap Windows AMI is %q", ami),
+				ObservedGeneration: nodePool.Generation,
+			})
 		} else {
-			// TODO: Should the region be included in the NodePool platform information?
+			// Default behavior for Linux/RHCOS AMIs
 			ami, err := defaultNodePoolAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
 			if err != nil {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -316,4 +344,37 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 	}
 
 	return nil
+}
+
+// getWindowsAMI returns the appropriate Windows AMI for the given region from release image metadata.
+func getWindowsAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	if releaseImage == nil {
+		return "", fmt.Errorf("release image is nil")
+	}
+
+	if releaseImage.StreamMetadata == nil {
+		return "", fmt.Errorf("release image stream metadata is nil")
+	}
+
+	archData, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
+	}
+
+	// Access the rhel-coreos-extensions aws-winli data
+	winliData := archData.RHCOS.AWSWinLi
+	if winliData.Regions == nil {
+		return "", fmt.Errorf("no aws-winli regions data found in release image metadata")
+	}
+
+	regionData, exists := winliData.Regions[region]
+	if !exists {
+		return "", fmt.Errorf("no Windows AMI found for region %s in release image metadata", region)
+	}
+
+	if regionData.Image == "" {
+		return "", fmt.Errorf("windows AMI image is empty for region %s in release image metadata", region)
+	}
+
+	return regionData.Image, nil
 }

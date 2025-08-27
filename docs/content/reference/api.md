@@ -1481,6 +1481,25 @@ is chosen based on the NodePool release payload image.</p>
 </tr>
 <tr>
 <td>
+<code>imageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageType">
+ImageType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageType specifies the type of image to use for node instances.
+Valid values are ImageTypeLinux (&ldquo;Linux&rdquo;) or ImageTypeWindows (&ldquo;Windows&rdquo;).
+When set to ImageTypeWindows, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.
+When the AMI field is also set, it will take precedence over automatic selection based
+on imageType. Also note that Windows ImageType is only compatible with an Arch of amd64</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>securityGroups</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AWSResourceReference">
@@ -7563,6 +7582,32 @@ specifications.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###ImageType { #hypershift.openshift.io/v1beta1.ImageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>ImageType specifies the type of image to use for node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Linux&#34;</p></td>
+<td><p>ImageTypeLinux represents the default image type (Linux/RHCOS).
+This is used when ImageType is empty or unspecified.</p>
+</td>
+</tr><tr><td><p>&#34;Windows&#34;</p></td>
+<td><p>ImageTypeWindows represents a Windows-based image type.
+When set, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
+</td>
+</tr></tbody>
 </table>
 ###InPlaceUpgrade { #hypershift.openshift.io/v1beta1.InPlaceUpgrade }
 <p>

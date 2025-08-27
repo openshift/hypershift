@@ -406,6 +406,18 @@ spec:
                           is chosen based on the NodePool release payload image.
                         maxLength: 255
                         type: string
+                      imageType:
+                        description: |-
+                          imageType specifies the type of image to use for node instances.
+                          Valid values are ImageTypeLinux ("Linux") or ImageTypeWindows ("Windows").
+                          When set to ImageTypeWindows, the controller will automatically populate the AMI field
+                          with a Windows-compatible AMI based on the region and OpenShift version.
+                          When the AMI field is also set, it will take precedence over automatic selection based
+                          on imageType. Also note that Windows ImageType is only compatible with an Arch of amd64
+                        enum:
+                        - Windows
+                        - Linux
+                        type: string
                       instanceProfile:
                         description: instanceProfile is the AWS EC2 instance profile,
                           which is a container for an IAM role that the EC2 instance
@@ -1632,6 +1644,9 @@ spec:
                 || has(self.platform.agent) || self.platform.type == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'
+            - message: ImageType 'Windows' requires arch 'amd64' (AWS only)
+              rule: '!has(self.platform.aws) || self.platform.aws.imageType != ''Windows''
+                || self.arch == ''amd64'''
           status:
             description: status is the latest observed status of the NodePool.
             properties:
