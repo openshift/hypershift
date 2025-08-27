@@ -17,19 +17,54 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // ClusterAutoscalingApplyConfiguration represents an declarative configuration of the ClusterAutoscaling type for use
 // with apply.
 type ClusterAutoscalingApplyConfiguration struct {
-	MaxNodesTotal        *int32  `json:"maxNodesTotal,omitempty"`
-	MaxPodGracePeriod    *int32  `json:"maxPodGracePeriod,omitempty"`
-	MaxNodeProvisionTime *string `json:"maxNodeProvisionTime,omitempty"`
-	PodPriorityThreshold *int32  `json:"podPriorityThreshold,omitempty"`
+	Scaling                       *v1beta1.ScalingType               `json:"scaling,omitempty"`
+	ScaleDown                     *ScaleDownConfigApplyConfiguration `json:"scaleDown,omitempty"`
+	BalancingIgnoredLabels        []string                           `json:"balancingIgnoredLabels,omitempty"`
+	MaxNodesTotal                 *int32                             `json:"maxNodesTotal,omitempty"`
+	MaxPodGracePeriod             *int32                             `json:"maxPodGracePeriod,omitempty"`
+	MaxNodeProvisionTime          *string                            `json:"maxNodeProvisionTime,omitempty"`
+	MaxFreeDifferenceRatioPercent *int32                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
+	PodPriorityThreshold          *int32                             `json:"podPriorityThreshold,omitempty"`
+	Expanders                     []v1beta1.ExpanderString           `json:"expanders,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs an declarative configuration of the ClusterAutoscaling type for use with
 // apply.
 func ClusterAutoscaling() *ClusterAutoscalingApplyConfiguration {
 	return &ClusterAutoscalingApplyConfiguration{}
+}
+
+// WithScaling sets the Scaling field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Scaling field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithScaling(value v1beta1.ScalingType) *ClusterAutoscalingApplyConfiguration {
+	b.Scaling = &value
+	return b
+}
+
+// WithScaleDown sets the ScaleDown field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ScaleDown field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithScaleDown(value *ScaleDownConfigApplyConfiguration) *ClusterAutoscalingApplyConfiguration {
+	b.ScaleDown = value
+	return b
+}
+
+// WithBalancingIgnoredLabels adds the given value to the BalancingIgnoredLabels field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the BalancingIgnoredLabels field.
+func (b *ClusterAutoscalingApplyConfiguration) WithBalancingIgnoredLabels(values ...string) *ClusterAutoscalingApplyConfiguration {
+	for i := range values {
+		b.BalancingIgnoredLabels = append(b.BalancingIgnoredLabels, values[i])
+	}
+	return b
 }
 
 // WithMaxNodesTotal sets the MaxNodesTotal field in the declarative configuration to the given value
@@ -56,10 +91,28 @@ func (b *ClusterAutoscalingApplyConfiguration) WithMaxNodeProvisionTime(value st
 	return b
 }
 
+// WithMaxFreeDifferenceRatioPercent sets the MaxFreeDifferenceRatioPercent field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaxFreeDifferenceRatioPercent field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithMaxFreeDifferenceRatioPercent(value int32) *ClusterAutoscalingApplyConfiguration {
+	b.MaxFreeDifferenceRatioPercent = &value
+	return b
+}
+
 // WithPodPriorityThreshold sets the PodPriorityThreshold field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the PodPriorityThreshold field is set to the value of the last call.
 func (b *ClusterAutoscalingApplyConfiguration) WithPodPriorityThreshold(value int32) *ClusterAutoscalingApplyConfiguration {
 	b.PodPriorityThreshold = &value
+	return b
+}
+
+// WithExpanders adds the given value to the Expanders field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Expanders field.
+func (b *ClusterAutoscalingApplyConfiguration) WithExpanders(values ...v1beta1.ExpanderString) *ClusterAutoscalingApplyConfiguration {
+	for i := range values {
+		b.Expanders = append(b.Expanders, values[i])
+	}
 	return b
 }
