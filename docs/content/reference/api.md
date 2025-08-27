@@ -1541,6 +1541,21 @@ PlacementOptions
 <p>placement specifies the placement options for the EC2 instances.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>spotMarketOptions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSpotMarketOptions">
+AWSSpotMarketOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spotMarketOptions specifies options for using AWS Spot instances.
+When specified, instances will be launched as Spot instances with the given configuration.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformSpec { #hypershift.openshift.io/v1beta1.AWSPlatformSpec }
@@ -2526,6 +2541,37 @@ Example:
 }
 ]
 }</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AWSSpotMarketOptions { #hypershift.openshift.io/v1beta1.AWSSpotMarketOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>AWSSpotMarketOptions defines configuration for AWS Spot instances</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price per hour that you&rsquo;re willing to pay for a Spot instance.
+The price is specified in USD. If omitted, the On-Demand price is used as the max price.</p>
 </td>
 </tr>
 </tbody>
