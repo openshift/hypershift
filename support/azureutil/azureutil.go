@@ -3,6 +3,7 @@ package azureutil
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -18,6 +19,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 )
+
+// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
+// This information comes from the encryption key ID, which is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+type AzureEncryptionKey struct {
+	KeyVaultName string
+	KeyName      string
+	KeyVersion   string
+}
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
 // Example subnet ID: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>
@@ -299,4 +308,43 @@ func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
+}
+
+// GetAzureEncryptionKeyInfo extracts the key vault name, key name, and key version from an encryption key ID
+// The encryption key ID is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, error) {
+	parsed, err := url.Parse(encryptionKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: %w", encryptionKeyID, err)
+	}
+
+	// Ensure the host is present
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: missing host", encryptionKeyID)
+
+	}
+
+	// Ensure the path starts with /keys/
+	if !strings.HasPrefix(parsed.Path, "/keys/") {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: expected path to start with /keys/", encryptionKeyID)
+	}
+
+	// Ensure the path has exactly two parts
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/keys/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: expected /keys/<keyName>/<keyVersion>", encryptionKeyID)
+	}
+
+	// Ensure the vault name is present
+	vaultName := strings.Split(host, ".")[0]
+	if vaultName == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name from host %q", encryptionKeyID, host)
+	}
+
+	return &AzureEncryptionKey{
+		KeyVaultName: vaultName,
+		KeyName:      parts[0],
+		KeyVersion:   parts[1],
+	}, nil
 }
