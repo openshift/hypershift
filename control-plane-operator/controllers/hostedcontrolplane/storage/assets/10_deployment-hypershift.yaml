@@ -14,6 +14,7 @@ spec:
         openshift.io/required-scc: restricted-v2
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       labels:
+        app: cluster-storage-operator
         name: cluster-storage-operator
     spec:
       containers:
