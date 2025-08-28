@@ -20,9 +20,13 @@ package credentialprovider
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // DockerConfigJSON represents ~/.docker/config.json file info
@@ -43,6 +47,96 @@ type DockerConfigEntry struct {
 	Username string
 	Password string
 	Email    string
+}
+
+var (
+	preferredPathLock sync.Mutex
+	preferredPath     = ""
+	workingDirPath    = ""
+	homeDirPath, _    = os.UserHomeDir()
+	rootDirPath       = "/"
+	homeJSONDirPath   = filepath.Join(homeDirPath, ".docker")
+	rootJSONDirPath   = filepath.Join(rootDirPath, ".docker")
+
+	configFileName     = ".dockercfg"
+	configJSONFileName = "config.json"
+)
+
+// SetPreferredDockercfgPath set preferred docker config path
+func SetPreferredDockercfgPath(path string) {
+	preferredPathLock.Lock()
+	defer preferredPathLock.Unlock()
+	preferredPath = path
+}
+
+// GetPreferredDockercfgPath get preferred docker config path
+func GetPreferredDockercfgPath() string {
+	preferredPathLock.Lock()
+	defer preferredPathLock.Unlock()
+	return preferredPath
+}
+
+// DefaultDockercfgPaths returns default search paths of .dockercfg
+func DefaultDockercfgPaths() []string {
+	return []string{GetPreferredDockercfgPath(), workingDirPath, homeDirPath, rootDirPath}
+}
+
+// DefaultDockerConfigJSONPaths returns default search paths of .docker/config.json
+func DefaultDockerConfigJSONPaths() []string {
+	return []string{GetPreferredDockercfgPath(), workingDirPath, homeJSONDirPath, rootJSONDirPath}
+}
+
+// ReadDockercfgFile attempts to read a legacy dockercfg file from the given paths.
+// if searchPaths is empty, the default paths are used.
+func ReadDockercfgFile(searchPaths []string) (cfg DockerConfig, err error) {
+	if len(searchPaths) == 0 {
+		searchPaths = DefaultDockercfgPaths()
+	}
+
+	for _, configPath := range searchPaths {
+		absDockerConfigFileLocation, err := filepath.Abs(filepath.Join(configPath, configFileName))
+		if err != nil {
+			continue
+		}
+		contents, err := ioutil.ReadFile(absDockerConfigFileLocation)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			continue
+		}
+		cfg, err := readDockerConfigFileFromBytes(contents)
+		if err != nil {
+			continue
+		}
+
+		return cfg, nil
+
+	}
+	return nil, fmt.Errorf("couldn't find valid .dockercfg after checking in %v", searchPaths)
+}
+
+// ReadDockerConfigJSONFile attempts to read a docker config.json file from the given paths.
+// if searchPaths is empty, the default paths are used.
+func ReadDockerConfigJSONFile(searchPaths []string) (cfg DockerConfig, err error) {
+	if len(searchPaths) == 0 {
+		searchPaths = DefaultDockerConfigJSONPaths()
+	}
+	for _, configPath := range searchPaths {
+		absDockerConfigFileLocation, err := filepath.Abs(filepath.Join(configPath, configJSONFileName))
+		if err != nil {
+			continue
+		}
+		cfg, err = ReadSpecificDockerConfigJSONFile(absDockerConfigFileLocation)
+		if err != nil {
+			if !os.IsNotExist(err) {
+			}
+			continue
+		}
+		return cfg, nil
+	}
+	return nil, fmt.Errorf("couldn't find valid %s after checking in %v", configJSONFileName, searchPaths)
+
 }
 
 // ReadSpecificDockerConfigJSONFile attempts to read docker configJSON from a given file path.
@@ -131,5 +225,12 @@ func decodeDockerConfigFieldAuth(field string) (username, password string, err e
 	username = parts[0]
 	password = parts[1]
 
+	return
+}
+
+func readDockerConfigFileFromBytes(contents []byte) (cfg DockerConfig, err error) {
+	if err = json.Unmarshal(contents, &cfg); err != nil {
+		return nil, errors.New("error occurred while trying to unmarshal json")
+	}
 	return
 }
