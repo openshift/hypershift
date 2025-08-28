@@ -43,24 +43,47 @@ func TestReconcileRouterDeployment(t *testing.T) {
 				}
 
 				expectedAffinity := &corev1.Affinity{
-					PodAntiAffinity: &corev1.PodAntiAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 							{
 								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: map[string]string{
-											"app": "router",
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      "aro-hcp.azure.com/role",
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"infra"},
 										},
 									},
-									TopologyKey: "topology.kubernetes.io/zone",
 								},
+							},
+						},
+					},
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							{
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: hcpRouterLabels(),
+								},
+								TopologyKey: corev1.LabelTopologyZone,
 							},
 						},
 					},
 				}
 				if !reflect.DeepEqual(tt.args.deployment.Spec.Template.Spec.Affinity, expectedAffinity) {
 					t.Errorf("Expected affinity to be %v, got %v", expectedAffinity, tt.args.deployment.Spec.Template.Spec.Affinity)
+				}
+
+				expectedTolerations := []corev1.Toleration{
+					{
+						Key:      "infra",
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+						Operator: corev1.TolerationOpEqual,
+					},
+				}
+				if !reflect.DeepEqual(tt.args.deployment.Spec.Template.Spec.Tolerations, expectedTolerations) {
+					t.Errorf("Expected tolerations to be %v, got %v", expectedTolerations, tt.args.deployment.Spec.Template.Spec.Tolerations)
 				}
 			}
 		})
