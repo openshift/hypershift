@@ -3,8 +3,11 @@ package util
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/support/certs"
@@ -80,9 +83,10 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
 		_, err = s3Client.PutObject(&s3.PutObjectInput{
-			Body:   bodyReader,
-			Bucket: aws.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
-			Key:    aws.String(providerID + path),
+			Body:        bodyReader,
+			Bucket:      aws.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
+			Key:         aws.String(providerID + path),
+			ContentType: aws.String("application/json"),
 		})
 		if err != nil {
 			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, opts.ConfigurableClusterOptions.AWSOidcS3BucketName)
@@ -94,6 +98,11 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 			}
 			return wrapped
 		}
+	}
+
+	// Validate documents are publicly retrievable before creating the IAM OIDC provider.
+	if err := verifyOIDCDocumentsPubliclyAccessible(issuerURL, s3Client, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, providerID, artifactDir); err != nil {
+		return fmt.Errorf("oidc discovery documents are not publicly accessible: %w", err)
 	}
 
 	iamOptions := awsinfra.CreateIAMOptions{
@@ -131,4 +140,73 @@ func CleanupSharedOIDCProvider(opts *Options, log logr.Logger) {
 
 	DestroyOIDCProvider(log, iamClient, opts.IssuerURL)
 	CleanupOIDCBucketObjects(log, s3Client, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, opts.IssuerURL)
+}
+
+// verifyOIDCDocumentsPubliclyAccessible attempts anonymous HTTP GETs to the OIDC discovery
+// endpoints and, if they fail, records detailed diagnostics along with S3 public access settings
+// into an artifact log file to aid troubleshooting.
+func verifyOIDCDocumentsPubliclyAccessible(issuerURL string, s3Client *s3.S3, bucketName, providerID, artifactDir string) error {
+	logFile := filepath.Join(artifactDir, "oidc-access-check.log")
+	f, err := os.Create(logFile)
+	if err != nil {
+		return fmt.Errorf("failed to create access check log: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	writef := func(format string, args ...interface{}) { _, _ = fmt.Fprintf(f, format+"\n", args...) }
+
+	writef("issuerURL=%s", issuerURL)
+	client := &http.Client{Timeout: 15 * time.Second}
+	paths := []string{"/.well-known/openid-configuration", oidc.JWKSURI}
+	var firstErr error
+	for _, p := range paths {
+		url := issuerURL + p
+		writef("checking public GET %s", url)
+		resp, err := client.Get(url)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			writef("HTTP GET error: %v", err)
+			continue
+		}
+		func() {
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+			writef("status=%d", resp.StatusCode)
+			for k, v := range resp.Header {
+				writef("header %s: %v", k, v)
+			}
+			writef("body_prefix=%q", string(body))
+		}()
+		if resp.StatusCode != http.StatusOK {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("unexpected status %d for %s", resp.StatusCode, url)
+			}
+		}
+	}
+
+	if firstErr != nil {
+		writef("collecting S3 diagnostics for bucket %q and providerID %q", bucketName, providerID)
+		for _, p := range paths {
+			key := providerID + p
+			writef("HeadObject bucket=%s key=%s", bucketName, key)
+			if _, err := s3Client.HeadObject(&s3.HeadObjectInput{Bucket: aws.String(bucketName), Key: aws.String(key)}); err != nil {
+				writef("HeadObject error: %v", err)
+			} else {
+				writef("HeadObject succeeded")
+			}
+		}
+		writef("GetPublicAccessBlock bucket=%s", bucketName)
+		if pab, err := s3Client.GetPublicAccessBlock(&s3.GetPublicAccessBlockInput{Bucket: aws.String(bucketName)}); err != nil {
+			writef("GetPublicAccessBlock error: %v", err)
+		} else if pab != nil && pab.PublicAccessBlockConfiguration != nil {
+			cfg := pab.PublicAccessBlockConfiguration
+			writef("PublicAccessBlock: BlockPublicAcls=%v BlockPublicPolicy=%v IgnorePublicAcls=%v RestrictPublicBuckets=%v",
+				aws.BoolValue(cfg.BlockPublicAcls), aws.BoolValue(cfg.BlockPublicPolicy), aws.BoolValue(cfg.IgnorePublicAcls), aws.BoolValue(cfg.RestrictPublicBuckets))
+		}
+		return firstErr
+	}
+
+	return nil
 }
