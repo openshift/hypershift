@@ -66,14 +66,11 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, hypershiftOperator
 				AutomountServiceAccountToken: ptr.To(true),
 				Affinity: &corev1.Affinity{
 					PodAntiAffinity: &corev1.PodAntiAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
 							{
-								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									TopologyKey: corev1.LabelTopologyZone,
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: hcpRouterLabels(),
-									},
+								TopologyKey: corev1.LabelTopologyZone,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: hcpRouterLabels(),
 								},
 							},
 						},
