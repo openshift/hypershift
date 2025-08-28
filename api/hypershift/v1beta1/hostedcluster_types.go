@@ -1278,7 +1278,7 @@ type KarpenterAWSConfig struct {
 }
 
 const (
-	ProvisionerKarpeneter Provisioner = "Karpenter"
+	ProvisionerKarpenter Provisioner = "Karpenter"
 )
 
 // provisioner is a enum specifying the strategy for auto managing Nodes.
