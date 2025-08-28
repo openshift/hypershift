@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"math/big"
+	"math/bits"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -325,7 +326,9 @@ func (prog *Program) Write(out io.Writer) error {
 }
 
 // ExecFile calls [ExecFileOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [ExecFileOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func ExecFile(thread *Thread, filename string, src interface{}, predeclared StringDict) (StringDict, error) {
 	return ExecFileOptions(syntax.LegacyFileOptions(), thread, filename, src, predeclared)
 }
@@ -360,7 +363,9 @@ func ExecFileOptions(opts *syntax.FileOptions, thread *Thread, filename string, 
 }
 
 // SourceProgram calls [SourceProgramOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [SourceProgramOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func SourceProgram(filename string, src interface{}, isPredeclared func(string) bool) (*syntax.File, *Program, error) {
 	return SourceProgramOptions(syntax.LegacyFileOptions(), filename, src, isPredeclared)
 }
@@ -430,7 +435,7 @@ func CompiledProgram(in io.Reader) (*Program, error) {
 // executes the toplevel code of the specified program,
 // and returns a new, unfrozen dictionary of the globals.
 func (prog *Program) Init(thread *Thread, predeclared StringDict) (StringDict, error) {
-	toplevel := makeToplevelFunction(prog.compiled, predeclared)
+	toplevel := makeToplevelFunction(prog, predeclared)
 
 	_, err := Call(thread, toplevel, nil, nil)
 
@@ -469,7 +474,7 @@ func ExecREPLChunk(f *syntax.File, thread *Thread, globals StringDict) error {
 
 	// -- variant of Program.Init --
 
-	toplevel := makeToplevelFunction(prog.compiled, predeclared)
+	toplevel := makeToplevelFunction(prog, predeclared)
 
 	// Initialize module globals from parameter.
 	for i, id := range prog.compiled.Globals {
@@ -490,10 +495,10 @@ func ExecREPLChunk(f *syntax.File, thread *Thread, globals StringDict) error {
 	return err
 }
 
-func makeToplevelFunction(prog *compile.Program, predeclared StringDict) *Function {
+func makeToplevelFunction(prog *Program, predeclared StringDict) *Function {
 	// Create the Starlark value denoted by each program constant c.
-	constants := make([]Value, len(prog.Constants))
-	for i, c := range prog.Constants {
+	constants := make([]Value, len(prog.compiled.Constants))
+	for i, c := range prog.compiled.Constants {
 		var v Value
 		switch c := c.(type) {
 		case int64:
@@ -513,18 +518,20 @@ func makeToplevelFunction(prog *compile.Program, predeclared StringDict) *Functi
 	}
 
 	return &Function{
-		funcode: prog.Toplevel,
-		module: &module{
+		funcode: prog.compiled.Toplevel,
+		module: &Module{
 			program:     prog,
 			predeclared: predeclared,
-			globals:     make([]Value, len(prog.Globals)),
+			globals:     make([]Value, len(prog.compiled.Globals)),
 			constants:   constants,
 		},
 	}
 }
 
 // Eval calls [EvalOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [EvalOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func Eval(thread *Thread, filename string, src interface{}, env StringDict) (Value, error) {
 	return EvalOptions(syntax.LegacyFileOptions(), thread, filename, src, env)
 }
@@ -552,7 +559,9 @@ func EvalOptions(opts *syntax.FileOptions, thread *Thread, filename string, src 
 }
 
 // EvalExpr calls [EvalExprOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [EvalExprOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func EvalExpr(thread *Thread, expr syntax.Expr, env StringDict) (Value, error) {
 	return EvalExprOptions(syntax.LegacyFileOptions(), thread, expr, env)
 }
@@ -578,7 +587,9 @@ func EvalExprOptions(opts *syntax.FileOptions, thread *Thread, expr syntax.Expr,
 }
 
 // ExprFunc calls [ExprFuncOptions] using [syntax.LegacyFileOptions].
-// Deprecated: relies on legacy global variables.
+//
+// Deprecated: use [ExprFuncOptions] with [syntax.FileOptions] instead,
+// because this function relies on legacy global variables.
 func ExprFunc(filename string, src interface{}, env StringDict) (*Function, error) {
 	return ExprFuncOptions(syntax.LegacyFileOptions(), filename, src, env)
 }
@@ -601,7 +612,8 @@ func makeExprFunc(opts *syntax.FileOptions, expr syntax.Expr, env StringDict) (*
 		return nil, err
 	}
 
-	return makeToplevelFunction(compile.Expr(opts, expr, "<expr>", locals), env), nil
+	prog := compile.Expr(opts, expr, "<expr>", locals)
+	return makeToplevelFunction(&Program{prog}, env), nil
 }
 
 // The following functions are primitive operations of the byte code interpreter.
@@ -1021,57 +1033,14 @@ func Binary(op syntax.Token, x, y Value) (Value, error) {
 
 	case syntax.IN:
 		switch y := y.(type) {
-		case *List:
-			for _, elem := range y.elems {
-				if eq, err := Equal(elem, x); err != nil {
-					return nil, err
-				} else if eq {
-					return True, nil
-				}
-			}
-			return False, nil
-		case Tuple:
-			for _, elem := range y {
-				if eq, err := Equal(elem, x); err != nil {
-					return nil, err
-				} else if eq {
-					return True, nil
-				}
-			}
-			return False, nil
+		case Container: // List, Tuple, Set, String, Bytes, rangeValue etc.
+			found, err := y.Has(x)
+			return Bool(found), err
 		case Mapping: // e.g. dict
 			// Ignore error from Get as we cannot distinguish true
 			// errors (value cycle, type error) from "key not found".
 			_, found, _ := y.Get(x)
 			return Bool(found), nil
-		case *Set:
-			ok, err := y.Has(x)
-			return Bool(ok), err
-		case String:
-			needle, ok := x.(String)
-			if !ok {
-				return nil, fmt.Errorf("'in <string>' requires string as left operand, not %s", x.Type())
-			}
-			return Bool(strings.Contains(string(y), string(needle))), nil
-		case Bytes:
-			switch needle := x.(type) {
-			case Bytes:
-				return Bool(strings.Contains(string(y), string(needle))), nil
-			case Int:
-				var b byte
-				if err := AsInt(needle, &b); err != nil {
-					return nil, fmt.Errorf("int in bytes: %s", err)
-				}
-				return Bool(strings.IndexByte(string(y), b) >= 0), nil
-			default:
-				return nil, fmt.Errorf("'in bytes' requires bytes or int as left operand, not %s", x.Type())
-			}
-		case rangeValue:
-			i, err := NumberToInt(x)
-			if err != nil {
-				return nil, fmt.Errorf("'in <range>' requires integer as left operand, not %s", x.Type())
-			}
-			return Bool(y.contains(i)), nil
 		}
 
 	case syntax.PIPE:
@@ -1182,8 +1151,8 @@ func tupleRepeat(elems Tuple, n Int) (Tuple, error) {
 		return nil, nil
 	}
 	// Inv: i > 0, len > 0
-	sz := len(elems) * i
-	if sz < 0 || sz >= maxAlloc { // sz < 0 => overflow
+	of, sz := bits.Mul(uint(len(elems)), uint(i))
+	if of != 0 || sz >= maxAlloc { // of != 0 => overflow
 		// Don't print sz.
 		return nil, fmt.Errorf("excessive repeat (%d * %d elements)", len(elems), i)
 	}
@@ -1214,8 +1183,8 @@ func stringRepeat(s String, n Int) (String, error) {
 		return "", nil
 	}
 	// Inv: i > 0, len > 0
-	sz := len(s) * i
-	if sz < 0 || sz >= maxAlloc { // sz < 0 => overflow
+	of, sz := bits.Mul(uint(len(s)), uint(i))
+	if of != 0 || sz >= maxAlloc { // of != 0 => overflow
 		// Don't print sz.
 		return "", fmt.Errorf("excessive repeat (%d * %d elements)", len(s), i)
 	}
@@ -1659,9 +1628,14 @@ func interpolate(format string, x Value) (Value, error) {
 		index++
 	}
 
-	if index < nargs {
+	if index < nargs && !is[Mapping](x) {
 		return nil, fmt.Errorf("too many arguments for format string")
 	}
 
 	return String(buf.String()), nil
+}
+
+func is[T any](x any) bool {
+	_, ok := x.(T)
+	return ok
 }
