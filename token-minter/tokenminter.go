@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -18,6 +16,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -67,18 +67,9 @@ refresh the token as it expires.`,
 	_ = cmd.MarkFlagRequired("service-account-name")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(cmd.Context())
+		ctx := ctrl.SetupSignalHandler()
 
 		log.Printf("Starting token minter. Version = %s\n", supportedversion.String())
-
-		c := make(chan os.Signal, 2)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		go func() {
-			<-c
-			cancel()
-			<-c
-			os.Exit(1) // second signal. Exit directly.
-		}()
 
 		if opts.oneshot {
 			_, err := mintToken(ctx, opts)
