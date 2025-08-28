@@ -96,6 +96,8 @@ func TestReconcile(t *testing.T) {
 					Namespace: "test",
 					Annotations: map[string]string{
 						TokenSecretAnnotation: "true",
+						// Use inplace upgrade type to test that the payload is compressed and encoded.
+						TokenSecretNodePoolUpgradeType: string(hyperv1.UpgradeTypeInPlace),
 					},
 					CreationTimestamp: metav1.Now(),
 				},
@@ -148,7 +150,9 @@ func TestReconcile(t *testing.T) {
 				g.Expect(freshSecret.Annotations[TokenSecretTokenGenerationTime]).ToNot(BeEmpty())
 
 				// Validate data for conditions
-				g.Expect(freshSecret.Data[TokenSecretPayloadKey]).To(BeEquivalentTo(fakePayload))
+				inplacePayload, err := util.DecodeAndDecompress(freshSecret.Data[TokenSecretPayloadKey])
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(inplacePayload.String()).To(BeEquivalentTo(fakePayload))
 				g.Expect(freshSecret.Data[TokenSecretReasonKey]).To(BeEquivalentTo(hyperv1.AsExpectedReason))
 				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Payload generated successfully"))
 
