@@ -370,6 +370,12 @@ const (
 	// referenced in the HostedCluster `spec.configuration.authentication.oidcProviders[*].oidcClients[*].clientSecret`
 	// and only for the ARO-HCP platform.
 	HostedClusterSourcedAnnotation = "hypershift.openshift.io/hosted-cluster-sourced"
+
+	// HostedClusterRestoredFromBackupAnnotation is set to true when the HostedCluster is restored from a backup using Hypershift
+	// OADP plugin. This annotation is set by the Hypershift OADP plugin during the Backup/Restore process. The annotation will trigger
+	// a process to check if the differents components in the DataPlane are working as expected. Checks:
+	// - Validates the monitoring stack is properly working after restoration, if not HCCO will restart the prometheus-k8s pods.
+	HostedClusterRestoredFromBackupAnnotation = "hypershift.openshift.io/restored-from-backup"
 )
 
 // RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
