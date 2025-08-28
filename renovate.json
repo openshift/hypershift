@@ -1,0 +1,21 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "enabled": true,
+    "enabledManagers": ["tekton"],
+    "packageRules": [
+        {
+            "matchManagers": ["gomod"],
+            "enabled": false
+        },
+        {
+            "matchFileNames": ["go.mod", "go.sum"],
+            "enabled": false
+        }
+    ],
+    "tekton": {
+        "branchConcurrentLimit": 10,
+        "extends": [
+            "github>konflux-ci/mintmaker-presets:update-fedora-to-stable"
+        ]
+    }
+}
