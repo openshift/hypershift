@@ -350,6 +350,10 @@ const (
 
 	// ControlPlaneOperatorV2EnvVar when set on the CPO deplyoment, enables the new manifest based CPO implementation.
 	ControlPlaneOperatorV2EnvVar = "CPO_V2"
+
+	// SkipKASCertificateConflicSANValidation allows skipping the validation of the KAS certificate SANs so they do not conflict with ServicePublishingStrategy Hostname.
+	// This annotation is useful as a escape hatch, that IBM could use.
+	SkipKASConflicSANValidation = "hypershift.openshift.io/skip-kas-conflict-san-validation"
 )
 
 // +kubebuilder:validation:Enum=ImageRegistry
