@@ -19,6 +19,11 @@ When you create a Jira issue, add this label: ai-generated-jira.
 
 By default, set the Security Level to the following: Red Hat Employee.
 
+Never include credentials or secrets in any Jira issue (e.g., usernames/passwords, cloud keys, API tokens, kubeconfigs, SSH keys, certificates).
+This applies to descriptions, comments, attachments, screenshots, logs, and URLs. Redact before sharing.
+
+Use Jira’s native description formatting (Wiki/ADF): headings, bullet lists, code blocks, and tables.
+
 ## Standard Parts of a Jira Issue
 
 ### Summary
@@ -38,7 +43,17 @@ A summary is needed for the following Jira issue types: Outcomes, Features, Init
 TBD
 
 ### Creating an epic
-TBD
+Summary: An agile epic is a body of work that can be broken down into specific items (called user stories) based on the needs/requests of customers or end-users. Epics are an important practice for agile and DevOps teams. When adopting agile and DevOps, an epic serves to manage work.
+
+In an epic, the epic name field is required. Make it the same as the summary field.
+
+The parent link field is where the feature ID would be specified to which the epic belongs.
+
+Epics should:
+ - be a more narrow strategic objective than a market problem
+ - be broader than a user story
+ - fit inside the time box (quarter/release) and stories should fit inside a sprint
+ - typically include acceptance criteria (this lets us know when the epic is done!)
 
 ### Creating a story
 A story describes product functionality from a customer’s perspective.
