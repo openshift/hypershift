@@ -21,6 +21,7 @@ PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
+GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 
 OUT_DIR ?= bin
@@ -92,6 +93,21 @@ hypershift:
 .PHONY: product-cli
 product-cli:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hcp ./product-cli
+
+.PHONY: product-cli-release
+product-cli-release:
+	@for OS in linux; do for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
+	@for OS in darwin windows; do for ARCH in amd64 arm64; do \
+		echo "# Building $${OS}/$${ARCH}/hcp"; \
+		GOOS=$${OS} GOARCH=$${ARCH} $(GO_CLI_RECIPE) -o $(OUT_DIR)/$${OS}/$${ARCH}/hcp ./product-cli \
+			|| exit 1; \
+		done; \
+	done
 
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
