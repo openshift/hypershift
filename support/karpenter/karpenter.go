@@ -10,7 +10,7 @@ import (
 func IsKarpenterEnabled(autoNode *hyperv1.AutoNode) bool {
 	return autoNode != nil &&
 		autoNode.Provisioner != nil &&
-		autoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
+		autoNode.Provisioner.Name == hyperv1.ProvisionerKarpenter &&
 		autoNode.Provisioner.Karpenter != nil &&
 		autoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
 }
