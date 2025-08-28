@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/support/config"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
 
@@ -73,6 +74,70 @@ func TestNewAPIServerParamsAPIAdvertiseAddressAndPort(t *testing.T) {
 				g.Expect(test.advertiseAddress).To(Equal(test.expectedAddress))
 			}
 			g.Expect(p.KASPodPort).To(Equal(test.expectedPort))
+		})
+	}
+}
+
+func TestNewAPIServerParamsGoAwayChance(t *testing.T) {
+	tests := []struct {
+		name                 string
+		hcp                  *hyperv1.HostedControlPlane
+		expectedGoAwayChance string
+	}{
+		{
+			name: "highly-available",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+				},
+			},
+			expectedGoAwayChance: "0.001",
+		},
+		{
+			name: "single-replica",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ControllerAvailabilityPolicy: hyperv1.SingleReplica,
+				},
+			},
+			expectedGoAwayChance: "0",
+		},
+		{
+			name: "highly-available with annotation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerGoAwayChance: "0.002",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ControllerAvailabilityPolicy: hyperv1.HighlyAvailable,
+				},
+			},
+			expectedGoAwayChance: "0.002",
+		},
+		{
+			name: "single-replica with annotation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.KubeAPIServerGoAwayChance: "0.002",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					ControllerAvailabilityPolicy: hyperv1.SingleReplica,
+				},
+			},
+			expectedGoAwayChance: "0.002",
+		},
+	}
+
+	imageProvider := imageprovider.NewFromImages(map[string]string{})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			p := NewKubeAPIServerParams(context.Background(), test.hcp, imageProvider, "", 0, "", 0, false, nil)
+			g.Expect(p.GoAwayChance).To(Equal(test.expectedGoAwayChance))
 		})
 	}
 }
