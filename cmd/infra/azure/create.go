@@ -871,15 +871,59 @@ func assignRole(ctx context.Context, subscriptionID, infraID, component, assigne
 		},
 	}
 
-	// Create the role assignment
+	// Robust existence check:
+	// 1) List assignments for this principalId at or around this scope and
+	//    verify one matches both the exact scope and role definition ID.
+	pager := roleAssignmentClient.NewListForScopePager(scope, &azureauth.RoleAssignmentsClientListForScopeOptions{
+		// Use atScope() to reliably list assignments at this scope, then match in code
+		Filter: ptr.To("atScope()"),
+	})
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to list role assignments for scope: %w", err)
+		}
+		for _, ra := range page.Value {
+			if ra.Properties == nil {
+				continue
+			}
+			if ra.Properties.RoleDefinitionID == nil || ra.Properties.Scope == nil || ra.Properties.PrincipalID == nil {
+				continue
+			}
+			if strings.EqualFold(*ra.Properties.Scope, scope) && strings.EqualFold(*ra.Properties.RoleDefinitionID, roleDefinitionID) && strings.EqualFold(*ra.Properties.PrincipalID, assigneeID) {
+				log.Log.Info("Skipping role assignment creation, matching assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+				return nil
+			}
+		}
+	}
+
+	// 2) Fallback to a direct GET by our deterministic name; create only if 404.
+	_, err = roleAssignmentClient.Get(ctx, scope, roleAssignmentName, nil)
+	if err == nil {
+		log.Log.Info("Skipping role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+		return nil
+	}
+	var respErr *azcore.ResponseError
+	if errors.As(err, &respErr) {
+		if respErr.StatusCode == http.StatusNotFound {
+			// proceed to create
+		} else if respErr.StatusCode == http.StatusForbidden || strings.EqualFold(respErr.ErrorCode, "AuthorizationFailed") {
+			log.Log.Info("Get not permitted; will attempt create and rely on 409 for idempotency.", "role", role, "assigneeID", assigneeID, "scope", scope)
+		} else {
+			return fmt.Errorf("failed checking role assignment existence: %w", err)
+		}
+	} else {
+		return fmt.Errorf("failed to check role assignment existence: %w", err)
+	}
+
 	_, err = roleAssignmentClient.Create(ctx, scope, roleAssignmentName, roleAssignmentProperties, nil)
 	if err != nil {
-		// Azure will return an error if the role assignment already exists, but we can ignore it since the role
-		// assignment already exists.
-		if !strings.Contains(err.Error(), "The role assignment already exists") {
-			return fmt.Errorf("failed to create role assignment: %w", err)
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && (respErr.StatusCode == http.StatusConflict || strings.EqualFold(respErr.ErrorCode, "RoleAssignmentExists")) {
+			log.Log.Info("Failed role assignment creation, role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+			return nil
 		}
-		log.Log.Info("WARNING: Role assignment already exists.", "role", role, "assigneeID", assigneeID, "scope", scope)
+		return fmt.Errorf("failed to create role assignment: %w", err)
 	}
 	log.Log.Info("successfully created role assignment", "role", role, "assigneeID", assigneeID, "scope", scope)
 	return nil
