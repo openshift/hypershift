@@ -1688,6 +1688,112 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when AWS placement options have invalid configurations it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when tenancy is 'host' and capacity reservation is specified it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "host",
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: ptr.To("cr-1234567890abcdef0"),
+								},
+							}
+						},
+						expectedErrorSubstring: "AWS Capacity Reservations cannot be used with Dedicated Hosts (tenancy 'host')",
+					},
+					{
+						name: "when capacity reservation ID is specified with preference 'None' it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-1234567890abcdef0"),
+									Preference: hyperv1.CapacityReservationPreferenceNone,
+								},
+							}
+						},
+						expectedErrorSubstring: "AWS Capacity Reservation preference 'None' or 'Open' is incompatible with specifying a Capacity Reservation ID",
+					},
+					{
+						name: "when capacity reservation ID is specified with preference 'Open' it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-1234567890abcdef0"),
+									Preference: hyperv1.CapacityReservationPreferenceOpen,
+								},
+							}
+						},
+						expectedErrorSubstring: "AWS Capacity Reservation preference 'None' or 'Open' is incompatible with specifying a Capacity Reservation ID",
+					},
+					{
+						name: "when capacity reservation ID has invalid format it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: ptr.To("invalid-id"),
+								},
+							}
+						},
+						expectedErrorSubstring: "AWS Capacity Reservation ID must start with 'cr-' followed by 17 lowercase hexadecimal characters",
+					},
+					{
+						name: "when marketType is 'CapacityBlocks' without capacity reservation ID it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									MarketType: hyperv1.MarketTypeCapacityBlock,
+									Preference: hyperv1.CapacityReservationPreferenceOpen,
+								},
+							}
+						},
+						expectedErrorSubstring: "AWS Capacity Reservation market type 'CapacityBlocks' requires a Capacity Reservation ID",
+					},
+					{
+						name: "when tenancy is 'default' with capacity reservation it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "default",
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: ptr.To("cr-1234567890abcdef0"),
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capacity reservation has preference 'Open' without ID it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									Preference: hyperv1.CapacityReservationPreferenceOpen,
+									MarketType: hyperv1.MarketTypeOnDemand,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when capacity reservation ID is specified with preference 'CapacityReservationsOnly' it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-1234567890abcdef0"),
+									Preference: hyperv1.CapacityReservationPreferenceOnly,
+									MarketType: hyperv1.MarketTypeCapacityBlock,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
