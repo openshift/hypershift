@@ -27,7 +27,7 @@ spec:
         - /work
         env:
         - name: KUBECONFIG
-          value: /var/secrets/localhost-kubeconfig/kubeconfig
+          value: /var/secrets/hcco-localhost-kubeconfig/kubeconfig
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         name: bootstrap
@@ -38,8 +38,8 @@ spec:
         volumeMounts:
         - mountPath: /work
           name: bootstrap-manifests
-        - mountPath: /var/secrets/localhost-kubeconfig
-          name: localhost-kubeconfig
+        - mountPath: /var/secrets/hcco-localhost-kubeconfig
+          name: hcco-localhost-kubeconfig
       - args:
         - kube-apiserver
         - --openshift-config=/etc/kubernetes/config/config.json
@@ -290,6 +290,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: localhost-kubeconfig
+      - name: hcco-localhost-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: hcco-localhost-kubeconfig
       - emptyDir: {}
         name: logs
       - configMap:
