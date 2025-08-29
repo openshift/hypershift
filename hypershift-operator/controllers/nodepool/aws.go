@@ -142,16 +142,25 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		},
 	}
 
-	if nodePool.Spec.Platform.AWS.Placement != nil {
-		awsMachineTemplateSpec.Template.Spec.Tenancy = nodePool.Spec.Platform.AWS.Placement.Tenancy
+	if placement := nodePool.Spec.Platform.AWS.Placement; placement != nil {
+		awsMachineTemplateSpec.Template.Spec.Tenancy = placement.Tenancy
 
-		if capacityReservation := nodePool.Spec.Platform.AWS.Placement.CapacityReservation; capacityReservation != nil {
-			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = ptr.To(capacityReservation.ID)
-			if capacityReservation.MarketType == hyperv1.MarketTypeOnDemand {
-				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
-			} else {
+		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = capacityReservation.ID
+
+			switch capacityReservation.MarketType {
+			case hyperv1.MarketTypeCapacityBlock:
 				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+			case hyperv1.MarketTypeOnDemand:
+				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+			default:
+				if placement.Tenancy != "host" && capacityReservation.ID != nil {
+					// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
+					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+				}
 			}
+
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 		}
 	}
 

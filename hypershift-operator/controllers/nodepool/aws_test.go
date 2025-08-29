@@ -530,7 +530,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 						AWS: &hyperv1.AWSNodePoolPlatform{
 							Placement: &hyperv1.PlacementOptions{
 								CapacityReservation: &hyperv1.CapacityReservationOptions{
-									ID: capacityReservationID,
+									ID: &capacityReservationID,
 								},
 							},
 						},
