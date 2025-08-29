@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/pricing"
@@ -53,13 +54,12 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: c.ResponseInstanceTypes}, c.ResponseError
 }
 
-type mockPricingClient struct {
+type PricingClientMock struct {
 	pricingiface.PricingAPI
 }
 
-func (m *mockPricingClient) DescribeServices(input *pricing.DescribeServicesInput) (*pricing.DescribeServicesOutput, error) {
-	//	    // mock response/functionality
-	return nil, fmt.Errorf("an error, nothing to describe here")
+func (m *PricingClientMock) GetProducts(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+	return nil, fmt.Errorf("Hye man, no products here!")
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
@@ -114,11 +114,20 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			expectedVCpusCountErrorReason: "unexpected AWS output",
 		},
 		{
-			name: "When AWS DescribeInstanceTypes return an error",
+			name: "When AWS DescribeInstanceTypes return a generic error",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
 			},
-			describeInstancesTypeReturnedError: fmt.Errorf("That's an error!"),
+			describeInstancesTypeReturnedError: fmt.Errorf("Good instance but it is an error!"),
+			expectedVCpusCount:                 -1,
+			expectedVCpusCountErrorReason:      "failed to call AWS",
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			describeInstancesTypeReturnedError: awserr.New("InvalidInstanceType", "who knows", nil),
 			expectedVCpusCount:                 -1,
 			expectedVCpusCountErrorReason:      "failed to call AWS",
 		},
@@ -146,6 +155,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				ec2MockedClient.ResponseError = tc.describeInstancesTypeReturnedError
 			}
 
+			pricingMockedClient := &PricingClientMock{}
+
 			for k, npParam := range tc.npsParams {
 				nodePool := &hyperv1.NodePool{
 					ObjectMeta: metav1.ObjectMeta{
@@ -170,7 +181,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, pricingMockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
 			if err != nil {
