@@ -68,19 +68,6 @@ func KASPodPort(hcp *hyperv1.HostedControlPlane) int32 {
 	return 6443
 }
 
-// KASPodPortFromHostedCluster will retrieve the port the kube-apiserver binds on locally in the pod.
-// This comes from hcp.Spec.Networking.APIServer.Port if set and != 443 or defaults to 6443.
-func KASPodPortFromHostedCluster(hc *hyperv1.HostedCluster) int32 {
-	// Binding on 443 is not allowed. So returning default for that case.
-	// This provides backward compatibility for existing clusters which were defaulting to that value, ignoring it here and
-	// enforcing it in the data plane proxy by reconciling the endpoint. 443 API input is not allowed now.
-	// https://github.com/openshift/hypershift/pull/2964
-	if hc.Spec.Networking.APIServer != nil && hc.Spec.Networking.APIServer.Port != nil && *hc.Spec.Networking.APIServer.Port != 443 {
-		return *hc.Spec.Networking.APIServer.Port
-	}
-	return 6443
-}
-
 // APIPortForLocalZone returns the port used by processes within a private hosted cluster
 // to communicate with the KAS via the api.<hc-name>.hypershift.local host.
 func APIPortForLocalZone(isLBKAS bool) int32 {
