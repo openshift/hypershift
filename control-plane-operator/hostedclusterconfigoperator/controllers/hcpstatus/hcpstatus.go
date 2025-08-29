@@ -164,5 +164,12 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 	}
 	log.Info("Finished reconciling hosted cluster version conditions")
 
+	var authentication configv1.Authentication
+	if err = h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, &authentication); err != nil {
+		return fmt.Errorf("failed to get Authentication resource \"cluster\": %w", err)
+	}
+	hcp.Status.Configuration = &hyperv1.ConfigurationStatus{
+		Authentication: authentication.Status,
+	}
 	return nil
 }
