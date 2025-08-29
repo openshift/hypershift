@@ -25,7 +25,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -98,12 +98,16 @@ spec:
           requests:
             cpu: 10m
             memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         - --connect-directly-to-cloud-apis=true
@@ -119,6 +123,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -127,6 +133,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --token-audience=openshift
         - --service-account-namespace=openshift-ingress-operator
@@ -143,12 +151,16 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: admin-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -194,4 +206,6 @@ spec:
       - emptyDir:
           medium: Memory
         name: cloud-token
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

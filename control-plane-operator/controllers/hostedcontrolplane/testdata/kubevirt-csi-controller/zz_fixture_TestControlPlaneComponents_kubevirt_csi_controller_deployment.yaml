@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: socket-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: socket-dir,tmp-dir
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -98,12 +98,16 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --csi-address=$(ADDRESS)
         - --default-fstype=ext4
@@ -121,12 +125,16 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --csi-address=$(ADDRESS)
         - --v=5
@@ -143,12 +151,16 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/lib/csi/sockets/pluginproxy/
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --csi-address=/csi/csi.sock
         - --probe-timeout=3s
@@ -160,12 +172,16 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /csi
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --v=5
         - --csi-address=/csi/csi.sock
@@ -178,6 +194,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -185,6 +203,8 @@ spec:
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --v=5
         - --csi-address=/csi/csi.sock
@@ -198,6 +218,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
@@ -205,6 +227,8 @@ spec:
           name: socket-dir
         - mountPath: /var/run/secrets/tenantcluster
           name: service-account-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       serviceAccount: kubevirt-csi
       tolerations:
@@ -223,4 +247,6 @@ spec:
         secret:
           defaultMode: 416
           secretName: kubevirt-csi-controller-service-account-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

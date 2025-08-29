@@ -25,6 +25,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -110,6 +111,8 @@ spec:
           requests:
             cpu: 10m
             memory: 160Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /srv-cert
@@ -121,6 +124,8 @@ spec:
         - mountPath: /etc/openshift/kubeconfig
           name: kubeconfig
           readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         command:
@@ -135,6 +140,8 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/secrets/kubeconfig
@@ -143,6 +150,8 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -193,4 +202,6 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

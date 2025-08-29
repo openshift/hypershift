@@ -70,6 +70,11 @@ const (
 	// AvailabilityProberImageName is the name under which components can find the availability prober
 	// image in the release image.
 	AvailabilityProberImageName = "availability-prober"
+
+	// PodTmpDirMountName is a name for a volume created in each pod by the CPO that gives the pods containers a place to mount and write temporary files to.
+	PodTmpDirMountName = "tmp-dir"
+	// PodTmpDirMountPath is the path that each container created by the CPO will mount the volume PodTmpDirMountName at.
+	PodTmpDirMountPath = "/tmp"
 )
 
 func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...AvailabilityProberOpt) {

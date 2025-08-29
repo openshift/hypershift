@@ -22,6 +22,7 @@ spec:
       template:
         metadata:
           annotations:
+            cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
             component.hypershift.openshift.io/config-hash: fe7dc514
             hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
           creationTimestamp: null
@@ -82,12 +83,16 @@ spec:
               requests:
                 cpu: 10m
                 memory: 80Mi
+            securityContext:
+              readOnlyRootFilesystem: true
             terminationMessagePolicy: FallbackToLogsOnError
             volumeMounts:
             - mountPath: /etc/config
               name: config-volume
             - mountPath: /var/run/secrets/serving-cert
               name: secret-volume
+            - mountPath: /tmp
+              name: tmp-dir
           priorityClassName: hypershift-control-plane
           restartPolicy: Never
           serviceAccountName: olm-collect-profiles
@@ -109,5 +114,7 @@ spec:
             secret:
               defaultMode: 416
               secretName: metrics-client
+          - emptyDir: {}
+            name: tmp-dir
   schedule: 41 5 * * *
 status: {}

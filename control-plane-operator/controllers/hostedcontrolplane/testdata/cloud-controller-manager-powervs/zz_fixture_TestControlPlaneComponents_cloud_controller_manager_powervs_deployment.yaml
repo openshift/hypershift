@@ -24,6 +24,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 774b434c
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -102,6 +103,8 @@ spec:
           requests:
             cpu: 75m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes
@@ -110,6 +113,8 @@ spec:
           name: ccm-config
         - mountPath: /etc/vpc
           name: cloud-creds
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       terminationGracePeriodSeconds: 90
       tolerations:
@@ -133,4 +138,6 @@ spec:
       - name: cloud-creds
         secret:
           defaultMode: 416
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

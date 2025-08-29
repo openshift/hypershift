@@ -121,6 +121,7 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.InitContainers)
 	enforceTerminationMessagePolicy(podTemplateSpec.Spec.Containers)
+	enforceReadOnlyRootFilesystem(&podTemplateSpec.Spec)
 
 	if _, exist := podTemplateSpec.Annotations[config.NeedMetricsServerAccessLabel]; exist || c.NeedsManagementKASAccess() ||
 		c.Name() == "packageserver" { // TODO: investigate why packageserver needs AutomountServiceAccountToken or set NeedsManagementKASAccess to true.
@@ -554,6 +555,33 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
 	}
 	return nil
+}
+
+func enforceReadOnlyRootFilesystem(podSpec *corev1.PodSpec) {
+	podSpec.Volumes = append(podSpec.Volumes, corev1.Volume{
+		Name: util.PodTmpDirMountName,
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+	enforceReadOnlyRootFilesystemContainers(podSpec.Containers)
+}
+
+func enforceReadOnlyRootFilesystemContainers(containers []corev1.Container) {
+	for i := range containers {
+		if containers[i].SecurityContext == nil {
+			containers[i].SecurityContext = &corev1.SecurityContext{}
+		}
+		if !slices.ContainsFunc(containers[i].VolumeMounts, func(vm corev1.VolumeMount) bool {
+			return vm.MountPath == util.PodTmpDirMountPath
+		}) {
+			containers[i].VolumeMounts = append(containers[i].VolumeMounts, corev1.VolumeMount{
+				Name:      util.PodTmpDirMountName,
+				MountPath: util.PodTmpDirMountPath,
+			})
+		}
+		containers[i].SecurityContext.ReadOnlyRootFilesystem = ptr.To(true)
+	}
 }
 
 func enforceTerminationMessagePolicy(containers []corev1.Container) {

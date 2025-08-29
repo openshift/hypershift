@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -130,6 +131,8 @@ spec:
           requests:
             cpu: 40m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         startupProbe:
           failureThreshold: 60
           httpGet:
@@ -145,6 +148,8 @@ spec:
           name: agent-certs
         - mountPath: /etc/konnectivity/ca
           name: konnectivity-ca
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -164,4 +169,6 @@ spec:
           defaultMode: 420
           name: konnectivity-ca-bundle
         name: konnectivity-ca
+      - emptyDir: {}
+        name: tmp-dir
 status: {}
