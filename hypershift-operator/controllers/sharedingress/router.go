@@ -64,16 +64,37 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, hypershiftOperator
 				},
 				ServiceAccountName:           RouterServiceAccount().Name,
 				AutomountServiceAccountToken: ptr.To(true),
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "infra",
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+						Operator: corev1.TolerationOpEqual,
+					},
+				},
 				Affinity: &corev1.Affinity{
-					PodAntiAffinity: &corev1.PodAntiAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 							{
 								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									TopologyKey: corev1.LabelTopologyZone,
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: hcpRouterLabels(),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      "aro-hcp.azure.com/role",
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"infra"},
+										},
 									},
+								},
+							},
+						},
+					},
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							{
+								TopologyKey: corev1.LabelTopologyZone,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: hcpRouterLabels(),
 								},
 							},
 						},
