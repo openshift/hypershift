@@ -14,7 +14,7 @@ import (
 // Be sure to update *ConfigMapRefs in refs.go to include new configmap refs
 func TestKnownConfigMapRefs(t *testing.T) {
 	actual := findRefs(reflect.TypeOf(hyperv1.ClusterConfiguration{}), "", "ConfigMapNameReference")
-	expected := sets.NewString(
+	expected := sets.New[string](
 		".APIServer.ClientCA",
 		".Authentication.OAuthMetadata",
 		".Authentication.OIDCProviders.Issuer.CertificateAuthority",
@@ -30,7 +30,7 @@ func TestKnownConfigMapRefs(t *testing.T) {
 		".Scheduler.Policy",
 	)
 	if !actual.Equal(expected) {
-		t.Errorf("actual: %v, expected: %v", actual.List(), expected.List())
+		t.Errorf("actual: %v, expected: %v", actual.UnsortedList(), expected.UnsortedList())
 	}
 }
 
@@ -272,7 +272,7 @@ func TestConfigMapRefs(t *testing.T) {
 // Be sure to update *SecretRefs() in refs.go to include new secret refs
 func TestKnownSecretRefs(t *testing.T) {
 	actual := findRefs(reflect.TypeOf(hyperv1.ClusterConfiguration{}), "", "SecretNameReference")
-	expected := sets.NewString(
+	expected := sets.New[string](
 		".APIServer.ServingCerts.NamedCertificates.ServingCertificate",
 		".Authentication.WebhookTokenAuthenticator.KubeConfig",
 		".Authentication.WebhookTokenAuthenticators.KubeConfig",
@@ -293,7 +293,7 @@ func TestKnownSecretRefs(t *testing.T) {
 		".OAuth.Templates.ProviderSelection",
 	)
 	if !actual.Equal(expected) {
-		t.Errorf("actual: %v, expected: %v", actual.List(), expected.List())
+		t.Errorf("actual: %v, expected: %v", actual.UnsortedList(), expected.UnsortedList())
 	}
 }
 
@@ -576,19 +576,19 @@ func TestSecretRefs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			actualRefs := SecretRefs(test.config)
-			if actual, expected := sets.NewString(actualRefs...), sets.NewString(test.refs...); !actual.Equal(expected) {
-				t.Errorf("actual: %v, expected: %v", actual.List(), expected.List())
+			if actual, expected := sets.New[string](actualRefs...), sets.New[string](test.refs...); !actual.Equal(expected) {
+				t.Errorf("actual: %v, expected: %v", actual.UnsortedList(), expected.UnsortedList())
 			}
 		})
 	}
 }
 
-func findRefs(sel reflect.Type, prefix, structName string) sets.String {
+func findRefs(sel reflect.Type, prefix, structName string) sets.Set[string] {
 	switch sel.Kind() {
 	case reflect.Pointer, reflect.Slice, reflect.Map:
 		return findRefs(sel.Elem(), prefix, structName)
 	case reflect.Struct:
-		result := sets.NewString()
+		result := sets.New[string]()
 		for i := 0; i < sel.NumField(); i++ {
 			field := sel.Field(i)
 			if field.Type.Name() == structName {
@@ -596,9 +596,9 @@ func findRefs(sel reflect.Type, prefix, structName string) sets.String {
 				continue
 			}
 			fieldRefs := findRefs(field.Type, prefix+"."+field.Name, structName)
-			result.Insert(fieldRefs.List()...)
+			result.Insert(fieldRefs.UnsortedList()...)
 		}
 		return result
 	}
-	return sets.NewString()
+	return sets.New[string]()
 }

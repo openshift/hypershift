@@ -128,7 +128,11 @@ func writeYamlFile(path string, data map[string]interface{}) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil {
+			fmt.Printf("Warning: failed to close file: %v\n", closeErr)
+		}
+	}()
 	_, err = file.Write(yamlData)
 	if err != nil {
 		return err
@@ -147,7 +151,11 @@ func writeManifestsToDir(manifests []crclient.Object, dir string) error {
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer func() {
+			if closeErr := file.Close(); closeErr != nil {
+				fmt.Printf("Warning: failed to close file: %v\n", closeErr)
+			}
+		}()
 		err = render([]crclient.Object{manifest}, RenderFormatYaml, file)
 		if err != nil {
 			return err

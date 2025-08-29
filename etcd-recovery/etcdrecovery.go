@@ -24,7 +24,6 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/spf13/cobra"
@@ -258,7 +257,7 @@ func missingMember(member1, member2 *etcdserverpb.Member) *string {
 	return nil
 }
 
-func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.Client, k crclient.Client) (*etcdStatus, error) {
+func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.Client, k client.Client) (*etcdStatus, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	result := &etcdStatus{recoverable: true}
@@ -301,7 +300,7 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 
 	// Determine if the statefulset is updating
 	etcdSTS := etcdStatefulSet(opts.namespace)
-	if err := k.Get(ctx, crclient.ObjectKeyFromObject(etcdSTS), etcdSTS); err != nil {
+	if err := k.Get(ctx, client.ObjectKeyFromObject(etcdSTS), etcdSTS); err != nil {
 		return nil, fmt.Errorf("failed to get etcd statefulset: %w", err)
 	}
 
@@ -311,7 +310,7 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 
 	// Find failing pod
 	podList := &corev1.PodList{}
-	if err := k.List(ctx, podList, crclient.InNamespace(opts.namespace), crclient.MatchingLabels{
+	if err := k.List(ctx, podList, client.InNamespace(opts.namespace), client.MatchingLabels{
 		"app": "etcd",
 	}); err != nil {
 		return nil, fmt.Errorf("failed to list etcd pods: %w", err)
@@ -382,14 +381,14 @@ func recoverEtcd(ctx context.Context, opt options, status etcdStatus) error {
 		log.Error(err, "failed to get kubernetes client")
 		return err
 	}
-	log.Info("Deleting pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
+	log.Info("Deleting pvc", "pvc", client.ObjectKeyFromObject(pvc))
 	if _, err := hyperutil.DeleteIfNeeded(ctx, kclient, pvc); err != nil {
-		log.Error(err, "failed to delete pvc", "pvc", crclient.ObjectKeyFromObject(pvc))
+		log.Error(err, "failed to delete pvc", "pvc", client.ObjectKeyFromObject(pvc))
 	}
 
-	log.Info("Deleting pod", "pod", crclient.ObjectKeyFromObject(pod))
+	log.Info("Deleting pod", "pod", client.ObjectKeyFromObject(pod))
 	if _, err := hyperutil.DeleteIfNeeded(ctx, kclient, pod); err != nil {
-		log.Error(err, "failed to delete pod", "pod", crclient.ObjectKeyFromObject(pod))
+		log.Error(err, "failed to delete pod", "pod", client.ObjectKeyFromObject(pod))
 	}
 
 	log.Info("Etcd recovery actions completed")
@@ -446,13 +445,13 @@ func etcdClient(ctx context.Context, opts options, endpoint string) (*etcdclient
 	return cli, nil
 }
 
-func kubeClient() (crclient.Client, error) {
+func kubeClient() (client.Client, error) {
 	restConfig, err := ctrl.GetConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get the restConfig for management cluster: %w", err)
 	}
 
-	kubeClient, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+	kubeClient, err := client.New(restConfig, client.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
@@ -472,7 +471,11 @@ func isEndpointHealthy(ctx context.Context, opts options, name, endpointURL stri
 		log.Error(err, "cannot create etcd client, returning healthy=false")
 		return false
 	}
-	defer cli.Close()
+	defer func() {
+		if closeErr := cli.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close etcd client")
+		}
+	}()
 
 	healthCtx, healthCtxCancel := context.WithTimeout(ctx, defaultEtcdClientTimeout)
 	defer healthCtxCancel()

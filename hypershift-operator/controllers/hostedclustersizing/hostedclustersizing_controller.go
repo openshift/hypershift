@@ -181,7 +181,7 @@ func (r *reconciler) reconcile(
 		return nil, nil
 	}
 
-	if !hostedCluster.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !hostedCluster.DeletionTimestamp.IsZero() {
 		return nil, nil
 	}
 
@@ -197,7 +197,7 @@ func (r *reconciler) reconcile(
 	}
 
 	lastTransitionTime, lastSizeClass := previousTransitionFor(hostedCluster)
-	currentSizeClass, sizeClassLabelPresent := hostedCluster.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
+	currentSizeClass, sizeClassLabelPresent := hostedCluster.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 	if lastTransitionTime != nil && !sizeClassLabelPresent || currentSizeClass != lastSizeClass {
 		// we can't update both the status and the labels in one call, so when we have updated status but
 		// have not yet updated the labels, we just need to do that first

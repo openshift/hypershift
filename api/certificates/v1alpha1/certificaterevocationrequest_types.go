@@ -26,7 +26,7 @@ type CertificateRevocationRequestSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=customer-break-glass;sre-break-glass
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="signerClass is immutable"
-
+	// +kubebuilder:validation:MaxLength=255
 	// SignerClass identifies the class of signer to revoke. All the active signing CAs for the
 	// signer class will be revoked.
 	SignerClass string `json:"signerClass"`
@@ -48,18 +48,16 @@ const (
 
 // CertificateRevocationRequestStatus defines the observed state of CertificateRevocationRequest
 type CertificateRevocationRequestStatus struct {
-	// +optional
-
 	// RevocationTimestamp is the cut-off time for signing CAs to be revoked. All certificates that
 	// are valid before this time will be revoked; all re-generated certificates will not be valid
 	// at or before this time.
-	RevocationTimestamp *metav1.Time `json:"revocationTimestamp,omitempty"`
-
 	// +optional
+	RevocationTimestamp *metav1.Time `json:"revocationTimestamp,omitempty"` //nolint:kubeapilinter
 
 	// PreviousSigner stores a reference to the previous signer certificate. We require
 	// storing this data to ensure that we can validate that the old signer is no longer
 	// valid before considering revocation complete.
+	// +optional
 	PreviousSigner *corev1.LocalObjectReference `json:"previousSigner,omitempty"`
 
 	// +optional
@@ -67,7 +65,7 @@ type CertificateRevocationRequestStatus struct {
 	// +listMapKey=type
 	// +patchMergeKey=type
 	// +patchStrategy=merge
-
+	// +kubebuilder:validation:MaxItems=10
 	// Conditions contain details about the various aspects of certificate revocation.
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }

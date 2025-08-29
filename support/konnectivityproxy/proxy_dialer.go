@@ -47,7 +47,6 @@ func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) 
 	}
 
 	if err := connectReq.Write(conn); err != nil {
-		conn.Close()
 		return nil, err
 	}
 
@@ -56,12 +55,10 @@ func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) 
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, connectReq)
 	if err != nil {
-		conn.Close()
 		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
-		conn.Close()
 		f := strings.SplitN(resp.Status, " ", 2)
 		return nil, errors.New(f[1])
 	}

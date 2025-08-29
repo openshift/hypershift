@@ -122,14 +122,17 @@ spec:
                           description: |-
                             APICriticalPriorityClassName is the priority class for pods in the API request serving path.
                             This includes Kube API Server, OpenShift APIServer, etc.
+                          maxLength: 255
                           type: string
                         controlPlanePriorityClassName:
                           description: ControlPlanePriorityClassName is the priority
                             class to use for most control plane pods
+                          maxLength: 255
                           type: string
                         etcdPriorityClassName:
                           description: EtcdPriorityClassName is the priority class
                             to use for etcd pods
+                          maxLength: 255
                           type: string
                         kasGoMemLimit:
                           description: |-
@@ -160,6 +163,7 @@ spec:
                               containerName:
                                 description: ContainerName is the name of the container
                                   to which the resource request applies.
+                                maxLength: 255
                                 type: string
                               cpu:
                                 anyOf:
@@ -172,6 +176,7 @@ spec:
                               deploymentName:
                                 description: DeploymentName is the name of the deployment
                                   to which the resource request applies.
+                                maxLength: 255
                                 type: string
                               memory:
                                 anyOf:
@@ -185,6 +190,7 @@ spec:
                             - containerName
                             - deploymentName
                             type: object
+                          maxItems: 100
                           type: array
                       type: object
                     management:
@@ -211,11 +217,13 @@ spec:
                       type: object
                     name:
                       description: Name is the t-shirt size name.
+                      maxLength: 255
                       type: string
                   required:
                   - criteria
                   - name
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - name
@@ -311,6 +319,7 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - type

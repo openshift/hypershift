@@ -32,7 +32,7 @@ func (r *validator) Reconcile(ctx context.Context, request reconcile.Request) (r
 
 	config := schedulingv1alpha1.ClusterSizingConfiguration{}
 	if err := r.lister.Get(ctx, request.NamespacedName, &config); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to get cluster sizing configuration %s: %w", request.NamespacedName.String(), err)
+		return reconcile.Result{}, fmt.Errorf("failed to get cluster sizing configuration %s: %w", request.String(), err)
 	}
 
 	cfg := schedulingv1alpha1applyconfigurations.ClusterSizingConfiguration(request.Name)

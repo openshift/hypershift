@@ -101,7 +101,11 @@ func TestCheckAndFixFile(t *testing.T) {
 			// Create a temporary directory for test files
 			tempDir, err := os.MkdirTemp("", "sync-pullsecret-test-*")
 			g.Expect(err).To(BeNil())
-			defer os.RemoveAll(tempDir)
+			defer func() {
+				if err := os.RemoveAll(tempDir); err != nil {
+					t.Logf("failed to remove temp directory %s: %v", tempDir, err)
+				}
+			}()
 
 			// Create test file path
 			testFilePath := filepath.Join(tempDir, "config.json")

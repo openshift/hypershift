@@ -22,7 +22,9 @@ func (c *defaultHAproxyClient) sendCommand(socketPath, command string) (string, 
 	if err != nil {
 		return "", fmt.Errorf("failed to connect to socket %s: %w", socketPath, err)
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	// Set a deadline for reads/writes to avoid blocking forever.
 	if err := conn.SetDeadline(time.Now().Add(reloadTimeout)); err != nil {

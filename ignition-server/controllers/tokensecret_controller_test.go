@@ -80,7 +80,7 @@ func TestReconcile(t *testing.T) {
 
 				// Get the secret.
 				freshSecret := &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate data for conditions
@@ -121,7 +121,7 @@ func TestReconcile(t *testing.T) {
 
 				// Get the secret.
 				freshSecret := &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate that the tokenID was not rotated.
@@ -142,7 +142,7 @@ func TestReconcile(t *testing.T) {
 
 				// Validate the token ID was rotated.
 				freshSecret = &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(freshSecret.Data[TokenSecretTokenKey]).ToNot(BeEquivalentTo(originalSecret.Data[TokenSecretTokenKey]))
 				g.Expect(freshSecret.Data[TokenSecretOldTokenKey]).To(BeEquivalentTo(originalSecret.Data[TokenSecretTokenKey]))
@@ -157,12 +157,12 @@ func TestReconcile(t *testing.T) {
 				g.Expect(freshSecret.Data[TokenSecretMessageKey]).To(BeEquivalentTo("Payload generated successfully"))
 
 				// Delete the secret.
-				err = r.Client.Delete(ctx, secret)
+				err = r.Delete(ctx, secret)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate the secret is really gone.
 				freshSecret = &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).To(HaveOccurred())
 				if !apierrors.IsNotFound(err) {
 					t.Errorf("expected notFound error, got: %v", err)
@@ -212,7 +212,7 @@ func TestReconcile(t *testing.T) {
 				now := time.Now()
 				// Get the secret.
 				freshSecret := &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 				oldToken := freshSecret.Data[TokenSecretTokenKey]
 
@@ -241,7 +241,7 @@ func TestReconcile(t *testing.T) {
 
 				// Get the fresh Secret.
 				freshSecret = &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate that the expired tokenID was deleted from the cache.
@@ -297,7 +297,7 @@ func TestReconcile(t *testing.T) {
 
 				// Get the secret.
 				freshSecret := &corev1.Secret{}
-				err = r.Client.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
+				err = r.Get(ctx, client.ObjectKeyFromObject(secret), freshSecret)
 				g.Expect(err).ToNot(HaveOccurred())
 
 				// Validate that the payload was not stored in the token secret
@@ -604,7 +604,7 @@ func TestProcessedExpiredToken(t *testing.T) {
 					Namespace: fakeNamespace,
 				},
 			}
-			err = r.Client.Get(t.Context(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
+			err = r.Get(t.Context(), client.ObjectKeyFromObject(secretToFetch), secretToFetch)
 			g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 		})
 	}

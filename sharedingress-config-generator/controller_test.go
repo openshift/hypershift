@@ -38,7 +38,9 @@ func TestReconcile(t *testing.T) {
 	var err error
 	tempDir, err := os.MkdirTemp("", "haproxy-config-*")
 	g.Expect(err).NotTo(HaveOccurred())
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
 
 	configPath := filepath.Join(tempDir, "haproxy.cfg")
 

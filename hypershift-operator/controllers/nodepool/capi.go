@@ -186,7 +186,7 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
 	// list machineSets
 	machineSets := &capiv1.MachineSetList{}
-	if err := c.Client.List(ctx, machineSets, client.InNamespace(controlPlaneNamespace)); err != nil {
+	if err := c.List(ctx, machineSets, client.InNamespace(controlPlaneNamespace)); err != nil {
 		return fmt.Errorf("failed to list machineSets: %w", err)
 	}
 
@@ -213,7 +213,7 @@ func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nod
 	machineTemplates := new(unstructured.UnstructuredList)
 	machineTemplates.SetAPIVersion(ref.APIVersion)
 	machineTemplates.SetKind(ref.Kind)
-	if err := c.Client.List(ctx, machineTemplates, client.InNamespace(ref.Namespace)); err != nil {
+	if err := c.List(ctx, machineTemplates, client.InNamespace(ref.Namespace)); err != nil {
 		return fmt.Errorf("failed to list MachineTemplates: %w", err)
 	}
 
@@ -234,7 +234,7 @@ func (c *CAPI) cleanupMachineTemplates(ctx context.Context, log logr.Logger, nod
 
 		if shouldDelete {
 			log.Info("deleting machineTemplate", "name", mt.GetName())
-			if err := c.Client.Delete(ctx, &mt); err != nil {
+			if err := c.Delete(ctx, &mt); err != nil {
 				return fmt.Errorf("failed to delete MachineTemplate %s: %w", mt.GetName(), err)
 			}
 		}

@@ -32,7 +32,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	log := ctrl.LoggerFrom(ctx).WithValues("secret", req.String())
 
 	secret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, req.NamespacedName, secret); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("not found", "request", req.String())
 			return ctrl.Result{}, nil
@@ -61,7 +61,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 	}
 
 	nodePool := &hyperv1.NodePool{}
-	if err := r.Client.Get(ctx, supportutil.ParseNamespacedName(nodePoolName), nodePool); err != nil && !apierrors.IsNotFound(err) {
+	if err := r.Get(ctx, supportutil.ParseNamespacedName(nodePoolName), nodePool); err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "error getting nodepool")
 		return ctrl.Result{}, err
 	} else if apierrors.IsNotFound(err) {
@@ -71,7 +71,7 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		}
 
 		log.Info("removing secret as nodePool is missing")
-		return ctrl.Result{}, r.Client.Delete(ctx, secret)
+		return ctrl.Result{}, r.Delete(ctx, secret)
 
 	}
 

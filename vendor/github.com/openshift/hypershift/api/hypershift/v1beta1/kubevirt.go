@@ -177,7 +177,7 @@ type KubevirtNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:default=true
-	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"`
+	AttachDefaultNetwork *bool `json:"attachDefaultNetwork,omitempty"` //nolint:kubeapilinter
 
 	// nodeSelector is a selector which must be true for the kubevirt VirtualMachine to fit on a node.
 	// Selector which must match a node's labels for the VM to be scheduled on that node. More info:
@@ -279,7 +279,7 @@ type KubevirtPlatformSpec struct {
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="baseDomainPassthrough is immutable"
-	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"`
+	BaseDomainPassthrough *bool `json:"baseDomainPassthrough,omitempty"` //nolint:kubeapilinter
 
 	// generateID is used to uniquely apply a name suffix to resources associated with
 	// kubevirt infrastructure resources

@@ -41,7 +41,8 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 	switch platformType {
 	case hyperv1.KubevirtPlatform:
 		// Modify vxlan port to avoid collisions with management cluster's default vxlan port.
-		if networkType == hyperv1.OpenShiftSDN {
+		switch networkType {
+		case hyperv1.OpenShiftSDN:
 			port := kubevirtDefaultVXLANPort
 			if network.Spec.DefaultNetwork.OpenShiftSDNConfig == nil {
 				network.Spec.DefaultNetwork.OpenShiftSDNConfig = &operatorv1.OpenShiftSDNConfig{}
@@ -49,7 +50,7 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			if network.Spec.DefaultNetwork.OpenShiftSDNConfig.VXLANPort == nil {
 				network.Spec.DefaultNetwork.OpenShiftSDNConfig.VXLANPort = &port
 			}
-		} else if networkType == hyperv1.OVNKubernetes {
+		case hyperv1.OVNKubernetes:
 			port := kubevirtDefaultGenevePort
 			if network.Spec.DefaultNetwork.OVNKubernetesConfig == nil {
 				network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}

@@ -1,5 +1,5 @@
 package e2e
 
 const (
-	tuningConfigKey = "tuning"
+	tuningConfigKey = "tuning" //nolint:unused
 )

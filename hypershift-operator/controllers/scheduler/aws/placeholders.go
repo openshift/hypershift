@@ -211,10 +211,10 @@ func (r *placeholderCreator) reconcile(
 			// which placeholder are we missing?
 			presentIndices := sets.Set[int]{}
 			for _, deployment := range deployments.Items {
-				index, err := parseIndex(deployment.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel], deployment.ObjectMeta.Name)
+				index, err := parseIndex(deployment.Labels[hypershiftv1beta1.HostedClusterSizeLabel], deployment.Name)
 				if err != nil {
 					// this should never happen, but we can't progress if it does
-					logger.Error(err, "deployment has invalid placeholder index value", "value", deployment.ObjectMeta.Name)
+					logger.Error(err, "deployment has invalid placeholder index value", "value", deployment.Name)
 					return nil, nil
 				}
 				// the indices are names of k8s resources, so we know they won't collide,
@@ -286,8 +286,8 @@ func (r *placeholderUpdater) reconcile(
 ) (bool, *appsv1applyconfigurations.DeploymentApplyConfiguration, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
-	_, isPlaceholder := deployment.ObjectMeta.Labels[PlaceholderLabel]
-	placeholderSize, hasSize := deployment.ObjectMeta.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
+	_, isPlaceholder := deployment.Labels[PlaceholderLabel]
+	placeholderSize, hasSize := deployment.Labels[hypershiftv1beta1.HostedClusterSizeLabel]
 
 	if !isPlaceholder || !hasSize {
 		return false, nil, nil
@@ -313,9 +313,9 @@ func (r *placeholderUpdater) reconcile(
 		}
 	}
 
-	parsedIndex, err := parseIndex(placeholderSize, deployment.ObjectMeta.Name)
+	parsedIndex, err := parseIndex(placeholderSize, deployment.Name)
 	if err != nil {
-		logger.Error(err, "deployment has invalid placeholder index value", "value", deployment.ObjectMeta.Name)
+		logger.Error(err, "deployment has invalid placeholder index value", "value", deployment.Name)
 		return false, nil, nil
 	}
 

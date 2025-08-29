@@ -101,7 +101,11 @@ func simulateFileCorruption(t *testing.T, cacheDir string) {
 	if err != nil {
 		t.Fatal("failed to open cache file", err)
 	}
-	defer cachedFile.Close()
+	defer func() {
+		if closeErr := cachedFile.Close(); closeErr != nil {
+			t.Logf("Failed to close cached file: %v", closeErr)
+		}
+	}()
 	if _, err := cachedFile.WriteString("世界"); err != nil {
 		t.Fatal("failed to add data to a cache file", err)
 	}

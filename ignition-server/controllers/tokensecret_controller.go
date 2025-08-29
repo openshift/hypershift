@@ -167,7 +167,7 @@ func (r *TokenSecretReconciler) processExpiredToken(ctx context.Context, tokenSe
 	if currentToken, ok := tokenSecret.Data[TokenSecretTokenKey]; ok {
 		r.PayloadStore.Delete(string(currentToken))
 	}
-	if err := r.Client.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
+	if err := r.Delete(ctx, tokenSecret); err != nil && !apierrors.IsNotFound(err) {
 		return err
 	}
 	return nil
@@ -185,7 +185,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// token cache with reality in a more timely fashion than TTL alone.
 	secretDeleted := false
 	tokenSecret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, req.NamespacedName, tokenSecret); err != nil {
+	if err := r.Get(ctx, req.NamespacedName, tokenSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("Token Secret not found", "request", req.String())
 			secretDeleted = true
@@ -260,7 +260,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		patch := tokenSecret.DeepCopy()
 		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
 		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
-		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+		if err := r.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 		}
 
@@ -293,7 +293,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		patch := tokenSecret.DeepCopy()
 		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
 		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
-		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+		if err := r.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 		}
 
@@ -327,7 +327,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	patch.Data[TokenSecretReasonKey] = []byte(hyperv1.AsExpectedReason)
 	patch.Data[TokenSecretMessageKey] = []byte("Payload generated successfully")
 
-	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+	if err := r.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 	}
 
@@ -386,7 +386,7 @@ func (r *TokenSecretReconciler) rotateToken(ctx context.Context, tokenSecret *co
 	// before the value is set in the cache the new token would require a new payload generation in that reconciliation.
 	r.PayloadStore.Set(newToken, value)
 
-	if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+	if err := r.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
 		// If token patch operation fails, consistently restore the cache.
 		// Otherwise, the next reconciliation the token would require a new payload generation because
 		// it wouldn't be in the cache anymore.

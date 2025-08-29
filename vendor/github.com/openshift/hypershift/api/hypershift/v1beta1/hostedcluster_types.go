@@ -697,7 +697,7 @@ type HostedClusterSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="fips is immutable"
 	// +optional
 	// +immutable
-	FIPS bool `json:"fips"`
+	FIPS bool `json:"fips"` //nolint:kubeapilinter
 
 	// pausedUntil is a field that can be used to pause reconciliation on the HostedCluster controller, resulting in any change to the HostedCluster being ignored.
 	// Either a date can be provided in RFC3339 format or a boolean as in 'true', 'false', 'True', 'False'. If a date is
@@ -1254,7 +1254,6 @@ type AutoNode struct {
 type ProvisionerConfig struct {
 	// name specifies the name of the provisioner to use.
 	// +required
-	// +kubebuilder:validation:Enum=Karpenter
 	Name Provisioner `json:"name"`
 	// karpenter specifies the configuration for the Karpenter provisioner.
 	// +optional
@@ -1800,6 +1799,7 @@ type ClusterVersionStatus struct {
 	// is preserved.
 	//
 	// +optional
+	// +kubebuilder:validation:MaxItems=100
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
 	// observedGeneration reports which version of the spec is being synced.

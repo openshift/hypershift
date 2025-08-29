@@ -39,7 +39,7 @@ func TestExtractMCOBinaries(t *testing.T) {
 			cacheFunc: func(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
 				switch file {
 				case "usr/lib/os-release":
-					_, err := out.Write([]byte(fmt.Sprintf("VERSION_ID=\"%s\"\n", "8.0")))
+					_, err := fmt.Fprintf(out, "VERSION_ID=\"%s\"\n", "8.0")
 					return err
 				case "usr/bin/machine-config-operator", "usr/bin/machine-config-controller", "usr/bin/machine-config-server":
 					_, err := out.Write([]byte("rhel8"))
@@ -81,7 +81,7 @@ func TestExtractMCOBinaries(t *testing.T) {
 			imageFileCache.regClient = func(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
 				switch file {
 				case "usr/lib/os-release":
-					_, err := out.Write([]byte(fmt.Sprintf("VERSION_ID=\"%s\"\n", tc.mcoOSReleaseVersion)))
+					_, err := fmt.Fprintf(out, "VERSION_ID=\"%s\"\n", tc.mcoOSReleaseVersion)
 					return err
 				case "usr/bin/machine-config-operator", "usr/bin/machine-config-controller", "usr/bin/machine-config-server":
 					_, err := out.Write([]byte("rhel8"))

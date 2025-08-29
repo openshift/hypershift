@@ -83,8 +83,10 @@ func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Re
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to create temporary config file: %w", err)
 	}
-	defer tmpFile.Close()
-	defer os.Remove(tmpFile.Name())
+	defer func() {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpFile.Name())
+	}()
 
 	// Use MultiWriter to write to both hash and file simultaneously
 	h := sha256.New()
@@ -103,7 +105,9 @@ func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Re
 		if err := tmpFile.Sync(); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to sync temporary file: %w", err)
 		}
-		tmpFile.Close()
+		if err := tmpFile.Close(); err != nil {
+			logger.Error(err, "failed to close temporary file")
+		}
 
 		if err := os.Rename(tmpFile.Name(), r.configPath); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update config file: %w", err)
@@ -136,7 +140,9 @@ func (r *SharedIngressConfigReconciler) currentConfigHash() ([]byte, error) {
 		}
 		return nil, fmt.Errorf("failed to open config file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	h := sha256.New()
 	if _, err := io.Copy(h, file); err != nil {

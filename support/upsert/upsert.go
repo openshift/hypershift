@@ -421,11 +421,11 @@ func defaultProbe(original, mutated *corev1.Probe) {
 }
 
 func defaultVolume(original, mutated *corev1.Volume) {
-	if mutated.VolumeSource.Secret != nil && original.VolumeSource.Secret != nil && mutated.VolumeSource.Secret.DefaultMode == nil {
-		mutated.VolumeSource.Secret.DefaultMode = original.VolumeSource.Secret.DefaultMode
+	if mutated.Secret != nil && original.Secret != nil && mutated.Secret.DefaultMode == nil {
+		mutated.Secret.DefaultMode = original.Secret.DefaultMode
 	}
-	if mutated.VolumeSource.ConfigMap != nil && original.VolumeSource.ConfigMap != nil && mutated.VolumeSource.ConfigMap.DefaultMode == nil {
-		mutated.VolumeSource.ConfigMap.DefaultMode = original.VolumeSource.ConfigMap.DefaultMode
+	if mutated.ConfigMap != nil && original.ConfigMap != nil && mutated.ConfigMap.DefaultMode == nil {
+		mutated.ConfigMap.DefaultMode = original.ConfigMap.DefaultMode
 	}
 }
 

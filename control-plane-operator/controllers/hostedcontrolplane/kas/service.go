@@ -330,7 +330,7 @@ func ReconcileKonnectivityServerServiceStatus(svc *corev1.Service, route *routev
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if len(svc.Status.LoadBalancer.Ingress) == 0 {
-			message = fmt.Sprintf("Konnectivity load balancer is not provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+			message = fmt.Sprintf("Konnectivity load balancer is not provisioned; %v since creation", duration.ShortHumanDuration(time.Since(svc.CreationTimestamp.Time)))
 			var messages []string
 			messages, err = messageCollector.ErrorMessages(svc)
 			if err != nil {

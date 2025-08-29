@@ -62,7 +62,7 @@ func (b *projectedVolumeBuilder) volume() corev1.Volume {
 
 func (b *projectedVolumeBuilder) withSecrets(secretNames ...string) *projectedVolumeBuilder {
 	for _, name := range secretNames {
-		b.v.VolumeSource.Projected.Sources = append(b.v.VolumeSource.Projected.Sources, corev1.VolumeProjection{
+		b.v.Projected.Sources = append(b.v.Projected.Sources, corev1.VolumeProjection{
 			Secret: &corev1.SecretProjection{
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: name,
@@ -75,7 +75,7 @@ func (b *projectedVolumeBuilder) withSecrets(secretNames ...string) *projectedVo
 
 func (b *projectedVolumeBuilder) withConfigMaps(cmNames ...string) *projectedVolumeBuilder {
 	for _, name := range cmNames {
-		b.v.VolumeSource.Projected.Sources = append(b.v.VolumeSource.Projected.Sources, corev1.VolumeProjection{
+		b.v.Projected.Sources = append(b.v.Projected.Sources, corev1.VolumeProjection{
 			ConfigMap: &corev1.ConfigMapProjection{
 				LocalObjectReference: corev1.LocalObjectReference{
 					Name: name,
@@ -88,7 +88,7 @@ func (b *projectedVolumeBuilder) withConfigMaps(cmNames ...string) *projectedVol
 
 func (b *projectedVolumeBuilder) withDownardAPI(fields ...string) *projectedVolumeBuilder {
 	for _, field := range fields {
-		b.v.VolumeSource.Projected.Sources = append(b.v.VolumeSource.Projected.Sources, corev1.VolumeProjection{
+		b.v.Projected.Sources = append(b.v.Projected.Sources, corev1.VolumeProjection{
 			DownwardAPI: &corev1.DownwardAPIProjection{
 				Items: []corev1.DownwardAPIVolumeFile{
 					{

@@ -116,7 +116,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 func (r *Reconciler) reconcileMonitoringConfig(ctx context.Context) error {
 	monitoringConfig := monitoring.MonitoringConfig()
-	if _, err := r.CreateOrUpdateProvider.CreateOrUpdate(ctx, r.Client, monitoringConfig, func() error {
+	if _, err := r.CreateOrUpdate(ctx, r.Client, monitoringConfig, func() error {
 		return reconcileMonitoringConfigContent(monitoringConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile monitoring config: %w", err)
@@ -131,7 +131,7 @@ func (r *Reconciler) reconcileTelemetryRemoteWrite(ctx context.Context, clusterI
 	}
 
 	remoteWriteSecret := monitoring.UWMRemoteWriteSecret()
-	if _, err := r.CreateOrUpdateProvider.CreateOrUpdate(ctx, r.Client, remoteWriteSecret, func() error {
+	if _, err := r.CreateOrUpdate(ctx, r.Client, remoteWriteSecret, func() error {
 		return reconcileRemoteWriteSecret(telemeterClientSecret, remoteWriteSecret, clusterID)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile remote write secret: %w", err)
@@ -147,7 +147,7 @@ func (r *Reconciler) reconcileTelemetryRemoteWrite(ctx context.Context, clusterI
 	}
 
 	uwmConfig := monitoring.UWMConfig()
-	if _, err := r.CreateOrUpdateProvider.CreateOrUpdate(ctx, r.Client, uwmConfig, func() error {
+	if _, err := r.CreateOrUpdate(ctx, r.Client, uwmConfig, func() error {
 		return reconcileUWMConfigContent(uwmConfig, relabelConfig)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile user workload monitoring config: %w", err)

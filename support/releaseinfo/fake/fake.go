@@ -104,7 +104,7 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 	}
 
 	for name, image := range f.Components {
-		releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+		releaseImage.Spec.Tags = append(releaseImage.Spec.Tags, imagev1.TagReference{
 			Name: name,
 			From: &corev1.ObjectReference{Name: image},
 		})
@@ -112,7 +112,7 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 
 	if len(f.ImageVersion) == 0 {
 		if f.Version != "" {
-			releaseImage.ImageStream.Name = f.Version
+			releaseImage.Name = f.Version
 		}
 		return releaseImage, nil
 	}
@@ -120,7 +120,7 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 	if !ok {
 		return nil, fmt.Errorf("unable to lookup release image")
 	}
-	releaseImage.ImageStream.Name = version
+	releaseImage.Name = version
 	return releaseImage, nil
 }
 

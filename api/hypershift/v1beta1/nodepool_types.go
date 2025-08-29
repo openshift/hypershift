@@ -420,7 +420,7 @@ type NodePoolManagement struct {
 	// AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.
 	// +optional
 	// +kubebuilder:default=false
-	AutoRepair bool `json:"autoRepair"`
+	AutoRepair bool `json:"autoRepair"` //nolint:kubeapilinter
 }
 
 // NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.

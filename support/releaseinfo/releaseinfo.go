@@ -107,12 +107,12 @@ type CoreOSPowerVSImage struct {
 }
 
 func (i *ReleaseImage) Version() string {
-	return i.ImageStream.Name
+	return i.Name
 }
 
 func (i *ReleaseImage) ComponentImages() map[string]string {
 	images := make(map[string]string)
-	for _, tag := range i.ImageStream.Spec.Tags {
+	for _, tag := range i.Spec.Tags {
 		images[tag.Name] = tag.From.Name
 	}
 	return images
@@ -125,8 +125,8 @@ func (i *ReleaseImage) ComponentVersions() (map[string]string, error) {
 	}
 
 	versions := make(map[string]string)
-	if len(i.ImageStream.Name) > 0 {
-		versions["release"] = i.ImageStream.Name
+	if len(i.Name) > 0 {
+		versions["release"] = i.Name
 	}
 	for component, version := range componentVersions {
 		versions[component] = version.String()

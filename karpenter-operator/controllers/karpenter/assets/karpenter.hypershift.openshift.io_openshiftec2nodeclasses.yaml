@@ -58,6 +58,7 @@ spec:
                   properties:
                     deviceName:
                       description: The device name (for example, /dev/sdh or xvdh).
+                      maxLength: 255
                       type: string
                     ebs:
                       description: EBS contains parameters used to automatically set
@@ -99,9 +100,11 @@ spec:
                         kmsKeyID:
                           description: KMSKeyID (ARN) of the symmetric Key Management
                             Service (KMS) CMK used for encryption.
+                          maxLength: 255
                           type: string
                         snapshotID:
                           description: SnapshotID is the ID of an EBS snapshot
+                          maxLength: 255
                           type: string
                         throughput:
                           description: |-
@@ -174,12 +177,14 @@ spec:
                   properties:
                     id:
                       description: ID is the security group id in EC2
+                      maxLength: 255
                       pattern: sg-[0-9a-z]+
                       type: string
                     name:
                       description: |-
                         Name is the security group name in EC2.
                         This value is the name field, which is different from the name tag.
+                      maxLength: 255
                       type: string
                     tags:
                       additionalProperties:
@@ -216,6 +221,7 @@ spec:
                   properties:
                     id:
                       description: ID is the subnet id in EC2
+                      maxLength: 255
                       pattern: subnet-[0-9a-z]+
                       type: string
                     tags:
@@ -320,6 +326,7 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
@@ -334,13 +341,16 @@ spec:
                   properties:
                     id:
                       description: ID of the security group
+                      maxLength: 255
                       type: string
                     name:
                       description: Name of the security group
+                      maxLength: 255
                       type: string
                   required:
                   - id
                   type: object
+                maxItems: 30
                 type: array
               subnets:
                 description: |-
@@ -352,17 +362,21 @@ spec:
                   properties:
                     id:
                       description: ID of the subnet
+                      maxLength: 255
                       type: string
                     zone:
                       description: The associated availability zone
+                      maxLength: 255
                       type: string
                     zoneID:
                       description: The associated availability zone ID
+                      maxLength: 255
                       type: string
                   required:
                   - id
                   - zone
                   type: object
+                maxItems: 30
                 type: array
             type: object
         type: object

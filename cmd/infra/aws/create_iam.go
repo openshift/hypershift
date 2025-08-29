@@ -193,10 +193,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
-	sharedVPC := false
-	if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
-		sharedVPC = true
-	}
+	sharedVPC := o.VPCOwnerCredentialsOpts.AWSCredentialsFile != ""
 
 	awsConfig := awsutil.NewConfig()
 	iamClient := iam.New(awsSession, awsConfig)

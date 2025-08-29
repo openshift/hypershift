@@ -120,7 +120,11 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer payloadFile.Close()
+	defer func() {
+		if closeErr := payloadFile.Close(); closeErr != nil {
+			log.Error(closeErr, "Failed to close payload file")
+		}
+	}()
 	if err := os.WriteFile(payloadFile.Name(), payload, 0644); err != nil {
 		return fmt.Errorf("failed to write payload file: %w", err)
 	}

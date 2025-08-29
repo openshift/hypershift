@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -16,7 +17,10 @@ import (
 func init() {
 	// The proxy package only interprets the ALL_PROXY variable. This is only used
 	// for cloud provider endpoints, so use the https proxy.
-	os.Setenv("ALL_PROXY", os.Getenv("HTTPS_PROXY"))
+	if err := os.Setenv("ALL_PROXY", os.Getenv("HTTPS_PROXY")); err != nil {
+		// Can't really handle this error in init, but at least avoid silent failure
+		panic("Failed to set ALL_PROXY environment variable: " + err.Error())
+	}
 	// The proxy itself might be using either http or https though, so we have to
 	// register both dialers.
 	proxy.RegisterDialerType("http", newHttpDialer)
@@ -58,7 +62,9 @@ func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) 
 	}
 
 	if err := connectReq.Write(conn); err != nil {
-		conn.Close()
+		if closeErr := conn.Close(); closeErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("failed to close connection: %w", closeErr))
+		}
 		return nil, err
 	}
 
@@ -67,14 +73,19 @@ func (hpd *httpProxyDialer) Dial(network string, addr string) (net.Conn, error) 
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, connectReq)
 	if err != nil {
-		conn.Close()
+		if closeErr := conn.Close(); closeErr != nil {
+			return nil, errors.Join(err, fmt.Errorf("failed to close connection: %w", closeErr))
+		}
 		return nil, err
 	}
 
 	if resp.StatusCode != 200 {
-		conn.Close()
 		f := strings.SplitN(resp.Status, " ", 2)
-		return nil, errors.New(f[1])
+		statusErr := errors.New(f[1])
+		if closeErr := conn.Close(); closeErr != nil {
+			return nil, errors.Join(statusErr, fmt.Errorf("failed to close connection: %w", closeErr))
+		}
+		return nil, statusErr
 	}
 	return conn, nil
 }

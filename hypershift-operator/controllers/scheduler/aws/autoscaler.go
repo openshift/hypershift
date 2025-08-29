@@ -98,7 +98,7 @@ func (r *NonRequestServingNodeAutoscaler) Reconcile(ctx context.Context, req ctr
 	}
 
 	nonReqServingMachineSets := filterMachineSets(machineSets.Items, func(ms *machinev1beta1.MachineSet) bool {
-		return strings.HasPrefix(ms.Spec.Template.ObjectMeta.Labels[clusterAPIMachineTypeLabel], nonRequestServingLabelPrefix)
+		return strings.HasPrefix(ms.Spec.Template.Labels[clusterAPIMachineTypeLabel], nonRequestServingLabelPrefix)
 	})
 
 	if err := validateNonRequestServingMachineSets(nonReqServingMachineSets); err != nil {
@@ -636,15 +636,15 @@ func matchingMachineSet(machineSet *machinev1beta1.MachineSet, machineSets []mac
 }
 
 func machineSetSize(machineSet *machinev1beta1.MachineSet) string {
-	return machineSet.Spec.Template.Spec.ObjectMeta.Labels[hyperv1.NodeSizeLabel]
+	return machineSet.Spec.Template.Spec.Labels[hyperv1.NodeSizeLabel]
 }
 
 func machineSetPairLabel(machineSet *machinev1beta1.MachineSet) string {
-	return machineSet.Spec.Template.Spec.ObjectMeta.Labels[OSDFleetManagerPairedNodesLabel]
+	return machineSet.Spec.Template.Spec.Labels[OSDFleetManagerPairedNodesLabel]
 }
 
 func isRequestServingMachineSet(machineSet *machinev1beta1.MachineSet) bool {
-	return machineSet.Spec.Template.Spec.ObjectMeta.Labels[hyperv1.RequestServingComponentLabel] == "true"
+	return machineSet.Spec.Template.Spec.Labels[hyperv1.RequestServingComponentLabel] == "true"
 }
 
 func podSize(pod *corev1.Pod) string {

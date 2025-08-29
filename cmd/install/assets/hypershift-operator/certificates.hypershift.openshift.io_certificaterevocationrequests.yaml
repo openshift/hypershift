@@ -52,6 +52,7 @@ spec:
                 enum:
                 - customer-break-glass
                 - sre-break-glass
+                maxLength: 255
                 type: string
                 x-kubernetes-validations:
                 - message: signerClass is immutable
@@ -120,6 +121,7 @@ spec:
                   - status
                   - type
                   type: object
+                maxItems: 10
                 type: array
                 x-kubernetes-list-map-keys:
                 - type

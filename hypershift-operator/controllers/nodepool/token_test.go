@@ -885,7 +885,7 @@ func TestOutdatedUserdataSecret(t *testing.T) {
 			secret := tc.token.outdatedUserDataSecret()
 			g.Expect(secret).NotTo(BeNil())
 			g.Expect(secret.Namespace).To(Equal(tc.token.controlplaneNamespace))
-			g.Expect(secret.Name).To(Equal(tc.expectedSecretNamePrefix + tc.token.ConfigGenerator.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]))
+			g.Expect(secret.Name).To(Equal(tc.expectedSecretNamePrefix + tc.token.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]))
 		})
 	}
 }
@@ -930,7 +930,7 @@ func TestOutdatedTokenSecret(t *testing.T) {
 			secret := tc.token.outdatedTokenSecret()
 			g.Expect(secret).NotTo(BeNil())
 			g.Expect(secret.Namespace).To(Equal(tc.token.controlplaneNamespace))
-			g.Expect(secret.Name).To(Equal(tc.expectedSecretNamePrefix + tc.token.ConfigGenerator.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]))
+			g.Expect(secret.Name).To(Equal(tc.expectedSecretNamePrefix + tc.token.nodePool.Annotations[nodePoolAnnotationCurrentConfigVersion]))
 		})
 	}
 }

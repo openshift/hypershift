@@ -224,7 +224,7 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 			}
 			var got []hypershiftv1beta1.KubevirtNetwork
 			if output != nil && output.completetedKubevirtPlatformCreateOptions != nil {
-				got = output.completetedKubevirtPlatformCreateOptions.AdditionalNetworks
+				got = output.AdditionalNetworks
 			}
 			if diff := cmp.Diff(test.output, got); diff != "" {
 				t.Errorf("got incorrect output: %v", diff)
