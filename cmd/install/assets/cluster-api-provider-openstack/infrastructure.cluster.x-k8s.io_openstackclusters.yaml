@@ -1247,10 +1247,11 @@ spec:
                   ControlPlaneEndpoint cannot be modified after ControlPlaneEndpoint.Host has been set.
                 properties:
                   host:
-                    description: The hostname on which the API server is serving.
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
                     type: string
                   port:
-                    description: The port on which the API server is serving.
+                    description: port is the port on which the API server is serving.
                     format: int32
                     type: integer
                 required:
