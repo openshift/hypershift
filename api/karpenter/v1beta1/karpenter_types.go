@@ -13,6 +13,15 @@ const (
 	// KarpenterProviderAWSImage overrides the Karpenter AWS provider image to use for
 	// a HostedControlPlane with AutoNode enabled.
 	KarpenterProviderAWSImage = "hypershift.openshift.io/karpenter-provider-aws-image"
+
+	// KarpenterNodePoolName is the name of the hyperv1.NodePool associated with Karpenter.
+	KarpenterNodePool = "karpenter"
+
+	// TokenSecretNodePoolAnnotation is used to annotate the Karpenter token secret with its hyperv1.NodePool namespaced name.
+	TokenSecretNodePoolAnnotation = "hypershift.openshift.io/nodePool"
+
+	// UserDataAMILabel is a label set in the userData secret generated for karpenter instances.
+	UserDataAMILabel = "hypershift.openshift.io/ami"
 )
 
 // Subnet contains resolved Subnet selector values utilized for node launch
