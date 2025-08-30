@@ -1,8 +1,11 @@
 package karpenteroperator
 
 import (
+	"os"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -52,6 +55,14 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			c.Args = append(c.Args,
 				"--control-plane-operator-image="+karp.ControlPlaneOperatorImage,
 			)
+			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+				c.Env = append(c.Env,
+					corev1.EnvVar{
+						Name:  rhobsmonitoring.EnvironmentVariable,
+						Value: "1",
+					},
+				)
+			}
 		})
 	}
 
