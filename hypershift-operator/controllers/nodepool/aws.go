@@ -7,6 +7,8 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -155,6 +157,15 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 		}
 	}
 
+	if nodePool.Spec.Platform.AWS.SpotMarketOptions != nil {
+		awsMachineTemplateSpec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{
+			MaxPrice: nodePool.Spec.Platform.AWS.SpotMarketOptions.MaxPrice,
+		}
+		if awsMachineTemplateSpec.Template.Spec.MarketType == "" {
+			awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeSpot
+		}
+	}
+
 	if hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
 		awsMachineTemplateSpec.Template.Spec.PublicIP = ptr.To(true)
 	}
@@ -291,6 +302,9 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 }
 
 func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, oldCondition *hyperv1.NodePoolCondition) error {
+	if nodePool.Spec.Platform.AWS == nil {
+		return fmt.Errorf("aws platform not populated")
+	}
 	if nodePool.Spec.Platform.AWS.Placement != nil && nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
 		pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
 		if err != nil {
@@ -303,6 +317,17 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 
 		if hostedClusterVersion.Major == 4 && hostedClusterVersion.Minor < 19 {
 			return fmt.Errorf("capacityReservation is only supported on 4.19+ clusters")
+		}
+	}
+
+	if nodePool.Spec.Platform.AWS.SpotMarketOptions != nil {
+		if nodePool.Spec.Platform.AWS.Placement != nil {
+			if nodePool.Spec.Platform.AWS.Placement.Tenancy != "" && nodePool.Spec.Platform.AWS.Placement.Tenancy != ec2.TenancyDefault {
+				return fmt.Errorf("spotMarketOptions is not compatible with non default tenancy placement options")
+			}
+			if nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
+				return fmt.Errorf("spotMarketOptions is not compatible with capacity reservation placement options")
+			}
 		}
 	}
 

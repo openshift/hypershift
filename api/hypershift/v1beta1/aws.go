@@ -57,6 +57,21 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	Placement *PlacementOptions `json:"placement,omitempty"`
+
+	// spotMarketOptions specifies options for using AWS Spot instances.
+	// When specified, instances will be launched as Spot instances with the given configuration.
+	// +optional
+	SpotMarketOptions *AWSSpotMarketOptions `json:"spotMarketOptions,omitempty"`
+}
+
+// AWSSpotMarketOptions defines configuration for AWS Spot instances
+type AWSSpotMarketOptions struct {
+	// maxPrice defines the maximum price per hour that you're willing to pay for a Spot instance.
+	// The price is specified in USD. If omitted, the On-Demand price is used as the max price.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	// +kubebuilder:validation:MaxLength=15
+	MaxPrice *string `json:"maxPrice,omitempty"`
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
