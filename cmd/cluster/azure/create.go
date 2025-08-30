@@ -67,6 +67,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
 	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
 }
@@ -93,6 +94,7 @@ type RawCreateOptions struct {
 	DNSZoneRGName                    string
 	ManagedIdentitiesFile            string
 	DataPlaneIdentitiesFile          string
+	WorkloadIdentitiesFile           string
 	AssignServicePrincipalRoles      bool
 	AssignCustomHCPRoles             bool
 	IssuerURL                        string
@@ -132,6 +134,14 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 	}
 
+	// Validate that workload identities file and managed identities files are mutually exclusive
+	if o.WorkloadIdentitiesFile != "" && o.ManagedIdentitiesFile != "" {
+		return nil, fmt.Errorf("flags --workload-identities-file and --managed-identities-file are mutually exclusive")
+	}
+	if o.WorkloadIdentitiesFile != "" && o.DataPlaneIdentitiesFile != "" {
+		return nil, fmt.Errorf("flags --workload-identities-file and --data-plane-identities-file are mutually exclusive")
+	}
+
 	validOpts := &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: o,
@@ -156,9 +166,10 @@ type completedCreateOptions struct {
 	externalDNSDomain string
 	name, namespace   string
 
-	infra         *azureinfra.CreateInfraOutput
-	encryptionKey *AzureEncryptionKey
-	creds         util.AzureCreds
+	infra              *azureinfra.CreateInfraOutput
+	encryptionKey      *AzureEncryptionKey
+	creds              util.AzureCreds
+	workloadIdentities *hyperv1.AzureWorkloadIdentities
 }
 
 type CreateOptions struct {
@@ -251,23 +262,36 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			VnetID:            o.infra.VNetID,
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
-			AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
-				AzureAuthenticationConfigType: "ManagedIdentities",
-			},
 		},
 	}
 
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities = o.infra.ControlPlaneMIs
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+	// Configure authentication based on whether workload identities or managed identities are provided
+	if o.infra.WorkloadIdentities != nil {
+		// Self-managed Azure with workload identities
+		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+			AzureAuthenticationConfigType: "WorkloadIdentities",
+			WorkloadIdentities:            o.infra.WorkloadIdentities,
+		}
+	} else {
+		// Managed Azure with managed identities
+		cluster.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+			AzureAuthenticationConfigType: "ManagedIdentities",
+			ManagedIdentities:             o.infra.ControlPlaneMIs,
+		}
 
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
-	cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+		if o.infra.ControlPlaneMIs != nil {
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.DataPlane = o.infra.DataPlaneIdentities
+
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.CloudProvider.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ImageRegistry.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Ingress.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Network.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk.ObjectEncoding = ObjectEncoding
+			cluster.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File.ObjectEncoding = ObjectEncoding
+		}
+	}
 
 	if o.encryptionKey != nil {
 		cluster.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
@@ -552,6 +576,7 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		DNSZoneRG:                   azureOpts.DNSZoneRGName,
 		ManagedIdentitiesFile:       azureOpts.ManagedIdentitiesFile,
 		DataPlaneIdentitiesFile:     azureOpts.DataPlaneIdentitiesFile,
+		WorkloadIdentitiesFile:      azureOpts.WorkloadIdentitiesFile,
 		AssignServicePrincipalRoles: azureOpts.AssignServicePrincipalRoles,
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
