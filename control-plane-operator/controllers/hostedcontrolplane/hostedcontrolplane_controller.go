@@ -77,6 +77,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/globalconfig"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
@@ -3083,8 +3084,7 @@ func awsSecurityGroupTags(hcp *hyperv1.HostedControlPlane) map[string]string {
 		tags["Name"] = awsSecurityGroupName(infraID)
 	}
 
-	if hcp.Spec.AutoNode != nil && hcp.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
-		hcp.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+	if karpenterutil.IsKarpenterEnabled(hcp.Spec.AutoNode) {
 		if _, exist := tags["karpenter.sh/discovery"]; !exist {
 			tags["karpenter.sh/discovery"] = infraID
 		}

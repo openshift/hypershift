@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -362,8 +363,7 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 		userDataSecret.Labels = make(map[string]string)
 	}
 
-	if t.hostedCluster.Spec.AutoNode != nil && t.hostedCluster.Spec.AutoNode.Provisioner.Name == hyperv1.ProvisionerKarpeneter &&
-		t.hostedCluster.Spec.AutoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform {
+	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		// TODO(alberto): prevent nodePool name collisions adding prefix to karpenter NodePool.
 		if t.nodePool.GetName() == "karpenter" {
 			userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
