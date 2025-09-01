@@ -6,17 +6,19 @@ import (
 	"strconv"
 	"time"
 
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
-	"github.com/openshift/hypershift/support/util"
+
+	configv1 "github.com/openshift/api/config/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
+
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -551,7 +553,7 @@ func getAvailableCandidates(nodes []*corev1.Node, targetConfig string, capacity 
 	return candidateNodes[:capacity]
 }
 
-func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, payload []byte, poolName string) error {
+func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hostedClusterClient client.Client, targetConfigVersionHash string, compressedAndEncodedPayload []byte, poolName string) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	namespace := inPlaceUpgradeNamespace(poolName)
@@ -573,7 +575,7 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 	configmap := inPlaceUpgradeConfigMap(poolName, namespace.Name)
 	if result, err := r.CreateOrUpdate(ctx, hostedClusterClient, configmap, func() error {
 		return r.reconcileUpgradeConfigmap(
-			ctx, configmap, targetConfigVersionHash, payload,
+			ctx, configmap, targetConfigVersionHash, compressedAndEncodedPayload,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile upgrade ConfigMap for hash %s: %w", targetConfigVersionHash, err)
@@ -583,17 +585,11 @@ func (r *Reconciler) reconcileInPlaceUpgradeManifests(ctx context.Context, hoste
 	return nil
 }
 
-func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, payload []byte) error {
+func (r *Reconciler) reconcileUpgradeConfigmap(ctx context.Context, configmap *corev1.ConfigMap, targetConfigVersionHash string, compressedAndEncodedPayload []byte) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Base64-encode and gzip the payload to allow larger overall payload sizes.
-	compressedPayload, err := util.CompressAndEncode(payload)
-	if err != nil {
-		return fmt.Errorf("could not compress payload: %w", err)
-	}
-
 	configmap.Data = map[string]string{
-		"config": compressedPayload.String(),
+		"config": string(compressedAndEncodedPayload),
 		"hash":   targetConfigVersionHash,
 	}
 
