@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -184,6 +185,17 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1.HostedControlPlane, deployment *appsv1.Deployment) {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
+		if hcp.Spec.Platform.AWS != nil && hcp.Spec.Platform.AWS.ResourceTags != nil {
+			if awsutil.IsROSAHCPFromTags(hcp.Spec.Platform.AWS.ResourceTags) {
+				deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+					corev1.EnvVar{
+						Name:  "MANAGED_SERVICE",
+						Value: hyperv1.RosaHCP,
+					},
+				)
+			}
+		}
+
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
 			corev1.Volume{
 				Name: "provider-creds",

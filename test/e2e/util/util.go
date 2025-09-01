@@ -1715,8 +1715,8 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) error {
 	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
 		AtLeast(t, Version419)
-		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
-			t.Skip("test only supported on platform ARO")
+		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip("test only supported on platform ARO and AWS")
 		}
 
 		var (

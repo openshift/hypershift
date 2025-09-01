@@ -292,6 +292,9 @@ const (
 	// It is not set by the end-user.
 	DisableClusterAutoscalerAnnotation = "hypershift.openshift.io/disable-cluster-autoscaler"
 
+	// ROSA-HCP represents the ROSA HCP managed service offering
+	RosaHCP = "ROSA-HCP"
+
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 

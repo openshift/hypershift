@@ -32,6 +32,8 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/supportedversion"
@@ -282,7 +284,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
-	if o.platformType == string(hyperv1.AzurePlatform) {
+	if azureutil.IsAroHCP() || awsutil.IsROSAHCP() {
 		controllersToRun[globalps.ControllerName] = globalps.Setup
 	}
 
