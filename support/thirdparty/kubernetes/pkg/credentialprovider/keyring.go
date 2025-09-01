@@ -44,6 +44,12 @@ type BasicDockerKeyring struct {
 	creds map[string][]AuthConfig
 }
 
+// providersDockerKeyring is an implementation of DockerKeyring that
+// materializes its dockercfg based on a set of dockerConfigProviders.
+type providersDockerKeyring struct {
+	Providers []DockerConfigProvider
+}
+
 // AuthConfig contains authorization information for connecting to a Registry
 // This type mirrors "github.com/docker/docker/api/types.AuthConfig"
 type AuthConfig struct {
@@ -250,6 +256,18 @@ func (dk *BasicDockerKeyring) Lookup(image string) ([]AuthConfig, bool) {
 	}
 
 	return []AuthConfig{}, false
+}
+
+// Lookup implements the DockerKeyring method for fetching credentials
+// based on image name.
+func (dk *providersDockerKeyring) Lookup(image string) ([]AuthConfig, bool) {
+	keyring := &BasicDockerKeyring{}
+
+	for _, p := range dk.Providers {
+		keyring.Add(p.Provide(image))
+	}
+
+	return keyring.Lookup(image)
 }
 
 // FakeKeyring a fake config credentials
