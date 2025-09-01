@@ -3781,8 +3781,13 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>id specifies the target Capacity Reservation into which the EC2 instances should be launched.
-Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0</p>
+Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
+When empty, no specific Capacity Reservation is targeted.</p>
+<p>When specified, preference cannot be set to &lsquo;None&rsquo; or &lsquo;Open&rsquo; as these
+are mutually exclusive with targeting a specific reservation. Use preference &lsquo;CapacityReservationsOnly&rsquo;
+or omit preference field when targeting a specific reservation.</p>
 </td>
 </tr>
 <tr>
@@ -3797,13 +3802,61 @@ MarketType
 <td>
 <em>(Optional)</em>
 <p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
-&ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
+- &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
 When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default value is CapacityBlocks.</p>
+<p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preference</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationPreference">
+CapacityReservationPreference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+- &ldquo;&rdquo;: No preference (platform default)
+- &ldquo;Open&rdquo;: The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+- &ldquo;None&rdquo;: The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+- &ldquo;CapacityReservationsOnly&rdquo;: The instance will only run if matched or targeted to a Capacity Reservation</p>
+<p>Cannot be set to &lsquo;None&rsquo; or &lsquo;Open&rsquo; when a specific Capacity Reservation ID is provided,
+as targeting a specific reservation is mutually exclusive with these general preference settings.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###CapacityReservationPreference { #hypershift.openshift.io/v1beta1.CapacityReservationPreference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+</p>
+<p>
+<p>CapacityReservationPreference describes the preferred use of capacity reservations
+of an instance</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>CapacityReservationPreferenceNone the instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads</p>
+</td>
+</tr><tr><td><p>&#34;CapacityReservationsOnly&#34;</p></td>
+<td><p>CapacityReservationPreferenceOnly the instance will only run if matched or targeted to a Capacity Reservation</p>
+</td>
+</tr><tr><td><p>&#34;Open&#34;</p></td>
+<td><p>CapacityReservationPreferenceOpen the instance may make use of open Capacity Reservations that match its AZ and InstanceType.</p>
+</td>
+</tr></tbody>
 </table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
@@ -8801,7 +8854,7 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservationo for an Instance.</p>
+<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
 </p>
 <table>
 <thead>
@@ -10360,9 +10413,11 @@ string
 <em>(Optional)</em>
 <p>tenancy indicates if instance should run on shared or single-tenant hardware.</p>
 <p>Possible values:
-default: NodePool instances run on shared hardware.
-dedicated: Each NodePool instance runs on single-tenant hardware.
-host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
+- &ldquo;default&rdquo;: NodePool instances run on shared hardware.
+- &ldquo;dedicated&rdquo;: Each NodePool instance runs on single-tenant hardware (Dedicated Instances).
+- &ldquo;host&rdquo;: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts (Dedicated Hosts).</p>
+<p>When tenancy is set to &ldquo;host&rdquo;, capacityReservation cannot be specified
+as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </td>
 </tr>
 <tr>
@@ -10377,6 +10432,8 @@ CapacityReservationOptions
 <td>
 <em>(Optional)</em>
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
+<p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
+do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
 </td>
 </tr>
 </tbody>

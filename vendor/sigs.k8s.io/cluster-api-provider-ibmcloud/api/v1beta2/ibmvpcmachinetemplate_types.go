@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta2
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -31,6 +32,16 @@ type IBMVPCMachineTemplateResource struct {
 	Spec IBMVPCMachineSpec `json:"spec"`
 }
 
+// IBMVPCMachineTemplateStatus defines the observed state of IBMVPCMachineTemplate.
+type IBMVPCMachineTemplateStatus struct {
+	// Capacity defines the resource capacity for this machine.
+	// This value is used for autoscaling from zero operations as defined in:
+	// https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20210310-opt-in-autoscaling-from-zero.md
+	// +optional
+	Capacity corev1.ResourceList `json:"capacity,omitempty"`
+}
+
+//+kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=ibmvpcmachinetemplates,scope=Namespaced,categories=cluster-api
 // +kubebuilder:storageversion
@@ -40,7 +51,8 @@ type IBMVPCMachineTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec IBMVPCMachineTemplateSpec `json:"spec,omitempty"`
+	Spec   IBMVPCMachineTemplateSpec   `json:"spec,omitempty"`
+	Status IBMVPCMachineTemplateStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -53,5 +65,5 @@ type IBMVPCMachineTemplateList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&IBMVPCMachineTemplate{}, &IBMVPCMachineTemplateList{})
+	objectTypes = append(objectTypes, &IBMVPCMachineTemplate{}, &IBMVPCMachineTemplateList{})
 }

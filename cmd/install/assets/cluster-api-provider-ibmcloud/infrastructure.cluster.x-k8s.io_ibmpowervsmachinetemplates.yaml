@@ -236,10 +236,7 @@ spec:
                       memoryGiB:
                         description: |-
                           memoryGiB is the size of a virtual machine's memory, in GiB.
-                          maximum value for the MemoryGiB depends on the selected SystemType.
-                          when SystemType is set to e880 maximum MemoryGiB value is 7463 GiB.
-                          when SystemType is set to e980 maximum MemoryGiB value is 15307 GiB.
-                          when SystemType is set to s922 maximum MemoryGiB value is 942 GiB.
+                          maximum value for the MemoryGiB depends on the selected SystemType, which can be found here: https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-pricing-virtual-server-on-cloud
                           The minimum memory is 2 GiB.
                           When omitted, this means the user has no opinion and the platform is left to choose a reasonable
                           default, which is subject to change over time. The current default is 2.
@@ -288,10 +285,8 @@ spec:
                         description: |-
                           processors is the number of virtual processors in a virtual machine.
                           when the processorType is selected as Dedicated the processors value cannot be fractional.
-                          maximum value for the Processors depends on the selected SystemType.
-                          when SystemType is set to e880 or e980 maximum Processors value is 143.
-                          when SystemType is set to s922 maximum Processors value is 15.
-                          minimum value for Processors depends on the selected ProcessorType.
+                          maximum value for the Processors depends on the selected SystemType,
+                          and minimum value for Processors depends on the selected ProcessorType, which can be found here: https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-pricing-virtual-server-on-cloud.
                           when ProcessorType is set as Shared or Capped, The minimum processors is 0.25.
                           when ProcessorType is set as Dedicated, The minimum processors is 1.
                           When omitted, this means that the user has no opinion and the platform is left to choose a
@@ -303,10 +298,35 @@ spec:
                         description: ProviderID is the unique identifier as specified
                           by the cloud provider.
                         type: string
+                      serviceInstance:
+                        description: |-
+                          serviceInstance is the reference to the Power VS workspace on which the server instance(VM) will be created.
+                          Power VS workspace is a container for all Power VS instances at a specific geographic region.
+                          serviceInstance can be created via IBM Cloud catalog or CLI.
+                          supported serviceInstance identifier in PowerVSResource are Name and ID and that can be obtained from IBM Cloud UI or IBM Cloud cli.
+                          More detail about Power VS service instance.
+                          https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
+                          when omitted system will dynamically create the service instance
+                        properties:
+                          id:
+                            description: ID of resource
+                            minLength: 1
+                            type: string
+                          name:
+                            description: Name of resource
+                            minLength: 1
+                            type: string
+                          regex:
+                            description: |-
+                              Regular expression to match resource,
+                              In case of multiple resources matches the provided regular expression the first matched resource will be selected
+                            minLength: 1
+                            type: string
+                        type: object
                       serviceInstanceID:
-                        description: ServiceInstanceID is the id of the power cloud
-                          instance where the vsi instance will get deployed.
-                        minLength: 1
+                        description: |-
+                          ServiceInstanceID is the id of the power cloud instance where the vsi instance will get deployed.
+                          Deprecated: use ServiceInstance instead
                         type: string
                       sshKey:
                         description: SSHKey is the name of the SSH key pair provided
@@ -316,15 +336,15 @@ spec:
                         description: |-
                           systemType is the System type used to host the instance.
                           systemType determines the number of cores and memory that is available.
-                          Few of the supported SystemTypes are s922,e880,e980.
-                          e880 systemType available only in Dallas Datacenters.
-                          e980 systemType available in Datacenters except Dallas and Washington.
+                          Few of the supported SystemTypes are s922,e980,s1022,e1050,e1080.
                           When omitted, this means that the user has no opinion and the platform is left to choose a
                           reasonable default, which is subject to change over time. The current default is s922 which is generally available.
                         enum:
                         - s922
-                        - e880
                         - e980
+                        - s1022
+                        - e1050
+                        - e1080
                         - ""
                         type: string
                     required:
