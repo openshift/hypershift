@@ -539,11 +539,14 @@ func reconcileClusterSizingConfiguration(csc *schedulingv1alpha1.ClusterSizingCo
 							DeploymentName: "cluster-autoscaler",
 							Memory:         mustQuantity("2.75Gi"),
 						},
-						{
-							ContainerName:  "kube-controller-manager",
-							DeploymentName: "kube-controller-manager",
-							Memory:         mustQuantity("2.5Gi"),
-						},
+						/*
+								TODO: Uncomment when bug OCPBUGS-61499 is fixed
+							{
+								ContainerName:  "kube-controller-manager",
+								DeploymentName: "kube-controller-manager",
+								Memory:         mustQuantity("2.5Gi"),
+							},
+						*/
 						{
 							ContainerName:  "cluster-policy-controller",
 							DeploymentName: "cluster-policy-controller",
@@ -607,11 +610,14 @@ func reconcileClusterSizingConfiguration(csc *schedulingv1alpha1.ClusterSizingCo
 							DeploymentName: "cluster-autoscaler",
 							Memory:         mustQuantity("4Gi"),
 						},
-						{
-							ContainerName:  "kube-controller-manager",
-							DeploymentName: "kube-controller-manager",
-							Memory:         mustQuantity("3.7Gi"),
-						},
+						/*
+								TODO: Uncomment when bug OCPBUGS-61499 is fixed
+							{
+								ContainerName:  "kube-controller-manager",
+								DeploymentName: "kube-controller-manager",
+								Memory:         mustQuantity("3.7Gi"),
+							},
+						*/
 						{
 							ContainerName:  "cluster-policy-controller",
 							DeploymentName: "cluster-policy-controller",
@@ -678,11 +684,14 @@ func reconcileClusterSizingConfiguration(csc *schedulingv1alpha1.ClusterSizingCo
 							DeploymentName: "cluster-autoscaler",
 							Memory:         mustQuantity("5.3Gi"),
 						},
-						{
-							ContainerName:  "kube-controller-manager",
-							DeploymentName: "kube-controller-manager",
-							Memory:         mustQuantity("5.3Gi"),
-						},
+						/*
+								TODO: Uncomment when bug OCPBUGS-61499 is fixed
+							{
+								ContainerName:  "kube-controller-manager",
+								DeploymentName: "kube-controller-manager",
+								Memory:         mustQuantity("5.3Gi"),
+							},
+						*/
 						{
 							ContainerName:  "cluster-policy-controller",
 							DeploymentName: "cluster-policy-controller",
