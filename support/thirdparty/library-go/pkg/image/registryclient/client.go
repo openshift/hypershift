@@ -25,6 +25,12 @@ import (
 	"golang.org/x/time/rate"
 )
 
+// CredentialStoreFactory is any entity capable of creating a CredentialStore based on an image
+// path (such as quay.io/fedora/fedora).
+type CredentialStoreFactory interface {
+	CredentialStoreFor(image string) auth.CredentialStore
+}
+
 // RepositoryRetriever fetches a Docker distribution.Repository.
 type RepositoryRetriever interface {
 	// Repository returns a properly authenticated distribution.Repository for the given registry, repository
@@ -67,15 +73,16 @@ type transportCache struct {
 }
 
 type Context struct {
-	Transport         http.RoundTripper
-	InsecureTransport http.RoundTripper
-	Challenges        challenge.Manager
-	Scopes            []auth.Scope
-	Actions           []string
-	Retries           int
-	Credentials       auth.CredentialStore
-	RequestModifiers  []transport.RequestModifier
-	Limiter           *rate.Limiter
+	Transport          http.RoundTripper
+	InsecureTransport  http.RoundTripper
+	Challenges         challenge.Manager
+	Scopes             []auth.Scope
+	Actions            []string
+	Retries            int
+	Credentials        auth.CredentialStore
+	CredentialsFactory CredentialStoreFactory
+	RequestModifiers   []transport.RequestModifier
+	Limiter            *rate.Limiter
 
 	DisableDigestVerification bool
 
@@ -89,14 +96,15 @@ func (c *Context) Copy() *Context {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	copied := &Context{
-		Transport:         c.Transport,
-		InsecureTransport: c.InsecureTransport,
-		Challenges:        c.Challenges,
-		Scopes:            c.Scopes,
-		Actions:           c.Actions,
-		Retries:           c.Retries,
-		Credentials:       c.Credentials,
-		Limiter:           c.Limiter,
+		Transport:          c.Transport,
+		InsecureTransport:  c.InsecureTransport,
+		Challenges:         c.Challenges,
+		Scopes:             c.Scopes,
+		Actions:            c.Actions,
+		Retries:            c.Retries,
+		Credentials:        c.Credentials,
+		CredentialsFactory: c.CredentialsFactory,
+		Limiter:            c.Limiter,
 
 		DisableDigestVerification: c.DisableDigestVerification,
 
@@ -131,6 +139,11 @@ func (c *Context) WithActions(actions ...string) *Context {
 
 func (c *Context) WithCredentials(credentials auth.CredentialStore) *Context {
 	c.Credentials = credentials
+	return c
+}
+
+func (c *Context) WithCredentialsFactory(factory CredentialStoreFactory) *Context {
+	c.CredentialsFactory = factory
 	return c
 }
 
@@ -286,10 +299,23 @@ type stringScope string
 
 func (s stringScope) String() string { return string(s) }
 
-// cachedTransport reuses an underlying transport for the given round tripper based
-// on the set of passed scopes. It will always return a transport that has at least the
-// provided scope list.
-func (c *Context) cachedTransport(rt http.RoundTripper, scopes []auth.Scope) http.RoundTripper {
+func (c *Context) scopes(repoName string) []auth.Scope {
+	scopes := make([]auth.Scope, 0, 1+len(c.Scopes))
+	scopes = append(scopes, c.Scopes...)
+	if len(c.Actions) == 0 {
+		scopes = append(scopes, auth.RepositoryScope{Repository: repoName, Actions: []string{"pull"}})
+	} else {
+		scopes = append(scopes, auth.RepositoryScope{Repository: repoName, Actions: c.Actions})
+	}
+	return scopes
+}
+
+func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, repoName string) http.RoundTripper {
+	return c.cachedTransportForRepo(t, registry, repoName, c.scopes(repoName))
+}
+
+// cachedTransportForRepo is similar to cachedTransport but can use CredentialsFactory for dynamic credential resolution
+func (c *Context) cachedTransportForRepo(rt http.RoundTripper, registry *url.URL, repoName string, scopes []auth.Scope) http.RoundTripper {
 	scopeNames := make(map[string]struct{})
 	for _, scope := range scopes {
 		scopeNames[scope.String()] = struct{}{}
@@ -297,10 +323,20 @@ func (c *Context) cachedTransport(rt http.RoundTripper, scopes []auth.Scope) htt
 
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	for _, c := range c.cachedTransports {
-		if c.rt == rt && hasAll(c.scopes, scopeNames) {
-			return c.transport
+	for _, cached := range c.cachedTransports {
+		if cached.rt == rt && hasAll(cached.scopes, scopeNames) {
+			return cached.transport
 		}
+	}
+
+	// Use CredentialsFactory if available, otherwise fallback to static Credentials
+	var credentials auth.CredentialStore
+	if c.CredentialsFactory != nil {
+		// Construct image reference for the factory
+		imageRef := registry.Host + "/" + repoName
+		credentials = c.CredentialsFactory.CredentialStoreFor(imageRef)
+	} else {
+		credentials = c.Credentials
 	}
 
 	// avoid taking a dependency on kube sets.String for minimal dependencies
@@ -321,10 +357,10 @@ func (c *Context) cachedTransport(rt http.RoundTripper, scopes []auth.Scope) htt
 			c.Challenges,
 			auth.NewTokenHandlerWithOptions(auth.TokenHandlerOptions{
 				Transport:   rt,
-				Credentials: c.Credentials,
+				Credentials: credentials,
 				Scopes:      scopes,
 			}),
-			auth.NewBasicHandler(c.Credentials),
+			auth.NewBasicHandler(credentials),
 		),
 	}
 	modifiers = append(modifiers, c.RequestModifiers...)
@@ -335,21 +371,6 @@ func (c *Context) cachedTransport(rt http.RoundTripper, scopes []auth.Scope) htt
 		transport: t,
 	})
 	return t
-}
-
-func (c *Context) scopes(repoName string) []auth.Scope {
-	scopes := make([]auth.Scope, 0, 1+len(c.Scopes))
-	scopes = append(scopes, c.Scopes...)
-	if len(c.Actions) == 0 {
-		scopes = append(scopes, auth.RepositoryScope{Repository: repoName, Actions: []string{"pull"}})
-	} else {
-		scopes = append(scopes, auth.RepositoryScope{Repository: repoName, Actions: c.Actions})
-	}
-	return scopes
-}
-
-func (c *Context) repositoryTransport(t http.RoundTripper, registry *url.URL, repoName string) http.RoundTripper {
-	return c.cachedTransport(t, c.scopes(repoName))
 }
 
 type retryRepository struct {

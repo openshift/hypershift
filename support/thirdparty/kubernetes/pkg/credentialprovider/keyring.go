@@ -25,9 +25,10 @@ import (
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 )
 
-// DockerKeyring tracks a set of docker registry credentials, maintaining a
+// DockerKeyring tracks a set of container registry credentials, maintaining a
 // reverse index across the registry endpoints. A registry endpoint is made
 // up of a host (e.g. registry.example.com), but it may also contain a path
 // (e.g. registry.example.com/foo) This index is important for two reasons:
@@ -42,6 +43,12 @@ type DockerKeyring interface {
 type BasicDockerKeyring struct {
 	index []string
 	creds map[string][]AuthConfig
+}
+
+// providersDockerKeyring is an implementation of DockerKeyring that
+// materializes its dockercfg based on a set of dockerConfigProviders.
+type providersDockerKeyring struct {
+	Providers []DockerConfigProvider
 }
 
 // AuthConfig contains authorization information for connecting to a Registry
@@ -85,6 +92,7 @@ func (dk *BasicDockerKeyring) Add(cfg DockerConfig) {
 		}
 		parsed, err := url.Parse(value)
 		if err != nil {
+			klog.Errorf("Entry %q in dockercfg invalid (%v), ignoring", loc, err)
 			continue
 		}
 
@@ -250,6 +258,18 @@ func (dk *BasicDockerKeyring) Lookup(image string) ([]AuthConfig, bool) {
 	}
 
 	return []AuthConfig{}, false
+}
+
+// Lookup implements the DockerKeyring method for fetching credentials
+// based on image name.
+func (dk *providersDockerKeyring) Lookup(image string) ([]AuthConfig, bool) {
+	keyring := &BasicDockerKeyring{}
+
+	for _, p := range dk.Providers {
+		keyring.Add(p.Provide(image))
+	}
+
+	return keyring.Lookup(image)
 }
 
 // FakeKeyring a fake config credentials
