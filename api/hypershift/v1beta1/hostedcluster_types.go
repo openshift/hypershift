@@ -281,6 +281,8 @@ const (
 
 	// AWSLoadBalancerSubnetsAnnotation allows specifying the subnets to use for control plane load balancers
 	// in the AWS platform. These subnets only apply to private load balancers.
+	// Deprecated: Subnets should not be specified for the private load balancer. This results in
+	// private link creation failures. The annotation has no effect.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
 
 	// AWSLoadBalancerTargetNodesAnnotation allows specifying label selectors to choose target nodes for
