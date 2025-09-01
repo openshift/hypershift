@@ -19,12 +19,15 @@ const (
 type Subnet struct {
 	// ID of the subnet
 	// +required
+	// +kubebuilder:validation:MaxLength=255
 	ID string `json:"id"`
 	// The associated availability zone
 	// +required
+	// +kubebuilder:validation:MaxLength=255
 	Zone string `json:"zone"`
 	// The associated availability zone ID
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	ZoneID string `json:"zoneID,omitempty"`
 }
 
@@ -32,9 +35,11 @@ type Subnet struct {
 type SecurityGroup struct {
 	// ID of the security group
 	// +required
+	// +kubebuilder:validation:MaxLength=255
 	ID string `json:"id"`
 	// Name of the security group
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name,omitempty"`
 }
 
@@ -72,7 +77,7 @@ type OpenshiftEC2NodeClassSpec struct {
 
 	// AssociatePublicIPAddress controls if public IP addresses are assigned to instances that are launched with the nodeclass.
 	// +optional
-	AssociatePublicIPAddress *bool `json:"associatePublicIPAddress,omitempty"`
+	AssociatePublicIPAddress *bool `json:"associatePublicIPAddress,omitempty"` //nolint:kubeapilinter
 
 	// Tags to be applied on ec2 resources like instances and launch templates.
 	// +kubebuilder:validation:XValidation:message="empty tag keys aren't supported",rule="self.all(k, k != '')"
@@ -96,7 +101,7 @@ type OpenshiftEC2NodeClassSpec struct {
 
 	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
 	// +optional
-	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"` //nolint:kubeapilinter
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
@@ -112,6 +117,7 @@ type SubnetSelectorTerm struct {
 	// ID is the subnet id in EC2
 	// +kubebuilder:validation:Pattern="subnet-[0-9a-z]+"
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	ID string `json:"id,omitempty"`
 }
 
@@ -128,16 +134,19 @@ type SecurityGroupSelectorTerm struct {
 	// ID is the security group id in EC2
 	// +kubebuilder:validation:Pattern:="sg-[0-9a-z]+"
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	ID string `json:"id,omitempty"`
 
 	// Name is the security group name in EC2.
 	// This value is the name field, which is different from the name tag.
+	// +kubebuilder:validation:MaxLength=255
 	Name string `json:"name,omitempty"`
 }
 
 type BlockDeviceMapping struct {
 	// The device name (for example, /dev/sdh or xvdh).
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	DeviceName *string `json:"deviceName,omitempty"`
 
 	// EBS contains parameters used to automatically set up EBS volumes when an instance is launched.
@@ -147,19 +156,19 @@ type BlockDeviceMapping struct {
 
 	// RootVolume is a flag indicating if this device is mounted as kubelet root dir. You can
 	// configure at most one root volume in BlockDeviceMappings.
-	RootVolume bool `json:"rootVolume,omitempty"`
+	RootVolume bool `json:"rootVolume,omitempty"` //nolint:kubeapilinter
 }
 
 type BlockDevice struct {
 	// DeleteOnTermination indicates whether the EBS volume is deleted on instance termination.
 	// +optional
-	DeleteOnTermination *bool `json:"deleteOnTermination,omitempty"`
+	DeleteOnTermination *bool `json:"deleteOnTermination,omitempty"` //nolint:kubeapilinter
 
 	// Encrypted indicates whether the EBS volume is encrypted. Encrypted volumes can only
 	// be attached to instances that support Amazon EBS encryption. If you are creating
 	// a volume from a snapshot, you can't specify an encryption value.
 	// +optional
-	Encrypted *bool `json:"encrypted,omitempty"`
+	Encrypted *bool `json:"encrypted,omitempty"` //nolint:kubeapilinter
 
 	// IOPS is the number of I/O operations per second (IOPS). For gp3, io1, and io2 volumes,
 	// this represents the number of IOPS that are provisioned for the volume. For
@@ -185,10 +194,12 @@ type BlockDevice struct {
 
 	// KMSKeyID (ARN) of the symmetric Key Management Service (KMS) CMK used for encryption.
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	KMSKeyID *string `json:"kmsKeyID,omitempty"`
 
 	// SnapshotID is the ID of an EBS snapshot
 	// +optional
+	// +kubebuilder:validation:MaxLength=255
 	SnapshotID *string `json:"snapshotID,omitempty"`
 
 	// Throughput to provision for a gp3 volume, with a maximum of 1,000 MiB/s.
@@ -228,11 +239,13 @@ type OpenshiftEC2NodeClassStatus struct {
 	// Subnets contains the current Subnet values that are available to the
 	// cluster under the subnet selectors.
 	// +optional
+	// +kubebuilder:validation:MaxItems=30
 	Subnets []Subnet `json:"subnets,omitempty"`
 
 	// SecurityGroups contains the current Security Groups values that are available to the
 	// cluster under the SecurityGroups selectors.
 	// +optional
+	// +kubebuilder:validation:MaxItems=30
 	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
 
 	// +optional
@@ -240,6 +253,7 @@ type OpenshiftEC2NodeClassStatus struct {
 	// +listMapKey=type
 	// +patchMergeKey=type
 	// +patchStrategy=merge
+	// +kubebuilder:validation:MaxItems=10
 	// Conditions contain signals for health and readiness.
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
 }

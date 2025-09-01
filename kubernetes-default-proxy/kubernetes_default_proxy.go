@@ -85,14 +85,22 @@ func (s *server) run(ctx context.Context) error {
 		}
 
 		go func() {
-			defer conn.Close()
+			defer func() {
+				if closeErr := conn.Close(); closeErr != nil {
+					s.log.Error(closeErr, "Failed to close client connection")
+				}
+			}()
 
 			backendConn, err := net.Dial("tcp", s.proxyAddr)
 			if err != nil {
 				s.log.Error(err, "failed diaing backend", "proxyAddr", s.proxyAddr)
 				return
 			}
-			defer backendConn.Close()
+			defer func() {
+				if closeErr := backendConn.Close(); closeErr != nil {
+					s.log.Error(closeErr, "Failed to close backend connection")
+				}
+			}()
 
 			req := &http.Request{
 				Method:     "CONNECT",

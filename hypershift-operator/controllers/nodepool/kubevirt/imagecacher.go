@@ -332,7 +332,7 @@ func DeleteCache(ctx context.Context, cl client.Client, name, namespace string) 
 		return fmt.Errorf("failed to get DataVolume %s/%s: %w", namespace, name, err)
 	}
 
-	if dv.ObjectMeta.DeletionTimestamp.IsZero() {
+	if dv.DeletionTimestamp.IsZero() {
 		err = cl.Delete(ctx, &dv)
 		if err != nil {
 			return fmt.Errorf("failed to delete DataVolume %s/%s: %w", namespace, name, err)

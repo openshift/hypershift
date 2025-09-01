@@ -113,7 +113,8 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile private-router Network Policy
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform || hcluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform:
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		// TODO: Network policy code should move to the control plane operator. For now,
 		// only setup ingress rules (and not egress rules) when version is < 4.14
@@ -123,7 +124,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
-	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+	case hyperv1.KubevirtPlatform:
 		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
 			// network policy is being set on centralized infra only, not on external infra
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
@@ -138,7 +139,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	for _, svc := range hcluster.Spec.Services {
 		switch svc.Service {
 		case hyperv1.OAuthServer:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+			if svc.Type == hyperv1.NodePort {
 				// Reconcile nodeport-oauth Network Policy
 				policy = networkpolicy.NodePortOauthNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
@@ -148,7 +149,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}
 			}
 		case hyperv1.Ignition:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+			if svc.Type == hyperv1.NodePort {
 				// Reconcile nodeport-ignition Network Policy
 				policy = networkpolicy.NodePortIgnitionNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
@@ -165,7 +166,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 				}
 			}
 		case hyperv1.Konnectivity:
-			if svc.ServicePublishingStrategy.Type == hyperv1.NodePort {
+			if svc.Type == hyperv1.NodePort {
 				// Reconcile nodeport-konnectivity Network Policy
 				policy = networkpolicy.NodePortKonnectivityNetworkPolicy(controlPlaneNamespaceName)
 				if _, err := createOrUpdate(ctx, r.Client, policy, func() error {

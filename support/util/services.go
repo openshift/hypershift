@@ -15,7 +15,7 @@ func CollectLBMessageIfNotProvisioned(svc *corev1.Service, messageCollector even
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		return "", nil
 	}
-	message := fmt.Sprintf("%s load balancer is not provisioned; %v since creation.", svc.Name, duration.ShortHumanDuration(time.Since(svc.ObjectMeta.CreationTimestamp.Time)))
+	message := fmt.Sprintf("%s load balancer is not provisioned; %v since creation.", svc.Name, duration.ShortHumanDuration(time.Since(svc.CreationTimestamp.Time)))
 	var eventMessages []string
 	eventMessages, err := messageCollector.ErrorMessages(svc)
 	if err != nil {

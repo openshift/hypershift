@@ -65,7 +65,7 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 			if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
 				meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if err := r.Status().Update(ctx, hcluster); err != nil {
 					return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
 				}
 			}
@@ -89,7 +89,7 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 		if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if err := r.Status().Update(ctx, hcluster); err != nil {
 				return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
 			}
 		}
@@ -183,7 +183,7 @@ func (r *HostedClusterReconciler) reconcileETCDMemberRecovery(ctx context.Contex
 
 	if oldCondition == nil || oldCondition.Status != etcdRecoveryActiveCondition.Status {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, etcdRecoveryActiveCondition)
-		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+		if err := r.Status().Update(ctx, hcluster); err != nil {
 			return nil, fmt.Errorf("failed to update etcd recovery job condition: %w", err)
 		}
 	}

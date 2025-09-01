@@ -181,7 +181,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 			//change pull secret name to simulate node pool config update
 			if tc.isUpdatingConfig {
 				hostedCluster.Spec.PullSecret.Name = "new-pull"
-				pullSecret.ObjectMeta.Name = "new-pull"
+				pullSecret.Name = "new-pull"
 			}
 
 			nodePool := &hyperv1.NodePool{
