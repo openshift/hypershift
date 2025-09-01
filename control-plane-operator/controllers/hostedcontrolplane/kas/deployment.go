@@ -779,8 +779,8 @@ cat <<EOF >/tmp/manifests/99_feature-gate.yaml
 %[3]s
 EOF
 
-touch /tmp/manifests/hcco-rolebinding.yaml
-cat <<EOF >/tmp/manifests/hcco-rolebinding.yaml
+touch /tmp/manifests/98_hcco-rolebinding.yaml
+cat <<EOF >/tmp/manifests/98_hcco-rolebinding.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
