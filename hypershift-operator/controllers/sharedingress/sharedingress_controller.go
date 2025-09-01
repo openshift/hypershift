@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/cmd/install/assets"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	sets "k8s.io/apimachinery/pkg/util/sets"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -38,11 +40,66 @@ type SharedIngressReconciler struct {
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
 	HypershiftOperatorImage       string
+	AzurePipIpTags                string
+}
+
+// validateAzurePipIpTags validates the format of Azure Public IP tags.
+// Expected format: comma separated key=value pairs with allowed keys: "FirstPartyUsage" or "RoutingPreference".
+// Example: "RoutingPreference=Internet" or "FirstPartyUsage=SomeValue,RoutingPreference=Internet".
+// Both keys and values must be non-empty, and only the specified keys are permitted.
+// Returns an error if the format is invalid or if unsupported keys are used.
+func validateAzurePipIpTags(tags string) error {
+	if strings.TrimSpace(tags) == "" {
+		return fmt.Errorf("tags cannot be an empty space")
+	}
+
+	// Allowed Azure Public IP tag keys
+	ipTagTypes := sets.New("FirstPartyUsage", "RoutingPreference")
+
+	// Split by comma and validate each tag
+	for tagPair := range strings.SplitSeq(tags, ",") {
+		tagPair = strings.TrimSpace(tagPair)
+		if tagPair == "" {
+			return fmt.Errorf("empty tag pair found")
+		}
+
+		// Check if tag contains exactly one '=' character
+		parts := strings.Split(tagPair, "=")
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid tag format '%s', expected 'key=value'", tagPair)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// Check if key is not empty and is allowed
+		if key == "" {
+			return fmt.Errorf("invalid tag format '%s', key cannot be empty", tagPair)
+		}
+		if !ipTagTypes.Has(key) {
+			return fmt.Errorf("invalid tag key '%s', only 'FirstPartyUsage' and 'RoutingPreference' are allowed", key)
+		}
+
+		// Check if value is not empty
+		if value == "" {
+			return fmt.Errorf("invalid tag format '%s', value cannot be empty", tagPair)
+		}
+	}
+
+	return nil
 }
 
 func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdateProvider upsert.CreateOrUpdateProvider) error {
 	r.createOrUpdate = createOrUpdateProvider.CreateOrUpdate
 	r.Client = mgr.GetClient()
+
+	// Initialize Azure PIP IP tags from environment variable
+	if tags := os.Getenv(AzurePipIpTagsEnvVar); tags != "" {
+		if err := validateAzurePipIpTags(tags); err != nil {
+			return fmt.Errorf("invalid value for environment variable %s: %w", AzurePipIpTagsEnvVar, err)
+		}
+		r.AzurePipIpTags = tags
+	}
 
 	err := mgr.GetCache().IndexField(context.Background(), &corev1.Service{}, "metadata.name", func(o client.Object) []string {
 		return []string{o.GetName()}
@@ -139,7 +196,7 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 
 	svc := RouterPublicService()
 	if _, err := r.createOrUpdate(ctx, r.Client, svc, func() error {
-		return ReconcileRouterService(svc)
+		return ReconcileRouterService(svc, r.AzurePipIpTags)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile private router service: %w", err)
 	}
