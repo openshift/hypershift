@@ -55,13 +55,22 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	hccoCFG, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG_HCCO"))
+	if err != nil {
+		return fmt.Errorf("failed to get HCCO config: %w", err)
+	}
+	hccoClient, err := client.New(hccoCFG, client.Options{Scheme: configScheme})
+	if err != nil {
+		return fmt.Errorf("failed to create client with HCCO kubeconfig: %w", err)
+	}
+
 	// This binary is meant to run next to the KAS container within the same pod.
 	// We briefly poll here to retry on race and transient network issues.
 	// 50s is a high margin chosen here as in CI aws kms is observed to take up to 30s to start.
 	// This to avoid unnecessary restarts of this container.
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
+			if err := applyBootstrapResources(ctx, c, hccoClient, opts.ResourcesPath); err != nil {
 				logger.Error(err, "failed to apply bootstrap resources, retrying")
 				return false, nil
 			}
@@ -80,18 +89,9 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to parse featureGate file: %w", err)
 	}
 
-	hccoCFG, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG_HCCO"))
-	if err != nil {
-		return fmt.Errorf("failed to get HCCO config: %w", err)
-	}
-	hccoClient, err := client.New(hccoCFG, client.Options{Scheme: configScheme})
-	if err != nil {
-		return fmt.Errorf("failed to create client with HCCO kubeconfig: %w", err)
-	}
-
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := reconcileFeatureGate(ctx, hccoClient, renderedFeatureGate); err != nil {
+			if err := reconcileFeatureGate(ctx, c, renderedFeatureGate); err != nil {
 				logger.Error(err, "failed to reconcile featureGate, retrying")
 				return false, nil
 			}
@@ -182,7 +182,7 @@ func parseFeatureGateV1(objBytes []byte) (*configv1.FeatureGate, error) {
 	return requiredObj.(*configv1.FeatureGate), nil
 }
 
-func applyBootstrapResources(ctx context.Context, c client.Client, filesPath string) error {
+func applyBootstrapResources(ctx context.Context, c, hccoClient client.Client, filesPath string) error {
 	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
 
 	// Fail early if the specified path does not exist.
@@ -218,7 +218,15 @@ func applyBootstrapResources(ctx context.Context, c client.Client, filesPath str
 			return fmt.Errorf("failed to decode file %s: %w", path, err)
 		}
 
-		if _, err = ctrl.CreateOrUpdate(ctx, c, obj.(client.Object), func() error {
+		clientToUse := c
+		if _, ok := obj.(*configv1.FeatureGate); ok {
+			logger.Info("Using HCCO kubeconfig")
+			clientToUse = hccoClient
+		}
+
+		objCopy := obj.DeepCopyObject().(client.Object)
+		if _, err = ctrl.CreateOrUpdate(ctx, clientToUse, objCopy, func() error {
+			objCopy = obj.DeepCopyObject().(client.Object)
 			return nil
 		}); err != nil {
 			return fmt.Errorf("failed to createOrUpdate file %s: %w", path, err)
