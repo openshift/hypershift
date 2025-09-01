@@ -224,12 +224,8 @@ func applyBootstrapResources(ctx context.Context, c, hccoClient client.Client, f
 			clientToUse = hccoClient
 		}
 
-		objCopy := obj.DeepCopyObject().(client.Object)
-		if _, err = ctrl.CreateOrUpdate(ctx, clientToUse, objCopy, func() error {
-			objCopy = obj.DeepCopyObject().(client.Object)
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to createOrUpdate file %s: %w", path, err)
+		if err := clientToUse.Patch(ctx, obj.(client.Object), client.Apply); err != nil {
+			return fmt.Errorf("failed to apply file %s: %w", path, err)
 		}
 
 		return nil
