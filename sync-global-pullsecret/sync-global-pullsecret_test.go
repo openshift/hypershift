@@ -278,3 +278,147 @@ func TestRestartKubelet(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateDockerConfigJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       []byte
+		expectError bool
+		description string
+	}{
+		{
+			name:        "valid docker config with single auth",
+			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+			expectError: false,
+			description: "valid JSON with auths key containing single registry",
+		},
+		{
+			name:        "valid docker config with multiple auths",
+			input:       []byte(`{"auths":{"registry1.com":{"auth":"dGVzdDp0ZXN0"},"registry2.com":{"auth":"YW5vdGhlcjphdXRo"}}}`),
+			expectError: false,
+			description: "valid JSON with auths key containing multiple registries",
+		},
+		{
+			name:        "valid docker config with empty auths",
+			input:       []byte(`{"auths":{}}`),
+			expectError: false,
+			description: "valid JSON with empty auths object",
+		},
+		{
+			name:        "valid docker config with additional fields",
+			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},"credsStore":"desktop","credHelpers":{"registry.com":"registry-helper"}}`),
+			expectError: false,
+			description: "valid JSON with auths key and additional docker config fields",
+		},
+		{
+			name:        "invalid JSON - malformed",
+			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}`),
+			expectError: true,
+			description: "malformed JSON missing closing brace",
+		},
+		{
+			name:        "invalid JSON - trailing comma",
+			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},}`),
+			expectError: true,
+			description: "malformed JSON with trailing comma",
+		},
+		{
+			name:        "invalid JSON - unquoted key",
+			input:       []byte(`{auths:{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+			expectError: true,
+			description: "malformed JSON with unquoted key",
+		},
+		{
+			name:        "missing auths key",
+			input:       []byte(`{"registries":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
+			expectError: true,
+			description: "valid JSON but missing required auths key",
+		},
+		{
+			name:        "empty input",
+			input:       []byte(``),
+			expectError: true,
+			description: "empty byte slice should fail JSON parsing",
+		},
+		{
+			name:        "null input",
+			input:       []byte(`null`),
+			expectError: true,
+			description: "null JSON value should fail validation",
+		},
+		{
+			name:        "string input",
+			input:       []byte(`"some string"`),
+			expectError: true,
+			description: "string JSON value should fail validation",
+		},
+		{
+			name:        "array input",
+			input:       []byte(`[{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}]`),
+			expectError: true,
+			description: "array JSON value should fail validation",
+		},
+		{
+			name:        "number input",
+			input:       []byte(`123`),
+			expectError: true,
+			description: "number JSON value should fail validation",
+		},
+		{
+			name:        "boolean input",
+			input:       []byte(`true`),
+			expectError: true,
+			description: "boolean JSON value should fail validation",
+		},
+		{
+			name:        "auths key with null value",
+			input:       []byte(`{"auths":null}`),
+			expectError: false,
+			description: "auths key with null value should be valid (auths key exists)",
+		},
+		{
+			name:        "auths key with string value",
+			input:       []byte(`{"auths":"not an object"}`),
+			expectError: false,
+			description: "auths key with non-object value should be valid (auths key exists)",
+		},
+		{
+			name:        "auths key with array value",
+			input:       []byte(`{"auths":[]}`),
+			expectError: false,
+			description: "auths key with array value should be valid (auths key exists)",
+		},
+		{
+			name:        "whitespace only",
+			input:       []byte(`   `),
+			expectError: true,
+			description: "whitespace only input should fail JSON parsing",
+		},
+		{
+			name:        "empty object",
+			input:       []byte(`{}`),
+			expectError: true,
+			description: "empty object should fail validation (missing auths key)",
+		},
+		{
+			name:        "nested auths key",
+			input:       []byte(`{"config":{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}}`),
+			expectError: true,
+			description: "auths key nested inside another object should fail validation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			err := validateDockerConfigJSON(tt.input)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tt.description)
+			} else {
+				g.Expect(err).To(BeNil(), "Expected no error for test case: %s, but got: %v", tt.description, err)
+			}
+		})
+	}
+}
