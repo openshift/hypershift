@@ -4,9 +4,11 @@ package syncglobalpullsecret
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -21,7 +23,6 @@ import (
 // syncGlobalPullSecretOptions contains the configuration options for the sync-global-pullsecret command
 type syncGlobalPullSecretOptions struct {
 	kubeletConfigJsonPath string
-	globalPSSecretName    string
 }
 
 //go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
@@ -38,7 +39,6 @@ type GlobalPullSecretSyncer struct {
 
 const (
 	defaultKubeletConfigJsonPath = "/var/lib/kubelet/config.json"
-	defaultGlobalPSSecretName    = "global-pull-secret"
 	dbusRestartUnitMode          = "replace"
 	kubeletServiceUnit           = "kubelet.service"
 
@@ -55,7 +55,7 @@ const (
 var (
 	// writeFileFunc is a variable that holds the function used to write files.
 	// This allows tests to inject custom write functions for testing rollback scenarios.
-	writeFileFunc = os.WriteFile
+	writeFileFunc = writeAtomic
 
 	// readFileFunc is a variable that holds the function used to read files.
 	// This allows tests to inject custom read functions for testing.
@@ -66,14 +66,13 @@ var (
 func NewRunCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync-global-pullsecret",
-		Short: "Syncs a mixture between the user provided pull secret in DataPlane and the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster",
-		Long:  `Syncs a mixture between the user provided pull secret in DataPlane and the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster. The resulting pull secret is deployed in a DaemonSet in the DataPlane that updates the kubelet.config.json file with the new pull secret. If there are conflicting entries in the resulting global pull secret, the user provided pull secret will prevail.`,
+		Short: "Syncs a mixture between the user original pull secret in DataPlane and the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster",
+		Long:  `Syncs a mixture between the user original pull secret in DataPlane and the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster. The resulting pull secret is deployed in a DaemonSet in the DataPlane that updates the kubelet.config.json file with the new pull secret. If there are conflicting entries in the resulting global pull secret, the original pull secret entries will prevail to ensure the well functioning of the nodes.`,
 	}
 
 	opts := syncGlobalPullSecretOptions{
 		kubeletConfigJsonPath: defaultKubeletConfigJsonPath,
 	}
-	cmd.Flags().StringVar(&opts.globalPSSecretName, "global-pull-secret-name", defaultGlobalPSSecretName, "The name of the global pullSecret secret in the DataPlane.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -134,7 +133,7 @@ func (s *GlobalPullSecretSyncer) runSyncLoop(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			s.log.Info("Context canceled, stopping sync loop")
-			return ctx.Err()
+			return nil
 		case <-ticker.C:
 			if err := s.syncPullSecret(); err != nil {
 				s.log.Error(err, "Sync failed")
@@ -162,7 +161,16 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 		}
 		globalPullSecretBytes = originalPullSecretBytes
 	} else {
-		s.log.Info("Global pull secret content found, using it")
+		if len(globalPullSecretBytes) == 0 {
+			s.log.Info("Global pull secret file is empty, using original pull secret")
+			originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
+			if err != nil {
+				return fmt.Errorf("failed to read original pull secret from file: %w", err)
+			}
+			globalPullSecretBytes = originalPullSecretBytes
+		} else {
+			s.log.Info("Global pull secret content found, using it")
+		}
 	}
 
 	if err := s.checkAndFixFile(globalPullSecretBytes); err != nil {
@@ -176,8 +184,13 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 	s.log.Info("Checking Kubelet's config.json file content")
 
+	// Basic sanity check
+	if err := validateDockerConfigJSON(pullSecretBytes); err != nil {
+		return fmt.Errorf("invalid docker config.json content: %w", err)
+	}
+
 	// Read existing content if file exists
-	existingContent, err := os.ReadFile(s.kubeletConfigJsonPath)
+	existingContent, err := readFileFunc(s.kubeletConfigJsonPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
@@ -256,4 +269,41 @@ func readPullSecretFromFile(filePath string) ([]byte, error) {
 		return nil, err
 	}
 	return content, nil
+}
+
+func validateDockerConfigJSON(b []byte) error {
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	if _, ok := m["auths"]; !ok {
+		return fmt.Errorf("missing 'auths' key")
+	}
+	return nil
+}
+
+func writeAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".config.json.tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

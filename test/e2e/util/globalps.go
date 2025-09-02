@@ -8,8 +8,6 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -71,11 +69,9 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:           manifests.GlobalPullSecretDSName,
-					AutomountServiceAccountToken: ptr.To(true),
-					SecurityContext:              &corev1.PodSecurityContext{},
-					DNSPolicy:                    corev1.DNSDefault,
-					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					Containers: []corev1.Container{
 						{
 							Name:            KubeletConfigVerifierDaemonSetName,

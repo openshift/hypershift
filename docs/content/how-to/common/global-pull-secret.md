@@ -43,12 +43,16 @@ Your `.dockerconfigjson` should follow this structure:
     "registry.example.com": {
       "auth": "base64-encoded-credentials"
     },
-    "quay.io": {
+    "quay.io/mycompany": {
       "auth": "base64-encoded-credentials"
     }
   }
 }
 ```
+
+!!! tip "Using Namespace-Specific Registry Entries"
+
+    For registries like Quay.io that support organization/namespace-specific authentication, you can specify the full path in your registry entry (e.g., `quay.io/mycompany` instead of just `quay.io`). This allows you to provide different credentials for different namespaces within the same registry, and helps avoid conflicts with existing registry entries in the original pull secret.
 
 ### 3. Apply the secret
 
@@ -90,7 +94,8 @@ The Global Pull Secret functionality operates through a multi-component system:
 - The system validates that your secret contains a proper DockerConfigJSON format
 - It retrieves the original pull secret from the HostedControlPlane
 - Your additional pull secret is merged with the original one
-- If there are conflicting registry entries, your additional pull secret takes precedence
+- **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
+- The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
 
 ### Deployment Process
 - A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
@@ -105,9 +110,69 @@ The Global Pull Secret functionality operates through a multi-component system:
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
 ### Automatic Cleanup
-- If you delete the `additional-pull-secret`, the HCCO automatically removes the globalPullSecret secret
-- The DaemonSet is deleted from all nodes
-- RBAC resources (ServiceAccount, Role, RoleBinding) in both namespaces are cleaned up by the HCCO
+- If you delete the `additional-pull-secret`, the HCCO automatically removes the `global-pull-secret` secret
+- The system reverts to using only the original pull secret from the HostedControlPlane
+- The DaemonSet continues running but now syncs only the original pull secret to nodes
+
+## Registry Precedence and Conflict Resolution
+
+The Global Pull Secret system uses a specific precedence model when merging your additional pull secret with the original one:
+
+### Merge Behavior
+- **Original pull secret entries always take precedence** over additional pull secret entries for the same registry
+- If both secrets contain an entry for `quay.io`, the original pull secret's credentials will be used
+- Your additional pull secret entries are only added if they don't conflict with existing entries
+- Warnings are logged when conflicts are detected
+
+### Recommended Approach
+To avoid conflicts and ensure your credentials are used, consider these strategies:
+
+1. **Use namespace-specific entries**: Instead of `quay.io`, use `quay.io/your-namespace`
+2. **Target specific registries**: Add entries only for registries not already in the original pull secret
+3. **Check existing entries**: Review what registries are already configured in the HostedControlPlane
+
+### Example Merge Scenario
+
+**Original Pull Secret:**
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "original-credentials"
+    }
+  }
+}
+```
+
+**Your Additional Pull Secret:**
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "your-credentials"
+    },
+    "quay.io/mycompany": {
+      "auth": "your-namespace-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged Pull Secret:**
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "original-credentials"
+    },
+    "quay.io/mycompany": {
+      "auth": "your-namespace-credentials"
+    }
+  }
+}
+```
+
+Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
 ## Implementation details
 
