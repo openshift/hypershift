@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	"github.com/openshift/hypershift/support/awsutil"
-	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -26,7 +23,8 @@ import (
 )
 
 const (
-	ControllerName = "globalps"
+	ControllerName     = "globalps"
+	configSeedLabelKey = "hypershift.openshift.io/globalps-config-hash"
 )
 
 type Reconciler struct {
@@ -53,14 +51,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req crreconcile.Request) (cr
 
 // reconcileGlobalPullSecret reconciles the original pull secret given by HCP and merges it with a new pull secret provided by the user.
 // The new pull secret is only stored in the DataPlane side so, it's not exposed in the API. It lives in the kube-system namespace of the DataPlane.
-// If that PS exists, the HCCO deploys a DaemonSet which mounts the whole Root FS of the node, and merges the new PS with the original one.
-// If the PS doesn't exist, the HCCO doesn't do anything.
+// - If that PS is created, the HCCO deploys a DaemonSet which mounts the node's kubeconfig's file, and merges the new PS with the original one.
+// - If the PS doesn't exist, the HCCO doesn't do anything.
+// - If at some point the user deletes the additional pull secret, the daemonSet will not be removed
 func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	var (
 		userProvidedPullSecretBytes []byte
 		originalPullSecretBytes     []byte
 		globalPullSecretBytes       []byte
 		err                         error
+		ok                          bool
 	)
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling global pull secret")
@@ -70,7 +70,11 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
 		return fmt.Errorf("failed to get original pull secret: %w", err)
 	}
-	originalPullSecretBytes = originalPullSecret.Data[corev1.DockerConfigJsonKey]
+
+	originalPullSecretBytes, ok = originalPullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok || len(originalPullSecretBytes) == 0 {
+		return fmt.Errorf("original pull secret does not contain %s key", corev1.DockerConfigJsonKey)
+	}
 
 	// Get the user provided pull secret
 	exists, additionalPullSecret, err := additionalPullSecretExists(ctx, r.kubeSystemSecretClient)
@@ -82,8 +86,6 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp); err != nil {
 		return fmt.Errorf("failed to get hosted control plane: %w", err)
 	}
-
-	managedServices := isManagedServices(hcp)
 
 	if !exists || additionalPullSecret.Data == nil {
 		// Delete global pull secret if it exists
@@ -106,11 +108,11 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		}
 
 		// Generate a hash of the original pull secret content to trigger pod recreation
-		originalPullSecretSeed := util.HashSimple(originalPullSecretBytes)
+		configSeed := util.HashSimple(originalPullSecretBytes)
 
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
-		if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, "", originalPullSecretSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+		if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, "", configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 		}
 
@@ -124,7 +126,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	log.Info("Valid additional pull secret found in the DataPlane, reconciling global pull secret")
 
 	// Merge the additional pull secret with the original pull secret
-	if globalPullSecretBytes, err = mergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes, managedServices); err != nil {
+	if globalPullSecretBytes, err = mergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes); err != nil {
 		return fmt.Errorf("failed to merge pull secrets: %w", err)
 	}
 
@@ -151,16 +153,16 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	}
 
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
-	globalPullSecretSeed := util.HashSimple(globalPullSecretBytes)
+	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, secret.Name, globalPullSecretSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, secret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, originalPullSecretName, globalPullSecretName, globalPullSecretSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, originalPullSecretName, globalPullSecretName, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
@@ -174,15 +176,14 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, origin
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name":   manifests.GlobalPullSecretDSName,
-						"config": globalPullSecretSeed,
+						"name":             manifests.GlobalPullSecretDSName,
+						configSeedLabelKey: configSeed,
 					},
 				},
 				Spec: corev1.PodSpec{
-					AutomountServiceAccountToken: ptr.To(true),
-					SecurityContext:              &corev1.PodSecurityContext{},
-					DNSPolicy:                    corev1.DNSDefault,
-					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					Containers: []corev1.Container{
 						{
 							Name:            manifests.GlobalPullSecretDSName,
@@ -191,10 +192,8 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, origin
 							Command: []string{
 								"/usr/bin/control-plane-operator",
 							},
-							// TODO: remove the flag --global-pull-secret-name from the relevant places
 							Args: []string{
 								"sync-global-pullsecret",
-								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
 							},
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: ptr.To(true),
@@ -311,11 +310,12 @@ func validateAdditionalPullSecret(pullSecret *corev1.Secret) ([]byte, error) {
 
 // MergePullSecrets merges two pull secrets into a single pull secret.
 // The additional pull secret is merged with the original pull secret.
-// If an auth entry already exists, it will be overwritten.
-// The resulting pull secret is returned as a JSON string.
+// If an auth entry already exists, the original pull secret will be kept.
+// If there is somekind on conflict with the original pull secret, the user could
+// try to use a namespaced entry, to avoid the limitation on the original pull secret.
 // Not using credentialprovider.DockerConfigJSON because it does not support
 // marshaling the auth field.
-func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullSecret []byte, managedServices bool) ([]byte, error) {
+func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullSecret []byte) ([]byte, error) {
 	var (
 		originalAuths         map[string]any
 		userProvidedAuths     map[string]any
@@ -339,20 +339,13 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	}
 	userProvidedAuths = userProvidedJSON["auths"].(map[string]any)
 
-	// If managedServices, that means the prcedence of the original pull secret is higher than the user provided pull secret so we need to merge the user provided pull secret into the original pull secret in the other case, the precedence is the opposite
-	if !managedServices {
-		log.Info("Non-managed services detected, merging auths with precedence of user provided pull secret")
-		for k, v := range userProvidedAuths {
-			originalAuths[k] = v
+	for k, v := range originalAuths {
+		if _, ok := userProvidedAuths[k]; ok {
+			log.Info("The registry provided in the additional-pull-secret secret already exists in the original pull secret, this is not allowed. Keeping the original pull secret registry authentication", "registry", k)
 		}
-		finalAuths = originalAuths
-	} else {
-		log.Info("Managed services detected, merging auths with precedence of original pull secret")
-		for k, v := range originalAuths {
-			userProvidedAuths[k] = v
-		}
-		finalAuths = userProvidedAuths
+		userProvidedAuths[k] = v
 	}
+	finalAuths = userProvidedAuths
 
 	// Create final JSON
 	finalJSON := map[string]any{
@@ -376,18 +369,4 @@ func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *
 		return false, nil, err
 	}
 	return true, additionalPullSecret, nil
-}
-
-// isManagedServices returns true if the hosted control plane has managed services enabled
-func isManagedServices(hcp *hyperv1.HostedControlPlane) bool {
-	// Check if is an ARO HCP
-	if azureutil.IsAroHCP() {
-		return true
-	}
-
-	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
-		return awsutil.IsROSAHCP(hcp)
-	}
-
-	return false
 }

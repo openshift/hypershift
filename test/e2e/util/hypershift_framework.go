@@ -25,6 +25,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -153,6 +154,28 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
+
+		// TestHAEtcdChaos runs as NonePlatform and it's broken.
+		// so skipping until we fix it.
+		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
+		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
+			// Private clusters may won't be reachable from the test runner; assume workers exist.
+			hasWorkerNodes := true
+			if !util.IsPrivateHC(hostedCluster) {
+				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
+				var nodeList corev1.NodeList
+				if err := guestClient.List(t.Context(), &nodeList); err != nil {
+					t.Errorf("failed to list nodes in guest cluster: %v", err)
+				}
+				hasWorkerNodes = len(nodeList.Items) > 0
+			}
+			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+		}
+
+		// Run EnsureGlobalPullSecret at the end to avoid interference with upgrade tests
+		// that may have executed earlier in the same cluster. This test modifies
+		// /var/lib/kubelet/config.json and can cause disk validation failures in upgrades.
+		EnsureGlobalPullSecret(t, t.Context(), h.client, hostedCluster)
 	})
 }
 
