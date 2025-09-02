@@ -1434,7 +1434,17 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 }
 
 func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) error {
-	AtLeast(t, Version420)
+	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
+		AtLeast(t, Version419)
+		// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
+		// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
+		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+			t.Skip("test only supported on platform ARO or AWS")
+		}
+
+		if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
+			t.Skip("AWS platform not supported on version 4.20 or less")
+		}
 
 	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform ARO")
