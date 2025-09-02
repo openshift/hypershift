@@ -54,6 +54,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/pricing"
+	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
 	"github.com/aws/aws-sdk-go/service/s3"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -375,15 +377,19 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	var ec2Client ec2iface.EC2API
+	var (
+		ec2Client     ec2iface.EC2API
+		pricingClient pricingiface.PricingAPI
+	)
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
 		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
 		awsConfig := awsutil.NewConfig()
 		ec2Client = ec2.New(awsSession, awsConfig)
+		pricingClient = pricing.New(awsSession, awsConfig)
 	}
 
-	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client, pricingClient)
 
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
