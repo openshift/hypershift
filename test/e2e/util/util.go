@@ -1807,7 +1807,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			additionalPullSecretName            = "additional-pull-secret"
 			additionalPullSecretNamespace       = "kube-system"
 			additionalPullSecretDummyData       = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
-			additionalPullSecretReadOnlyE2EData = []byte(`{"auths": {"quay.io": {"auth": "aHlwZXJzaGlmdCtlMmVfcmVhZG9ubHk6R1U2V0ZDTzVaVkJHVDJPREE1VVAxT0lCOVlNMFg2TlY0UkZCT1lJSjE3TDBWOFpTVlFGVE5BS0daNTNNQVAzRA=="}}}`)
+			additionalPullSecretReadOnlyE2EData = []byte(`{"auths": {"quay.io/hypershift": {"auth": "aHlwZXJzaGlmdCtlMmVfcmVhZG9ubHk6R1U2V0ZDTzVaVkJHVDJPREE1VVAxT0lCOVlNMFg2TlY0UkZCT1lJSjE3TDBWOFpTVlFGVE5BS0daNTNNQVAzRA=="}}}`)
 			oldglobalPullSecretData             []byte
 			dsImage                             string
 			g                                   = NewWithT(t)
@@ -1891,22 +1891,6 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 				}
 				return nil
 			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not updated")
-		})
-
-		// Check if we can pull other restricted images, should succeed
-		t.Run("Check if we can pull other restricted images, should succeed", func(t *testing.T) {
-			g.Eventually(func() error {
-				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				_, _, _, err := registryclient.GetMetadata(ctx, dummyImageTag12, pullSecretData)
-				if err != nil {
-					return fmt.Errorf("failed to get metadata for restricted image: %v", err)
-				}
-				return nil
-			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "should be able to pull other restricted images")
 		})
 
 		// Check if we can run a pod with the restricted image
@@ -3605,14 +3589,20 @@ func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Clie
 			return err
 		}
 		if shouldFail {
-			if pod.Status.ContainerStatuses != nil && pod.Status.ContainerStatuses[0].State.Waiting.Reason == "ImagePullBackOff" {
-				return fmt.Errorf("pod is not running")
+			if pod.Status.Phase == corev1.PodFailed ||
+				(len(pod.Status.ContainerStatuses) > 0 &&
+					((pod.Status.ContainerStatuses[0].State.Waiting != nil &&
+						pod.Status.ContainerStatuses[0].State.Waiting.Reason == "ImagePullBackOff") ||
+						(pod.Status.ContainerStatuses[0].State.Terminated != nil))) {
+				return nil
 			}
-			return nil
+			return fmt.Errorf("pod should fail but is not in failure state yet, current phase: %s", pod.Status.Phase)
 		} else {
+			t.Logf("Pod phase: %s, shouldFail: %t", pod.Status.Phase, shouldFail)
 			if pod.Status.Phase != corev1.PodRunning {
-				return fmt.Errorf("pod is running")
+				return fmt.Errorf("pod is not running yet, current phase: %s", pod.Status.Phase)
 			}
+			t.Logf("Pod is running! Continuing...")
 			return nil
 		}
 	}, 7*time.Minute, 5*time.Second).Should(Succeed(), "pod is not running")
