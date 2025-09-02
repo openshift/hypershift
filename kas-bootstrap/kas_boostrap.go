@@ -224,7 +224,7 @@ func applyBootstrapResources(ctx context.Context, c, hccoClient client.Client, f
 			clientToUse = hccoClient
 		}
 
-		if err := clientToUse.Patch(ctx, obj.(client.Object), client.Apply); err != nil {
+		if err := clientToUse.Patch(ctx, obj.(client.Object), client.Apply, client.FieldOwner("control-plane-operator")); err != nil {
 			return fmt.Errorf("failed to apply file %s: %w", path, err)
 		}
 
