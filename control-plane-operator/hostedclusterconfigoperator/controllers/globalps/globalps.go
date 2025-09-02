@@ -157,7 +157,19 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
 							},
 							SecurityContext: &corev1.SecurityContext{
-								Privileged: ptr.To(true),
+								Privileged: ptr.To(false),
+								Capabilities: &corev1.Capabilities{
+									Add: []corev1.Capability{
+										"DAC_OVERRIDE",
+										"SYS_ADMIN",
+									},
+									Drop: []corev1.Capability{
+										"ALL",
+									},
+								},
+								RunAsNonRoot:             ptr.To(false),
+								ReadOnlyRootFilesystem:   ptr.To(true),
+								AllowPrivilegeEscalation: ptr.To(false),
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
