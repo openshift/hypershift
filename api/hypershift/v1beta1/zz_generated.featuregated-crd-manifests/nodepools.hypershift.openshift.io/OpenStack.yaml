@@ -484,6 +484,22 @@ spec:
                                 requires a Capacity Reservation ID
                               rule: 'has(self.marketType) && self.marketType == ''CapacityBlocks''
                                 ? has(self.id) : true'
+                          spotMarketOptions:
+                            description: |-
+                              spotMarketOptions specifies options for using AWS Spot instances.
+                              When specified, instances will be launched as Spot instances with the given configuration.
+                              Mutually exclusive with capacityReservation, and tenancy must be unset or set to "default".
+                            properties:
+                              maxPrice:
+                                description: |-
+                                  maxPrice defines the maximum price (USD per instance‑hour) you are willing to pay for a Spot instance.
+                                  If omitted, the On‑Demand price is used as the ceiling.
+                                  Example: "0.0739"
+                                  Format: up to 10 integer digits and up to 6 fractional digits; no leading zeros unless the value is "0"; scientific notation is not allowed.
+                                maxLength: 17
+                                pattern: ^(0|[1-9][0-9]{0,9})(\.[0-9]{1,6})?$
+                                type: string
+                            type: object
                           tenancy:
                             description: |-
                               tenancy indicates if instance should run on shared or single-tenant hardware.
@@ -505,6 +521,12 @@ spec:
                         - message: AWS Capacity Reservations cannot be used with Dedicated
                             Hosts (tenancy 'host')
                           rule: 'has(self.tenancy) && self.tenancy == ''host'' ? !has(self.capacityReservation)
+                            : true'
+                        - message: spotMarketOptions is incompatible with capacityReservation
+                            and requires tenancy to be 'default' or unset (not 'dedicated'
+                            or 'host')
+                          rule: 'has(self.spotMarketOptions) ? (!has(self.capacityReservation)
+                            && (!has(self.tenancy) || self.tenancy == ''default''))
                             : true'
                       resourceTags:
                         description: |-

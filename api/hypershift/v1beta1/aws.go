@@ -59,8 +59,21 @@ type AWSNodePoolPlatform struct {
 	Placement *PlacementOptions `json:"placement,omitempty"`
 }
 
+// AWSSpotMarketOptions defines configuration for AWS Spot instances
+type AWSSpotMarketOptions struct {
+	// maxPrice defines the maximum price (USD per instance‑hour) you are willing to pay for a Spot instance.
+	// If omitted, the On‑Demand price is used as the ceiling.
+	// Example: "0.0739"
+	// Format: up to 10 integer digits and up to 6 fractional digits; no leading zeros unless the value is "0"; scientific notation is not allowed.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^(0|[1-9][0-9]{0,9})(\.[0-9]{1,6})?$`
+	// +kubebuilder:validation:MaxLength=17
+	MaxPrice *string `json:"maxPrice,omitempty"`
+}
+
 // PlacementOptions specifies the placement options for the EC2 instances.
 // +kubebuilder:validation:XValidation:rule="has(self.tenancy) && self.tenancy == 'host' ? !has(self.capacityReservation) : true", message="AWS Capacity Reservations cannot be used with Dedicated Hosts (tenancy 'host')"
+// +kubebuilder:validation:XValidation:rule="has(self.spotMarketOptions) ? (!has(self.capacityReservation) && (!has(self.tenancy) || self.tenancy == 'default')) : true", message="spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')"
 type PlacementOptions struct {
 	// tenancy indicates if instance should run on shared or single-tenant hardware.
 	//
@@ -83,6 +96,12 @@ type PlacementOptions struct {
 	//
 	// +optional
 	CapacityReservation *CapacityReservationOptions `json:"capacityReservation,omitempty"`
+
+	// spotMarketOptions specifies options for using AWS Spot instances.
+	// When specified, instances will be launched as Spot instances with the given configuration.
+	// Mutually exclusive with capacityReservation, and tenancy must be unset or set to "default".
+	// +optional
+	SpotMarketOptions *AWSSpotMarketOptions `json:"spotMarketOptions,omitempty"`
 }
 
 // MarketType describes the market type of the CapacityReservation for an Instance.

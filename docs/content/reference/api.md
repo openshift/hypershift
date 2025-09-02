@@ -2530,6 +2530,39 @@ Example:
 </tr>
 </tbody>
 </table>
+###AWSSpotMarketOptions { #hypershift.openshift.io/v1beta1.AWSSpotMarketOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>AWSSpotMarketOptions defines configuration for AWS Spot instances</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price (USD per instance‑hour) you are willing to pay for a Spot instance.
+If omitted, the On‑Demand price is used as the ceiling.
+Example: &ldquo;0.0739&rdquo;
+Format: up to 10 integer digits and up to 6 fractional digits; no leading zeros unless the value is &ldquo;0&rdquo;; scientific notation is not allowed.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AddressPair { #hypershift.openshift.io/v1beta1.AddressPair }
 <p>
 (<em>Appears on:</em>
@@ -10434,6 +10467,22 @@ CapacityReservationOptions
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 <p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
 do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>spotMarketOptions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AWSSpotMarketOptions">
+AWSSpotMarketOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spotMarketOptions specifies options for using AWS Spot instances.
+When specified, instances will be launched as Spot instances with the given configuration.
+Mutually exclusive with capacityReservation, and tenancy must be unset or set to &ldquo;default&rdquo;.</p>
 </td>
 </tr>
 </tbody>

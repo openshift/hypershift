@@ -12,6 +12,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/aws/aws-sdk-go/service/ec2"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -164,6 +166,36 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.InstanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
+			}),
+		},
+		{
+			name: "SpotMarketOptions with MaxPrice",
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+				Placement: &hyperv1.PlacementOptions{
+					SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+						MaxPrice: ptr.To("0.50"),
+					},
+				},
+			}}},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{
+					MaxPrice: ptr.To("0.50"),
+				}
+				tmpl.Spec.Template.Spec.MarketType = capiaws.MarketTypeSpot
+			}),
+		},
+		{
+			name: "SpotMarketOptions without MaxPrice",
+			nodePool: hyperv1.NodePoolSpec{Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+				AMI: amiName,
+				Placement: &hyperv1.PlacementOptions{
+					SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{},
+				},
+			}}},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
+				tmpl.Spec.Template.Spec.MarketType = capiaws.MarketTypeSpot
 			}),
 		},
 	}
@@ -495,7 +527,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 		},
 	}
 
-	capacityReservationID := "cr-fakeID"
+	capacityReservationID := "cr-0123456789abcdef0"
 
 	pullSecret := fakePullSecret(hostedcluster)
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret).Build()
@@ -503,13 +535,134 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		hostedClusterVersion string
+		setupNodePool        func() *hyperv1.NodePool
 		oldCondition         *hyperv1.NodePoolCondition
 		expectedError        string
 	}{
 		{
 			name:                 "If hostedCluster < 4.19 it should fail",
 			hostedClusterVersion: "4.18.0",
-			expectedError:        "capacityReservation is only supported on 4.19+ clusters",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									CapacityReservation: &hyperv1.CapacityReservationOptions{
+										ID: &capacityReservationID,
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "capacityReservation is only supported on 4.19+ clusters",
+		},
+		{
+			name:                 "SpotMarketOptions with non default tenancy should fail",
+			hostedClusterVersion: "4.19.0",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									Tenancy: ec2.TenancyDedicated,
+									SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+										MaxPrice: ptr.To("0.50"),
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+		},
+		{
+			name:                 "SpotMarketOptions with default tenancy should succeed",
+			hostedClusterVersion: "4.19.0",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									Tenancy: ec2.TenancyDefault,
+									SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+										MaxPrice: ptr.To("0.30"),
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "", // No error expected
+		},
+		{
+			name:                 "SpotMarketOptions with empty tenancy should succeed",
+			hostedClusterVersion: "4.19.0",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+										MaxPrice: ptr.To("0.30"),
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "", // No error expected
+		},
+		{
+			name:                 "SpotMarketOptions with CapacityReservation should fail",
+			hostedClusterVersion: "4.19.0",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									CapacityReservation: &hyperv1.CapacityReservationOptions{
+										ID: &capacityReservationID,
+									},
+									SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+										MaxPrice: ptr.To("0.50"),
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+		},
+		{
+			name:                 "SpotMarketOptions without CapacityReservation should succeed",
+			hostedClusterVersion: "4.19.0",
+			setupNodePool: func() *hyperv1.NodePool {
+				return &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+										MaxPrice: ptr.To("0.50"),
+									},
+								},
+							},
+						},
+					},
+				}
+			},
+			expectedError: "", // No error expected
 		},
 	}
 
@@ -524,19 +677,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 				},
 			}
 
-			nodePool := &hyperv1.NodePool{
-				Spec: hyperv1.NodePoolSpec{
-					Platform: hyperv1.NodePoolPlatform{
-						AWS: &hyperv1.AWSNodePoolPlatform{
-							Placement: &hyperv1.PlacementOptions{
-								CapacityReservation: &hyperv1.CapacityReservationOptions{
-									ID: &capacityReservationID,
-								},
-							},
-						},
-					},
-				},
-			}
+			nodePool := tc.setupNodePool()
 
 			reconciler := &NodePoolReconciler{
 				Client: fakeClient,
