@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
@@ -33,41 +34,31 @@ type nodePoolParams struct {
 
 type Ec2ClientMock struct {
 	ec2iface.EC2API
+	ResponseInstanceTypes []*ec2.InstanceTypeInfo
+	ResponseError         error
+}
+
+func initInstanceTypeInfo(instanceType string, vCpusCount int64) *ec2.InstanceTypeInfo {
+	return &ec2.InstanceTypeInfo{
+		InstanceType: ptr.To[string](instanceType),
+		VCpuInfo: &ec2.VCpuInfo{
+			DefaultVCpus: ptr.To[int64](vCpusCount),
+		},
+	}
 }
 
 func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-	var instanceTypesInfo []*ec2.InstanceTypeInfo
-
-	for _, instanceType := range input.InstanceTypes {
-		if instanceType != nil {
-			var vCpusCount *int64
-
-			switch *instanceType {
-			case "m5.xlarge":
-				vCpusCount = ptr.To[int64](4)
-			case "m5.2xlarge":
-				vCpusCount = ptr.To[int64](8)
-			}
-
-			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
-				InstanceType: instanceType,
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: vCpusCount,
-				},
-			})
-		}
-
-	}
-
-	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
+	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: c.ResponseInstanceTypes}, c.ResponseError
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
-		name                          string
-		npsParams                     []nodePoolParams
-		expectedVCpusCount            float64
-		expectedVCpusCountErrorReason string
+		name                               string
+		npsParams                          []nodePoolParams
+		requestedInstanceTypes             []*ec2.InstanceTypeInfo
+		describeInstancesTypeReturnedError error
+		expectedVCpusCount                 float64
+		expectedVCpusCountErrorReason      string
 	}{
 		{
 			name:               "When there is no nodePool, the total number of worker vCpus is 0",
@@ -79,12 +70,16 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
-			expectedVCpusCount: 0,
+			requestedInstanceTypes: []*ec2.InstanceTypeInfo{}, // no instance types should be requested
+			expectedVCpusCount:     0,
 		},
 		{
 			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			requestedInstanceTypes: []*ec2.InstanceTypeInfo{
+				initInstanceTypeInfo("m5.xlarge", 4),
 			},
 			expectedVCpusCount: 8,
 		},
@@ -93,6 +88,9 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
+			},
+			requestedInstanceTypes: []*ec2.InstanceTypeInfo{
+				initInstanceTypeInfo("m5.2xlarge", 8),
 			},
 			expectedVCpusCount: 32,
 		},
@@ -103,6 +101,15 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			},
 			expectedVCpusCount:            -1,
 			expectedVCpusCountErrorReason: "unexpected AWS output",
+		},
+		{
+			name: "When AWS DescribeInstanceTypes return an error",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			describeInstancesTypeReturnedError: fmt.Errorf("That's an error!"),
+			expectedVCpusCount:                 -1,
+			expectedVCpusCountErrorReason:      "failed to call AWS",
 		},
 	}
 
@@ -122,6 +129,11 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster)
+			ec2MockedClient := &Ec2ClientMock{}
+			ec2MockedClient.ResponseInstanceTypes = tc.requestedInstanceTypes
+			if tc.describeInstancesTypeReturnedError != nil {
+				ec2MockedClient.ResponseError = tc.describeInstancesTypeReturnedError
+			}
 
 			for k, npParam := range tc.npsParams {
 				nodePool := &hyperv1.NodePool{
@@ -147,7 +159,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), &Ec2ClientMock{}, clock.RealClock{}))
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
 			if err != nil {
