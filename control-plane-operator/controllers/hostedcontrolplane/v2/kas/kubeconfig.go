@@ -80,6 +80,21 @@ func adaptHCCOKubeconfigSecret(cpContext component.WorkloadContext, secret *core
 	return nil
 }
 
+func adaptHCCOLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	apiServerPort := util.KASPodPort(cpContext.HCP)
+	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.HCCOClientCertSecret(cpContext.HCP.Namespace), localhostURL)
+	if err != nil {
+		return fmt.Errorf("failed to generate kubeconfig: %w", err)
+	}
+
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[KubeconfigKey] = kubeconfig
+	return nil
+}
+
 func adaptLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	apiServerPort := util.KASPodPort(cpContext.HCP)
 	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
