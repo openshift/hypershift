@@ -282,7 +282,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
-	if o.platformType == string(hyperv1.AzurePlatform) {
+	if o.platformType == string(hyperv1.AzurePlatform) || o.platformType == string(hyperv1.AWSPlatform) {
 		controllersToRun[globalps.ControllerName] = globalps.Setup
 	}
 
