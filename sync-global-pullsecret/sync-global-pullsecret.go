@@ -11,9 +11,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -34,29 +32,11 @@ type syncGlobalPullSecretOptions struct {
 	globalPSSecretName    string
 }
 
-const (
-	defaultKubeletConfigJsonPath     = "/var/lib/kubelet/config.json"
-	defaultGlobalPSSecretName        = "global-pull-secret"
-	additionalPullSecretName         = "additional-pull-secret"
-	defaultGlobalPullSecretNamespace = "kube-system"
-	originalPullSecretName           = "pull-secret"
-	originalPullSecretNamespace      = "openshift-config"
-	dbusRestartUnitMode              = "replace"
-	kubeletServiceUnit               = "kubelet.service"
-
-	// systemd job completion state as documented in go-systemd/dbus
-	systemdJobDone = "done" // Job completed successfully
-)
-
 //go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
 type dbusConn interface {
 	RestartUnit(name string, mode string, ch chan<- string) (int, error)
 	Close()
 }
-
-// writeFileFunc is a variable that holds the function used to write files.
-// This allows tests to inject custom write functions for testing rollback scenarios.
-var writeFileFunc = os.WriteFile
 
 // GlobalPullSecretReconciler reconciles a Secret object
 type GlobalPullSecretReconciler struct {
@@ -67,6 +47,31 @@ type GlobalPullSecretReconciler struct {
 	globalPSSecretName    string
 	globalPSSecretNS      string
 }
+
+const (
+	defaultKubeletConfigJsonPath     = "/var/lib/kubelet/config.json"
+	defaultGlobalPSSecretName        = "global-pull-secret"
+	defaultGlobalPullSecretNamespace = "kube-system"
+	dbusRestartUnitMode              = "replace"
+	kubeletServiceUnit               = "kubelet.service"
+
+	// Mounted secret file paths
+	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
+	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
+
+	// systemd job completion state as documented in go-systemd/dbus
+	systemdJobDone = "done" // Job completed successfully
+)
+
+var (
+	// writeFileFunc is a variable that holds the function used to write files.
+	// This allows tests to inject custom write functions for testing rollback scenarios.
+	writeFileFunc = os.WriteFile
+
+	// readFileFunc is a variable that holds the function used to read files.
+	// This allows tests to inject custom read functions for testing.
+	readFileFunc = os.ReadFile
+)
 
 // NewRunCommand creates a new cobra.Command for the sync-global-pullsecret command
 func NewRunCommand() *cobra.Command {
@@ -99,6 +104,7 @@ func NewRunCommand() *cobra.Command {
 // run executes the main logic of the sync-global-pullsecret command
 func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 	// Create manager
+	// TODO: Review if we really need a controller here with the new way of work
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: hyperapi.Scheme,
 		Cache: cache.Options{
@@ -171,33 +177,28 @@ func (o *syncGlobalPullSecretOptions) isTargetSecret(obj crclient.Object) bool {
 
 // Reconcile handles the reconciliation logic for the GlobalPullSecret
 func (r *GlobalPullSecretReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	var (
-		log                = ctrl.LoggerFrom(ctx)
-		globalPullSecret   = &corev1.Secret{}
-		originalPullSecret = &corev1.Secret{}
-		err                error
-		chosenPullSecret   *corev1.Secret
-	)
-
+	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling GlobalPullSecret")
-	err = r.uncachedClient.Get(ctx, types.NamespacedName{
-		Name:      originalPullSecretName,
-		Namespace: originalPullSecretNamespace,
-	}, originalPullSecret)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to get original pull secret: %w", err)
-	}
 
-	err = r.cachedClient.Get(ctx, req.NamespacedName, globalPullSecret)
+	// Try to read the global pull secret from mounted file first
+	globalPullSecretBytes, err := readPullSecretFromFile(globalPullSecretFilePath)
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
-			return reconcile.Result{}, fmt.Errorf("failed to get global pull secret: %w", err)
+		// If global pull secret file doesn't exist, fall back to original pull secret
+		log.Info("Global pull secret file not found, using original pull secret", "error", err)
+		originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to read original pull secret from file: %w", err)
 		}
-		log.Info("Global pull secret not found, using original pull secret")
-		chosenPullSecret = originalPullSecret.DeepCopy()
+		globalPullSecretBytes = originalPullSecretBytes
 	} else {
 		log.Info("Global pull secret found, using it")
-		chosenPullSecret = globalPullSecret.DeepCopy()
+	}
+
+	// Create a temporary secret object for compatibility with existing checkAndFixFile logic
+	chosenPullSecret := &corev1.Secret{
+		Data: map[string][]byte{
+			corev1.DockerConfigJsonKey: globalPullSecretBytes,
+		},
 	}
 
 	// Normal reconciliation
@@ -306,4 +307,13 @@ func restartKubelet(ctx context.Context, conn dbusConn) error {
 
 	log.Info("Successfully signaled Kubelet to reload config")
 	return nil
+}
+
+// readPullSecretFromFile reads a pull secret from a mounted file path
+func readPullSecretFromFile(filePath string) ([]byte, error) {
+	content, err := readFileFunc(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read pull secret from file %s: %w", filePath, err)
+	}
+	return content, nil
 }
