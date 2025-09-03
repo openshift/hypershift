@@ -815,14 +815,17 @@ Release
 </em>
 </td>
 <td>
-<p>release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines which includes the kubelet version, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).
-It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
-Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Changing this field will trigger a NodePool rollout.</p>
+<p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
+<p>Version-skew rules and effects:
+- The minor-version skew relative to the control-plane release must be &lt;= N-2.
+This is not currently enforced, but exceeding this limit is unsupported and
+may lead to unpredictable behavior.
+- If the specified release is higher than the HostedCluster&rsquo;s release, the
+NodePool will be degraded and the ValidReleaseImage condition will be false.
+- If the specified release is lower than the NodePool&rsquo;s current y-stream,
+the NodePool will be degraded and the ValidReleaseImage condition will be false.</p>
+<p>Changing this field triggers a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -9479,14 +9482,17 @@ Release
 </em>
 </td>
 <td>
-<p>release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines which includes the kubelet version, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).
-It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
-Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Changing this field will trigger a NodePool rollout.</p>
+<p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
+<p>Version-skew rules and effects:
+- The minor-version skew relative to the control-plane release must be &lt;= N-2.
+This is not currently enforced, but exceeding this limit is unsupported and
+may lead to unpredictable behavior.
+- If the specified release is higher than the HostedCluster&rsquo;s release, the
+NodePool will be degraded and the ValidReleaseImage condition will be false.
+- If the specified release is lower than the NodePool&rsquo;s current y-stream,
+the NodePool will be degraded and the ValidReleaseImage condition will be false.</p>
+<p>Changing this field triggers a NodePool rollout.</p>
 </td>
 </tr>
 <tr>

@@ -97,14 +97,19 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')",message="clusterName must consist of lowercase alphanumeric characters or '-', start and end with an alphanumeric character, and be between 1 and 253 characters"
 	ClusterName string `json:"clusterName"`
 
-	// release specifies the OCP release used for the NodePool. This informs the
-	// ignition configuration for machines which includes the kubelet version, as well as other platform specific
-	// machine properties (e.g. an AMI on the AWS platform).
-	// It's not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there's no enforcement that prevents this from happening.
-	// Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-	// Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-	// Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-	// Changing this field will trigger a NodePool rollout.
+	// release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+	// the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).
+	//
+	// Version-skew rules and effects:
+	//   - The minor-version skew relative to the control-plane release must be <= N-2.
+	//     This is not currently enforced, but exceeding this limit is unsupported and
+	//     may lead to unpredictable behavior.
+	//   - If the specified release is higher than the HostedCluster's release, the
+	//     NodePool will be degraded and the ValidReleaseImage condition will be false.
+	//   - If the specified release is lower than the NodePool's current y-stream,
+	//     the NodePool will be degraded and the ValidReleaseImage condition will be false.
+	//
+	// Changing this field triggers a NodePool rollout.
 	// +rollout
 	// +required
 	Release Release `json:"release"`
