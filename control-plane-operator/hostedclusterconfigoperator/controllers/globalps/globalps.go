@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -74,10 +75,12 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 				return fmt.Errorf("failed to delete global pull secret: %w", err)
 			}
 		}
+		// TODO: We need to execute the reconcile daemonSet to change the hash forcing the pod to be recreated with the original pull secret
 		return nil
 	}
 
 	// Reconcile the RBAC for the Global Pull Secret
+	// TODO: We need to remove most of the RBAC with the new way of work
 	if err := reconcileGlobalPullSecretRBAC(ctx, r.hcUncachedClient, r.CreateOrUpdate, "kube-system", "openshift-config"); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret RBAC: %w", err)
 	}
@@ -102,7 +105,18 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to merge pull secrets: %w", err)
 	}
 
-	// Create secret in the DataPlane
+	// Create original pull secret in the DataPlane's kube-system namespace
+	originalSecret := manifests.OriginalPullSecret()
+	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, originalSecret, func() error {
+		originalSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: originalPullSecretBytes,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create original pull secret: %w", err)
+	}
+
+	// Create global pull secret in the DataPlane
 	secret := manifests.GlobalPullSecret()
 	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, secret, func() error {
 		secret.Data = map[string][]byte{
@@ -113,15 +127,17 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
 	}
 
+	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
+	globalPullSecretSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, secret.Name, globalPullSecretSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, originalPullSecretName, globalPullSecretName, globalPullSecretSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
@@ -129,13 +145,15 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name": manifests.GlobalPullSecretDSName,
+					"name":   manifests.GlobalPullSecretDSName,
+					"config": globalPullSecretSeed,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name": manifests.GlobalPullSecretDSName,
+						"name":   manifests.GlobalPullSecretDSName,
+						"config": globalPullSecretSeed,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -180,6 +198,16 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 									Name:      "dbus",
 									MountPath: "/var/run/dbus",
 								},
+								{
+									Name:      "original-pull-secret",
+									MountPath: "/etc/original-pull-secret",
+									ReadOnly:  true,
+								},
+								{
+									Name:      "global-pull-secret",
+									MountPath: "/etc/global-pull-secret",
+									ReadOnly:  true,
+								},
 							},
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							Resources: corev1.ResourceRequirements{
@@ -206,6 +234,23 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 								HostPath: &corev1.HostPathVolumeSource{
 									Path: "/var/run/dbus",
 									Type: ptr.To(corev1.HostPathDirectory),
+								},
+							},
+						},
+						{
+							Name: "original-pull-secret",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: originalPullSecretName,
+								},
+							},
+						},
+						{
+							Name: "global-pull-secret",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: globalPullSecretName,
+									Optional:   ptr.To(true), // Make the secret optional
 								},
 							},
 						},
