@@ -1,6 +1,8 @@
 package azure
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -39,6 +41,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"serviceaccount.yaml",
 			component.WithAdaptFunction(adaptServiceAccount),
+			component.WithPredicate(isSelfManagedAzure),
 		).
 		WithManifestAdapter(
 			"config.yaml",
@@ -72,6 +75,10 @@ func adaptServiceAccount(cpContext component.WorkloadContext, sa *corev1.Service
 		sa.Annotations = make(map[string]string)
 	}
 
+	if cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities == nil {
+		return fmt.Errorf("AzureAuthenticationConfig.WorkloadIdentities is nil")
+	}
+
 	// Get the client ID from the HostedControlPlane spec
 	clientID := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.CloudProvider.ClientID
 	tenantID := cpContext.HCP.Spec.Platform.Azure.TenantID
@@ -84,4 +91,8 @@ func adaptServiceAccount(cpContext component.WorkloadContext, sa *corev1.Service
 
 func isAroHCP(cpContext component.WorkloadContext) bool {
 	return azureutil.IsAroHCP()
+}
+
+func isSelfManagedAzure(cpContext component.WorkloadContext) bool {
+	return !azureutil.IsAroHCP()
 }
