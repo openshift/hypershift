@@ -95,7 +95,7 @@ const (
 
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
-	defaultGoAwayChance                = 0
+	defaultGoAwayChance                = 0.001
 )
 
 func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImageProvider imageprovider.ReleaseImageProvider, externalAPIAddress string, externalAPIPort int32, externalOAuthAddress string, externalOAuthPort int32, setDefaultSecurityContext bool, featureGates []string) *KubeAPIServerParams {
@@ -148,6 +148,10 @@ func NewKubeAPIServerParams(ctx context.Context, hcp *hyperv1.HostedControlPlane
 	}
 	if mutatingReqInflight := hcp.Annotations[hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight]; mutatingReqInflight != "" {
 		params.MaxMutatingRequestsInflight = mutatingReqInflight
+	}
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		// There is no point in rebalancing connections if there is only one KAS
+		params.GoAwayChance = "0"
 	}
 	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
 		params.GoAwayChance = goAwayChance
