@@ -47,6 +47,15 @@ func GlobalPullSecretDaemonSet() *appsv1.DaemonSet {
 	}
 }
 
+func OriginalPullSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "original-pull-secret",
+			Namespace: GlobalPullSecretNamespace,
+		},
+	}
+}
+
 func GlobalPullSecret() *corev1.Secret {
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
