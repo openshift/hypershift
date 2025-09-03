@@ -32,7 +32,7 @@ const (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var (
-	LatestSupportedVersion = semver.MustParse("4.20.0")
+	LatestSupportedVersion = semver.MustParse("4.21.0")
 	MinSupportedVersion    = semver.MustParse("4.14.0")
 )
 
