@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token,tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token,cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -107,6 +107,8 @@ spec:
           readOnly: true
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: token
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -133,6 +135,32 @@ spec:
           name: token
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=capi-provider
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -174,6 +202,9 @@ spec:
       - emptyDir:
           medium: Memory
         name: token
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}

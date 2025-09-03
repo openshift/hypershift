@@ -87,6 +87,7 @@ func TestCreateCluster(t *testing.T) {
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -106,6 +107,7 @@ func TestCreateCluster(t *testing.T) {
 				"--render-sensitive",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -127,6 +129,7 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-version=414.92.2024021",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -140,6 +143,7 @@ func TestCreateCluster(t *testing.T) {
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -152,6 +156,7 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--disable-cluster-capabilities=ImageRegistry",
 			},
 		},
@@ -165,6 +170,7 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--kas-dns-name=test-dns-name.example.com",
 			},
 		},
