@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75741638a5741638a5741638a5741638a5794dc8cc8b110e88a2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75741638a5741638a5741638a5741638a5794dc8cc8b110e88a2a4098ca2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -173,6 +173,8 @@ spec:
         - /work
         env:
         - name: KUBECONFIG
+          value: /var/secrets/kas-bootstrap-container-kubeconfig/kubeconfig
+        - name: KUBECONFIG_ADMIN
           value: /var/secrets/localhost-kubeconfig/kubeconfig
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
@@ -189,6 +191,8 @@ spec:
           name: bootstrap-manifests
         - mountPath: /var/secrets/localhost-kubeconfig
           name: localhost-kubeconfig
+        - mountPath: /var/secrets/kas-bootstrap-container-kubeconfig
+          name: kas-bootstrap-container-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -393,6 +397,22 @@ spec:
             name: system:hosted-cluster-config
           EOF
 
+          touch /tmp/manifests/00_kas-bootstrap-container-rolebinding.yaml
+          cat <<EOF >/tmp/manifests/00_kas-bootstrap-container-rolebinding.yaml
+          apiVersion: rbac.authorization.k8s.io/v1
+          kind: ClusterRoleBinding
+          metadata:
+            name: kas-bootstrap-container-cluster-admin
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: cluster-admin
+          subjects:
+          - apiGroup: rbac.authorization.k8s.io
+            kind: User
+            name: system:kas-bootstrap-container
+          EOF
+
           /usr/bin/render \
              --asset-output-dir /tmp/output \
              --rendered-manifest-dir=/tmp/manifests \
@@ -501,6 +521,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: localhost-kubeconfig
+      - name: kas-bootstrap-container-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: kas-bootstrap-container-kubeconfig
       - emptyDir: {}
         name: logs
       - configMap:
