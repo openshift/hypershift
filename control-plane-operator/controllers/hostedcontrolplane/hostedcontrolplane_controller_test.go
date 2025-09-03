@@ -1657,6 +1657,12 @@ func TestControlPlaneComponents(t *testing.T) {
 						SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
 						SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
 						VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+						AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+							AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeWorkloadIdentities,
+							WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+								CloudProvider: hyperv1.WorkloadIdentity{ClientID: hyperv1.AzureClientID("myClientID")},
+							},
+						},
 					},
 					OpenStack: &hyperv1.OpenStackPlatformSpec{
 						IdentityRef: hyperv1.OpenStackIdentityReference{
