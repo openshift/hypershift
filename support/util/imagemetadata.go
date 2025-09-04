@@ -56,7 +56,7 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref := seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
+	ref := SeekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
 	refPullSpec := ref.String()
 
 	// Check the cache for the image
@@ -102,7 +102,7 @@ func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, i
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
 	}
 
-	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
+	ref = SeekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
 
 	return ref, nil
 }
@@ -136,7 +136,7 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
+	ref = SeekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
 	composedRef := ref.String()
 
 	// If the overridden image name is in the cache, return early
@@ -183,7 +183,7 @@ func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, i
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref := seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
+	ref := SeekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
 
 	// Check the cache for the image
 	if manifest, exists := manifestsCache.Get(ref.String()); exists {
@@ -220,7 +220,7 @@ func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, i
 	}
 
 	// Get the image repo info based the source/mirrors in the ICSPs/IDMSs
-	ref = seekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
+	ref = SeekOverride(ctx, r.OpenShiftImageRegistryOverrides, parsedImageRef, pullSecret)
 	composedRef := ref.String()
 
 	return getMetadata(ctx, composedRef, pullSecret)
@@ -442,10 +442,18 @@ func GetPayloadVersion(ctx context.Context, releaseImageProvider releaseinfo.Pro
 	return &version, nil
 }
 
-func seekOverride(ctx context.Context, openshiftImageRegistryOverrides map[string][]string, parsedImageReference reference.DockerImageReference, pullSecret []byte) *reference.DockerImageReference {
+func SeekOverride(ctx context.Context, openshiftImageRegistryOverrides map[string][]string, parsedImageReference reference.DockerImageReference, pullSecret []byte) *reference.DockerImageReference {
 	log := ctrl.LoggerFrom(ctx)
 	for source, mirrors := range openshiftImageRegistryOverrides {
+		// Skip empty sources
+		if source == "" {
+			continue
+		}
 		for _, mirror := range mirrors {
+			// Skip empty mirrors
+			if mirror == "" {
+				continue
+			}
 			ref, overrideFound, err := GetRegistryOverrides(ctx, parsedImageReference, source, mirror)
 			if err != nil {
 				log.Info(fmt.Sprintf("failed to find registry override for image reference %q with source, %s, mirror %s: %s", parsedImageReference, source, mirror, err.Error()))
