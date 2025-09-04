@@ -39,6 +39,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		deployment.Spec.Template.Spec.ServiceAccountName = "azure-cloud-controller-manager"
 		deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(true)
 	}
-	
+
 	return nil
 }
