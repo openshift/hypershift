@@ -2,19 +2,19 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
   creationTimestamp: null
-  name: cloud-controller-manager-aws
+  name: aws-cloud-controller-manager
   namespace: hcp-namespace
   resourceVersion: "1"
 spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: cloud-controller-manager-aws Deployment Available condition not found
+    message: aws-cloud-controller-manager Deployment Available condition not found
     reason: NotFound
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment cloud-controller-manager-aws rollout to finish:
+    message: 'Waiting for deployment aws-cloud-controller-manager rollout to finish:
       0 out of 1 new replicas have been updated'
     reason: WaitingForRolloutComplete
     status: "False"
