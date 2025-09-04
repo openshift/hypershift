@@ -23,6 +23,7 @@ type KubeControllerManagerParams struct {
 	CloudProviderConfig *corev1.LocalObjectReference `json:"cloudProviderConfig"`
 	CloudProviderCreds  *corev1.LocalObjectReference `json:"cloudProviderCreds"`
 	Port                int32                        `json:"port"`
+	PlatformType        hyperv1.PlatformType
 	ServiceCIDR         string
 	ClusterCIDR         string
 	APIServer           *configv1.APIServerSpec `json:"apiServer"`
@@ -55,6 +56,7 @@ func NewKubeControllerManagerParams(ctx context.Context, hcp *hyperv1.HostedCont
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		params.CloudProvider = "external"
 	}
+	params.PlatformType = hcp.Spec.Platform.Type
 
 	if hcp.Spec.Configuration != nil {
 		params.FeatureGate = hcp.Spec.Configuration.FeatureGate
