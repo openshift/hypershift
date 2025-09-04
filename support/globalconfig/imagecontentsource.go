@@ -134,8 +134,18 @@ func getImageDigestMirrorSets(ctx context.Context, client crclient.Client) (map[
 		for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
 			source := imageDigestMirror.Source
 
+			// Skip empty sources
+			if source == "" {
+				continue
+			}
+
 			for n := range imageDigestMirror.Mirrors {
-				idmsRegistryOverrides[source] = append(idmsRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
+				mirror := string(imageDigestMirror.Mirrors[n])
+				// Skip empty mirrors
+				if mirror == "" {
+					continue
+				}
+				idmsRegistryOverrides[source] = append(idmsRegistryOverrides[source], mirror)
 			}
 		}
 	}
@@ -164,7 +174,22 @@ func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) 
 		for _, mirror := range item.Spec.RepositoryDigestMirrors {
 			source := mirror.Source
 
-			icspRegistryOverrides[source] = append(icspRegistryOverrides[source], mirror.Mirrors...)
+			// Skip empty sources
+			if source == "" {
+				continue
+			}
+
+			// Filter out empty mirrors
+			var validMirrors []string
+			for _, m := range mirror.Mirrors {
+				if m != "" {
+					validMirrors = append(validMirrors, m)
+				}
+			}
+
+			if len(validMirrors) > 0 {
+				icspRegistryOverrides[source] = append(icspRegistryOverrides[source], validMirrors...)
+			}
 		}
 	}
 
