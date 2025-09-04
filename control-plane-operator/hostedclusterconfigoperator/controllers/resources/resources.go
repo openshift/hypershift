@@ -290,7 +290,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	if !hcp.DeletionTimestamp.IsZero() {
 		// Delete admission policies during cluster deletion to allow HCCO cleanup operations for ARO HCP
-		if azureutil.IsAroHCP() {
+		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 			registryConfigManagementStateAdmissionPolicy := registry.AdmissionPolicy{Name: registry.AdmissionPolicyNameManagementState}
 			// During cluster deletion, delete the admission policy and its binding to allow CIRO cleanup
 			log.Info("Cluster is being deleted, deleting registry management state admission policy and binding to allow cleanup")
