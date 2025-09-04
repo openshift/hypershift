@@ -14,6 +14,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -74,11 +75,20 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		})
 
-		if mirroredReleaseImage := ign.releaseProvider.GetMirroredReleaseImage(); mirroredReleaseImage != "" {
-			c.Env = append(c.Env, corev1.EnvVar{
-				Name:  "MIRRORED_RELEASE_IMAGE",
-				Value: mirroredReleaseImage,
-			})
+		// Get the specific effective image for the control plane release image
+		controlPlaneReleaseImage := util.HCPControlPlaneReleaseImage(hcp)
+		parsedImageRef, err := reference.Parse(controlPlaneReleaseImage)
+		if err == nil {
+			effectiveImageRef := util.SeekOverride(cpContext.Context, ign.releaseProvider.GetOpenShiftImageRegistryOverrides(), parsedImageRef, pullSecretBytes)
+			effectiveImage := effectiveImageRef.String()
+
+			// Only set MIRRORED_RELEASE_IMAGE if we're using a mirror
+			if effectiveImage != controlPlaneReleaseImage {
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "MIRRORED_RELEASE_IMAGE",
+					Value: effectiveImage,
+				})
+			}
 		}
 
 		proxy.SetEnvVars(&c.Env)
