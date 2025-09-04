@@ -295,6 +295,11 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 		registry := registryMirror[0]
 		mirror := registryMirror[1]
 
+		// Skip empty registry or mirror entries
+		if registry == "" || mirror == "" {
+			continue
+		}
+
 		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
 	}
 
