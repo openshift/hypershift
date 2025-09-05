@@ -101,8 +101,8 @@ spec:
           timeoutSeconds: 10
         resources:
           requests:
-            cpu: 300m
-            memory: 600Mi
+            cpu: 150m
+            memory: 200Mi
         startupProbe:
           failureThreshold: 18
           httpGet:
