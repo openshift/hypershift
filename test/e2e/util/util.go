@@ -2431,12 +2431,15 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 				}
 				// Karpenter related metrics
 				if metricName == karpenterassets.KarpenterBuildInfoMetricName || metricName == karpenterassets.KarpenterOperatorInfoMetricName {
-					if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-						hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
-						continue
-					}
-					query = metricName
-					labelKey, labelValue = "", ""
+					// if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
+					// 	hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
+					// 	continue
+					// }
+					// TODO(maxcao13): This doesn't work right now since we no longer query prometheus aggregated metrics
+					// Come back later to enable this when we have a solution.
+					// query = metricName
+					// labelKey, labelValue = "", ""
+					continue
 				}
 
 				if metricName == hcmetrics.HostedClusterManagedAzureInfoMetricName {

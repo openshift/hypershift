@@ -33,14 +33,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
-	// userDataAMILabel is a label set in the userData secret generated for karpenter instances.
-	userDataAMILabel = "hypershift.openshift.io/ami"
-
 	finalizer = "hypershift.openshift.io/ec2-nodeclass-finalizer"
 )
 
@@ -85,8 +85,11 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 				return nil
 			},
 		)).
-		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{})
-
+		Watches(&awskarpenterv1.EC2NodeClass{}, &handler.EnqueueRequestForObject{}).
+		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
+		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
+			r.userDataSecretPredicate()))
 	return bldr.Complete(r)
 }
 
@@ -220,7 +223,7 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		AMIFamily: ptr.To("Custom"),
 		AMISelectorTerms: []awskarpenterv1.AMISelectorTerm{
 			{
-				ID: string(userDataSecret.Labels[userDataAMILabel]),
+				ID: string(userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel]),
 			},
 		},
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
@@ -393,4 +396,49 @@ func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedCon
 	}
 
 	return &hcpList.Items[0], nil
+}
+
+// userDataSecretPredicate only returns true on creates/updates on the userData secret tied to the karpenter hyperv1.NodePool
+func (r *EC2NodeClassReconciler) userDataSecretPredicate() predicate.Predicate {
+	filterKarpenterSecret := func(obj client.Object) bool {
+		if obj.GetNamespace() != r.Namespace {
+			return false
+		}
+		if secret, ok := obj.(*corev1.Secret); ok {
+			if annotationValue, exists := secret.Annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation]; exists {
+				if util.ParseNamespacedName(annotationValue).Name == hyperkarpenterv1.KarpenterNodePool {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	userDataSecretPredicate := predicate.Funcs{
+		CreateFunc:  func(e event.CreateEvent) bool { return filterKarpenterSecret(e.Object) },
+		UpdateFunc:  func(e event.UpdateEvent) bool { return filterKarpenterSecret(e.ObjectNew) },
+		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
+	return userDataSecretPredicate
+}
+
+// mapToOpenShiftEC2NodeClasses maps a request to all OpenshiftEC2NodeClass resources
+func (r *EC2NodeClassReconciler) mapToOpenShiftEC2NodeClasses(ctx context.Context, obj client.Object) []reconcile.Request {
+	openshiftEC2NodeClassList := &hyperkarpenterv1.OpenshiftEC2NodeClassList{}
+	if err := r.guestClient.List(ctx, openshiftEC2NodeClassList); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "failed to list OpenShiftEC2NodeClass")
+		return []reconcile.Request{}
+	}
+
+	var requests []reconcile.Request
+	for _, nodeClass := range openshiftEC2NodeClassList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKey{
+				Name:      nodeClass.Name,
+				Namespace: nodeClass.Namespace,
+			},
+		})
+	}
+
+	return requests
 }
