@@ -116,6 +116,29 @@ func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Ob
 	return true, nil
 }
 
+func DeleteIfNeededWithPredicate[T client.Object](ctx context.Context, c client.Client, o T, predicate func(T) bool) (exists bool, err error) {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting %T: %w", o, err)
+	}
+	if o.GetDeletionTimestamp() != nil {
+		return true, nil
+	}
+	if !predicate(o) {
+		return true, nil
+	}
+	if err := c.Delete(ctx, o); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting %T: %w", o, err)
+	}
+
+	return true, nil
+}
+
 func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
 	return DeleteIfNeededWithOptions(ctx, c, o)
 }

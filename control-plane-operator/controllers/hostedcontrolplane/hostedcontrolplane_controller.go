@@ -964,11 +964,6 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 	userReleaseImageProvider := imageprovider.New(userReleaseImage)
 	releaseImageProvider := imageprovider.New(releaseImage)
 
-	// Keep for now, until the switch to cpov2 is complete and validated.
-	// if err := r.reconcile(ctx, hostedControlPlane, createOrUpdate, releaseImageProvider, userReleaseImageProvider, infraStatus); err != nil {
-	// 	errs = append(errs, err)
-	// }
-
 	var errs []error
 	if err := r.reconcileCPOV2(ctx, hostedControlPlane, infraStatus, releaseImageProvider, userReleaseImageProvider); err != nil {
 		errs = append(errs, err)
@@ -1008,6 +1003,10 @@ func (r *HostedControlPlaneReconciler) update(ctx context.Context, hostedControl
 
 func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *hyperv1.HostedControlPlane, infraStatus infra.InfrastructureStatus, releaseImageProvider, userReleaseImageProvider imageprovider.ReleaseImageProvider) error {
 	if err := r.cleanupOldKonnectivityServerDeployment(ctx, hcp); err != nil {
+		return err
+	}
+
+	if err := r.cleanupOldPKIOperatorDeployment(ctx, hcp); err != nil {
 		return err
 	}
 
@@ -2274,6 +2273,22 @@ func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ct
 	// Remove the konnectivity-server deployment if it exists
 	if _, err := util.DeleteIfNeeded(ctx, r, serverDeployment); err != nil {
 		return fmt.Errorf("failed to remove konnectivity-server deployment: %w", err)
+	}
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) cleanupOldPKIOperatorDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	deployment := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      pkioperatorv2.ComponentName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	// Remove the pki-operator deployment if it exists with outdated selector.
+	if _, err := util.DeleteIfNeededWithPredicate(ctx, r, deployment, func(d *appsv1.Deployment) bool {
+		return d.Spec.Selector != nil && d.Spec.Selector.MatchLabels["name"] == "control-plane-pki-operator"
+	}); err != nil {
+		return fmt.Errorf("failed to remove pki-operator deployment: %w", err)
 	}
 	return nil
 }
