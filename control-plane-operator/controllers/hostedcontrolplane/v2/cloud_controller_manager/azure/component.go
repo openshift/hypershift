@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ComponentName = "cloud-controller-manager-azure"
+	ComponentName = "azure-cloud-controller-manager"
 )
 
 var _ component.ComponentOptions = &azureOptions{}
