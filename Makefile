@@ -78,7 +78,7 @@ lint: $(GOLANGCI_LINT)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml -v
 
 .PHONY: lint-fix
-lint-fix:
+lint-fix: $(GOLANGCI_LINT)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
