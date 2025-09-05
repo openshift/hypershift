@@ -2395,7 +2395,6 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 }
 
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
-	hostedClusterConfigMap.Immutable = ptr.To(true)
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
 		nodepool.KubeletConfigConfigMapLabel: "true",
 		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
