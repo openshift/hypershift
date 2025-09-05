@@ -2,24 +2,30 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
   creationTimestamp: null
-  name: cloud-controller-manager-powervs
+  name: azure-cloud-controller-manager
   namespace: hcp-namespace
   resourceVersion: "1"
 spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: cloud-controller-manager-powervs Deployment Available condition not found
+    message: azure-cloud-controller-manager Deployment Available condition not found
     reason: NotFound
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment cloud-controller-manager-powervs rollout to finish:
+    message: 'Waiting for deployment azure-cloud-controller-manager rollout to finish:
       0 out of 1 new replicas have been updated'
     reason: WaitingForRolloutComplete
     status: "False"
     type: RolloutComplete
   resources:
   - group: ""
+    kind: Secret
+    name: azure-cloud-config
+  - group: secrets-store.csi.x-k8s.io
+    kind: SecretProviderClass
+    name: managed-azure-cloud-provider
+  - group: ""
     kind: ConfigMap
-    name: ccm-config
+    name: azure-cloud-config

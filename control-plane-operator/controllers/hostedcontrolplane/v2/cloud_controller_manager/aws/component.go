@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ComponentName = "cloud-controller-manager-aws"
+	ComponentName = "aws-cloud-controller-manager"
 )
 
 var _ component.ComponentOptions = &awsOptions{}

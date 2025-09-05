@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ComponentName = "cloud-controller-manager-powervs"
+	ComponentName = "powervs-cloud-controller-manager"
 )
 
 var _ component.ComponentOptions = &powervsOptions{}

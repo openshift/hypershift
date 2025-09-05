@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ComponentName = "cloud-controller-manager-openstack"
+	ComponentName = "openstack-cloud-controller-manager"
 )
 
 var _ component.ComponentOptions = &openstackOptions{}

@@ -2,20 +2,20 @@ apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
   creationTimestamp: null
-  name: cloud-controller-manager-kubevirt
+  name: kubevirt-cloud-controller-manager
   namespace: hcp-namespace
   resourceVersion: "1"
 spec: {}
 status:
   conditions:
   - lastTransitionTime: null
-    message: cloud-controller-manager-kubevirt Deployment Available condition not
+    message: kubevirt-cloud-controller-manager Deployment Available condition not
       found
     reason: NotFound
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment cloud-controller-manager-kubevirt rollout to
+    message: 'Waiting for deployment kubevirt-cloud-controller-manager rollout to
       finish: 0 out of 2 new replicas have been updated'
     reason: WaitingForRolloutComplete
     status: "False"

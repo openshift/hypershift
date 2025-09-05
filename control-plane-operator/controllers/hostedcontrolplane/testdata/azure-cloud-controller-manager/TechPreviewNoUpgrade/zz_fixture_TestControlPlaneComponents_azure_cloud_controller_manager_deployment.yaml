@@ -4,7 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
-  name: cloud-controller-manager-azure
+  name: azure-cloud-controller-manager
   namespace: hcp-namespace
   ownerReferences:
   - apiVersion: hypershift.openshift.io/v1beta1
@@ -31,7 +31,7 @@ spec:
       creationTimestamp: null
       labels:
         app: cloud-controller-manager
-        hypershift.openshift.io/control-plane-component: cloud-controller-manager-azure
+        hypershift.openshift.io/control-plane-component: azure-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
     spec:
       affinity:

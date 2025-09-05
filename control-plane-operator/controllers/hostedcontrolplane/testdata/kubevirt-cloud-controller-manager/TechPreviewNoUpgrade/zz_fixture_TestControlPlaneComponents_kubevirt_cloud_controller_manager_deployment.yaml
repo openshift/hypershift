@@ -4,7 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
-  name: cloud-controller-manager-powervs
+  name: kubevirt-cloud-controller-manager
   namespace: hcp-namespace
   ownerReferences:
   - apiVersion: hypershift.openshift.io/v1beta1
@@ -15,23 +15,28 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
-  replicas: 1
+  replicas: 2
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      k8s-app: cloud-controller-manager
-  strategy: {}
+      app: cloud-controller-manager
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
   template:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 774b434c
+        component.hypershift.openshift.io/config-hash: b833e1fe
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
-        hypershift.openshift.io/control-plane-component: cloud-controller-manager-powervs
+        app: cloud-controller-manager
+        hypershift.openshift.io/control-plane-component: kubevirt-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
-        k8s-app: cloud-controller-manager
+        hypershift.openshift.io/need-management-kas-access: "true"
     spec:
       affinity:
         nodeAffinity:
@@ -58,47 +63,35 @@ spec:
                   hypershift.openshift.io/hosted-control-plane: hcp-namespace
               topologyKey: kubernetes.io/hostname
             weight: 100
-      automountServiceAccountToken: false
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: kubevirt-cloud-controller-manager
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: cloud-controller-manager
+                hypershift.openshift.io/control-plane-component: kubevirt-cloud-controller-manager
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: true
       containers:
-      - command:
-        - /bin/ibm-cloud-controller-manager
+      - args:
+        - --cloud-provider=kubevirt
+        - --cloud-config=/etc/cloud/cloud-config
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authentication-skip-lookup
-        - --bind-address=$(POD_IP_ADDRESS)
-        - --use-service-account-credentials=true
-        - --configure-cloud-routes=false
-        - --cloud-provider=ibm
-        - --cloud-config=/etc/ibm/ccm-config
-        - --profiling=false
-        - --leader-elect=true
-        - --leader-elect-lease-duration=137s
-        - --leader-elect-renew-deadline=107s
-        - --leader-elect-retry-period=26s
-        - --tls-cipher-suites=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_256_GCM_SHA384
-        - --kubeconfig=/etc/kubernetes/kubeconfig
-        - --use-service-account-credentials=false
-        env:
-        - name: POD_IP_ADDRESS
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        - name: VPCCTL_CLOUD_CONFIG
-          value: /etc/ibm/ccm-config
-        - name: ENABLE_VPC_PUBLIC_ENDPOINT
-          value: "true"
-        image: powervs-cloud-controller-manager
+        - --cluster-name=cluster_name
+        command:
+        - /bin/kubevirt-cloud-controller-manager
+        image: kubevirt-cloud-controller-manager
         imagePullPolicy: IfNotPresent
-        livenessProbe:
-          httpGet:
-            path: /healthz
-            port: 10258
-            scheme: HTTPS
-          initialDelaySeconds: 300
-          timeoutSeconds: 5
         name: cloud-controller-manager
-        ports:
-        - containerPort: 10258
-          name: https
-          protocol: TCP
         resources:
           requests:
             cpu: 75m
@@ -107,16 +100,14 @@ spec:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /etc/kubernetes
-          name: service-network-admin-kubeconfig
-        - mountPath: /etc/ibm
-          name: ccm-config
-        - mountPath: /etc/vpc
-          name: cloud-creds
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
-      terminationGracePeriodSeconds: 90
+      serviceAccountName: kubevirt-cloud-controller-manager
       tolerations:
       - effect: NoSchedule
         key: hypershift.openshift.io/control-plane
@@ -127,17 +118,14 @@ spec:
         operator: Equal
         value: hcp-namespace
       volumes:
-      - name: service-network-admin-kubeconfig
+      - name: kubeconfig
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
       - configMap:
           defaultMode: 420
-          name: ccm-config
-        name: ccm-config
-      - name: cloud-creds
-        secret:
-          defaultMode: 416
+          name: kubevirt-cloud-config
+        name: cloud-config
       - emptyDir: {}
         name: tmp-dir
 status: {}
