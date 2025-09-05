@@ -16,6 +16,8 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
+
+	"github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources"
 )
 
 func NewCommand() *cobra.Command {
@@ -92,4 +94,14 @@ func (o *OpenshiftManagerOperator) Run(ctx context.Context) error {
 
 func (o *OpenshiftManagerOperator) runInternal(ctx context.Context, client *dynamic.DynamicClient, hostedControlPlane *hypershiftv1beta1.HostedControlPlane) error {
 	return nil
+}
+
+// normally, we would get that list by running the input-res command of the auth-operator.
+// for now, just return a static list required to run controllers that manage the oauth-server.
+func getStaticInputResourcesForAuthOperator() (*libraryinputresources.InputResources, error) {
+	return &libraryinputresources.InputResources{
+		ApplyConfigurationResources: libraryinputresources.ResourceList{
+			ExactResources: []libraryinputresources.ExactResourceID{},
+		},
+	}, nil
 }
