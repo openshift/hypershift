@@ -44,24 +44,11 @@ func TestHAEtcdChaos(t *testing.T) {
 	clusterOpts.NodePoolReplicas = 0
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		t.Run("SingleMemberRecovery", func(t *testing.T) {
-			t.Parallel()
-			testSingleMemberRecovery(ctx, mgtClient, hostedCluster)
-		})
-		t.Run("KillRandomMembers", func(t *testing.T) {
-			t.Parallel()
-			testKillRandomMembers(ctx, mgtClient, hostedCluster)
-		})
-		t.Run("KillAllMembers", func(t *testing.T) {
-			t.Parallel()
-			testKillAllMembers(ctx, mgtClient, hostedCluster)
-		})
-		t.Run("SingleMemberRecoveryWithCorruption", func(t *testing.T) {
-			testEtcdMemberCorruption(ctx, mgtClient, hostedCluster)
-		})
-		t.Run("SingleMissingMemberRecovery", func(t *testing.T) {
-			testEtcdMemberMissing(ctx, mgtClient, hostedCluster)
-		})
+		t.Run("SingleMemberRecovery", testSingleMemberRecovery(ctx, mgtClient, hostedCluster))
+		t.Run("KillRandomMembers", testKillRandomMembers(ctx, mgtClient, hostedCluster))
+		t.Run("KillAllMembers", testKillAllMembers(ctx, mgtClient, hostedCluster))
+		t.Run("SingleMemberRecoveryWithCorruption", testEtcdMemberCorruption(ctx, mgtClient, hostedCluster))
+		t.Run("SingleMissingMemberRecovery", testEtcdMemberMissing(ctx, mgtClient, hostedCluster))
 
 	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "ha-etcd-chaos", globalOpts.ServiceAccountSigningKey)
 }
@@ -70,6 +57,7 @@ func TestHAEtcdChaos(t *testing.T) {
 // random etcd members are repeatedly killed.
 func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
@@ -154,6 +142,7 @@ func testKillRandomMembers(parentCtx context.Context, client crclient.Client, cl
 // loss of all etcd members.
 func testKillAllMembers(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
@@ -259,6 +248,7 @@ func testKillAllMembers(parentCtx context.Context, client crclient.Client, clust
 // testEtcdMemberMissing ensures that the etcd cluster can be recovered having 1 member with data corruption
 func testEtcdMemberCorruption(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
@@ -318,6 +308,7 @@ func testEtcdMemberCorruption(parentCtx context.Context, client crclient.Client,
 // testEtcdMemberMissing ensures that the etcd cluster can recover from a missing member
 func testEtcdMemberMissing(parentCtx context.Context, client crclient.Client, cluster *hyperv1.HostedCluster) func(t *testing.T) {
 	return func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		ctx, cancel := context.WithCancel(parentCtx)
 		defer cancel()
