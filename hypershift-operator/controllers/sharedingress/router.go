@@ -22,6 +22,13 @@ const (
 	KASSVCLBPort      = 6443
 	ExternalDNSLBPort = 443
 
+	// AzurePipIpTagsEnvVar is the environment variable that contains the IP tags for the Azure Public IP.
+	// It is used to tag the Azure Public IP associated with the Shared Ingress.
+	// Expected format: comma separated key=value pairs with allowed keys: "FirstPartyUsage" or "RoutingPreference".
+	// Example: "RoutingPreference=Internet" or "FirstPartyUsage=SomeValue,RoutingPreference=Internet".
+	// Both keys and values must be non-empty.
+	AzurePipIpTagsEnvVar = "SHARED_INGRESS_AZURE_PIP_IP_TAGS"
+
 	Image = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"
 )
 
@@ -198,13 +205,21 @@ func buildConfigGeneratorContainer(hypershiftOperatorImage string) func(*corev1.
 	}
 }
 
-func ReconcileRouterService(svc *corev1.Service) error {
+func ReconcileRouterService(svc *corev1.Service, azurePipIpTags string) error {
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
 	}
 	for k, v := range hcpRouterLabels() {
 		svc.Labels[k] = v
 	}
+
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	if azurePipIpTags != "" {
+		svc.Annotations["service.beta.kubernetes.io/azure-pip-ip-tags"] = azurePipIpTags
+	}
+
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 	// ServiceExternalTrafficPolicyLocal preserves the client source IP. see: https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
 	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
