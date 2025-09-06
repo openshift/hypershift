@@ -6,20 +6,28 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
+	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/yaml"
@@ -64,6 +72,64 @@ func TestKarpenter(t *testing.T) {
 			"node.kubernetes.io/instance-type": "t3.large",
 			"karpenter.sh/nodepool":            karpenterNodePool.GetName(),
 		}
+
+		t.Run("Karpenter operator plumbing and smoketesting", func(t *testing.T) {
+			karpenterMetrics := []string{
+				karpenterassets.KarpenterBuildInfoMetricName,
+				karpenterassets.KarpenterOperatorInfoMetricName,
+			}
+			operatorComponentName := karpenteroperatorcpov2.ComponentName
+			karpenterComponentName := karpentercpov2.ComponentName
+			karpenterNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+			t.Log("Checking Karpenter metrics are exposed")
+			err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+				kmf, err := e2eutil.GetMetricsFromPod(ctx, mgtClient, karpenterComponentName, karpenterComponentName, karpenterNamespace, "8080")
+				if err != nil {
+					t.Logf("unable to get karpenter metrics: %v", err)
+					return false, nil
+				}
+				komf, err := e2eutil.GetMetricsFromPod(ctx, mgtClient, operatorComponentName, operatorComponentName, karpenterNamespace, "8080")
+				if err != nil {
+					t.Logf("unable to get karpenter-operator metrics: %v", err)
+					return false, nil
+				}
+				combined := map[string]*dto.MetricFamily{}
+				if kmf != nil {
+					maps.Copy(combined, kmf)
+				}
+				if komf != nil {
+					maps.Copy(combined, komf)
+				}
+				for _, metricName := range karpenterMetrics {
+					if !e2eutil.ValidateMetricPresence(t, combined, metricName, "", "", metricName, true) {
+						return false, nil
+					}
+				}
+
+				t.Logf("Expected metrics are exposed: %v", karpenterMetrics)
+				return true, nil
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to validate Karpenter metrics")
+
+			t.Log("Validating EC2NodeClass")
+			ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+			g.Expect(guestClient.List(ctx, ec2NodeClassList)).To(Succeed())
+			g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
+
+			// validate admin cannot delete EC2NodeClass directly
+			ec2NodeClass := ec2NodeClassList.Items[0]
+			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+
+			// TODO(alberto): increase coverage:
+			// - Karpenter operator plumbing, e.g:
+			// -- validate the CRDs are installed
+			// -- validate the default class is created and has expected values
+			// -- validate admin can't modify fields owned by the service, e.g. ami.
+			// - Karpenter functionality:
+			//
+			// Tracked in https://issues.redhat.com/browse/AUTOSCALE-138
+		})
 
 		t.Run("Control plane upgrade and Karpenter Drift", func(t *testing.T) {
 			g := NewWithT(t)
@@ -182,21 +248,7 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("Created workloads")
 
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
-
-			ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
-			g.Expect(guestClient.List(ctx, ec2NodeClassList)).To(Succeed())
-			g.Expect(ec2NodeClassList.Items).ToNot(BeEmpty())
-
-			ec2NodeClass := ec2NodeClassList.Items[0]
-			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 		})
-
-		// TODO(alberto): increase coverage:
-		// - Karpenter operator plumbing, e.g:
-		// -- validate the CRDs are installed
-		// -- validate the default class is created and has expected values
-		// -- validate admin can't modify fields owned by the service, e.g. ami.
-		// - Karpenter functionality:
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
 }
 

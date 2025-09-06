@@ -25,7 +25,6 @@ import (
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
@@ -1402,12 +1401,10 @@ func RunQueryAtTime(ctx context.Context, log logr.Logger, prometheusClient prome
 	}, nil
 }
 
-// getExportedMetrics exec curl command in HO pod metrics endpoint and return metric values if any
-func getExportedMetrics(ctx context.Context, log logr.Logger, c crclient.Client) (map[string]*dto.MetricFamily, error) {
-	componentName := "operator"
-	containerName := "operator"
-	namespaceName := "hypershift"
-	command := []string{"curl", "http://127.0.0.1:9000/metrics"}
+// GetMetricsFromPod exec curl command in a pod metrics endpoint and return metric values if any
+// Requires curl to be installed in the container
+func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, containerName, namespaceName, port string) (map[string]*dto.MetricFamily, error) {
+	command := []string{"curl", "-s", fmt.Sprintf("http://127.0.0.1:%s/metrics", port)}
 	cmdOutput, err := RunCommandInPod(ctx, c, componentName, namespaceName, command, containerName, 5*time.Minute)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't obtain any metrics: %v", err)
@@ -1415,9 +1412,9 @@ func getExportedMetrics(ctx context.Context, log logr.Logger, c crclient.Client)
 	if len(cmdOutput) == 0 {
 		return nil, fmt.Errorf("no metrics found")
 	}
+
 	var parser expfmt.TextParser
 	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
-
 }
 
 func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
@@ -2394,6 +2391,24 @@ func extractDataFromFamilies(metricFamilies map[string]*dto.MetricFamily, metric
 	return labelPairs
 }
 
+// ValidateMetricPresence checks if a metric meets the expected presence criteria
+// Returns true if validation passes, false otherwise
+func ValidateMetricPresence(t *testing.T, mf map[string]*dto.MetricFamily, query, labelKey, labelValue, metricName string, areMetricsExpectedToBePresent bool) bool {
+	labelPairs := extractDataFromFamilies(mf, query, labelKey, labelValue)
+	if areMetricsExpectedToBePresent {
+		if len(labelPairs) < 1 {
+			t.Logf("Expected results for metric %q, found none", metricName)
+			return false
+		}
+	} else {
+		if len(labelPairs) > 0 {
+			t.Logf("Expected 0 results for metric %q, found %d", metricName, len(labelPairs))
+			return false
+		}
+	}
+	return true
+}
+
 // Verifies that the given metrics are defined for the given hosted cluster if areMetricsExpectedToBePresent is set to true.
 // Verifies that the given metrics are not defined otherwise.
 func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, metricsNames []string, areMetricsExpectedToBePresent bool) {
@@ -2408,9 +2423,10 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 
 		// Polling to prevent races with prometheus scrape interval.
 		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
-			mf, err := getExportedMetrics(ctx, NewLogr(t), client)
+			// exec curl command in HO pod metrics endpoint and return metric values if any
+			mf, err := GetMetricsFromPod(ctx, client, "operator", "operator", "hypershift", "9000")
 			if err != nil {
-				t.Logf("unable to get exportedMetrics: %v", err)
+				t.Logf("unable to get exportedMetrics from hypershift-operator: %v", err)
 				return false, nil
 			}
 			for _, metricName := range metricsNames {
@@ -2429,18 +2445,6 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 				if metricName == hcmetrics.UpgradingDurationMetricName && !strings.HasPrefix("TestUpgradeControlPlane", t.Name()) {
 					continue
 				}
-				// Karpenter related metrics
-				if metricName == karpenterassets.KarpenterBuildInfoMetricName || metricName == karpenterassets.KarpenterOperatorInfoMetricName {
-					// if hc.Spec.AutoNode == nil || hc.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-					// 	hc.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hc.Status.KubeConfig == nil {
-					// 	continue
-					// }
-					// TODO(maxcao13): This doesn't work right now since we no longer query prometheus aggregated metrics
-					// Come back later to enable this when we have a solution.
-					// query = metricName
-					// labelKey, labelValue = "", ""
-					continue
-				}
 
 				if metricName == hcmetrics.HostedClusterManagedAzureInfoMetricName {
 					if !(azureutil.IsAroHCP()) { // only for ARO
@@ -2450,17 +2454,8 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 					labelKey, labelValue = "", ""
 				}
 
-				labelPairs := extractDataFromFamilies(mf, query, labelKey, labelValue)
-				if areMetricsExpectedToBePresent {
-					if len(labelPairs) < 1 {
-						t.Logf("Expected results for metric %q, found none", metricName)
-						return false, nil
-					}
-				} else {
-					if len(labelPairs) > 0 {
-						t.Logf("Expected 0 results for metric %q, found %d", metricName, len(labelPairs))
-						return false, nil
-					}
+				if !ValidateMetricPresence(t, mf, query, labelKey, labelValue, metricName, areMetricsExpectedToBePresent) {
+					return false, nil
 				}
 			}
 			return true, nil

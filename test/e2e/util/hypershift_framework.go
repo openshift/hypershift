@@ -26,7 +26,6 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
-	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 
@@ -178,9 +177,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
 		}
-		AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName,
-			karpenterassets.KarpenterBuildInfoMetricName,
-			karpenterassets.KarpenterOperatorInfoMetricName}
+		AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName}
 
 		AzureMetrics := []string{
 			hcmetrics.HostedClusterManagedAzureInfoMetricName,

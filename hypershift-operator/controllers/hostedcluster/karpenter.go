@@ -22,6 +22,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -31,9 +32,8 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
-	if hcluster.Spec.AutoNode == nil || hcluster.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hcluster.Status.KubeConfig == nil {
+func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
+	if !karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) || hcluster.Status.KubeConfig == nil {
 		return nil
 	}
 
