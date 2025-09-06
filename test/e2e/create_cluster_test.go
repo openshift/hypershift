@@ -1792,6 +1792,77 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "",
 					},
+					{
+						name: "when spot instances are configured with dedicated tenancy it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "dedicated",
+								SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+									MaxPrice: ptr.To("0.50"),
+								},
+							}
+						},
+						expectedErrorSubstring: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+					},
+					{
+						name: "when spot instances are configured with host tenancy it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "host",
+								SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+									MaxPrice: ptr.To("0.75"),
+								},
+							}
+						},
+						expectedErrorSubstring: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+					},
+					{
+						name: "when spot instances are configured with capacity reservation it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "default",
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: ptr.To("cr-0123456789abcdef0"),
+								},
+								SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+									MaxPrice: ptr.To("0.50"),
+								},
+							}
+						},
+						expectedErrorSubstring: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+					},
+					{
+						name: "when spot instances are configured with both dedicated tenancy and capacity reservation it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "dedicated",
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-0123456789abcdef0"),
+									MarketType: hyperv1.MarketTypeOnDemand,
+								},
+								SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+									MaxPrice: ptr.To("0.50"),
+								},
+							}
+						},
+						expectedErrorSubstring: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+					},
+					{
+						name: "when spot instances are configured with capacity blocks it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								Tenancy: "default",
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-0123456789abcdef0"),
+									MarketType: hyperv1.MarketTypeCapacityBlock,
+								},
+								SpotMarketOptions: &hyperv1.AWSSpotMarketOptions{
+									MaxPrice: ptr.To("2.00"),
+								},
+							}
+						},
+						expectedErrorSubstring: "spotMarketOptions is incompatible with capacityReservation and requires tenancy to be 'default' or unset (not 'dedicated' or 'host')",
+					},
 				},
 			},
 		}

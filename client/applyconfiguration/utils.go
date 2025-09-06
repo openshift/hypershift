@@ -89,6 +89,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSSharedVPCApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPCRolesRef"):
 		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AWSSpotMarketOptions"):
+		return &hypershiftv1beta1.AWSSpotMarketOptionsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureAuthenticationConfiguration"):
 		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
