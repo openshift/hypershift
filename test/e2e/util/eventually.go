@@ -476,6 +476,8 @@ func Conditions(item client.Object) ([]Condition, error) {
 		return adaptConditions(obj.Status.Conditions), nil
 	case *certificatesv1alpha1.CertificateRevocationRequest:
 		return adaptConditions(obj.Status.Conditions), nil
+	case *hyperv1.ControlPlaneComponent:
+		return adaptConditions(obj.Status.Conditions), nil
 	case *certificatesv1.CertificateSigningRequest:
 		conditions := make([]Condition, len(obj.Status.Conditions))
 		for i := range obj.Status.Conditions {
