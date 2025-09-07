@@ -24,6 +24,33 @@ func (noNewRequiredFields) WhyItMatters() string {
 		"CRD defaulting requires allowing an object with an empty or missing value to then get defaulted."
 }
 
+// isFieldOptional checks if a field is optional (ie not required by its parent)
+func isFieldOptional(
+	s *apiextensionsv1.JSONSchemaProps,
+	ancestors []*apiextensionsv1.JSONSchemaProps,
+	fldPath *field.Path,
+	newToFldPath map[*apiextensionsv1.JSONSchemaProps]*field.Path,
+	newFldPathToRequiredFields map[string]sets.Set[string]) bool {
+
+	// Check if field is an optional array
+	if s.Type == "array" && (s.MinLength == nil || *s.MinLength == 0) {
+		return true
+	}
+
+	// Check if field is not required by its parent
+	if len(ancestors) > 0 {
+		parentOfField := ancestors[len(ancestors)-1]
+		groups := lastIndexOrKeyRegexp.FindStringSubmatch(fldPath.String())
+		if len(groups) == 2 {
+			lastStep := groups[1]
+			parentRequiredFields := newFldPathToRequiredFields[newToFldPath[parentOfField].String()]
+			return !parentRequiredFields.Has(lastStep)
+		}
+	}
+
+	return false
+}
+
 func (b noNewRequiredFields) Compare(existingCRD, newCRD *apiextensionsv1.CustomResourceDefinition) (ComparisonResults, error) {
 	if existingCRD == nil {
 		return ComparisonResults{
@@ -97,10 +124,13 @@ func (b noNewRequiredFields) Compare(existingCRD, newCRD *apiextensionsv1.Custom
 					return false
 				}
 
-				existingRequired, existedBefore := existingRequiredFields[fldPath.String()]
-				if !existedBefore && s.Nullable {
-					// if the parent of the required field (current element) didn't exist in the schema before AND
-					// if the parent of the required field is nullable (client doesn't have to set it),
+				existingRequired, _ := existingRequiredFields[fldPath.String()]
+
+				// Check if this field actually existed in the old schema
+				_, fieldExistedBefore := existingFldPathToJSONSchemaProps[fldPath.String()]
+
+				if !fieldExistedBefore && isFieldOptional(s, ancestors, fldPath, newToFldPath, newFldPathToRequiredFields) {
+					// if the parent of the required field didn't exist before AND is optional,
 					// then we can allow a child to be required.
 					return false
 				}
@@ -150,10 +180,10 @@ func isAnyAncestorNewAndNullable(
 	for i := len(ancestors) - 1; i >= 0; i-- {
 		ancestor := ancestors[i]
 		ancestorFldPath := newToFldPath[ancestor]
-		isOptionalArray := ancestor.Type == "array" && (ancestor.MinLength == nil || *ancestor.MinLength == 0)
-		isAncestoryOptional := ancestor.Nullable || isOptionalArray
-		if !isAncestoryOptional {
-			// if this ancestor isn't nullable, then it cannot allow the current element to be required
+
+		// check if the ancestor is optional
+		if !isFieldOptional(ancestor, ancestors[:i], ancestorFldPath, newToFldPath, newFldPathToRequiredFields) {
+			// if this ancestor isn't optional, then it cannot allow the current element to be required
 			continue
 		}
 
