@@ -30,8 +30,8 @@ const PerformanceProfilePauseAnnotation = "performance.openshift.io/pause-reconc
 // network devices by including physical interfaces from netdev-rps rule.
 const PerformanceProfileEnablePhysicalRpsAnnotation = "performance.openshift.io/enable-physical-dev-rps"
 
-// PerformanceProfileEnableRpsAnnotation is an emergancy annotation
-// that ignores the removal of all RPS settings when realtime workload hint is explicitly set to false.
+// PerformanceProfileEnableRpsAnnotation enables RPS settings which are now disabled by default.
+// Valid values: "true", "enable" (to enable), "false", "disable" (to disable).
 const PerformanceProfileEnableRpsAnnotation = "performance.openshift.io/enable-rps"
 
 // PerformanceProfileSpec defines the desired state of PerformanceProfile.
