@@ -1149,7 +1149,7 @@ go.opentelemetry.io/proto/otlp/collector/trace/v1
 go.opentelemetry.io/proto/otlp/common/v1
 go.opentelemetry.io/proto/otlp/resource/v1
 go.opentelemetry.io/proto/otlp/trace/v1
-# go.starlark.net v0.0.0-20240520160348-046347dcd104
+# go.starlark.net v0.0.0-20250906160240-bf296ed553ea
 ## explicit; go 1.19
 go.starlark.net/internal/compile
 go.starlark.net/internal/spell
