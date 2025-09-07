@@ -328,8 +328,8 @@ github.com/gophercloud/gophercloud/pagination
 # github.com/gorilla/websocket v1.5.0
 ## explicit; go 1.12
 github.com/gorilla/websocket
-# github.com/grafana/regexp v0.0.0-20221122212121-6b5c0a4cb7fd
-## explicit; go 1.17
+# github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853
+## explicit; go 1.21
 github.com/grafana/regexp
 github.com/grafana/regexp/syntax
 # github.com/hashicorp/consul/api v1.20.0
@@ -1173,7 +1173,7 @@ k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
 # k8s.io/code-generator v0.28.3 => github.com/stevekuznetsov/k8s-code-generator v0.0.0-20231218200749-2151937f4610
-## explicit; go 1.21
+## explicit; go 1.21.3
 k8s.io/code-generator
 k8s.io/code-generator/cmd/applyconfiguration-gen
 k8s.io/code-generator/cmd/applyconfiguration-gen/args
