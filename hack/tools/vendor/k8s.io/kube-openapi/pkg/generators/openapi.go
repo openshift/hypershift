@@ -127,17 +127,19 @@ const (
 type openAPIGen struct {
 	generator.GoGenerator
 	// TargetPackage is the package that will get GetOpenAPIDefinitions function returns all open API definitions.
-	targetPackage string
-	imports       namer.ImportTracker
+	targetPackage        string
+	imports              namer.ImportTracker
+	useOpenAPIModelNames bool
 }
 
-func newOpenAPIGen(outputFilename string, targetPackage string) generator.Generator {
+func newOpenAPIGen(outputFilename string, targetPackage string, useOpenAPIModelNames bool) generator.Generator {
 	return &openAPIGen{
 		GoGenerator: generator.GoGenerator{
 			OutputFilename: outputFilename,
 		},
-		imports:       generator.NewImportTrackerForPackage(targetPackage),
-		targetPackage: targetPackage,
+		imports:              generator.NewImportTrackerForPackage(targetPackage),
+		targetPackage:        targetPackage,
+		useOpenAPIModelNames: useOpenAPIModelNames,
 	}
 }
 
@@ -179,7 +181,7 @@ func (g *openAPIGen) Init(c *generator.Context, w io.Writer) error {
 	sw.Do("return map[string]$.OpenAPIDefinition|raw${\n", argsFromType(nil))
 
 	for _, t := range c.Order {
-		err := newOpenAPITypeWriter(sw, c).generateCall(t)
+		err := newOpenAPITypeWriter(sw, c, g.useOpenAPIModelNames).generateCall(t)
 		if err != nil {
 			return err
 		}
@@ -194,7 +196,7 @@ func (g *openAPIGen) Init(c *generator.Context, w io.Writer) error {
 func (g *openAPIGen) GenerateType(c *generator.Context, t *types.Type, w io.Writer) error {
 	klog.V(5).Infof("generating for type %v", t)
 	sw := generator.NewSnippetWriter(w, c, "$", "$")
-	err := newOpenAPITypeWriter(sw, c).generate(t)
+	err := newOpenAPITypeWriter(sw, c, g.useOpenAPIModelNames).generate(t)
 	if err != nil {
 		return err
 	}
@@ -233,14 +235,16 @@ type openAPITypeWriter struct {
 	refTypes               map[string]*types.Type
 	enumContext            *enumContext
 	GetDefinitionInterface *types.Type
+	useOpenAPIModelNames   bool
 }
 
-func newOpenAPITypeWriter(sw *generator.SnippetWriter, c *generator.Context) openAPITypeWriter {
+func newOpenAPITypeWriter(sw *generator.SnippetWriter, c *generator.Context, useOpenAPIModelNames bool) openAPITypeWriter {
 	return openAPITypeWriter{
-		SnippetWriter: sw,
-		context:       c,
-		refTypes:      map[string]*types.Type{},
-		enumContext:   newEnumContext(c),
+		SnippetWriter:        sw,
+		context:              c,
+		refTypes:             map[string]*types.Type{},
+		enumContext:          newEnumContext(c),
+		useOpenAPIModelNames: useOpenAPIModelNames,
 	}
 }
 
@@ -249,7 +253,7 @@ func methodReturnsValue(mt *types.Type, pkg, name string) bool {
 		return false
 	}
 	r := mt.Signature.Results[0]
-	return r.Name.Name == name && r.Name.Package == pkg
+	return r.Type.Name.Name == name && r.Type.Name.Package == pkg
 }
 
 func hasOpenAPIV3DefinitionMethod(t *types.Type) bool {
@@ -339,8 +343,18 @@ func (g openAPITypeWriter) generateCall(t *types.Type) error {
 	// Only generate for struct type and ignore the rest
 	switch t.Kind {
 	case types.Struct:
+		if namer.IsPrivateGoName(t.Name.Name) { // skip private types
+			return nil
+		}
+
 		args := argsFromType(t)
-		g.Do("\"$.$\": ", t.Name)
+
+		if g.useOpenAPIModelNames {
+			g.Do("$.|raw${}.OpenAPIModelName(): ", t)
+		} else {
+			// Legacy case: use the "canonical type name"
+			g.Do("\"$.$\": ", t.Name)
+		}
 
 		hasV2Definition := hasOpenAPIDefinitionMethod(t)
 		hasV2DefinitionTypeAndFormat := hasOpenAPIDefinitionMethods(t)
@@ -360,6 +374,88 @@ func (g openAPITypeWriter) generateCall(t *types.Type) error {
 		}
 	}
 	return g.Error()
+}
+
+// Generates Go code to represent an OpenAPI schema. May be refactored in
+// the future to take more responsibility as we transition from an on-line
+// approach to parsing the comments to spec.Schema
+func (g openAPITypeWriter) generateSchema(s *spec.Schema) error {
+	if !reflect.DeepEqual(s.SchemaProps, spec.SchemaProps{}) {
+		g.Do("SchemaProps: spec.SchemaProps{\n", nil)
+		err := g.generateValueValidations(&s.SchemaProps)
+		if err != nil {
+			return err
+		}
+
+		if len(s.Properties) > 0 {
+			g.Do("Properties: map[string]spec.Schema{\n", nil)
+
+			// Sort property names to generate deterministic output
+			keys := []string{}
+			for k := range s.Properties {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			for _, k := range keys {
+				v := s.Properties[k]
+				g.Do("$.$: {\n", fmt.Sprintf("%#v", k))
+				err := g.generateSchema(&v)
+				if err != nil {
+					return err
+				}
+				g.Do("},\n", nil)
+			}
+			g.Do("},\n", nil)
+		}
+
+		if s.AdditionalProperties != nil && s.AdditionalProperties.Schema != nil {
+			g.Do("AdditionalProperties: &spec.SchemaOrBool{\n", nil)
+			g.Do("Allows: true,\n", nil)
+			g.Do("Schema: &spec.Schema{\n", nil)
+			err := g.generateSchema(s.AdditionalProperties.Schema)
+			if err != nil {
+				return err
+			}
+			g.Do("},\n", nil)
+			g.Do("},\n", nil)
+		}
+
+		if s.Items != nil && s.Items.Schema != nil {
+			g.Do("Items: &spec.SchemaOrArray{\n", nil)
+			g.Do("Schema: &spec.Schema{\n", nil)
+			err := g.generateSchema(s.Items.Schema)
+			if err != nil {
+				return err
+			}
+			g.Do("},\n", nil)
+			g.Do("},\n", nil)
+		}
+
+		g.Do("},\n", nil)
+	}
+
+	if len(s.Extensions) > 0 {
+		g.Do("VendorExtensible: spec.VendorExtensible{\nExtensions: spec.Extensions{\n", nil)
+
+		// Sort extension keys to generate deterministic output
+		keys := []string{}
+		for k := range s.Extensions {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := s.Extensions[k]
+			g.Do("$.key$: $.value$,\n", map[string]interface{}{
+				"key":   fmt.Sprintf("%#v", k),
+				"value": fmt.Sprintf("%#v", v),
+			})
+		}
+		g.Do("},\n},\n", nil)
+	}
+
+	return nil
 }
 
 func (g openAPITypeWriter) generateValueValidations(vs *spec.SchemaProps) error {
@@ -420,6 +516,18 @@ func (g openAPITypeWriter) generateValueValidations(vs *spec.SchemaProps) error 
 		g.Do("UniqueItems: true,\n", nil)
 	}
 
+	if len(vs.AllOf) > 0 {
+		g.Do("AllOf: []spec.Schema{\n", nil)
+		for _, s := range vs.AllOf {
+			g.Do("{\n", nil)
+			if err := g.generateSchema(&s); err != nil {
+				return err
+			}
+			g.Do("},\n", nil)
+		}
+		g.Do("},\n", nil)
+	}
+
 	return nil
 }
 
@@ -429,7 +537,7 @@ func (g openAPITypeWriter) generate(t *types.Type) error {
 	case types.Struct:
 		validationSchema, err := ParseCommentTags(t, t.CommentLines, markerPrefix)
 		if err != nil {
-			return err
+			return fmt.Errorf("failed parsing comment tags for %v: %w", t.String(), err)
 		}
 
 		hasV2Definition := hasOpenAPIDefinitionMethod(t)
@@ -573,7 +681,12 @@ func (g openAPITypeWriter) generate(t *types.Type) error {
 		if len(deps) > 0 {
 			g.Do("Dependencies: []string{\n", args)
 			for _, k := range deps {
-				g.Do("\"$.$\",", k)
+				t := g.refTypes[k]
+				if g.useOpenAPIModelNames {
+					g.Do("$.|raw${}.OpenAPIModelName(),", t)
+				} else {
+					g.Do("\"$.$\",", k)
+				}
 			}
 			g.Do("},\n", nil)
 		}
@@ -644,7 +757,15 @@ func (g openAPITypeWriter) emitExtensions(extensions []extension, unions []union
 	}
 
 	if len(otherExtensions) > 0 {
-		for k, v := range otherExtensions {
+		// Sort extension keys to generate deterministic output
+		keys := []string{}
+		for k := range otherExtensions {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+
+		for _, k := range keys {
+			v := otherExtensions[k]
 			g.Do("$.key$: $.value$,\n", map[string]interface{}{
 				"key":   fmt.Sprintf("%#v", k),
 				"value": fmt.Sprintf("%#v", v),
@@ -704,7 +825,7 @@ func defaultFromComments(comments []string, commentPath string, t *types.Type) (
 
 	var i interface{}
 	if id, ok := parseSymbolReference(tag, commentPath); ok {
-		klog.Errorf("%v, %v", id, commentPath)
+		klog.V(5).Infof("%v, %v", id, commentPath)
 		return nil, &id, nil
 	} else if err := json.Unmarshal([]byte(tag), &i); err != nil {
 		return nil, nil, fmt.Errorf("failed to unmarshal default: %v", err)
@@ -844,15 +965,9 @@ func (g openAPITypeWriter) generateDescription(CommentLines []string) {
 		}
 	}
 
-	postDoc := strings.TrimLeft(buffer.String(), "\n")
-	postDoc = strings.TrimRight(postDoc, "\n")
-	postDoc = strings.Replace(postDoc, "\\\"", "\"", -1) // replace user's \" to "
-	postDoc = strings.Replace(postDoc, "\"", "\\\"", -1) // Escape "
-	postDoc = strings.Replace(postDoc, "\n", "\\n", -1)
-	postDoc = strings.Replace(postDoc, "\t", "\\t", -1)
-	postDoc = strings.Trim(postDoc, " ")
-	if postDoc != "" {
-		g.Do("Description: \"$.$\",\n", postDoc)
+	postDoc := strings.TrimSpace(buffer.String())
+	if len(postDoc) > 0 {
+		g.Do("Description: $.$,\n", fmt.Sprintf("%#v", postDoc))
 	}
 }
 
@@ -931,7 +1046,22 @@ func (g openAPITypeWriter) generateSimpleProperty(typeString, format string) {
 
 func (g openAPITypeWriter) generateReferenceProperty(t *types.Type) {
 	g.refTypes[t.Name.String()] = t
-	g.Do("Ref: ref(\"$.$\"),\n", t.Name.String())
+	if g.useOpenAPIModelNames {
+		g.Do("Ref: ref($.|raw${}.OpenAPIModelName()),\n", t)
+	} else {
+		g.Do("Ref: ref(\"$.$\"),\n", t.Name.String())
+	}
+}
+
+func resolvePtrType(t *types.Type) *types.Type {
+	var prev *types.Type
+	for prev != t {
+		prev = t
+		if t.Kind == types.Pointer {
+			t = t.Elem
+		}
+	}
+	return t
 }
 
 func resolveAliasAndPtrType(t *types.Type) *types.Type {
