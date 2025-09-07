@@ -9,56 +9,48 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eks/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"time"
 )
 
-// Deletes an Amazon EKS add-on.
-//
-// When you remove an add-on, it's deleted from the cluster. You can always
-// manually start an add-on on the cluster using the Kubernetes API.
-func (c *Client) DeleteAddon(ctx context.Context, params *DeleteAddonInput, optFns ...func(*Options)) (*DeleteAddonOutput, error) {
+// Returns the status of the latest on-demand cluster insights refresh operation.
+func (c *Client) DescribeInsightsRefresh(ctx context.Context, params *DescribeInsightsRefreshInput, optFns ...func(*Options)) (*DescribeInsightsRefreshOutput, error) {
 	if params == nil {
-		params = &DeleteAddonInput{}
+		params = &DescribeInsightsRefreshInput{}
 	}
 
-	result, metadata, err := c.invokeOperation(ctx, "DeleteAddon", params, optFns, c.addOperationDeleteAddonMiddlewares)
+	result, metadata, err := c.invokeOperation(ctx, "DescribeInsightsRefresh", params, optFns, c.addOperationDescribeInsightsRefreshMiddlewares)
 	if err != nil {
 		return nil, err
 	}
 
-	out := result.(*DeleteAddonOutput)
+	out := result.(*DescribeInsightsRefreshOutput)
 	out.ResultMetadata = metadata
 	return out, nil
 }
 
-type DeleteAddonInput struct {
+type DescribeInsightsRefreshInput struct {
 
-	// The name of the add-on. The name must match one of the names returned by [ListAddons]
-	// ListAddons .
-	//
-	// [ListAddons]: https://docs.aws.amazon.com/eks/latest/APIReference/API_ListAddons.html
-	//
-	// This member is required.
-	AddonName *string
-
-	// The name of your cluster.
+	// The name of the cluster associated with the insights refresh operation.
 	//
 	// This member is required.
 	ClusterName *string
 
-	// Specifying this option preserves the add-on software on your cluster but Amazon
-	// EKS stops managing any settings for the add-on. If an IAM account is associated
-	// with the add-on, it isn't removed.
-	Preserve bool
-
 	noSmithyDocumentSerde
 }
 
-type DeleteAddonOutput struct {
+type DescribeInsightsRefreshOutput struct {
 
-	// An Amazon EKS add-on. For more information, see [Amazon EKS add-ons] in the Amazon EKS User Guide.
-	//
-	// [Amazon EKS add-ons]: https://docs.aws.amazon.com/eks/latest/userguide/eks-add-ons.html
-	Addon *types.Addon
+	// The date and time when the insights refresh operation ended.
+	EndedAt *time.Time
+
+	// The message associated with the insights refresh operation.
+	Message *string
+
+	// The date and time when the insights refresh operation started.
+	StartedAt *time.Time
+
+	// The current status of the insights refresh operation.
+	Status types.InsightsRefreshStatus
 
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -66,19 +58,19 @@ type DeleteAddonOutput struct {
 	noSmithyDocumentSerde
 }
 
-func (c *Client) addOperationDeleteAddonMiddlewares(stack *middleware.Stack, options Options) (err error) {
+func (c *Client) addOperationDescribeInsightsRefreshMiddlewares(stack *middleware.Stack, options Options) (err error) {
 	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
 		return err
 	}
-	err = stack.Serialize.Add(&awsRestjson1_serializeOpDeleteAddon{}, middleware.After)
+	err = stack.Serialize.Add(&awsRestjson1_serializeOpDescribeInsightsRefresh{}, middleware.After)
 	if err != nil {
 		return err
 	}
-	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpDeleteAddon{}, middleware.After)
+	err = stack.Deserialize.Add(&awsRestjson1_deserializeOpDescribeInsightsRefresh{}, middleware.After)
 	if err != nil {
 		return err
 	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "DeleteAddon"); err != nil {
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DescribeInsightsRefresh"); err != nil {
 		return fmt.Errorf("add protocol finalizers: %v", err)
 	}
 
@@ -133,10 +125,10 @@ func (c *Client) addOperationDeleteAddonMiddlewares(stack *middleware.Stack, opt
 	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
-	if err = addOpDeleteAddonValidationMiddleware(stack); err != nil {
+	if err = addOpDescribeInsightsRefreshValidationMiddleware(stack); err != nil {
 		return err
 	}
-	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeleteAddon(options.Region), middleware.Before); err != nil {
+	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDescribeInsightsRefresh(options.Region), middleware.Before); err != nil {
 		return err
 	}
 	if err = addRecursionDetection(stack); err != nil {
@@ -199,10 +191,10 @@ func (c *Client) addOperationDeleteAddonMiddlewares(stack *middleware.Stack, opt
 	return nil
 }
 
-func newServiceMetadataMiddleware_opDeleteAddon(region string) *awsmiddleware.RegisterServiceMetadata {
+func newServiceMetadataMiddleware_opDescribeInsightsRefresh(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		OperationName: "DeleteAddon",
+		OperationName: "DescribeInsightsRefresh",
 	}
 }
