@@ -126,6 +126,41 @@ type MachineConfigNodeStatus struct {
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
 	PinnedImageSets []MachineConfigNodeStatusPinnedImageSet `json:"pinnedImageSets,omitempty"`
+	// irreconcilableChanges is an optional field that contains the observed differences between this nodes
+	// configuration and the target rendered MachineConfig.
+	// This field will be set when there are changes to the target rendered MachineConfig that can only be applied to
+	// new nodes joining the cluster.
+	// Entries must be unique, keyed on the fieldPath field.
+	// Must not exceed 32 entries.
+	// +listType=map
+	// +listMapKey=fieldPath
+	// +openshift:enable:FeatureGate=IrreconcilableMachineConfig
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	// +optional
+	IrreconcilableChanges []IrreconcilableChangeDiff `json:"irreconcilableChanges,omitempty"`
+}
+
+// IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig
+// and the latest applied one caused by the presence of irreconcilable changes.
+type IrreconcilableChangeDiff struct {
+	// fieldPath is a required reference to the path in the latest rendered MachineConfig that differs from this nodes
+	// configuration.
+	// Must not be empty and must not exceed 70 characters in length.
+	// Must begin with the prefix 'spec.' and only contain alphanumeric characters, square brackets ('[]'), or dots ('.').
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=70
+	// +kubebuilder:validation:XValidation:rule="self.startsWith('spec.')",message="The fieldPath must start with `spec.`"
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[\\da-zA-Z\\.\\[\\]]+$')`,message="The fieldPath must consist only of alphanumeric characters, brackets [] and dots ('.')."
+	FieldPath string `json:"fieldPath,omitempty"`
+	// diff is a required field containing the difference between the nodes current configuration and the latest
+	// rendered MachineConfig for the field specified in fieldPath.
+	// Must not be an empty string and must not exceed 4096 characters in length.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=4096
+	Diff string `json:"diff,omitempty"`
 }
 
 // MachineConfigNodeStatusPinnedImageSet holds information about the current, desired, and failed pinned image sets for the observed machine config node.
