@@ -553,8 +553,8 @@ github.com/pkg/profile v1.7.0/go.mod h1:8Uer0jas47ZQMJ7VD+OHknK4YDY07LPUC6dEvqDj
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 h1:Jamvg5psRIccs7FGNTlIRMkT8wgtp5eCXdBlqhYGL6U=
 github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db h1:Fy2pmDLfLq2H0N77KD2LpNoCWbDGP0BknZU/odPx2+c=
-github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db/go.mod h1:yfr6HHPYyJzVgnivMsobLMbHQqUHrzcIqWM4Nav4kc8=
+github.com/ppc64le-cloud/powervs-utils v0.0.0-20250820090732-d58d915fd4b6 h1:Ix+OPeaKiZuhMSfHPL/+xV1nm4uxAb5yP3ujEBqpvME=
+github.com/ppc64le-cloud/powervs-utils v0.0.0-20250820090732-d58d915fd4b6/go.mod h1:yfr6HHPYyJzVgnivMsobLMbHQqUHrzcIqWM4Nav4kc8=
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0 h1:AHzMWDxNiAVscJL6+4wkvFRTpMnJqiaZFEKA/osaBXE=
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0/go.mod h1:wAR5JopumPtAZnu0Cjv2PSqV4p4QB09LMhc6fZZTXuA=
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
