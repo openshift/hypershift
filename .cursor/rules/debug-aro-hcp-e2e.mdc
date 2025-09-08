@@ -1,0 +1,128 @@
+---
+description: How to debug ARO HCP e2e tests using CI artifacts and common workflows
+alwaysApply: false
+---
+
+# Debugging ARO HCP e2e Tests
+
+Use this rule when a PR or CI job for ARO HCP (Azure) e2e tests fails. It points to where to look in artifacts, and prescribes fast triage workflows.
+See also: docs/content/reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
+
+## Quick links to artifacts
+
+- Hosted control plane components
+  - Control plane pod deployments: `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/namespaces/e2e-clusters-*/apps/deployments/`
+  - Control plane pod manifests: `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/namespaces/e2e-clusters-*/core/pods/`
+  - Control plane pod logs: `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/Test*/namespaces/e2e-clusters-*/core/pods/logs/`
+- HyperShift management cluster (namespace `hypershift/`)
+  - Operator deployment: `.../namespaces/hypershift/apps/deployments/operator.yaml`
+  - External DNS deployment: `.../namespaces/hypershift/apps/deployments/external-dns.yaml`
+  - Operator logs: `.../namespaces/hypershift/core/pods/logs/operator-*-operator.log`
+  - External DNS logs: `.../namespaces/hypershift/core/pods/logs/external-dns-*-external-dns.log`
+- Primary test directory: `artifacts/e2e-aks/hypershift-azure-run-e2e/`
+- Top-level CI files
+  - Build log: `artifacts/build-log.txt`
+  - CI operator log: `artifacts/ci-operator-*/ci-operator.log`
+  - JUnit: `artifacts/e2e-aks/hypershift-azure-run-e2e/artifacts/junit.xml`
+  - Job result: `finished.json`
+
+## Start here: critical HyperShift resources
+
+Check the status of these first; their `.status` often names the failing subsystem:
+- HostedCluster: `.../namespaces/e2e-clusters-*/hypershift.openshift.io/hostedclusters/*.yaml`
+- HostedControlPlane: `.../namespaces/e2e-clusters-*-{test-name}-*/hypershift.openshift.io/hostedcontrolplanes/*.yaml`
+- NodePool: `.../namespaces/e2e-clusters-*/hypershift.openshift.io/nodepools/*.yaml`
+
+Expect to see:
+- Overall readiness conditions
+- Infra provisioning state
+- Control plane component health
+- NodePool scaling/readiness
+- Failure reasons/messages
+
+## Per-test essentials
+
+Each scenario is under `.../hypershift-azure-run-e2e/artifacts/Test*/`:
+- `create.log` — hosted cluster creation; start here for provisioning issues
+- `destroy.log` — teardown
+- `dump.log` — comprehensive dump of cluster state
+- `infrastructure.log` — Azure provisioning details
+- `hostedcluster.tar` — full hosted cluster config
+- `namespaces/` — all K8s and HyperShift resources, including control plane pods and logs
+
+## Fast triage workflows
+
+### When control plane is not healthy
+1. Open `finished.json` for the failure type.
+2. Inspect HostedCluster/HostedControlPlane status for failing conditions.
+3. Read `Test*/create.log` for creation errors.
+4. Examine control plane pods: `.../e2e-clusters-*-{test-name}-*/core/pods/`.
+5. Pull component logs: `core/pods/logs/{component}-*-{container}.log`.
+
+### When nodes do not join or scale
+1. Check NodePool status for replicas/conditions.
+2. Review CAPI controllers:
+   - Cluster API: `cluster-api-*.{yaml,log}`
+   - Azure provider: `capi-provider-*.{yaml,log}`
+3. Verify bootstrapping: `ignition-server-*.{yaml,log}`.
+4. CSR approvals: `machine-approver-*.{yaml,log}`.
+5. Control plane coordination: `control-plane-operator-*.{yaml,log}`.
+
+### When management operator reports errors
+1. Operator reconciliation: `hypershift/core/pods/logs/operator-*-operator.log`.
+2. Operator init: `operator-*-init-environment.log`.
+3. DNS issues (Azure DNS): `external-dns-*-external-dns.log`.
+4. Cross-check hosted control plane namespace for component-level failures.
+
+## Component hotspots
+
+- etcd: `etcd-0.yaml`, `etcd-0-*.log`
+  - Look for quorum, storage, connectivity
+- kube-apiserver: `kube-apiserver-*.{yaml,log}` and audit logs
+  - TLS, etcd connectivity, RBAC/authN/Z
+- kube-controller-manager / scheduler: `kube-controller-manager-*`, `kube-scheduler-*`
+  - Resource reconciliation, scheduling constraints
+- OpenShift API server and OAuth server
+  - OpenShift API availability and authentication failures
+
+## Infrastructure and CI
+
+- AKS provision logs: `artifacts/e2e-aks/aks-provision/build-log.txt`
+- Azure resource actions: `Test*/infrastructure.log`
+- Network: look for `cloud-network-config-controller` in hosted control plane namespace
+- CI operator: `artifacts/ci-operator-*/ci-operator.log` for high-level pipeline errors
+
+## Common failure patterns
+
+- Azure API/quotas: errors in `capi-provider-*` or `infrastructure.log`
+- DNS propagation/permissions: `external-dns-*-external-dns.log`
+- Certificates/CSR: `machine-approver-*` and kube-apiserver TLS errors
+- etcd health: `etcd-0-healthz.log` and main etcd logs
+
+## Node joining quick checklist
+
+1. NodePool health
+   - Resource: `.../namespaces/e2e-clusters-*/hypershift.openshift.io/nodepools/*.yaml`
+   - Compare `status.replicas` vs `status.readyReplicas`; read `status.conditions[*].message` for reasons
+2. CAPI controllers (infrastructure provisioning)
+   - Logs: `.../core/pods/logs/cluster-api-*-*.log`, `.../core/pods/logs/capi-provider-*-*.log`
+   - Look for VM create/delete errors, quota limits, subnet/NSG failures, identity/permissions
+3. Bootstrap and ignition fetch
+   - Logs: `.../core/pods/logs/ignition-server-*-*.log`
+   - Indicators: GET /config 404/401, timeouts, TLS handshake errors, unreachable ignition endpoint
+4. CSR approval path
+   - Logs: `.../core/pods/logs/machine-approver-*-*.log`
+   - Indicators: CSRs Pending/Denied, signer mismatches, cert issuance errors; approvals not processed
+5. API reachability from nodes
+   - Logs: `.../core/pods/logs/kube-apiserver-*-kube-apiserver.log`
+   - Indicators: connection refused/timeouts from node IPs, SNI/certificate errors, authN/Z failures
+6. Networking readiness
+   - Logs: `.../core/pods/logs/cloud-network-config-controller-*-*.log`
+   - Indicators: pod CIDR allocation issues, route programming errors, Azure NIC/subnet problems
+7. If nodes exist but are NotReady
+   - Check kubelet/CRIO hints in events within `Test*/dump.log`; verify image pulls, CNI init, time sync
+
+## Test scenarios reference
+
+Examples under `Test*/`:
+- Autoscaling, CreateCluster, CustomConfig, HA etcd chaos, NodePool lifecycle, Control plane upgrade

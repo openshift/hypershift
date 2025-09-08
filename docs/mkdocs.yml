@@ -271,20 +271,22 @@ nav:
     - 'Expose Data Plane Ingress via MetalLB': recipes/common/exposing-dataplane-with-metallb.md
     - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
 - 'Reference':
-  - reference/index.md
-  - reference/goals-and-design-invariants.md
-  - reference/api.md
-  - reference/konnectivity.md
-  - "Infrastructure":
-    - reference/infrastructure/index.md
-    - "AWS": reference/infrastructure/aws.md
-    - "Agent": reference/infrastructure/agent.md
   - 'Architecture':
     - reference/architecture/index.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
         - reference/architecture/managed-azure/shared-ingress.md
+  - reference/api.md
+  - reference/concepts-and-personas.md
+  - reference/controller-architecture.md
+  - reference/goals-and-design-invariants.md
+  - "Infrastructure":
+    - reference/infrastructure/index.md
+    - "AWS": reference/infrastructure/aws.md
+    - "Agent": reference/infrastructure/agent.md
+  - reference/index.md
+  - reference/konnectivity.md
   - 'Manifests':
     - reference/manifests/index.md
     - 'IBM Cloud':
@@ -293,14 +295,15 @@ nav:
       - '4.11': reference/manifests/ibmcloud/4.11.md
       - '4.12': reference/manifests/ibmcloud/4.12.md
       - '4.13': reference/manifests/ibmcloud/4.13.md
+  - reference/multi-platform-support.md
   - 'Openshift behaviour deviations':
     - reference/ocp-behaviour-deviations/index.md
     - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
-  - reference/concepts-and-personas.md
-  - reference/controller-architecture.md
-  - reference/multi-platform-support.md
-  - reference/versioning-support.md
+  - 'Test Information/Debugging':
+    - 'ARO HCP / AKS e2e':
+      - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
   - reference/SLOs.md
+  - reference/versioning-support.md
 - 'Contribute':
   - contribute/index.md
   - 'Release Process': contribute/release-process.md
