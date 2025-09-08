@@ -251,6 +251,7 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 
 	nodeGoMemLimit := ""
 	lbSubnets := ""
+	pairLabel := ""
 	for _, node := range nodesToUse {
 		originalNode := node.DeepCopy()
 
@@ -261,6 +262,9 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 			lbSubnets = node.Labels[schedulerutil.LBSubnetsLabel]
 			// If subnets are separated by periods, replace them with commas
 			lbSubnets = strings.ReplaceAll(lbSubnets, ".", ",")
+		}
+		if node.Labels[OSDFleetManagerPairedNodesLabel] != "" && pairLabel == "" {
+			pairLabel = node.Labels[OSDFleetManagerPairedNodesLabel]
 		}
 
 		// Add taint and labels for specific hosted cluster
@@ -300,6 +304,10 @@ func (r *DedicatedServingComponentScheduler) Reconcile(ctx context.Context, req 
 	}
 	if lbSubnets != "" {
 		hcluster.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation] = lbSubnets
+	}
+	if pairLabel != "" {
+		hcluster.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation] =
+			fmt.Sprintf("%s=%s", OSDFleetManagerPairedNodesLabel, pairLabel)
 	}
 	if err := r.Patch(ctx, hcluster, client.MergeFrom(originalHcluster)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update hostedcluster annotation: %w", err)
