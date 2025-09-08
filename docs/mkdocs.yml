@@ -299,6 +299,9 @@ nav:
   - 'Openshift behaviour deviations':
     - reference/ocp-behaviour-deviations/index.md
     - 'Upgrade 4.17 > 4.18': reference/ocp-behaviour-deviations/upgrade-4.17-4.18.md
+  - 'Test Information/Debugging':
+    - 'ARO HCP / AKS e2e':
+      - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
   - reference/SLOs.md
   - reference/versioning-support.md
 - 'Contribute':
