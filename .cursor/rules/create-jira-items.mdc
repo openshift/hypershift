@@ -34,9 +34,11 @@ It answers the questions - How do we typically refer to this issue?
 A summary is needed for the following Jira issue types: Outcomes, Features, Initiatives, Epics, Stories, Spikes, Tasks, Bugs, Tickets, Risks, Sub-Tasks.
 
 ### Setting Versions
-For any Jira story or task, unless specified differently from the user, the target version should always be openshift-4.21.
+For any Jira story or task, unless specified differently from the user, the `target version` (also known as customfield_12319940) should always be openshift-4.21.
 
 For any OCPBUGS Jira issue, the `affected version/s` and `target version` (also known as customfield_12319940) fields should default to 4.21.
+
+Never set the `Fix Version/s` or `fixVersions` fields.
 
 ## Instructions on specific Jira Issue components
  <!-- Adapted from https://spaces.redhat.com/spaces/CIAO/pages/195636942/Story+Guidelines -->
