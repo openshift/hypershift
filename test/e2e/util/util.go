@@ -581,6 +581,40 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
+func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
+	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	EventuallyObjects(t, ctx, "control plane components to complete rollout",
+		func(ctx context.Context) ([]*hyperv1.ControlPlaneComponent, error) {
+			err := client.List(ctx, controlPlaneComponents, crclient.InNamespace(controlPlaneNamespace))
+			items := make([]*hyperv1.ControlPlaneComponent, len(controlPlaneComponents.Items))
+			for i := range controlPlaneComponents.Items {
+				items[i] = &controlPlaneComponents.Items[i]
+			}
+			return items, err
+		},
+		[]Predicate[[]*hyperv1.ControlPlaneComponent]{
+			func(cpComponents []*hyperv1.ControlPlaneComponent) (done bool, reasons string, err error) {
+				return len(cpComponents) > 10, "expecting more than 10 control plane components", nil
+			},
+		},
+		[]Predicate[*hyperv1.ControlPlaneComponent]{
+			ConditionPredicate[*hyperv1.ControlPlaneComponent](Condition{
+				Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
+				Status: metav1.ConditionTrue,
+			}),
+			func(cpComponent *hyperv1.ControlPlaneComponent) (done bool, reasons string, err error) {
+				if initialVersion != "" && cpComponent.Status.Version == initialVersion {
+					return false, fmt.Sprintf("component %s is still on version %s", cpComponent.Name, cpComponent.Status.Version), nil
+				}
+				return true, fmt.Sprintf("component %s has version: %s", cpComponent.Name, cpComponent.Status.Version), nil
+			},
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+}
+
 func WaitForConditionsOnHostedControlPlane(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, image string) {
 	var predicates []Predicate[*hyperv1.HostedControlPlane]
 	for _, conditionType := range []hyperv1.ConditionType{
