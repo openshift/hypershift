@@ -575,9 +575,11 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 	privateSubnetIDsToShare := make([]*string, 0, len(output.Zones))
 	publicSubnetIDsToShare := make([]*string, 0, len(publicSubnetIDs))
 	allSubnetIDsToShare := make([]*string, 0, len(output.Zones)+len(publicSubnetIDs))
-
-	for _, zone := range output.Zones {
-		privateSubnetIDsToShare = append(privateSubnetIDsToShare, aws.String(zone.SubnetID))
+	//if publicOnly=true, the zone.SubnetID is the same as publicSubnetID. Skip this to avoid duplicate publicSubnetIDs will be added to allSubnetIDsToShare
+	if !output.PublicOnly {
+		for _, zone := range output.Zones {
+			privateSubnetIDsToShare = append(privateSubnetIDsToShare, aws.String(zone.SubnetID))
+		}
 	}
 	for _, subnetID := range publicSubnetIDs {
 		publicSubnetIDsToShare = append(publicSubnetIDsToShare, aws.String(subnetID))
