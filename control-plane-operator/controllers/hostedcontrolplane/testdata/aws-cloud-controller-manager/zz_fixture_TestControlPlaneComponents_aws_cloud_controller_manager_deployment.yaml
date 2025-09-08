@@ -4,7 +4,7 @@ metadata:
   creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
-  name: cloud-controller-manager-openstack
+  name: aws-cloud-controller-manager
   namespace: hcp-namespace
   ownerReferences:
   - apiVersion: hypershift.openshift.io/v1beta1
@@ -19,22 +19,20 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      infrastructure.openshift.io/cloud-controller-manager: OpenStack
-      k8s-app: openstack-cloud-controller-manager
+      app: cloud-controller-manager
   strategy:
     type: Recreate
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 1cdcee0c
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
+        component.hypershift.openshift.io/config-hash: 6cd2cf9e
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
-        hypershift.openshift.io/control-plane-component: cloud-controller-manager-openstack
+        app: cloud-controller-manager
+        hypershift.openshift.io/control-plane-component: aws-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
-        infrastructure.openshift.io/cloud-controller-manager: OpenStack
-        k8s-app: openstack-cloud-controller-manager
     spec:
       affinity:
         nodeAffinity:
@@ -64,45 +62,74 @@ spec:
       automountServiceAccountToken: false
       containers:
       - args:
-        - --v=1
-        - --cloud-config=$(CLOUD_CONFIG)
-        - --cluster-name=$(OCP_INFRASTRUCTURE_NAME)
-        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
-        - --cloud-provider=openstack
+        - --cloud-provider=aws
         - --use-service-account-credentials=false
+        - --kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --cloud-config=/etc/cloud/aws.conf
         - --configure-cloud-routes=false
-        - --bind-address=127.0.0.1
         - --leader-elect=true
         - --leader-elect-lease-duration=137s
         - --leader-elect-renew-deadline=107s
         - --leader-elect-retry-period=26s
         - --leader-elect-resource-namespace=openshift-cloud-controller-manager
+        - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         command:
-        - /usr/bin/openstack-cloud-controller-manager
+        - /bin/aws-cloud-controller-manager
         env:
-        - name: CLOUD_CONFIG
-          value: /etc/openstack/config/cloud.conf
-        - name: OCP_INFRASTRUCTURE_NAME
-        image: openstack-cloud-controller-manager
+        - name: AWS_SHARED_CREDENTIALS_FILE
+          value: /etc/kubernetes/secrets/cloud-provider/credentials
+        - name: AWS_SDK_LOAD_CONFIG
+          value: "true"
+        - name: AWS_EC2_METADATA_DISABLED
+          value: "true"
+        image: aws-cloud-controller-manager
         imagePullPolicy: IfNotPresent
         name: cloud-controller-manager
         resources:
           requests:
-            cpu: 200m
-            memory: 50Mi
+            cpu: 75m
+            memory: 60Mi
         securityContext:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
+        - mountPath: /etc/cloud
+          name: cloud-config
+        - mountPath: /etc/aws
+          name: cloud-controller-creds
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
-          readOnly: true
-        - mountPath: /etc/openstack/config
-          name: cloud-config
-          readOnly: true
-        - mountPath: /etc/openstack/secret
-          name: secret-occm
-          readOnly: true
+        - mountPath: /etc/kubernetes/secrets/cloud-provider
+          name: cloud-creds
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=kube-controller-manager
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
@@ -122,18 +149,19 @@ spec:
           secretName: service-network-admin-kubeconfig
       - configMap:
           defaultMode: 420
-          items:
-          - key: cloud.conf
-            path: cloud.conf
-          name: openstack-cloud-config
+          name: aws-cloud-config
         name: cloud-config
-      - name: secret-occm
+      - name: cloud-controller-creds
         secret:
           defaultMode: 416
-          items:
-          - key: clouds.yaml
-            path: clouds.yaml
-          secretName: fake-cloud-credentials-secret
+          secretName: cloud-controller-creds
+      - name: cloud-creds
+        secret:
+          defaultMode: 416
+          secretName: cloud-controller-creds
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}
