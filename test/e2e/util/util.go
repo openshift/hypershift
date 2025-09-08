@@ -876,7 +876,7 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 			}), "no volume named proxy-additional-trust-bundle found in openshift-apiserver pod")
 		}
 
-		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 0)
+		_, err = RunCommandInPod(ctx, mgmtClient, "openshift-apiserver", hcpNs, command, "openshift-apiserver", 1*time.Minute)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to run command in pod: %v", err)
 	})
 

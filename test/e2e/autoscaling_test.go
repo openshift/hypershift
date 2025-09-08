@@ -6,12 +6,16 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -226,6 +230,26 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 				}
 			}
 			return false, "autoscaling condition not found", nil
+		}}, e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute))
+
+		// Wait for autoscaler deployment to have autoscaling settings and be ready
+		// TODO (cewong): This should be reported in the HostedCluster as a condition
+		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		e2eutil.EventuallyObject(t, ctx, "autoscaler deployment to have autoscaling settings and be ready", func(ctx context.Context) (*appsv1.Deployment, error) {
+			autoscalerDeployment := &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cluster-autoscaler"}}
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(autoscalerDeployment), autoscalerDeployment)
+			return autoscalerDeployment, err
+		}, []e2eutil.Predicate[*appsv1.Deployment]{func(autoscalerDeployment *appsv1.Deployment) (done bool, reasons string, err error) {
+			hasBalancingIgnoreLabel := false
+			for _, arg := range autoscalerDeployment.Spec.Template.Spec.Containers[0].Args {
+				if strings.Contains(arg, "custom.ignore.label") {
+					hasBalancingIgnoreLabel = true
+				}
+			}
+			if !hasBalancingIgnoreLabel {
+				return false, "autoscaler deployment does not have balancing ignore label", nil
+			}
+			return util.IsDeploymentReady(ctx, autoscalerDeployment), "autoscaler deployment not ready", nil
 		}}, e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute))
 
 		// Generate workload.
