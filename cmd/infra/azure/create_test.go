@@ -14,8 +14,8 @@ func TestValidateDeploymentModelFlags(t *testing.T) {
 	}{
 		"valid ARO HCP with both managed and data plane identities": {
 			opts: CreateInfraOptions{
-				ManagedIdentitiesFile:    "mi.json",
-				DataPlaneIdentitiesFile:  "dp.json",
+				ManagedIdentitiesFile:   "mi.json",
+				DataPlaneIdentitiesFile: "dp.json",
 			},
 			expectedError: false,
 			description:   "Should allow both ARO HCP identity files together",
@@ -34,7 +34,7 @@ func TestValidateDeploymentModelFlags(t *testing.T) {
 			expectedError: false,
 			description:   "Should allow OIDC issuer URL alone",
 		},
-		
+
 		// Invalid empty configuration
 		"invalid empty configuration": {
 			opts:          CreateInfraOptions{},
@@ -42,7 +42,7 @@ func TestValidateDeploymentModelFlags(t *testing.T) {
 			description:   "Should reject empty configuration without any identity settings",
 		},
 
-		// Invalid cross-deployment model cases  
+		// Invalid cross-deployment model cases
 		"invalid ARO HCP managed identities with self-managed workload identities": {
 			opts: CreateInfraOptions{
 				ManagedIdentitiesFile:  "mi.json",

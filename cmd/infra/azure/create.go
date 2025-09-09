@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -10,9 +11,10 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 
+	"sigs.k8s.io/yaml"
+
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
-	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -208,7 +210,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 	// Handle workload identities
 	if o.WorkloadIdentitiesFile != "" {
-		// Load workload identities from file
 		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
 		if err != nil {
 			return nil, fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)

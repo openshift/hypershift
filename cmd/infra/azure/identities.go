@@ -8,8 +8,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/go-logr/logr"
+
 	"k8s.io/utils/ptr"
+
+	"github.com/go-logr/logr"
 )
 
 // IdentityManager handles Azure managed identity and federated credential operations
