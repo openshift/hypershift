@@ -25,6 +25,9 @@ type CreateInfraOptions struct {
 	DNSZoneRG                   string
 	AssignCustomHCPRoles        bool
 	DisableClusterCapabilities  []string
+	OIDCIssuerURL               string
+	GenerateManagedIdentities   bool
+	WorkloadIdentitiesOutputFile string
 }
 
 type CreateInfraOutput struct {
