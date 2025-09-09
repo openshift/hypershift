@@ -1,0 +1,31 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: cluster-storage-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: cluster-storage-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment cluster-storage-operator rollout to finish: 0
+      out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: cluster-storage-operator
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: cluster-storage-operator
+  - group: ""
+    kind: ServiceAccount
+    name: cluster-storage-operator
