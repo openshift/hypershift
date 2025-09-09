@@ -7,10 +7,12 @@
                 "ec2:DescribeVpcs",
                 "iam:ListAttachedRolePolicies",
                 "iam:DeleteRolePolicy",
+                "iam:ListRoles",
                 "iam:ListRolePolicies",
                 "iam:RemoveRoleFromInstanceProfile",
                 "iam:DeleteInstanceProfile",
-                "iam:DeleteRole"
+                "iam:DeleteRole",
+                "iam:DetachRolePolicy"
             ],
             "Resource": "*"
         }
