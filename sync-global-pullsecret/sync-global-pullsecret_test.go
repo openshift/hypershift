@@ -1,7 +1,6 @@
 package syncglobalpullsecret
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,12 +8,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
+	"github.com/go-logr/logr"
 	"go.uber.org/mock/gomock"
 )
 
@@ -106,20 +100,6 @@ func TestCheckAndFixFile(t *testing.T) {
 			// Create test file path
 			testFilePath := filepath.Join(tempDir, "config.json")
 
-			// Create test secret
-			testSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-pull-secret",
-					Namespace: "kube-system",
-				},
-				Data: map[string][]byte{
-					corev1.DockerConfigJsonKey: []byte(tt.secretContent),
-				},
-			}
-
-			// Create fake client
-			fakeClient := fake.NewClientBuilder().WithObjects(testSecret).Build()
-
 			// Write initial content if provided
 			if tt.initialContent != "" {
 				err = os.WriteFile(testFilePath, []byte(tt.initialContent), 0600)
@@ -133,13 +113,10 @@ func TestCheckAndFixFile(t *testing.T) {
 				g.Expect(string(content)).To(Equal(tt.initialContent))
 			}
 
-			// Create reconciler for testing
-			reconciler := &GlobalPullSecretReconciler{
-				cachedClient:          fakeClient,
-				uncachedClient:        fakeClient,
+			// Create syncer for testing
+			syncer := &GlobalPullSecretSyncer{
 				kubeletConfigJsonPath: testFilePath,
-				globalPSSecretName:    "test-pull-secret",
-				globalPSSecretNS:      "kube-system",
+				log:                   logr.Discard(),
 			}
 
 			// Save original write function and restore it after test
@@ -161,7 +138,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			}
 
 			// Run checkAndFixFile
-			err = reconciler.checkAndFixFile(context.Background(), testSecret)
+			err = syncer.checkAndFixFile([]byte(tt.secretContent))
 
 			// Check error expectations
 			if tt.expectError {
@@ -178,77 +155,6 @@ func TestCheckAndFixFile(t *testing.T) {
 				content, err := os.ReadFile(testFilePath)
 				g.Expect(err).To(BeNil())
 				g.Expect(string(content)).To(Equal(tt.expectedFinalContent))
-			}
-		})
-	}
-}
-
-func TestIsTargetSecret(t *testing.T) {
-	tests := []struct {
-		name     string
-		obj      client.Object
-		expected bool
-	}{
-		{
-			name: "correct secret",
-			obj: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      defaultGlobalPSSecretName,
-					Namespace: defaultGlobalPullSecretNamespace,
-				},
-			},
-			expected: true,
-		},
-		{
-			name: "wrong namespace",
-			obj: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      defaultGlobalPSSecretName,
-					Namespace: "wrong-namespace",
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "wrong name",
-			obj: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wrong-name",
-					Namespace: defaultGlobalPullSecretNamespace,
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "wrong name and namespace",
-			obj: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "wrong-name",
-					Namespace: "wrong-namespace",
-				},
-			},
-			expected: false,
-		},
-		{
-			name: "different resource type",
-			obj: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      defaultGlobalPSSecretName,
-					Namespace: defaultGlobalPullSecretNamespace,
-				},
-			},
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			o := &syncGlobalPullSecretOptions{
-				globalPSSecretName: defaultGlobalPSSecretName,
-			}
-			result := o.isTargetSecret(tt.obj)
-			if result != tt.expected {
-				t.Errorf("isTargetSecret() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -359,7 +265,7 @@ func TestRestartKubelet(t *testing.T) {
 			mock := NewMockdbusConn(ctrl)
 			tt.setupMock(mock)
 
-			err := restartKubelet(context.Background(), mock)
+			err := restartKubelet(mock)
 			if err != nil {
 				if tt.expectedError == "" {
 					t.Errorf("unexpected error: %v", err)
