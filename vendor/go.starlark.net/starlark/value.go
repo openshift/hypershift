@@ -26,6 +26,7 @@
 //
 //	Callable        -- value is callable like a function
 //	Comparable      -- value defines its own comparison operations
+//	Container       -- value supports the 'in' operator
 //	Iterable        -- value is iterable using 'for' loops
 //	Sequence        -- value is iterable sequence of known length
 //	Indexable       -- value is sequence with efficient random access
@@ -95,6 +96,11 @@ type Value interface {
 	// structure through this API will fail dynamically, making the
 	// data structure immutable and safe for publishing to other
 	// Starlark interpreters running concurrently.
+	//
+	// Implementations of Freeze must be defensive against
+	// reference cycles; this can be achieved by first checking
+	// the value's frozen state, then setting it, and only then
+	// visiting any other values that it references.
 	Freeze()
 
 	// Truth returns the truth value of an object.
@@ -229,6 +235,13 @@ type Sliceable interface {
 	Slice(start, end, step int) Value
 }
 
+// A Container is a value that supports the 'in' operator.
+type Container interface {
+	Value
+	// Has reports whether the value contains the specified element.
+	Has(y Value) (bool, error)
+}
+
 // A HasSetIndex is an Indexable value whose elements may be assigned (x[i] = y).
 //
 // The implementation should not add Len to a negative index as the
@@ -245,6 +258,10 @@ var (
 	_ Sliceable   = Tuple(nil)
 	_ Sliceable   = String("")
 	_ Sliceable   = (*List)(nil)
+	_ Container   = Tuple(nil)
+	_ Container   = String("")
+	_ Container   = (*List)(nil)
+	_ Container   = (*Set)(nil)
 )
 
 // An Iterator provides a sequence of values to the caller.
@@ -254,12 +271,17 @@ var (
 //
 // Example usage:
 //
-//	iter := iterable.Iterator()
+//	var seq Iterator = ...
+//	iter := seq.Iterate()
 //	defer iter.Done()
-//	var x Value
-//	for iter.Next(&x) {
+//	var elem Value
+//	for iter.Next(&elem) {
 //		...
 //	}
+//
+// Or, using go1.23 iterators:
+//
+//	for elem := range Elements(seq) { ... }
 type Iterator interface {
 	// If the iterator is exhausted, Next returns false.
 	// Otherwise it sets *p to the current element of the sequence,
@@ -283,6 +305,8 @@ type Mapping interface {
 }
 
 // An IterableMapping is a mapping that supports key enumeration.
+//
+// See [Entries] for example use.
 type IterableMapping interface {
 	Mapping
 	Iterate() Iterator // see Iterable interface
@@ -528,7 +552,7 @@ func (f Float) Unary(op syntax.Token) (Value, error) {
 
 // String is the type of a Starlark text string.
 //
-// A String encapsulates an an immutable sequence of bytes,
+// A String encapsulates an immutable sequence of bytes,
 // but strings are not directly iterable. Instead, iterate
 // over the result of calling one of these four methods:
 // codepoints, codepoint_ords, elems, elem_ords.
@@ -575,6 +599,14 @@ func (s String) AttrNames() []string             { return builtinAttrNames(strin
 func (x String) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 	y := y_.(String)
 	return threeway(op, strings.Compare(string(x), string(y))), nil
+}
+
+func (s String) Has(y Value) (bool, error) {
+	needle, ok := y.(String)
+	if !ok {
+		return false, fmt.Errorf("'in <string>' requires string as left operand, not %s", y.Type())
+	}
+	return strings.Contains(string(s), string(needle)), nil
 }
 
 func AsString(x Value) (string, bool) { v, ok := x.(String); return string(v), ok }
@@ -684,30 +716,42 @@ func (*stringCodepointsIterator) Done() {}
 // The initialization behavior of a Starlark module is also represented by a Function.
 type Function struct {
 	funcode  *compile.Funcode
-	module   *module
+	module   *Module
 	defaults Tuple
 	freevars Tuple
 }
 
-// A module is the dynamic counterpart to a Program.
-// All functions in the same program share a module.
-type module struct {
-	program     *compile.Program
+// A Module represents an evaluated Starlark module.
+// It is the dynamic counterpart to a [Program].
+// All functions in the same program share a Module.
+type Module struct {
+	program     *Program
 	predeclared StringDict
 	globals     []Value
 	constants   []Value
 }
 
-// makeGlobalDict returns a new, unfrozen StringDict containing all global
+// Program returns the program from which this module was constructed.
+func (m *Module) Program() *Program {
+	return m.program
+}
+
+// Globals returns a new StringDict containing all global
 // variables so far defined in the module.
-func (m *module) makeGlobalDict() StringDict {
-	r := make(StringDict, len(m.program.Globals))
-	for i, id := range m.program.Globals {
+func (m *Module) Globals() StringDict {
+	r := make(StringDict, len(m.program.compiled.Globals))
+	for i, id := range m.program.compiled.Globals {
 		if v := m.globals[i]; v != nil {
 			r[id.Name] = v
 		}
 	}
 	return r
+}
+
+// Predeclared returns the predeclared environment used
+// to construct this module.
+func (m *Module) Predeclared() StringDict {
+	return m.predeclared
 }
 
 func (fn *Function) Name() string          { return fn.funcode.Name } // "lambda" for anonymous functions
@@ -717,10 +761,13 @@ func (fn *Function) Freeze()               { fn.defaults.Freeze(); fn.freevars.F
 func (fn *Function) String() string        { return toString(fn) }
 func (fn *Function) Type() string          { return "function" }
 func (fn *Function) Truth() Bool           { return true }
+func (fn *Function) Module() *Module       { return fn.module }
 
-// Globals returns a new, unfrozen StringDict containing all global
+// Globals returns a new StringDict containing all global
 // variables so far defined in the function's module.
-func (fn *Function) Globals() StringDict { return fn.module.makeGlobalDict() }
+//
+// fn.Globals() is equivalent to fn.Module().Globals().
+func (fn *Function) Globals() StringDict { return fn.module.Globals() }
 
 func (fn *Function) Position() syntax.Position { return fn.funcode.Pos }
 func (fn *Function) NumParams() int            { return fn.funcode.NumParams }
@@ -767,6 +814,15 @@ func (fn *Function) ParamDefault(i int) Value {
 
 func (fn *Function) HasVarargs() bool { return fn.funcode.HasVarargs }
 func (fn *Function) HasKwargs() bool  { return fn.funcode.HasKwargs }
+
+// NumFreeVars returns the number of free variables of this function.
+func (fn *Function) NumFreeVars() int { return len(fn.funcode.FreeVars) }
+
+// FreeVar returns the binding (name and binding position) and value
+// of the i'th free variable of function fn.
+func (fn *Function) FreeVar(i int) (Binding, Value) {
+	return Binding(fn.funcode.FreeVars[i]), fn.freevars[i].(*cell).v
+}
 
 // A Builtin is a function implemented in Go.
 type Builtin struct {
@@ -954,6 +1010,17 @@ func (l *List) Iterate() Iterator {
 	return &listIterator{l: l}
 }
 
+func (l *List) Has(y Value) (bool, error) {
+	for _, x := range l.elems {
+		if eq, err := Equal(x, y); err != nil {
+			return false, err
+		} else if eq {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (x *List) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 	y := y_.(*List)
 	// It's tempting to check x == y as an optimization here,
@@ -1053,6 +1120,7 @@ func (t Tuple) Slice(start, end, step int) Value {
 }
 
 func (t Tuple) Iterate() Iterator { return &tupleIterator{elems: t} }
+
 func (t Tuple) Freeze() {
 	for _, elem := range t {
 		elem.Freeze()
@@ -1065,6 +1133,17 @@ func (t Tuple) Truth() Bool    { return len(t) > 0 }
 func (x Tuple) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 	y := y_.(Tuple)
 	return sliceCompare(op, x, y, depth)
+}
+
+func (t Tuple) Has(y Value) (bool, error) {
+	for _, x := range t {
+		if eq, err := Equal(x, y); err != nil {
+			return false, err
+		} else if eq {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (t Tuple) Hash() (uint32, error) {
@@ -1208,6 +1287,16 @@ func (s *Set) Union(iter Iterator) (Value, error) {
 		}
 	}
 	return set, nil
+}
+
+func (s *Set) InsertAll(iter Iterator) error {
+	var x Value
+	for iter.Next(&x) {
+		if err := s.Insert(x); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Set) Difference(other Iterator) (Value, error) {
@@ -1581,6 +1670,7 @@ var (
 	_ Comparable = Bytes("")
 	_ Sliceable  = Bytes("")
 	_ Indexable  = Bytes("")
+	_ Container  = Bytes("")
 )
 
 func (b Bytes) String() string        { return syntax.Quote(string(b), true) }
@@ -1610,4 +1700,19 @@ func (b Bytes) Slice(start, end, step int) Value {
 func (x Bytes) CompareSameType(op syntax.Token, y_ Value, depth int) (bool, error) {
 	y := y_.(Bytes)
 	return threeway(op, strings.Compare(string(x), string(y))), nil
+}
+
+func (b Bytes) Has(y Value) (bool, error) {
+	switch needle := y.(type) {
+	case Bytes:
+		return strings.Contains(string(b), string(needle)), nil
+	case Int:
+		var by byte
+		if err := AsInt(needle, &by); err != nil {
+			return false, fmt.Errorf("int in bytes: %s", err)
+		}
+		return strings.IndexByte(string(b), by) >= 0, nil
+	default:
+		return false, fmt.Errorf("'in bytes' requires bytes or int as left operand, not %s", y.Type())
+	}
 }
