@@ -6,24 +6,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
-	hyperapi "github.com/openshift/hypershift/support/api"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/rest"
-
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/cache"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	"github.com/coreos/go-systemd/dbus"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
 	"github.com/spf13/cobra"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 // syncGlobalPullSecretOptions contains the configuration options for the sync-global-pullsecret command
@@ -38,26 +30,23 @@ type dbusConn interface {
 	Close()
 }
 
-// GlobalPullSecretReconciler reconciles a Secret object
-type GlobalPullSecretReconciler struct {
-	cachedClient          crclient.Client
-	uncachedClient        crclient.Client
-	Scheme                *runtime.Scheme
+// GlobalPullSecretSyncer handles the synchronization of pull secrets
+type GlobalPullSecretSyncer struct {
 	kubeletConfigJsonPath string
-	globalPSSecretName    string
-	globalPSSecretNS      string
+	log                   logr.Logger
 }
 
 const (
-	defaultKubeletConfigJsonPath     = "/var/lib/kubelet/config.json"
-	defaultGlobalPSSecretName        = "global-pull-secret"
-	defaultGlobalPullSecretNamespace = "kube-system"
-	dbusRestartUnitMode              = "replace"
-	kubeletServiceUnit               = "kubelet.service"
+	defaultKubeletConfigJsonPath = "/var/lib/kubelet/config.json"
+	defaultGlobalPSSecretName    = "global-pull-secret"
+	dbusRestartUnitMode          = "replace"
+	kubeletServiceUnit           = "kubelet.service"
 
 	// Mounted secret file paths
 	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
 	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
+
+	tickerPace = 30 * time.Second
 
 	// systemd job completion state as documented in go-systemd/dbus
 	systemdJobDone = "done" // Job completed successfully
@@ -86,14 +75,19 @@ func NewRunCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.globalPSSecretName, "global-pull-secret-name", defaultGlobalPSSecretName, "The name of the global pullSecret secret in the DataPlane.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		setupLog := ctrl.Log.WithName("global-pullsecret")
-		zapOpts := zap.Options{
-			Development: true,
-		}
-		ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
-		ctx := ctrl.SetupSignalHandler()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Handle SIGINT and SIGTERM
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-sigChan
+			cancel()
+		}()
+
 		if err := opts.run(ctx); err != nil {
-			setupLog.Error(err, "unable to start manager")
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	}
@@ -103,173 +97,120 @@ func NewRunCommand() *cobra.Command {
 
 // run executes the main logic of the sync-global-pullsecret command
 func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
-	// Create manager
-	// TODO: Review if we really need a controller here with the new way of work
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: hyperapi.Scheme,
-		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{defaultGlobalPullSecretNamespace: {}},
-		},
-	})
+	// Setup logger using zap with logr interface
+	config := zap.NewProductionConfig()
+	config.EncoderConfig.TimeKey = "timestamp"
+	config.EncoderConfig.EncodeTime = zapcore.RFC3339TimeEncoder
+	zapLogger, err := config.Build()
 	if err != nil {
-		return fmt.Errorf("failed to create manager: %w", err)
+		return fmt.Errorf("failed to create logger: %w", err)
 	}
+	logger := zapr.NewLogger(zapLogger)
 
-	uncachedClientRestConfig := mgr.GetConfig()
-	uncachedClientRestConfig.WarningHandler = rest.NoWarnings{}
-	uncachedClient, err := crclient.New(uncachedClientRestConfig, crclient.Options{
-		Scheme: mgr.GetScheme(),
-		Mapper: mgr.GetRESTMapper(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create uncached client: %w", err)
-	}
-
-	// Create reconciler
-	r := &GlobalPullSecretReconciler{
-		cachedClient:          mgr.GetClient(),
-		uncachedClient:        uncachedClient,
-		Scheme:                mgr.GetScheme(),
+	// Create syncer
+	syncer := &GlobalPullSecretSyncer{
 		kubeletConfigJsonPath: o.kubeletConfigJsonPath,
-		globalPSSecretName:    o.globalPSSecretName,
-		globalPSSecretNS:      defaultGlobalPullSecretNamespace,
+		log:                   logger,
 	}
 
-	// Create controller
-	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Secret{}).
-		WithEventFilter(predicate.Funcs{
-			// Adding filters to avoid processing events that are not relevant
-			CreateFunc: func(e event.CreateEvent) bool {
-				return o.isTargetSecret(e.Object)
-			},
-			UpdateFunc: func(e event.UpdateEvent) bool {
-				return o.isTargetSecret(e.ObjectNew)
-			},
-			DeleteFunc: func(e event.DeleteEvent) bool {
-				return o.isTargetSecret(e.Object)
-			},
-			GenericFunc: func(e event.GenericEvent) bool {
-				return false
-			},
-		}).
-		Complete(r); err != nil {
-		return fmt.Errorf("failed to create controller: %w", err)
-	}
-
-	// Start manager
-	if err := mgr.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start manager: %w", err)
-	}
-
-	return nil
+	// Start the sync loop
+	return syncer.runSyncLoop(ctx)
 }
 
-// isTargetSecret checks if the given object is the target secret we want to watch
-func (o *syncGlobalPullSecretOptions) isTargetSecret(obj crclient.Object) bool {
-	// Check if it's a Secret and has the correct name and namespace
-	if secret, ok := obj.(*corev1.Secret); ok {
-		return secret.GetNamespace() == defaultGlobalPullSecretNamespace &&
-			secret.GetName() == o.globalPSSecretName
+// runSyncLoop runs the main synchronization loop with backoff
+func (s *GlobalPullSecretSyncer) runSyncLoop(ctx context.Context) error {
+	s.log.Info("Starting global pull secret sync loop")
+
+	// Initial sync
+	if err := s.syncPullSecret(); err != nil {
+		s.log.Error(err, "Initial sync failed")
 	}
-	return false
+
+	// Sync loop with backoff
+	ticker := time.NewTicker(tickerPace)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			s.log.Info("Context canceled, stopping sync loop")
+			return ctx.Err()
+		case <-ticker.C:
+			if err := s.syncPullSecret(); err != nil {
+				s.log.Error(err, "Sync failed")
+				// Continue the loop even if sync fails
+			}
+		}
+	}
 }
 
-// Reconcile handles the reconciliation logic for the GlobalPullSecret
-func (r *GlobalPullSecretReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling GlobalPullSecret")
+// syncPullSecret handles the synchronization logic for the GlobalPullSecret
+func (s *GlobalPullSecretSyncer) syncPullSecret() error {
+	s.log.Info("Syncing global pull secret")
 
 	// Try to read the global pull secret from mounted file first
 	globalPullSecretBytes, err := readPullSecretFromFile(globalPullSecretFilePath)
 	if err != nil {
 		// If global pull secret file doesn't exist, fall back to original pull secret
-		log.Info("Global pull secret file not found, using original pull secret", "error", err)
+		s.log.Info("Global pull secret file not found, using original pull secret", "error", err)
 		originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
 		if err != nil {
-			return reconcile.Result{}, fmt.Errorf("failed to read original pull secret from file: %w", err)
+			return fmt.Errorf("failed to read original pull secret from file: %w", err)
 		}
 		globalPullSecretBytes = originalPullSecretBytes
 	} else {
-		log.Info("Global pull secret found, using it")
+		s.log.Info("Global pull secret content found, using it")
 	}
 
-	// Create a temporary secret object for compatibility with existing checkAndFixFile logic
-	chosenPullSecret := &corev1.Secret{
-		Data: map[string][]byte{
-			corev1.DockerConfigJsonKey: globalPullSecretBytes,
-		},
+	if err := s.checkAndFixFile(globalPullSecretBytes); err != nil {
+		return fmt.Errorf("failed to check and fix file: %w", err)
 	}
 
-	// Normal reconciliation
-	if err := r.checkAndFixFile(ctx, chosenPullSecret); err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to check and fix file: %w", err)
-	}
-
-	return reconcile.Result{}, nil
+	return nil
 }
 
 // checkAndFixFile reads the current file content and updates it if it differs from the desired content (global pull secret content).
-// Have in mind the logic which do the merge of the pull secret is in the globalpullsecret package under the HCCO.
-func (r *GlobalPullSecretReconciler) checkAndFixFile(ctx context.Context, pullSecret *corev1.Secret) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Checking and fixing file")
-
-	// Validate pullSecret is not nil
-	if pullSecret == nil {
-		return fmt.Errorf("pullSecret cannot be nil")
-	}
-
-	// Validate pullSecret.Data is not nil
-	if pullSecret.Data == nil {
-		return fmt.Errorf("pullSecret.Data cannot be nil")
-	}
-
-	log.Info("DEBUG: Pass Data check")
-	// Validate the required key exists
-	pullSecretBytes, exists := pullSecret.Data[corev1.DockerConfigJsonKey]
-	if !exists {
-		return fmt.Errorf("pullSecret does not contain required key: %s", corev1.DockerConfigJsonKey)
-	}
+func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
+	s.log.Info("Checking and fixing file")
 
 	// Read existing content if file exists
-	existingContent, err := os.ReadFile(r.kubeletConfigJsonPath)
+	existingContent, err := os.ReadFile(s.kubeletConfigJsonPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
 	// If file content is different, write the desired content
 	if string(existingContent) != string(pullSecretBytes) {
-		log.Info("file content is different, updating it")
+		s.log.Info("file content is different, updating it")
 		// Save original content for potential rollback
 		originalContent := existingContent
 
 		// Write the new content
-		if err := writeFileFunc(r.kubeletConfigJsonPath, pullSecretBytes, 0600); err != nil {
+		if err := writeFileFunc(s.kubeletConfigJsonPath, pullSecretBytes, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
-		log.Info("Pull secret updated", "file", r.kubeletConfigJsonPath)
+		s.log.Info("Pull secret updated", "file", s.kubeletConfigJsonPath)
 
 		// Attempt to restart Kubelet with retries
 		maxRetries := 3
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := signalKubeletToRestartProcess(ctx); err != nil {
+			if err := signalKubeletToRestartProcess(); err != nil {
 				lastErr = err
 				if attempt < maxRetries {
-					log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
+					s.log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
 					time.Sleep(time.Duration(attempt) * time.Second)
 					continue
 				}
 			} else {
-				log.Info("Successfully restarted Kubelet", "attempt", attempt)
+				s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
 				return nil
 			}
 		}
 
 		// If we reach this point, all retries failed - perform rollback
-		log.Info("Failed to restart Kubelet after some attempts, executing rollback", "maxRetries", maxRetries, "lastErr", lastErr)
-		if err := writeFileFunc(r.kubeletConfigJsonPath, originalContent, 0600); err != nil {
+		s.log.Info("Failed to restart Kubelet after some attempts, executing rollback", "maxRetries", maxRetries, "error", lastErr)
+		if err := writeFileFunc(s.kubeletConfigJsonPath, originalContent, 0600); err != nil {
 			return fmt.Errorf("2 errors happened: the kubelet restart failed after %d attempts and it failed to rollback the file: %w", maxRetries, err)
 		}
 		return fmt.Errorf("failed to restart kubelet after %d attempts, rolled back changes: %w", maxRetries, lastErr)
@@ -280,20 +221,17 @@ func (r *GlobalPullSecretReconciler) checkAndFixFile(ctx context.Context, pullSe
 
 // signalKubeletToRestartProcess signals Kubelet to reload the config by restarting the kubelet.service.
 // This is done by sending a signal to systemd via dbus.
-func signalKubeletToRestartProcess(ctx context.Context) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Signaling Kubelet to reload config")
+func signalKubeletToRestartProcess() error {
 	conn, err := dbus.New()
 	if err != nil {
 		return fmt.Errorf("failed to connect to dbus: %w", err)
 	}
 	defer conn.Close()
 
-	return restartKubelet(ctx, conn)
+	return restartKubelet(conn)
 }
 
-func restartKubelet(ctx context.Context, conn dbusConn) error {
-	log := ctrl.LoggerFrom(ctx)
+func restartKubelet(conn dbusConn) error {
 	ch := make(chan string)
 	if _, err := conn.RestartUnit(kubeletServiceUnit, dbusRestartUnitMode, ch); err != nil {
 		return fmt.Errorf("failed to restart kubelet: %w", err)
@@ -305,7 +243,6 @@ func restartKubelet(ctx context.Context, conn dbusConn) error {
 		return fmt.Errorf("failed to restart kubelet, result: %s", result)
 	}
 
-	log.Info("Successfully signaled Kubelet to reload config")
 	return nil
 }
 
