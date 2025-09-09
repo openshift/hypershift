@@ -6,27 +6,28 @@ import (
 )
 
 type CreateInfraOptions struct {
-	Name                        string
-	BaseDomain                  string
-	Location                    string
-	InfraID                     string
-	CredentialsFile             string
-	Credentials                 *util.AzureCreds
-	OutputFile                  string
-	RHCOSImage                  string
-	ResourceGroupName           string
-	VnetID                      string
-	NetworkSecurityGroupID      string
-	ResourceGroupTags           map[string]string
-	SubnetID                    string
-	ManagedIdentitiesFile       string
-	DataPlaneIdentitiesFile     string
-	AssignServicePrincipalRoles bool
-	DNSZoneRG                   string
-	AssignCustomHCPRoles        bool
-	DisableClusterCapabilities  []string
-	OIDCIssuerURL               string
-	GenerateManagedIdentities   bool
+	Name                         string
+	BaseDomain                   string
+	Location                     string
+	InfraID                      string
+	CredentialsFile              string
+	Credentials                  *util.AzureCreds
+	OutputFile                   string
+	RHCOSImage                   string
+	ResourceGroupName            string
+	VnetID                       string
+	NetworkSecurityGroupID       string
+	ResourceGroupTags            map[string]string
+	SubnetID                     string
+	ManagedIdentitiesFile        string
+	DataPlaneIdentitiesFile      string
+	WorkloadIdentitiesFile       string
+	AssignServicePrincipalRoles  bool
+	DNSZoneRG                    string
+	AssignCustomHCPRoles         bool
+	DisableClusterCapabilities   []string
+	OIDCIssuerURL                string
+	GenerateManagedIdentities    bool
 	WorkloadIdentitiesOutputFile string
 }
 
@@ -43,5 +44,5 @@ type CreateInfraOutput struct {
 	SecurityGroupID     string                                  `json:"securityGroupID"`
 	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
+	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
 }
-

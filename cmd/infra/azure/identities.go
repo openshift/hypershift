@@ -8,8 +8,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
-	"github.com/go-logr/logr"
+
 	"k8s.io/utils/ptr"
+
+	"github.com/go-logr/logr"
 )
 
 // IdentityManager handles Azure managed identity and federated credential operations
@@ -30,13 +32,13 @@ func NewIdentityManager(subscriptionID string, creds azcore.TokenCredential) *Id
 // Returns: resourceID, clientID, principalID, error
 func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logger, resourceGroupName string, name string, infraID string, location string) (string, string, string, error) {
 	identityName := fmt.Sprintf("%s-%s", name, infraID)
-	
-	l.Info("Creating managed identity", 
-		"name", identityName, 
-		"resourceGroup", resourceGroupName, 
+
+	l.Info("Creating managed identity",
+		"name", identityName,
+		"resourceGroup", resourceGroupName,
 		"location", location,
 		"subscription", i.subscriptionID)
-	
+
 	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, nil)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create managed identity client: %w", err)
@@ -46,8 +48,8 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 		Location: ptr.To(location),
 	}, nil)
 	if err != nil {
-		l.Error(err, "Failed to create managed identity", 
-			"name", identityName, 
+		l.Error(err, "Failed to create managed identity",
+			"name", identityName,
 			"resourceGroup", resourceGroupName)
 		return "", "", "", fmt.Errorf("failed to create managed identity: %w", err)
 	}
@@ -56,7 +58,7 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 		return "", "", "", fmt.Errorf("managed identity response missing required fields")
 	}
 
-	l.Info("Successfully created managed identity", 
+	l.Info("Successfully created managed identity",
 		"name", identityName,
 		"resourceID", ptr.Deref(identity.ID, ""),
 		"clientID", ptr.Deref(identity.Properties.ClientID, ""),
@@ -82,7 +84,7 @@ func (i *IdentityManager) createFederatedIdentityCredential(ctx context.Context,
 		"issuer", oidcIssuerURL,
 		"subject", config.Subject,
 		"audience", config.Audience)
-	
+
 	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create federated identity credentials client: %w", err)

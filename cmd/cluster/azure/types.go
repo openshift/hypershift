@@ -4,6 +4,7 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
+	azureutil "github.com/openshift/hypershift/support/azureutil"
 )
 
 // RawCreateOptions is the raw options for the Azure create cluster command
@@ -23,6 +24,7 @@ type RawCreateOptions struct {
 	DNSZoneRGName                    string
 	ManagedIdentitiesFile            string
 	DataPlaneIdentitiesFile          string
+	WorkloadIdentitiesFile           string
 	AssignServicePrincipalRoles      bool
 	AssignCustomHCPRoles             bool
 	IssuerURL                        string
@@ -61,7 +63,7 @@ type completedCreateOptions struct {
 	name, namespace   string
 
 	infra         *azureinfra.CreateInfraOutput
-	encryptionKey *AzureEncryptionKey
+	encryptionKey *azureutil.AzureEncryptionKey
 	creds         util.AzureCreds
 }
 

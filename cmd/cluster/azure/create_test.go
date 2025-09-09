@@ -17,8 +17,9 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	"github.com/spf13/pflag"
 	"sigs.k8s.io/yaml"
+
+	"github.com/spf13/pflag"
 )
 
 func TestCreateCluster(t *testing.T) {
