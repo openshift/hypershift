@@ -17,13 +17,11 @@ import (
 	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -33,17 +31,46 @@ const (
 	ObjectEncoding      = "utf-8"
 )
 
-func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
-	rawCreateOptions := &RawCreateOptions{
+var _ core.Platform = (*CreateOptions)(nil)
+
+func DefaultOptions() (*RawCreateOptions, error) {
+	return &RawCreateOptions{
 		Location:     "eastus",
 		NodePoolOpts: azurenodepool.DefaultOptions(),
+	}, nil
+}
+
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "azure",
+		Short:        "Creates basic functional HostedCluster resources on Azure",
+		SilenceUsage: true,
 	}
 
-	if client == nil {
-		return rawCreateOptions, nil
+	azureOpts, err := DefaultOptions()
+	if err != nil {
+		opts.Log.Error(err, "Failed to create default options")
+		return nil
+	}
+	BindOptions(azureOpts, cmd.Flags())
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if opts.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+			defer cancel()
+		}
+
+		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
+			opts.Log.Error(err, "Failed to create cluster")
+			return err
+		}
+		return nil
 	}
 
-	return rawCreateOptions, nil
+	return cmd
 }
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -52,70 +79,41 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required)")
-	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the cluster")
-	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>")
-	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under.")
-	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID.")
-	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool.")
-	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
-	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed.")
-	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
-	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
+	// managed Azure only flags; these flags should not be used for self-managed Azure
 	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
-	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
 	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
 	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
+
+	// general flags used for both managed and self-managed Azure
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required). This file is used to extract the subscription ID, tenant ID, and its credentials are used to create the necessary Azure resources for the HostedCluster.")
+	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the HostedCluster. This is also used as the location for the Azure resources created for the HostedCluster.")
+	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion> used to set up KMSv2 for etcd encryption.")
+	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The resource group name to create the HostedCluster infrastructure resources under. If not provided, a new resource group will be created.")
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID. If not provided, a new VNET will be created.")
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool. If not provided, a new Network Security Group will be created.")
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed. If not provided, a new subnet will be created.")
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL.")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer.")
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
+
+	// TODO CNTRLPLANE-1389 - this needs to be renamed. In ARO HCP, we are using service principals in the control plane, but in self-managed Azure, we are using managed identities.
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "If enabled, assigns the correct Azure role to the each control plane component needing to authenticate to Azure (ex. Cloud Provider, Ingress, etc.).")
 }
 
+// BindDeveloperOptions binds developer/development only options for the Azure create cluster command
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 
+	// TODO CNTRLPLANE-1387 - this should be removed since we are using Azure Marketplace images
 	flags.StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, "The RHCOS image to use.")
 }
 
-type RawCreateOptions struct {
-	CredentialsFile                  string
-	Location                         string
-	EncryptionKeyID                  string
-	AvailabilityZones                []string
-	ResourceGroupName                string
-	VnetID                           string
-	NetworkSecurityGroupID           string
-	ResourceGroupTags                map[string]string
-	SubnetID                         string
-	RHCOSImage                       string
-	KMSUserAssignedCredsSecretName   string
-	TechPreviewEnabled               bool
-	DNSZoneRGName                    string
-	ManagedIdentitiesFile            string
-	DataPlaneIdentitiesFile          string
-	WorkloadIdentitiesFile           string
-	AssignServicePrincipalRoles      bool
-	AssignCustomHCPRoles             bool
-	IssuerURL                        string
-	ServiceAccountTokenIssuerKeyPath string
-	MultiArch                        bool
-
-	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
-}
-
-// validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
-type validatedCreateOptions struct {
-	*RawCreateOptions
-
-	*azurenodepool.ValidatedAzurePlatformCreateOptions
-}
-
-type ValidatedCreateOptions struct {
-	// Embed a private pointer that cannot be instantiated outside of this package.
-	*validatedCreateOptions
-}
-
+// Validate validates the Azure create cluster command options
 func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
@@ -124,6 +122,8 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, fmt.Errorf("flag --resource-group-name is required when using --network-security-group-id")
 	}
 
+	// The DNS zone resource group name is required when assigning azure roles to the control plane components
+	// since several will need to be scoped to this resource group.
 	if o.AssignServicePrincipalRoles && o.DNSZoneRGName == "" {
 		return nil, fmt.Errorf("flag --dns-zone-rg-name is required")
 	}
@@ -150,34 +150,20 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		},
 	}
 
+	// Validate the availability zones
 	for _, az := range o.AvailabilityZones {
 		if !slices.Contains([]string{"1", "2", "3"}, az) {
 			return nil, fmt.Errorf("invalid value for --availability-zone: %s", az)
 		}
 	}
 
+	// Validate the nodepool options
 	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
 
 	return validOpts, err
 }
 
-// completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
-type completedCreateOptions struct {
-	*ValidatedCreateOptions
-
-	externalDNSDomain string
-	name, namespace   string
-
-	infra         *azureinfra.CreateInfraOutput
-	encryptionKey *azureutil.AzureEncryptionKey
-	creds         util.AzureCreds
-}
-
-type CreateOptions struct {
-	// Embed a private pointer that cannot be instantiated outside of this package.
-	*completedCreateOptions
-}
-
+// Complete completes the Azure create cluster command options
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	output := &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
@@ -188,6 +174,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		},
 	}
 
+	// Load or create infrastructure for the cluster
 	if opts.InfrastructureJSON != "" {
 		rawInfra, err := os.ReadFile(opts.InfrastructureJSON)
 		if err != nil {
@@ -207,6 +194,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		}
 	}
 
+	// Set the encryption key information
 	if o.EncryptionKeyID != "" {
 		var err error
 		output.encryptionKey, err = azureutil.GetAzureEncryptionKeyInfo(o.EncryptionKeyID)
@@ -215,6 +203,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		}
 	}
 
+	// Set the Azure credentials
 	azureCredsRaw, err := os.ReadFile(o.CredentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read --azure-creds file %s: %w", o.CredentialsFile, err)
@@ -226,6 +215,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	return output, nil
 }
 
+// ApplyPlatformSpecifics applies the Azure platform specific settings to the HostedCluster
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {
 	cluster.Spec.DNS = hyperv1.DNSSpec{
 		BaseDomain:    o.infra.BaseDomain,
@@ -332,32 +322,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	return nil
 }
 
-func credentialSecret(namespace, name string) *corev1.Secret {
-	return &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Secret",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name + "-cloud-credentials",
-			Namespace: namespace,
-		},
-	}
-}
-
-func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
-	return &corev1.Secret{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "Secret",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-	}
-}
-
+// GenerateNodePools generates the initial nodepool(s) for the Azure HostedCluster create cluster command
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
 	var vmImage hyperv1.AzureVMImage
 	if o.MarketplacePublisher == "" {
@@ -472,6 +437,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	return []*hyperv1.NodePool{azureNodePool}
 }
 
+// GenerateResources generates the Kubernetes resources for the Azure HostedCluster create cluster command
 func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 	var objects []crclient.Object
 
@@ -499,46 +465,7 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 	return objects, nil
 }
 
-var _ core.Platform = (*CreateOptions)(nil)
-
-func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:          "azure",
-		Short:        "Creates basic functional HostedCluster resources on Azure",
-		SilenceUsage: true,
-	}
-
-	client, err := util.GetClient()
-	if err != nil {
-		opts.Log.Info(fmt.Sprintf("Failed to get client, proceeding without checking feature gate CM: %s", err.Error()))
-	}
-
-	azureOpts, err := DefaultOptions(client, opts.Log)
-	if err != nil {
-		opts.Log.Error(err, "Failed to create default options")
-		return nil
-	}
-	BindOptions(azureOpts, cmd.Flags())
-	_ = cmd.MarkPersistentFlagRequired("pull-secret")
-
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		ctx := cmd.Context()
-		if opts.Timeout > 0 {
-			var cancel context.CancelFunc
-			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-			defer cancel()
-		}
-
-		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
-			opts.Log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
-	}
-
-	return cmd
-}
-
+// CreateInfraOptions creates the Azure infrastructure options for the HostedCluster create cluster command
 func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
 	rhcosImage := azureOpts.RHCOSImage
 	if rhcosImage == "" && azureOpts.MarketplacePublisher == "" {

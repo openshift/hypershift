@@ -53,6 +53,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 
 	return cmd
 }
+
 func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 	hostedCluster, err := core.GetCluster(ctx, o)
 	if err != nil {
