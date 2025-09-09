@@ -258,7 +258,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 					"konnectivity-agent": konnectivityAgentImage,
 				},
 			},
-			RegistryOverrides: o.registryOverrides,
+			RegistryOverrides: nil,
 		},
 		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
 	}

@@ -108,6 +108,8 @@ spec:
           value: quay.io/openshift/origin-aws-ebs-csi-driver:latest
         - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE
           value: quay.io/openshift/origin-csi-livenessprobe:latest
+        - name: KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE
+          value: quay.io/openshift/origin-kube-rbac-proxy:latest
         image: quay.io/openshift/origin-cluster-storage-operator:latest
         imagePullPolicy: IfNotPresent
         name: cluster-storage-operator
