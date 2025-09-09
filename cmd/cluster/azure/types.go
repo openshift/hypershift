@@ -23,6 +23,7 @@ type RawCreateOptions struct {
 	DNSZoneRGName                    string
 	ManagedIdentitiesFile            string
 	DataPlaneIdentitiesFile          string
+	WorkloadIdentitiesFile           string
 	AssignServicePrincipalRoles      bool
 	AssignCustomHCPRoles             bool
 	IssuerURL                        string

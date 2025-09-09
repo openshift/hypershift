@@ -21,6 +21,7 @@ type CreateInfraOptions struct {
 	SubnetID                    string
 	ManagedIdentitiesFile       string
 	DataPlaneIdentitiesFile     string
+	WorkloadIdentitiesFile      string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
 	AssignCustomHCPRoles        bool
@@ -40,5 +41,5 @@ type CreateInfraOutput struct {
 	SecurityGroupID     string                                  `json:"securityGroupID"`
 	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
+	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
 }
-

@@ -2,6 +2,7 @@ package azure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 
@@ -184,6 +185,23 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 		if o.AssignServicePrincipalRoles {
 			if err := rbacMgr.AssignDataPlaneRoles(ctx, o, result.DataPlaneIdentities, resourceGroupName); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// Handle workload identities
+	if o.WorkloadIdentitiesFile != "" {
+		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)
+		}
+		if err := json.Unmarshal(workloadIdentitiesRaw, &result.WorkloadIdentities); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
+		}
+
+		if o.AssignServicePrincipalRoles {
+			if err := rbacMgr.AssignWorkloadIdentities(ctx, o, result.WorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
 				return nil, err
 			}
 		}

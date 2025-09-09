@@ -91,6 +91,47 @@ func (r *RBACManager) AssignControlPlaneRoles(ctx context.Context, opts *CreateI
 	return nil
 }
 
+// AssignControlPlaneRoles assigns roles to control plane managed identities
+func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
+	components := map[string]hyperv1.AzureClientID{
+		config.CPO:           workloadIdentities.ImageRegistry.ClientID,
+		config.NodePoolMgmt:  workloadIdentities.NodePoolManagement.ClientID,
+		config.CloudProvider: workloadIdentities.CloudProvider.ClientID,
+		config.AzureFile:     workloadIdentities.File.ClientID,
+		config.AzureDisk:     workloadIdentities.Disk.ClientID,
+		config.Ingress:       workloadIdentities.Ingress.ClientID,
+		config.CNCC:          workloadIdentities.Network.ClientID,
+	}
+
+	if !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
+		components[config.CIRO] = workloadIdentities.ImageRegistry.ClientID
+	}
+
+	// Get an access token for Microsoft Graph API for getting the object IDs
+	token, err := r.getAzureToken()
+	if err != nil {
+		return err
+	}
+
+	for component, clientID := range components {
+		objectID, err := r.getObjectIDFromClientID(string(clientID), token)
+		if err != nil {
+			return err
+		}
+
+		role, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, opts.DNSZoneRG, component, opts.AssignCustomHCPRoles)
+
+		// For each resource group (aka scope), assign the role to the service principal
+		for _, scope := range scopes {
+			if err := r.assignRole(ctx, opts.InfraID, component, objectID, role, scope); err != nil {
+				return fmt.Errorf("failed to perform role assignment: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // AssignDataPlaneRoles assigns roles to data plane managed identities
 func (r *RBACManager) AssignDataPlaneRoles(ctx context.Context, opts *CreateInfraOptions, dataPlaneIdentities hyperv1.DataPlaneManagedIdentities, resourceGroupName string) error {
 	managedRG := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", r.subscriptionID, resourceGroupName)
