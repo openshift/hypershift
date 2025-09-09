@@ -1,0 +1,254 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: kube-scheduler
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: kube-scheduler
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work,tmp-dir
+        component.hypershift.openshift.io/config-hash: 022a8a3acb8019bf
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: kube-scheduler
+        hypershift.openshift.io/control-plane-component: kube-scheduler
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: kube-scheduler
+                hypershift.openshift.io/control-plane-component: kube-scheduler
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: kube-scheduler
+                hypershift.openshift.io/control-plane-component: kube-scheduler
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --config=/etc/kubernetes/config/config.json
+        - --cert-dir=/var/run/kubernetes
+        - --secure-port=10259
+        - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
+        - -v=2
+        - --tls-min-version=VersionTLS12
+        - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+        - --feature-gates=AWSEFSDriverVolumeMetrics=true
+        - --feature-gates=AdditionalRoutingCapabilities=true
+        - --feature-gates=AdminNetworkPolicy=true
+        - --feature-gates=AlibabaPlatform=true
+        - --feature-gates=AzureWorkloadIdentity=true
+        - --feature-gates=BareMetalLoadBalancer=true
+        - --feature-gates=BuildCSIVolumes=true
+        - --feature-gates=ChunkSizeMiB=true
+        - --feature-gates=CloudDualStackNodeIPs=true
+        - --feature-gates=DisableKubeletCloudCredentialProviders=true
+        - --feature-gates=ExternalOIDC=true
+        - --feature-gates=GCPLabelsTags=true
+        - --feature-gates=HardwareSpeed=true
+        - --feature-gates=IngressControllerLBSubnetsAWS=true
+        - --feature-gates=KMSv1=true
+        - --feature-gates=ManagedBootImages=true
+        - --feature-gates=ManagedBootImagesAWS=true
+        - --feature-gates=MultiArchInstallAWS=true
+        - --feature-gates=MultiArchInstallGCP=true
+        - --feature-gates=NetworkDiagnosticsConfig=true
+        - --feature-gates=NetworkLiveMigration=true
+        - --feature-gates=NetworkSegmentation=true
+        - --feature-gates=NodeDisruptionPolicy=true
+        - --feature-gates=OpenShiftPodSecurityAdmission=true
+        - --feature-gates=PersistentIPsForVirtualization=true
+        - --feature-gates=PrivateHostedZoneAWS=true
+        - --feature-gates=SetEIPForNLBIngressController=true
+        - --feature-gates=VSphereControlPlaneMachineSet=true
+        - --feature-gates=VSphereDriverConfiguration=true
+        - --feature-gates=VSphereMultiVCenters=true
+        - --feature-gates=VSphereStaticIPs=true
+        - --feature-gates=ValidatingAdmissionPolicy=true
+        - --feature-gates=AWSClusterHostedDNS=false
+        - --feature-gates=AutomatedEtcdBackup=false
+        - --feature-gates=BootcNodeManagement=false
+        - --feature-gates=CPMSMachineNamePrefix=false
+        - --feature-gates=ClusterAPIInstall=false
+        - --feature-gates=ClusterAPIInstallIBMCloud=false
+        - --feature-gates=ClusterMonitoringConfig=false
+        - --feature-gates=ClusterVersionOperatorConfiguration=false
+        - --feature-gates=ConsolePluginContentSecurityPolicy=false
+        - --feature-gates=DNSNameResolver=false
+        - --feature-gates=DualReplica=false
+        - --feature-gates=DyanmicServiceEndpointIBMCloud=false
+        - --feature-gates=DynamicResourceAllocation=false
+        - --feature-gates=EtcdBackendQuota=false
+        - --feature-gates=EventedPLEG=false
+        - --feature-gates=Example=false
+        - --feature-gates=Example2=false
+        - --feature-gates=GCPClusterHostedDNS=false
+        - --feature-gates=GCPCustomAPIEndpoints=false
+        - --feature-gates=GatewayAPI=false
+        - --feature-gates=GatewayAPIController=false
+        - --feature-gates=HighlyAvailableArbiter=false
+        - --feature-gates=ImageStreamImportMode=false
+        - --feature-gates=IngressControllerDynamicConfigurationManager=false
+        - --feature-gates=InsightsConfig=false
+        - --feature-gates=InsightsConfigAPI=false
+        - --feature-gates=InsightsOnDemandDataGather=false
+        - --feature-gates=InsightsRuntimeExtractor=false
+        - --feature-gates=KMSEncryptionProvider=false
+        - --feature-gates=MachineAPIMigration=false
+        - --feature-gates=MachineAPIOperatorDisableMachineHealthCheckController=false
+        - --feature-gates=MachineAPIProviderOpenStack=false
+        - --feature-gates=MachineConfigNodes=false
+        - --feature-gates=MaxUnavailableStatefulSet=false
+        - --feature-gates=MetricsCollectionProfiles=false
+        - --feature-gates=MinimumKubeletVersion=false
+        - --feature-gates=MixedCPUsAllocation=false
+        - --feature-gates=MultiArchInstallAzure=false
+        - --feature-gates=NewOLM=false
+        - --feature-gates=NewOLMCatalogdAPIV1Metas=false
+        - --feature-gates=NodeSwap=false
+        - --feature-gates=NutanixMultiSubnets=false
+        - --feature-gates=OVNObservability=false
+        - --feature-gates=OnClusterBuild=false
+        - --feature-gates=PinnedImages=false
+        - --feature-gates=PlatformOperators=false
+        - --feature-gates=ProcMountType=false
+        - --feature-gates=RouteAdvertisements=false
+        - --feature-gates=RouteExternalCertificate=false
+        - --feature-gates=SELinuxChangePolicy=false
+        - --feature-gates=SELinuxMount=false
+        - --feature-gates=ServiceAccountTokenNodeBinding=false
+        - --feature-gates=ShortCertRotation=false
+        - --feature-gates=SignatureStores=false
+        - --feature-gates=SigstoreImageVerification=false
+        - --feature-gates=SigstoreImageVerificationPKI=false
+        - --feature-gates=TranslateStreamCloseWebsocketRequests=false
+        - --feature-gates=UpgradeStatus=false
+        - --feature-gates=UserNamespacesPodSecurityStandards=false
+        - --feature-gates=UserNamespacesSupport=false
+        - --feature-gates=VSphereConfigurableMaxAllowedBlockVolumesPerNode=false
+        - --feature-gates=VSphereHostVMGroupZonal=false
+        - --feature-gates=VSphereMultiDisk=false
+        - --feature-gates=VSphereMultiNetworks=false
+        - --feature-gates=VolumeAttributesClass=false
+        - --feature-gates=VolumeGroupSnapshot=false
+        command:
+        - hyperkube
+        - kube-scheduler
+        image: hyperkube
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /livez
+            port: 10259
+            scheme: HTTPS
+          initialDelaySeconds: 60
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: kube-scheduler
+        resources:
+          requests:
+            cpu: 25m
+            memory: 150Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/kubernetes
+          name: cert-work
+        - mountPath: /etc/kubernetes/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/config
+          name: scheduler-config
+        - mountPath: /tmp
+          name: tmp-dir
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:6443/readyz
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+      priorityClassName: hypershift-control-plane
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: kube-scheduler
+        name: scheduler-config
+      - emptyDir: {}
+        name: cert-work
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: kube-scheduler-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
+status: {}
