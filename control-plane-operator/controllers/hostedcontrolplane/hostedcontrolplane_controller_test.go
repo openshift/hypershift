@@ -1594,24 +1594,24 @@ func TestControlPlaneComponents(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
 
 	tests := []struct {
-		name       string
-		featureSet configv1.FeatureSet
-		KASPort    *int32
+		name         string
+		featureSet   configv1.FeatureSet
+		platformType *hyperv1.PlatformType
 	}{
 		{
-			name:       "Default feature set, default KAS port",
-			featureSet: configv1.Default,
-			KASPort:    nil,
+			name:         "Default feature set, default platform type",
+			featureSet:   configv1.Default,
+			platformType: nil,
 		},
 		{
-			name:       "TechPreviewNoUpgrade feature set, default KAS port",
-			featureSet: configv1.TechPreviewNoUpgrade,
-			KASPort:    nil,
+			name:         "TechPreviewNoUpgrade feature set, default platform type",
+			featureSet:   configv1.TechPreviewNoUpgrade,
+			platformType: nil,
 		},
 		{
-			name:       "Default feature set, custom KAS port",
-			featureSet: configv1.Default,
-			KASPort:    ptr.To(int32(2040)),
+			name:         "Default feature set, IBM Cloud platform type",
+			featureSet:   configv1.Default,
+			platformType: ptr.To(hyperv1.IBMCloudPlatform),
 		},
 	}
 
@@ -1666,13 +1666,20 @@ func TestControlPlaneComponents(t *testing.T) {
 					PowerVS: &hyperv1.PowerVSPlatformSpec{
 						VPC: &hyperv1.PowerVSVPC{},
 					},
+					IBMCloud: &hyperv1.IBMCloudPlatformSpec{
+						ProviderType: configv1.IBMCloudProviderTypeVPC,
+					},
 				},
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			},
 		}
-		if tt.KASPort != nil {
-			hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
-				Port: tt.KASPort,
+		if tt.platformType != nil {
+			hcp.Spec.Platform.Type = *tt.platformType
+			if *tt.platformType == hyperv1.IBMCloudPlatform {
+				hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
+					Port:             ptr.To[int32](2040),
+					AdvertiseAddress: ptr.To("1.2.3.4"),
+				}
 			}
 		}
 
@@ -1756,8 +1763,8 @@ func TestControlPlaneComponents(t *testing.T) {
 				if tt.featureSet != configv1.Default {
 					subDir = fmt.Sprintf("%s/%s", component.Name(), tt.featureSet)
 				}
-				if tt.KASPort != nil {
-					subDir = fmt.Sprintf("%s/%s", component.Name(), "CustomKASPort")
+				if tt.platformType != nil {
+					subDir = fmt.Sprintf("%s/%s", component.Name(), *tt.platformType)
 				}
 				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(subDir), testutil.WithSuffix(suffix))
 			}
