@@ -233,6 +233,12 @@ github.com/MakeNowJust/heredoc
 # github.com/NYTimes/gziphandler v1.1.1
 ## explicit; go 1.11
 github.com/NYTimes/gziphandler
+# github.com/PaesslerAG/gval v1.2.3
+## explicit; go 1.15
+github.com/PaesslerAG/gval
+# github.com/PaesslerAG/jsonpath v0.1.1
+## explicit
+github.com/PaesslerAG/jsonpath
 # github.com/antlr4-go/antlr/v4 v4.13.1
 ## explicit; go 1.22
 github.com/antlr4-go/antlr/v4
@@ -886,6 +892,7 @@ github.com/openshift/library-go/pkg/controller/controllercmd
 github.com/openshift/library-go/pkg/controller/factory
 github.com/openshift/library-go/pkg/controller/fileobserver
 github.com/openshift/library-go/pkg/crypto
+github.com/openshift/library-go/pkg/manifestclient
 github.com/openshift/library-go/pkg/network
 github.com/openshift/library-go/pkg/operator/apiserver/audit
 github.com/openshift/library-go/pkg/operator/certrotation
@@ -900,6 +907,13 @@ github.com/openshift/library-go/pkg/operator/resourcesynccontroller
 github.com/openshift/library-go/pkg/operator/v1helpers
 github.com/openshift/library-go/pkg/serviceability
 github.com/openshift/library-go/test/library/metrics
+# github.com/openshift/multi-operator-manager v0.0.0-20250912153614-c1b6da18d385
+## explicit; go 1.22.0
+github.com/openshift/multi-operator-manager/pkg/applyconfiguration
+github.com/openshift/multi-operator-manager/pkg/flagtypes
+github.com/openshift/multi-operator-manager/pkg/library/libraryapplyconfiguration
+github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources
+github.com/openshift/multi-operator-manager/pkg/library/libraryoutputresources
 # github.com/opentracing/opentracing-go v1.2.0
 ## explicit; go 1.14
 github.com/opentracing/opentracing-go
@@ -973,6 +987,9 @@ github.com/samber/lo
 github.com/samber/lo/internal/constraints
 github.com/samber/lo/internal/rand
 github.com/samber/lo/mutable
+# github.com/shopspring/decimal v1.4.0
+## explicit; go 1.10
+github.com/shopspring/decimal
 # github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
