@@ -51,6 +51,10 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(adaptHCCOKubeconfigSecret),
 		).
 		WithManifestAdapter(
+			"hcco-localhost-kubeconfig.yaml",
+			component.WithAdaptFunction(adaptHCCOLocalhostKubeconfigSecret),
+		).
+		WithManifestAdapter(
 			"local-kubeconfig.yaml",
 			component.WithAdaptFunction(adaptLocalhostKubeconfigSecret),
 		).

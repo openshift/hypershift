@@ -17,6 +17,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"go.uber.org/zap/zapcore"
@@ -398,9 +399,29 @@ func TestApplyBootstrapResources(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			builder := fake.NewClientBuilder().WithScheme(configScheme)
+			builder = builder.WithInterceptorFuncs(
+				interceptor.Funcs{
+					Create: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+						if _, ok := obj.(*configv1.FeatureGate); ok {
+							return nil
+						}
+
+						return client.Create(ctx, obj, opts...)
+					},
+					Update: func(ctx context.Context, client client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+						if _, ok := obj.(*configv1.FeatureGate); ok {
+							return nil
+						}
+
+						return client.Update(ctx, obj, opts...)
+					},
+				},
+			)
 			c := builder.Build()
 
-			err := applyBootstrapResources(context.TODO(), c, tc.filesPath)
+			hccoClient := fake.NewClientBuilder().WithScheme(configScheme).Build()
+
+			err := applyBootstrapResources(t.Context(), c, hccoClient, tc.filesPath)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				return
@@ -416,7 +437,7 @@ func TestApplyBootstrapResources(t *testing.T) {
 
 			// we expect the feature gate to be created.
 			featureGate := &configv1.FeatureGate{}
-			err = c.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, featureGate)
+			err = hccoClient.Get(context.TODO(), client.ObjectKey{Name: "cluster"}, featureGate)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// we expect the hcco-role-binding to be created.
