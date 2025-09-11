@@ -19,16 +19,36 @@ func IsLBKAS(hcp *hyperv1.HostedControlPlane) bool {
 }
 
 func IsRouteKAS(hcp *hyperv1.HostedControlPlane) bool {
-	apiServerService := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
-	return apiServerService != nil && apiServerService.Type == hyperv1.Route
+	return IsRoute(hcp, hyperv1.APIServer)
 }
 
-func UseDedicatedDNSforKAS(hcp *hyperv1.HostedControlPlane) bool {
-	apiServerService := ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
-	return IsRouteKAS(hcp) &&
-		// When using dedicated DNS apiServerService.Route.Hostname is set explicitly
+func IsRoute(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) bool {
+	svc := ServicePublishingStrategyByTypeForHCP(hcp, svcType)
+	return svc != nil && svc.Type == hyperv1.Route
+}
+
+func UseDedicatedDNSForKAS(hcp *hyperv1.HostedControlPlane) bool {
+	return UseDedicatedDNS(hcp, hyperv1.APIServer)
+}
+
+func UseDedicatedDNSForOAuth(hcp *hyperv1.HostedControlPlane) bool {
+	return UseDedicatedDNS(hcp, hyperv1.OAuthServer)
+}
+
+func UseDedicatedDNSForKonnectivity(hcp *hyperv1.HostedControlPlane) bool {
+	return UseDedicatedDNS(hcp, hyperv1.Konnectivity)
+}
+
+func UseDedicatedDNSForIgnition(hcp *hyperv1.HostedControlPlane) bool {
+	return UseDedicatedDNS(hcp, hyperv1.Ignition)
+}
+
+func UseDedicatedDNS(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) bool {
+	svc := ServicePublishingStrategyByTypeForHCP(hcp, svcType)
+	return IsRoute(hcp, svcType) &&
+		// When using dedicated DNS svc.Route.Hostname is set explicitly
 		// and later is used to annotate the route so the external DNS controller can watch it.
-		apiServerService.Route != nil && apiServerService.Route.Hostname != ""
+		svc.Route != nil && svc.Route.Hostname != ""
 }
 
 func ServicePublishingStrategyByTypeByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
@@ -46,11 +66,20 @@ func IsLBKASByHC(hc *hyperv1.HostedCluster) bool {
 }
 
 func UseDedicatedDNSForKASByHC(hc *hyperv1.HostedCluster) bool {
-	apiServerService := ServicePublishingStrategyByTypeByHC(hc, hyperv1.APIServer)
-	return apiServerService != nil && apiServerService.Type == hyperv1.Route &&
-		// When using dedicated DNS apiServerService.Route.Hostname is set explicitly
+	return UseDedicatedDNSByHC(hc, hyperv1.APIServer)
+}
+
+func IsRouteByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType) bool {
+	svc := ServicePublishingStrategyByTypeByHC(hc, svcType)
+	return svc != nil && svc.Type == hyperv1.Route
+}
+
+func UseDedicatedDNSByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType) bool {
+	svc := ServicePublishingStrategyByTypeByHC(hc, svcType)
+	return IsRouteByHC(hc, svcType) &&
+		// When using dedicated DNS svc.Route.Hostname is set explicitly
 		// and later is used to annotate the route so the external DNS controller can watch it.
-		apiServerService.Route != nil && apiServerService.Route.Hostname != ""
+		svc.Route != nil && svc.Route.Hostname != ""
 }
 
 func ServiceExternalDNSHostname(hcp *hyperv1.HostedControlPlane, serviceType hyperv1.ServiceType) string {
