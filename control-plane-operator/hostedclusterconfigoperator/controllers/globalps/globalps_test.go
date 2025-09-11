@@ -82,60 +82,101 @@ func TestMergePullSecrets(t *testing.T) {
 		name             string
 		originalSecret   []byte
 		additionalSecret []byte
+		managedServices  bool
 		expectedResult   []byte
 		wantErr          bool
 	}{
 		{
-			name:             "successful merge with 1 entries",
+			name:             "successful merge with 1 entries - non-managed services",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry2": validAuth}),
+			managedServices:  false,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "successful merge with 2 entries in additional secret",
+			name:             "successful merge with 2 entries in additional secret - non-managed services",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry2": validAuth, "registry3": validAuth}),
+			managedServices:  false,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "successful merge with 2 entries in original secret",
+			name:             "successful merge with 2 entries in original secret - non-managed services",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry3": validAuth}),
+			managedServices:  false,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
-			name:             "overwrite existing registry",
+			name:             "overwrite existing registry - non-managed services (userProvided wins)",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			managedServices:  false,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "overwrite existing registry - managed services (original wins)",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			managedServices:  true,
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "precedence test - non-managed services (userProvided has precedence)",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry3": validAuth}),
+			managedServices:  false,
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": oldAuth, "registry3": validAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "precedence test - managed services (original has precedence)",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry3": validAuth}),
+			managedServices:  true,
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
 			name:             "invalid original secret",
 			originalSecret:   []byte(`invalid json`),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			managedServices:  false,
 			wantErr:          true,
 		},
 		{
 			name:             "invalid additional secret",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: []byte(`invalid json`),
+			managedServices:  false,
 			wantErr:          true,
 		},
 		{
 			name:             "empty additional secret, invalid JSON",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			additionalSecret: []byte{},
+			managedServices:  false,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
 			wantErr:          true,
 		},
 		{
-			name:             "empty additional secret with valid JSON",
+			name:             "empty additional secret with valid JSON - non-managed services",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			additionalSecret: []byte(`{"auths":{}}`),
+			managedServices:  false,
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "empty additional secret with valid JSON - managed services",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
+			additionalSecret: []byte(`{"auths":{}}`),
+			managedServices:  true,
 			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth}),
 			wantErr:          false,
 		},
@@ -144,7 +185,7 @@ func TestMergePullSecrets(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			result, err := mergePullSecrets(context.Background(), tt.originalSecret, tt.additionalSecret)
+			result, err := mergePullSecrets(context.Background(), tt.originalSecret, tt.additionalSecret, tt.managedServices)
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 			} else {
