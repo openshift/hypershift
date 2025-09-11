@@ -1111,6 +1111,15 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs: []string{rbacv1.VerbAll},
 			},
 			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"persistentvolumes",
+				},
+				Verbs: []string{
+					"get",
+				},
+			},
+			{
 				APIGroups: []string{"apps"},
 				Resources: []string{"deployments", "replicasets", "statefulsets"},
 				Verbs:     []string{rbacv1.VerbAll},
