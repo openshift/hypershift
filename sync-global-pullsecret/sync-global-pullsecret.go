@@ -151,8 +151,11 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 	// Try to read the global pull secret from mounted file first
 	globalPullSecretBytes, err := readPullSecretFromFile(globalPullSecretFilePath)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("failed to read global pull secret from file: %w", err)
+		}
 		// If global pull secret file doesn't exist, fall back to original pull secret
-		s.log.Info("Global pull secret file not found, using original pull secret", "error", err)
+		s.log.Info("Global pull secret file not found, using original pull secret")
 		originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
 		if err != nil {
 			return fmt.Errorf("failed to read original pull secret from file: %w", err)
@@ -171,7 +174,7 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 
 // checkAndFixFile reads the current file content and updates it if it differs from the desired content (global pull secret content).
 func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
-	s.log.Info("Checking and fixing file")
+	s.log.Info("Checking Kubelet's config.json file content")
 
 	// Read existing content if file exists
 	existingContent, err := os.ReadFile(s.kubeletConfigJsonPath)
@@ -250,7 +253,7 @@ func restartKubelet(conn dbusConn) error {
 func readPullSecretFromFile(filePath string) ([]byte, error) {
 	content, err := readFileFunc(filePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read pull secret from file %s: %w", filePath, err)
+		return nil, err
 	}
 	return content, nil
 }
