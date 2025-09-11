@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cluster-storage-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-storage-operator
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        openshift.io/required-scc: restricted-v2
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      creationTimestamp: null
+      labels:
+        app: cluster-storage-operator
+        hypershift.openshift.io/control-plane-component: cluster-storage-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+        name: cluster-storage-operator
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - start
+        - -v=2
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.crt
+        - --terminate-on-files=/var/run/secrets/serving-cert/tls.key
+        - --guest-kubeconfig=/etc/guest-kubeconfig/kubeconfig
+        command:
+        - cluster-storage-operator
+        - start
+        env:
+        - name: OPERATOR_IMAGE_VERSION
+          value: 4.18.0
+        - name: OPERAND_IMAGE_VERSION
+          value: 4.18.0
+        - name: AWS_EBS_DRIVER_OPERATOR_IMAGE
+          value: aws-ebs-csi-driver-operator
+        - name: AWS_EBS_DRIVER_IMAGE
+          value: aws-ebs-csi-driver
+        - name: GCP_PD_DRIVER_OPERATOR_IMAGE
+          value: gcp-pd-csi-driver-operator
+        - name: GCP_PD_DRIVER_IMAGE
+          value: gcp-pd-csi-driver
+        - name: OPENSTACK_CINDER_DRIVER_OPERATOR_IMAGE
+          value: openstack-cinder-csi-driver-operator
+        - name: OPENSTACK_CINDER_DRIVER_IMAGE
+          value: openstack-cinder-csi-driver
+        - name: OVIRT_DRIVER_OPERATOR_IMAGE
+          value: ovirt-csi-driver-operator
+        - name: OVIRT_DRIVER_IMAGE
+          value: ovirt-csi-driver
+        - name: MANILA_DRIVER_OPERATOR_IMAGE
+          value: csi-driver-manila-operator
+        - name: MANILA_DRIVER_IMAGE
+          value: csi-driver-manila
+        - name: MANILA_NFS_DRIVER_IMAGE
+          value: csi-driver-nfs
+        - name: PROVISIONER_IMAGE
+          value: csi-external-provisioner
+        - name: ATTACHER_IMAGE
+          value: csi-external-attacher
+        - name: RESIZER_IMAGE
+          value: csi-external-resizer
+        - name: SNAPSHOTTER_IMAGE
+          value: csi-external-snapshotter
+        - name: NODE_DRIVER_REGISTRAR_IMAGE
+          value: csi-node-driver-registrar
+        - name: LIVENESS_PROBE_IMAGE
+          value: csi-livenessprobe
+        - name: VSPHERE_PROBLEM_DETECTOR_OPERATOR_IMAGE
+          value: vsphere-problem-detector
+        - name: AZURE_DISK_DRIVER_OPERATOR_IMAGE
+          value: azure-disk-csi-driver-operator
+        - name: AZURE_DISK_DRIVER_IMAGE
+          value: azure-disk-csi-driver
+        - name: AZURE_FILE_DRIVER_OPERATOR_IMAGE
+          value: azure-file-csi-driver-operator
+        - name: AZURE_FILE_DRIVER_IMAGE
+          value: azure-file-csi-driver
+        - name: KUBE_RBAC_PROXY_IMAGE
+          value: kube-rbac-proxy
+        - name: VMWARE_VSPHERE_DRIVER_OPERATOR_IMAGE
+          value: vsphere-csi-driver-operator
+        - name: VMWARE_VSPHERE_DRIVER_IMAGE
+          value: vsphere-csi-driver
+        - name: VMWARE_VSPHERE_SYNCER_IMAGE
+          value: vsphere-csi-driver-syncer
+        - name: CLUSTER_CLOUD_CONTROLLER_MANAGER_OPERATOR_IMAGE
+          value: cluster-cloud-controller-manager-operator
+        - name: IBM_VPC_BLOCK_DRIVER_OPERATOR_IMAGE
+          value: ibm-vpc-block-csi-driver-operator
+        - name: IBM_VPC_BLOCK_DRIVER_IMAGE
+          value: ibm-vpc-block-csi-driver
+        - name: POWERVS_BLOCK_CSI_DRIVER_OPERATOR_IMAGE
+          value: powervs-block-csi-driver-operator
+        - name: POWERVS_BLOCK_CSI_DRIVER_IMAGE
+          value: powervs-block-csi-driver
+        - name: HYPERSHIFT_IMAGE
+          value: token-minter
+        - name: AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE
+          value: aws-ebs-csi-driver
+        - name: AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE
+          value: azure-disk-csi-driver
+        - name: LIVENESS_PROBE_CONTROL_PLANE_IMAGE
+          value: csi-livenessprobe
+        - name: AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE
+          value: azure-file-csi-driver
+        - name: OPENSTACK_CINDER_DRIVER_CONTROL_PLANE_IMAGE
+          value: openstack-cinder-csi-driver
+        - name: MANILA_DRIVER_CONTROL_PLANE_IMAGE
+          value: csi-driver-manila
+        - name: KUBE_RBAC_PROXY_CONTROL_PLANE_IMAGE
+          value: kube-rbac-proxy
+        - name: TOOLS_IMAGE
+          value: tools
+        - name: VOLUME_DATA_SOURCE_VALIDATOR_IMAGE
+          value: volume-data-source-validator
+        image: cluster-storage-operator
+        imagePullPolicy: IfNotPresent
+        name: cluster-storage-operator
+        ports:
+        - containerPort: 8443
+          name: metrics
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/guest-kubeconfig
+          name: guest-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:2040/readyz
+        - --kubeconfig=/var/kubeconfig/kubeconfig
+        - --required-api=operator.openshift.io,v1,Storage
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/kubeconfig
+          name: guest-kubeconfig
+      priorityClassName: hypershift-control-plane
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: cluster-storage-operator
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: guest-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
+status: {}

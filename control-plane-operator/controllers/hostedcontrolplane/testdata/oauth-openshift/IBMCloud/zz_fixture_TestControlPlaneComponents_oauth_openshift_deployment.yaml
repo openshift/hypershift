@@ -1,0 +1,296 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: oauth-openshift
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: oauth-openshift
+  strategy:
+    rollingUpdate:
+      maxSurge: 3
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,tmp-dir
+        component.hypershift.openshift.io/config-hash: 19dc307e3b105d444ebc1fdd60b54b1d741638a5a0dd232cbcc341c5
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: oauth-openshift
+        hypershift.openshift.io/control-plane-component: oauth-openshift
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/request-serving-component: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - osinserver
+        - --config=/etc/kubernetes/config/config.yaml
+        - --audit-log-format=json
+        - --audit-log-maxbackup=1
+        - --audit-log-maxsize=10
+        - --audit-log-path=/var/run/kubernetes/audit.log
+        - --audit-policy-file=/etc/kubernetes/audit-config/policy.yaml
+        env:
+        - name: HTTP_PROXY
+          value: http://127.0.0.1:8092
+        - name: HTTPS_PROXY
+          value: http://127.0.0.1:8092
+        - name: ALL_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver,audit-webhook,iam.cloud.ibm.com,iam.test.cloud.ibm.com
+        image: oauth-server
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 6443
+            scheme: HTTPS
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: oauth-openshift
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: healthz
+            port: 6443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 25m
+            memory: 40Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/audit-config
+          name: audit-config
+        - mountPath: /etc/kubernetes/secrets/templates/error
+          name: error-template
+        - mountPath: /etc/kubernetes/secrets/svc-kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/kubernetes/secrets/templates/login
+          name: login-template
+        - mountPath: /var/run/kubernetes
+          name: logs
+        - mountPath: /etc/kubernetes/certs/master-ca
+          name: master-ca-bundle
+        - mountPath: /etc/kubernetes/config
+          name: oauth-config
+        - mountPath: /etc/kubernetes/secrets/templates/providers
+          name: providers-template
+        - mountPath: /etc/kubernetes/certs/serving-cert
+          name: serving-cert
+        - mountPath: /etc/kubernetes/secrets/session
+          name: session-secret
+        - mountPath: /tmp
+          name: tmp-dir
+        workingDir: /var/run/kubernetes
+      - args:
+        - -c
+        - |
+          set -o errexit
+          set -o nounset
+          set -o pipefail
+
+          function cleanup() {
+            pkill -P $$$
+            wait
+            exit
+          }
+          trap cleanup SIGTERM
+
+          /usr/bin/tail -c+1 -F /var/run/kubernetes/audit.log &
+          wait $!
+        command:
+        - /bin/bash
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: audit-logs
+        resources:
+          requests:
+            cpu: 5m
+            memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/kubernetes
+          name: logs
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - run
+        - --serving-port=8092
+        - --connect-directly-to-cloud-apis=true
+        command:
+        - /usr/bin/control-plane-operator
+        - konnectivity-https-proxy
+        env:
+        - name: KUBECONFIG
+          value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+        image: controlplane-operator
+        name: konnectivity-proxy-https
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secrets/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/konnectivity/proxy-ca
+          name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - run
+        - --resolve-from-guest-cluster-dns=true
+        - --resolve-from-management-cluster-dns=true
+        command:
+        - /usr/bin/control-plane-operator
+        - konnectivity-socks5-proxy
+        env:
+        - name: KUBECONFIG
+          value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+        image: controlplane-operator
+        name: konnectivity-proxy-socks5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secrets/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/konnectivity/proxy-ca
+          name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:2040/readyz
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+      priorityClassName: hypershift-api-critical
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - configMap:
+          defaultMode: 420
+          name: oauth-openshift
+        name: oauth-config
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: oauth-server-crt
+      - name: session-secret
+        secret:
+          defaultMode: 416
+          secretName: oauth-openshift-session
+      - name: error-template
+        secret:
+          defaultMode: 416
+          secretName: oauth-openshift-default-error-template
+      - name: login-template
+        secret:
+          defaultMode: 416
+          secretName: oauth-openshift-default-login-template
+      - name: providers-template
+        secret:
+          defaultMode: 416
+          secretName: oauth-openshift-default-provider-selection-template
+      - emptyDir: {}
+        name: logs
+      - configMap:
+          defaultMode: 420
+          name: oauth-master-ca-bundle
+        name: master-ca-bundle
+      - configMap:
+          defaultMode: 420
+          name: oauth-openshift-audit
+        name: audit-config
+      - name: konnectivity-proxy-cert
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-client
+      - configMap:
+          name: konnectivity-ca-bundle
+        name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: tmp-dir
+status: {}

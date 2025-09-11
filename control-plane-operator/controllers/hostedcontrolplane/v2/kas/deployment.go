@@ -111,6 +111,19 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 	util.UpdateContainer(ComponentName, podSpec.Containers, func(c *corev1.Container) {
 		c.Ports[0].ContainerPort = util.KASPodPort(hcp)
 
+		postStartCommand := fmt.Sprintf(
+			"until curl -ksf -o /dev/null https://localhost:%d/readyz; do echo 'Waiting for kube-apiserver to be ready...'; sleep 5; done",
+			util.KASPodPort(hcp),
+		)
+		if c.Lifecycle == nil {
+			c.Lifecycle = &corev1.Lifecycle{}
+		}
+		c.Lifecycle.PostStart = &corev1.LifecycleHandler{
+			Exec: &corev1.ExecAction{
+				Command: []string{"/bin/sh", "-c", postStartCommand},
+			},
+		}
+
 		kasVerbosityLevel := 2
 		if hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation] != "" {
 			parsedKASVerbosityValue, err := strconv.Atoi(hcp.Annotations[hyperv1.KubeAPIServerVerbosityLevelAnnotation])

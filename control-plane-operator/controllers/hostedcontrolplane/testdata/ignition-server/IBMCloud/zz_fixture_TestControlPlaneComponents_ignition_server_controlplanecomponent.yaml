@@ -1,0 +1,46 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: ignition-server
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: ignition-server Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment ignition-server rollout to finish: 0 out of 2
+      new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: Secret
+    name: ignition-server-ca-cert
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: ignition-server
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: ignition-server
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: ignition-server
+  - group: route.openshift.io
+    kind: Route
+    name: ignition-server
+  - group: ""
+    kind: Service
+    name: ignition-server
+  - group: ""
+    kind: ServiceAccount
+    name: ignition-server
+  - group: ""
+    kind: Secret
+    name: ignition-server-serving-cert
