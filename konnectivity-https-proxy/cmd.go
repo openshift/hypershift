@@ -198,8 +198,12 @@ func shouldDialDirectFunc(connectDirectlyToCloudAPIs bool, isCloudAPI func(strin
 				return true, nil
 			}
 		}
-
-		proxyURL, err := userProxyFunc(u)
+		// If the scheme is missing, set it to https
+		localURL := *u
+		if localURL.Scheme == "" {
+			localURL.Scheme = "https"
+		}
+		proxyURL, err := userProxyFunc(&localURL)
 		if err != nil {
 			return false, err
 		}
