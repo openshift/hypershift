@@ -47,7 +47,7 @@ type ManifestProvider interface {
 // ExtractImageFiles extracts a list of files from a registry image given the image reference, pull secret and the
 // list of files to extract. It returns a map with file contents or an error.
 func ExtractImageFiles(ctx context.Context, imageRef string, pullSecret []byte, files ...string) (map[string][]byte, error) {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +124,7 @@ func allFound(content map[string][]byte) bool {
 }
 
 func ExtractImageFile(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -182,7 +182,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 		return fmt.Errorf("invalid pattern: %w", err)
 	}
 
-	layers, fromBlobs, err := getMetadata(ctx, imageRef, pullSecret)
+	layers, fromBlobs, err := GetMetadata(ctx, imageRef, pullSecret)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func ExtractImageFilesToDir(ctx context.Context, imageRef string, pullSecret []b
 	return nil
 }
 
-func getMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
+func GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) ([]distribution.Descriptor, distribution.BlobStore, error) {
 	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get repo setup: %w", err)
