@@ -151,6 +151,7 @@ var (
 		"remove":               NewBuiltin("remove", set_remove),
 		"symmetric_difference": NewBuiltin("symmetric_difference", set_symmetric_difference),
 		"union":                NewBuiltin("union", set_union),
+		"update":               NewBuiltin("update", set_update),
 	}
 )
 
@@ -853,6 +854,7 @@ var (
 	_ Sequence   = rangeValue{}
 	_ Comparable = rangeValue{}
 	_ Sliceable  = rangeValue{}
+	_ Container  = rangeValue{}
 )
 
 func (r rangeValue) Len() int          { return r.len }
@@ -913,6 +915,14 @@ func (x rangeValue) CompareSameType(op syntax.Token, y_ Value, depth int) (bool,
 	default:
 		return false, fmt.Errorf("%s %s %s not implemented", x.Type(), op, y.Type())
 	}
+}
+
+func (r rangeValue) Has(y Value) (bool, error) {
+	i, err := NumberToInt(y)
+	if err != nil {
+		return false, fmt.Errorf("'in <range>' requires integer as left operand, not %s", y.Type())
+	}
+	return r.contains(i), nil
 }
 
 func rangeEqual(x, y rangeValue) bool {
@@ -2184,12 +2194,18 @@ func set_add(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
 	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &elem); err != nil {
 		return nil, err
 	}
-	if found, err := b.Receiver().(*Set).Has(elem); err != nil {
+	recv := b.Receiver().(*Set)
+	// It is always an error to attempt to mutate a set that cannot be mutated
+	if err := recv.ht.checkMutable("insert into"); err != nil {
+		return nil, nameErr(b, err)
+	}
+	// TODO(adonovan): opt: combine Has+Insert. (e.g. use Insert and re-check Len)
+	if found, err := recv.Has(elem); err != nil {
 		return nil, nameErr(b, err)
 	} else if found {
 		return None, nil
 	}
-	err := b.Receiver().(*Set).Insert(elem)
+	err := recv.Insert(elem)
 	if err != nil {
 		return nil, nameErr(b, err)
 	}
@@ -2277,12 +2293,18 @@ func set_discard(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, erro
 	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 1, &k); err != nil {
 		return nil, err
 	}
-	if found, err := b.Receiver().(*Set).Has(k); err != nil {
+	recv := b.Receiver().(*Set)
+	// It is always an error to attempt to mutate a set that cannot be mutated
+	if err := recv.ht.checkMutable("delete from"); err != nil {
+		return nil, nameErr(b, err)
+	}
+	// TODO(adonovan): opt: combine Has+Delete (e.g. use Delete and re-check Len)
+	if found, err := recv.Has(k); err != nil {
 		return nil, nameErr(b, err)
 	} else if !found {
 		return None, nil
 	}
-	if _, err := b.Receiver().(*Set).Delete(k); err != nil {
+	if _, err := recv.Delete(k); err != nil {
 		return nil, nameErr(b, err) // set is frozen
 	}
 	return None, nil
@@ -2336,17 +2358,19 @@ func set_symmetric_difference(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple)
 
 // https://github.com/google/starlark-go/blob/master/doc/spec.md#set·union.
 func set_union(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
-	var iterable Iterable
-	if err := UnpackPositionalArgs(b.Name(), args, kwargs, 0, &iterable); err != nil {
-		return nil, err
-	}
-	iter := iterable.Iterate()
-	defer iter.Done()
-	union, err := b.Receiver().(*Set).Union(iter)
-	if err != nil {
+	receiverSet := b.Receiver().(*Set).clone()
+	if err := setUpdate(receiverSet, args, kwargs); err != nil {
 		return nil, nameErr(b, err)
 	}
-	return union, nil
+	return receiverSet, nil
+}
+
+// https://github.com/google/starlark-go/blob/master/doc/spec.md#set·update.
+func set_update(_ *Thread, b *Builtin, args Tuple, kwargs []Tuple) (Value, error) {
+	if err := setUpdate(b.Receiver().(*Set), args, kwargs); err != nil {
+		return nil, nameErr(b, err)
+	}
+	return None, nil
 }
 
 // Common implementation of string_{r}{find,index}.
@@ -2442,6 +2466,28 @@ func updateDict(dict *Dict, updates Tuple, kwargs []Tuple) error {
 				return fmt.Errorf("duplicate keyword arg: %v", k)
 			}
 			keys[k] = true
+		}
+	}
+
+	return nil
+}
+
+func setUpdate(s *Set, args Tuple, kwargs []Tuple) error {
+	if len(kwargs) > 0 {
+		return errors.New("does not accept keyword arguments")
+	}
+
+	for i, arg := range args {
+		iterable, ok := arg.(Iterable)
+		if !ok {
+			return fmt.Errorf("argument #%d is not iterable: %s", i+1, arg.Type())
+		}
+		if err := func() error {
+			iter := iterable.Iterate()
+			defer iter.Done()
+			return s.InsertAll(iter)
+		}(); err != nil {
+			return err
 		}
 	}
 
