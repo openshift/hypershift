@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	"github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -30,6 +33,7 @@ type Reconciler struct {
 	cpClient               crclient.Client
 	kubeSystemSecretClient crclient.Client
 	hcUncachedClient       crclient.Client
+	hcpName                string
 	hcpNamespace           string
 	hccoImage              string
 	upsert.CreateOrUpdateProvider
@@ -74,6 +78,13 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
 	}
 
+	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return fmt.Errorf("failed to get hosted control plane: %w", err)
+	}
+
+	managedServices := isManagedServices(hcp)
+
 	if !exists || additionalPullSecret.Data == nil {
 		// Delete global pull secret if it exists
 		secret := manifests.GlobalPullSecret()
@@ -113,7 +124,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	log.Info("Valid additional pull secret found in the DataPlane, reconciling global pull secret")
 
 	// Merge the additional pull secret with the original pull secret
-	if globalPullSecretBytes, err = mergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes); err != nil {
+	if globalPullSecretBytes, err = mergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes, managedServices); err != nil {
 		return fmt.Errorf("failed to merge pull secrets: %w", err)
 	}
 
@@ -157,8 +168,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, origin
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"name":   manifests.GlobalPullSecretDSName,
-					"config": globalPullSecretSeed,
+					"name": manifests.GlobalPullSecretDSName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
@@ -181,45 +191,39 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, origin
 							Command: []string{
 								"/usr/bin/control-plane-operator",
 							},
+							// TODO: remove the flag --global-pull-secret-name from the relevant places
 							Args: []string{
 								"sync-global-pullsecret",
 								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
 							},
 							SecurityContext: &corev1.SecurityContext{
-								Privileged: ptr.To(false),
-								Capabilities: &corev1.Capabilities{
-									Add: []corev1.Capability{
-										"DAC_OVERRIDE",
-										"SYS_ADMIN",
-									},
-									Drop: []corev1.Capability{
-										"ALL",
-									},
-								},
-								RunAsNonRoot:             ptr.To(false),
-								ReadOnlyRootFilesystem:   ptr.To(true),
-								AllowPrivilegeEscalation: ptr.To(false),
+								Privileged: ptr.To(true),
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "kubelet-config",
-									MountPath: "/var/lib/kubelet",
-								},
-								{
-									Name:      "dbus",
-									MountPath: "/var/run/dbus",
-								},
-								{
-									Name:      "original-pull-secret",
-									MountPath: "/etc/original-pull-secret",
-									ReadOnly:  true,
-								},
-								{
-									Name:      "global-pull-secret",
-									MountPath: "/etc/global-pull-secret",
-									ReadOnly:  true,
-								},
-							},
+							VolumeMounts: func() []corev1.VolumeMount {
+								volumeMounts := []corev1.VolumeMount{
+									{
+										Name:      "kubelet-config",
+										MountPath: "/var/lib/kubelet",
+									},
+									{
+										Name:      "dbus",
+										MountPath: "/var/run/dbus",
+									},
+									{
+										Name:      "original-pull-secret",
+										MountPath: "/etc/original-pull-secret",
+										ReadOnly:  true,
+									},
+								}
+								if globalPullSecretName != "" {
+									volumeMounts = append(volumeMounts, corev1.VolumeMount{
+										Name:      "global-pull-secret",
+										MountPath: "/etc/global-pull-secret",
+										ReadOnly:  true,
+									})
+								}
+								return volumeMounts
+							}(),
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -229,43 +233,48 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, origin
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kubelet-config",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/var/lib/kubelet",
-									Type: ptr.To(corev1.HostPathDirectory),
+					Volumes: func() []corev1.Volume {
+						volumes := []corev1.Volume{
+							{
+								Name: "kubelet-config",
+								VolumeSource: corev1.VolumeSource{
+									HostPath: &corev1.HostPathVolumeSource{
+										Path: "/var/lib/kubelet",
+										Type: ptr.To(corev1.HostPathDirectory),
+									},
 								},
 							},
-						},
-						{
-							Name: "dbus",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/var/run/dbus",
-									Type: ptr.To(corev1.HostPathDirectory),
+							{
+								Name: "dbus",
+								VolumeSource: corev1.VolumeSource{
+									HostPath: &corev1.HostPathVolumeSource{
+										Path: "/var/run/dbus",
+										Type: ptr.To(corev1.HostPathDirectory),
+									},
 								},
 							},
-						},
-						{
-							Name: "original-pull-secret",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: originalPullSecretName,
+							{
+								Name: "original-pull-secret",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: originalPullSecretName,
+									},
 								},
 							},
-						},
-						{
-							Name: "global-pull-secret",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: globalPullSecretName,
-									Optional:   ptr.To(true), // Make the secret optional
+						}
+						if globalPullSecretName != "" {
+							volumes = append(volumes, corev1.Volume{
+								Name: "global-pull-secret",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: globalPullSecretName,
+										Optional:   ptr.To(true), // Make the secret optional
+									},
 								},
-							},
-						},
-					},
+							})
+						}
+						return volumes
+					}(),
 				},
 			},
 		}
@@ -306,16 +315,18 @@ func validateAdditionalPullSecret(pullSecret *corev1.Secret) ([]byte, error) {
 // The resulting pull secret is returned as a JSON string.
 // Not using credentialprovider.DockerConfigJSON because it does not support
 // marshaling the auth field.
-func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullSecret []byte) ([]byte, error) {
+func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullSecret []byte, managedServices bool) ([]byte, error) {
 	var (
 		originalAuths         map[string]any
 		userProvidedAuths     map[string]any
+		finalAuths            map[string]any
 		originalJSON          map[string]any
 		userProvidedJSON      map[string]any
 		globalPullSecretBytes []byte
 		err                   error
 	)
 
+	log := ctrl.LoggerFrom(ctx)
 	// Unmarshal original pull secret
 	if err = json.Unmarshal(originalPullSecret, &originalJSON); err != nil {
 		return nil, fmt.Errorf("invalid original pull secret format: %w", err)
@@ -328,14 +339,24 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	}
 	userProvidedAuths = userProvidedJSON["auths"].(map[string]any)
 
-	// Merge auths
-	for k, v := range userProvidedAuths {
-		originalAuths[k] = v
+	// If managedServices, that means the prcedence of the original pull secret is higher than the user provided pull secret so we need to merge the user provided pull secret into the original pull secret in the other case, the precedence is the opposite
+	if !managedServices {
+		log.Info("Non-managed services detected, merging auths with precedence of user provided pull secret")
+		for k, v := range userProvidedAuths {
+			originalAuths[k] = v
+		}
+		finalAuths = originalAuths
+	} else {
+		log.Info("Managed services detected, merging auths with precedence of original pull secret")
+		for k, v := range originalAuths {
+			userProvidedAuths[k] = v
+		}
+		finalAuths = userProvidedAuths
 	}
 
 	// Create final JSON
 	finalJSON := map[string]any{
-		"auths": originalAuths,
+		"auths": finalAuths,
 	}
 
 	globalPullSecretBytes, err = json.Marshal(finalJSON)
@@ -355,4 +376,18 @@ func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *
 		return false, nil, err
 	}
 	return true, additionalPullSecret, nil
+}
+
+// isManagedServices returns true if the hosted control plane has managed services enabled
+func isManagedServices(hcp *hyperv1.HostedControlPlane) bool {
+	// Check if is an ARO HCP
+	if azureutil.IsAroHCP() {
+		return true
+	}
+
+	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
+		return awsutil.IsROSAHCP(hcp)
+	}
+
+	return false
 }
