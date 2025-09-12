@@ -2215,6 +2215,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGOMemoryLimitAnnotation,
 		hyperv1.RequestServingNodeAdditionalSelectorAnnotation,
 		hyperv1.AWSLoadBalancerSubnetsAnnotation,
+		hyperv1.AWSLoadBalancerTargetNodesAnnotation,
 		hyperv1.ManagementPlatformAnnotation,
 		hyperv1.KubeAPIServerVerbosityLevelAnnotation,
 		hyperv1.KubeAPIServerMaximumRequestsInFlight,
