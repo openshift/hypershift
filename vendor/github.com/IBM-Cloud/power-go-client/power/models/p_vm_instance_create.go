@@ -59,6 +59,9 @@ type PVMInstanceCreate struct {
 	// The placement group for the server
 	PlacementGroup string `json:"placementGroup,omitempty"`
 
+	// processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
+
 	// Processor type (dedicated, shared, capped)
 	// Required: true
 	// Enum: ["dedicated","shared","capped"]
@@ -116,7 +119,7 @@ type PVMInstanceCreate struct {
 	// System type used to host the instance
 	SysType string `json:"sysType,omitempty"`
 
-	// Cloud init user defined data; For FLS, only cloud-config instance-data is supported and data must not be compressed or exceed 63K
+	// Cloud init user defined data; For FLS, only cloud-config user-data is supported and data must not be compressed or exceed 63K
 	UserData string `json:"userData,omitempty"`
 
 	// user tags

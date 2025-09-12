@@ -29,6 +29,9 @@ type PVMInstanceUpdateResponse struct {
 	// pin policy
 	PinPolicy PinPolicy `json:"pinPolicy,omitempty"`
 
+	// Preferred processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
+
 	// Processor type (dedicated, shared, capped)
 	// Enum: ["dedicated","shared","capped"]
 	ProcType string `json:"procType,omitempty"`

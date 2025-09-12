@@ -41,6 +41,9 @@ type PVMInstanceReference struct {
 	// Required: true
 	DiskSize *float64 `json:"diskSize"`
 
+	// Effective processor compatibility mode
+	EffectiveProcessorCompatibilityMode string `json:"effectiveProcessorCompatibilityMode,omitempty"`
+
 	// fault
 	Fault *PVMInstanceFault `json:"fault,omitempty"`
 
@@ -92,6 +95,9 @@ type PVMInstanceReference struct {
 
 	// The placement group of the server
 	PlacementGroup *string `json:"placementGroup,omitempty"`
+
+	// Preferred processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
 
 	// Processor type (dedicated, shared, capped)
 	// Required: true

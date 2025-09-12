@@ -14,6 +14,8 @@ import (
 	"github.com/go-openapi/runtime"
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
+
+	"github.com/IBM-Cloud/power-go-client/power/models"
 )
 
 // NewPcloudVolumegroupsDeleteParams creates a new PcloudVolumegroupsDeleteParams object,
@@ -60,6 +62,12 @@ PcloudVolumegroupsDeleteParams contains all the parameters to send to the API en
 	Typically these are written to a http.Request.
 */
 type PcloudVolumegroupsDeleteParams struct {
+
+	/* Body.
+
+	   Parameters for deleting a volume-group
+	*/
+	Body *models.VolumeGroupDelete
 
 	/* CloudInstanceID.
 
@@ -126,6 +134,17 @@ func (o *PcloudVolumegroupsDeleteParams) SetHTTPClient(client *http.Client) {
 	o.HTTPClient = client
 }
 
+// WithBody adds the body to the pcloud volumegroups delete params
+func (o *PcloudVolumegroupsDeleteParams) WithBody(body *models.VolumeGroupDelete) *PcloudVolumegroupsDeleteParams {
+	o.SetBody(body)
+	return o
+}
+
+// SetBody adds the body to the pcloud volumegroups delete params
+func (o *PcloudVolumegroupsDeleteParams) SetBody(body *models.VolumeGroupDelete) {
+	o.Body = body
+}
+
 // WithCloudInstanceID adds the cloudInstanceID to the pcloud volumegroups delete params
 func (o *PcloudVolumegroupsDeleteParams) WithCloudInstanceID(cloudInstanceID string) *PcloudVolumegroupsDeleteParams {
 	o.SetCloudInstanceID(cloudInstanceID)
@@ -155,6 +174,11 @@ func (o *PcloudVolumegroupsDeleteParams) WriteToRequest(r runtime.ClientRequest,
 		return err
 	}
 	var res []error
+	if o.Body != nil {
+		if err := r.SetBodyParam(o.Body); err != nil {
+			return err
+		}
+	}
 
 	// path param cloud_instance_id
 	if err := r.SetPathParam("cloud_instance_id", o.CloudInstanceID); err != nil {

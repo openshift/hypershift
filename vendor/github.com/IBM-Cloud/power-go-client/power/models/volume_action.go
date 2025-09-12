@@ -20,6 +20,9 @@ type VolumeAction struct {
 	// Indicates if the volume should be replication enabled or not
 	ReplicationEnabled *bool `json:"replicationEnabled,omitempty"`
 
+	// Target CRN of the secondary workspace where the auxiliary data resides; optional; only valid when changing the storage tier for a replication enabled volume; if specified, and the auxiliary volume is already onboarded, the primary volume change will be automatically applied to the auxiliary volume.
+	TargetCRN string `json:"targetCRN,omitempty"`
+
 	// Target storage tier; used to change a volume's storage tier
 	TargetStorageTier *string `json:"targetStorageTier,omitempty"`
 }
