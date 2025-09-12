@@ -273,11 +273,11 @@ func GetRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (dist
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create insecure transport: %w", err)
 	}
-	credStore, err := dockercredentials.NewFromBytes(pullSecret)
+	credFactory, err := dockercredentials.NewCredentialStoreFactoryFromBytes(pullSecret)
 	if err != nil {
 		return nil, nil, fmt.Errorf("GetRepoSetup - failed to parse docker credentials: %w", err)
 	}
-	registryContext := registryclient.NewContext(rt, insecureRT).WithCredentials(credStore).
+	registryContext := registryclient.NewContext(rt, insecureRT).WithCredentialsFactory(credFactory).
 		WithRequestModifiers(transport.NewHeaderRequestModifier(http.Header{http.CanonicalHeaderKey("User-Agent"): []string{rest.DefaultKubernetesUserAgent()}}))
 
 	ref, err := reference.Parse(imageRef)
