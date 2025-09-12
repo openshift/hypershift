@@ -27,6 +27,20 @@ const (
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
 )
 
+// ImageType specifies the type of image to use for node instances.
+type ImageType string
+
+const (
+	// ImageTypeDefault represents the default image type (Linux/RHCOS).
+	// This is used when ImageType is empty or unspecified.
+	ImageTypeDefault ImageType = ""
+
+	// ImageTypeWindows represents a Windows-based image type.
+	// When set, the controller will automatically populate the AMI field
+	// with a Windows-compatible AMI based on the region and OpenShift version.
+	ImageTypeWindows ImageType = "windows"
+)
+
 var (
 	// ArchAliases contains the RHCOS release metadata aliases for the different architectures supported as API input.
 	ArchAliases = map[string]string{
@@ -218,6 +232,15 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
+
+	// imageType specifies the type of image to use for node instances.
+	// Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows ("windows").
+	// When set to ImageTypeWindows, the controller will automatically populate the AMI field
+	// with a Windows-compatible AMI based on the region and OpenShift version.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum="";windows
+	ImageType ImageType `json:"imageType,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

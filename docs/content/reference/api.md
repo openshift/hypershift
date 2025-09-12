@@ -1026,6 +1026,23 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>imageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageType">
+ImageType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageType specifies the type of image to use for node instances.
+Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows (&ldquo;windows&rdquo;).
+When set to ImageTypeWindows, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
+</td>
+</tr>
 </table>
 </td>
 </tr>
@@ -7383,6 +7400,32 @@ specifications.</p>
 </tr>
 </tbody>
 </table>
+###ImageType { #hypershift.openshift.io/v1beta1.ImageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
+</p>
+<p>
+<p>ImageType specifies the type of image to use for node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;&#34;</p></td>
+<td><p>ImageTypeDefault represents the default image type (Linux/RHCOS).
+This is used when ImageType is empty or unspecified.</p>
+</td>
+</tr><tr><td><p>&#34;windows&#34;</p></td>
+<td><p>ImageTypeWindows represents a Windows-based image type.
+When set, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
+</td>
+</tr></tbody>
+</table>
 ###InPlaceUpgrade { #hypershift.openshift.io/v1beta1.InPlaceUpgrade }
 <p>
 (<em>Appears on:</em>
@@ -9691,6 +9734,23 @@ string
 TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageType">
+ImageType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageType specifies the type of image to use for node instances.
+Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows (&ldquo;windows&rdquo;).
+When set to ImageTypeWindows, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
 </td>
 </tr>
 </tbody>
