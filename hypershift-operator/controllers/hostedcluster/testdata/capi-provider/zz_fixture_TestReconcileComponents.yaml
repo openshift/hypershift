@@ -10,17 +10,13 @@ metadata:
   namespace: hcp-namespace
   resourceVersion: "1"
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: capi-provider-controller-manager
       control-plane: capi-provider-controller-manager
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+  strategy: {}
   template:
     metadata:
       annotations:
