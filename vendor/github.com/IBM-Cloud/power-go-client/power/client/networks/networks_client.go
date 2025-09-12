@@ -187,7 +187,7 @@ func (a *Client) V1NetworksNetworkInterfacesGetall(params *V1NetworksNetworkInte
 }
 
 /*
-V1NetworksNetworkInterfacesPost performs network interface addition deletion and listing
+V1NetworksNetworkInterfacesPost creates a network interface
 */
 func (a *Client) V1NetworksNetworkInterfacesPost(params *V1NetworksNetworkInterfacesPostParams, authInfo runtime.ClientAuthInfoWriter, opts ...ClientOption) (*V1NetworksNetworkInterfacesPostCreated, error) {
 	// TODO: Validate the params before sending

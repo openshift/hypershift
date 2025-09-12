@@ -14,6 +14,8 @@ import (
 	"github.com/go-openapi/runtime"
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
+
+	"github.com/IBM-Cloud/power-go-client/power/models"
 )
 
 // NewPcloudCloudinstancesVolumesDeleteParams creates a new PcloudCloudinstancesVolumesDeleteParams object,
@@ -60,6 +62,12 @@ PcloudCloudinstancesVolumesDeleteParams contains all the parameters to send to t
 	Typically these are written to a http.Request.
 */
 type PcloudCloudinstancesVolumesDeleteParams struct {
+
+	/* Body.
+
+	   Parameters for the deletion of a data volume
+	*/
+	Body *models.DeleteDataVolume
 
 	/* CloudInstanceID.
 
@@ -126,6 +134,17 @@ func (o *PcloudCloudinstancesVolumesDeleteParams) SetHTTPClient(client *http.Cli
 	o.HTTPClient = client
 }
 
+// WithBody adds the body to the pcloud cloudinstances volumes delete params
+func (o *PcloudCloudinstancesVolumesDeleteParams) WithBody(body *models.DeleteDataVolume) *PcloudCloudinstancesVolumesDeleteParams {
+	o.SetBody(body)
+	return o
+}
+
+// SetBody adds the body to the pcloud cloudinstances volumes delete params
+func (o *PcloudCloudinstancesVolumesDeleteParams) SetBody(body *models.DeleteDataVolume) {
+	o.Body = body
+}
+
 // WithCloudInstanceID adds the cloudInstanceID to the pcloud cloudinstances volumes delete params
 func (o *PcloudCloudinstancesVolumesDeleteParams) WithCloudInstanceID(cloudInstanceID string) *PcloudCloudinstancesVolumesDeleteParams {
 	o.SetCloudInstanceID(cloudInstanceID)
@@ -155,6 +174,11 @@ func (o *PcloudCloudinstancesVolumesDeleteParams) WriteToRequest(r runtime.Clien
 		return err
 	}
 	var res []error
+	if o.Body != nil {
+		if err := r.SetBodyParam(o.Body); err != nil {
+			return err
+		}
+	}
 
 	// path param cloud_instance_id
 	if err := r.SetPathParam("cloud_instance_id", o.CloudInstanceID); err != nil {

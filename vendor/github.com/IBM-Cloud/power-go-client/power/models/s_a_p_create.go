@@ -50,8 +50,12 @@ type SAPCreate struct {
 	// The placement group for the server
 	PlacementGroup string `json:"placementGroup,omitempty"`
 
+	// Preferred processor compatibility mode
+	PreferredProcessorCompatibilityMode string `json:"preferredProcessorCompatibilityMode,omitempty"`
+
 	// SAP Profile ID for the amount of cores and memory
 	// Required: true
+	// Pattern: ^[\s]*[A-Za-z][A-Za-z0-9\-]{3,}$
 	ProfileID *string `json:"profileID"`
 
 	// Indicates the replication site of the boot volume
@@ -72,10 +76,10 @@ type SAPCreate struct {
 	// Storage type for server deployment; if storageType is not provided the storage type will default to 'tier3'.
 	StorageType string `json:"storageType,omitempty"`
 
-	// System type used to host the instance. Only e880, e980, e1080 are supported
+	// System type used to host the instance. Only e980, s1022, e1050, e1080, s1122, e1150, and e1180 are supported
 	SysType string `json:"sysType,omitempty"`
 
-	// Cloud init user defined data; For FLS, only cloud-config instance-data is supported and data must not be compressed or exceed 63K
+	// Cloud init user defined data; For FLS, only cloud-config user-data is supported and data must not be compressed or exceed 63K
 	UserData string `json:"userData,omitempty"`
 
 	// user tags
@@ -234,6 +238,10 @@ func (m *SAPCreate) validatePinPolicy(formats strfmt.Registry) error {
 func (m *SAPCreate) validateProfileID(formats strfmt.Registry) error {
 
 	if err := validate.Required("profileID", "body", m.ProfileID); err != nil {
+		return err
+	}
+
+	if err := validate.Pattern("profileID", "body", *m.ProfileID, `^[\s]*[A-Za-z][A-Za-z0-9\-]{3,}$`); err != nil {
 		return err
 	}
 

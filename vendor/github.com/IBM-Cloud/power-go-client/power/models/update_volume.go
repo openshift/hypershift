@@ -28,6 +28,9 @@ type UpdateVolume struct {
 
 	// New Volume size
 	Size float64 `json:"size,omitempty"`
+
+	// Target CRN of the secondary workspace where the auxiliary data resides; optional; only valid when updating a replication enabled volume’s name and/or shareable properties; if specified, and the auxiliary volume is already onboarded, the primary volume changes will be automatically applied to the auxiliary volume.
+	TargetCRN string `json:"targetCRN,omitempty"`
 }
 
 // Validate validates this update volume
