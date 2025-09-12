@@ -84,9 +84,6 @@ spec:
           requests:
             cpu: 100m
             memory: 600Mi
-          limits:
-            cpu: 1000m
-            memory: 1Gi
         volumeMounts:
         - mountPath: /var/run/kubernetes
           name: certs
