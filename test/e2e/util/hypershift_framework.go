@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -136,6 +137,9 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
 			ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 		}
+		
+		// Validate configuration status matches between HCP, HC, and guest cluster
+		ValidateConfigurationStatus(t, h.ctx, h.client, hostedCluster)
 	})
 }
 
@@ -159,6 +163,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
+		
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 		}
@@ -571,4 +576,59 @@ func archive(t *testing.T, srcDir, destArchive string) error {
 	}
 
 	return nil
+}
+
+// ValidateConfigurationStatus validates that the HCP and HC configuration status
+// matches the Authentication resource status from the hosted cluster
+func ValidateConfigurationStatus(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+	
+	// Get Authentication resource from hosted cluster
+	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hostedCluster)
+	var guestAuth configv1.Authentication
+	err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, &guestAuth)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get Authentication resource from hosted cluster")
+	
+	// Wait for both HCP and HC configuration status to be populated and validate consistency
+	hcpName := hostedCluster.Name
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	
+	g.Eventually(func() error {
+		// Check HCP configuration status
+		var hcp hyperv1.HostedControlPlane
+		if err := mgmtClient.Get(ctx, crclient.ObjectKey{Name: hcpName, Namespace: hcpNamespace}, &hcp); err != nil {
+			return fmt.Errorf("failed to get HCP: %w", err)
+		}
+		if hcp.Status.Configuration == nil {
+			return fmt.Errorf("HCP configuration status not populated yet")
+		}
+		
+		// Check HC configuration status  
+		var hc hyperv1.HostedCluster
+		if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), &hc); err != nil {
+			return fmt.Errorf("failed to get HC: %w", err)
+		}
+		if hc.Status.Configuration == nil {
+			return fmt.Errorf("HC configuration status not populated yet")
+		}
+		
+		// Validate HCP authentication status matches guest cluster
+		if !reflect.DeepEqual(hcp.Status.Configuration.Authentication, guestAuth.Status) {
+			return fmt.Errorf("HCP authentication status doesn't match guest cluster Authentication resource")
+		}
+		
+		// Validate HC authentication status matches guest cluster
+		if !reflect.DeepEqual(hc.Status.Configuration.Authentication, guestAuth.Status) {
+			return fmt.Errorf("HC authentication status doesn't match guest cluster Authentication resource")
+		}
+		
+		// Validate HCP and HC have consistent configuration status
+		if !reflect.DeepEqual(hcp.Status.Configuration.Authentication, hc.Status.Configuration.Authentication) {
+			return fmt.Errorf("HCP and HC authentication status are inconsistent")
+		}
+		
+		return nil
+	}, 60*time.Second, 2*time.Second).Should(Succeed(), "Configuration status should be consistent across HCP, HC, and guest cluster")
+	
+	t.Logf("Successfully validated configuration authentication status consistency across HCP, HC, and guest cluster")
 }
