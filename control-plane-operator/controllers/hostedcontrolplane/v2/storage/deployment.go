@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"strconv"
+
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -28,6 +30,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 					Name:  "ARO_HCP_SECRET_PROVIDER_CLASS_FOR_FILE",
 					Value: config.ManagedAzureFileCSISecretStoreProviderClassName,
 				})
+		}
+
+		// We set this so cluster-storage-operator knows which User ID to run the CSI controller pods as.
+		// This is needed when these pods are run on a management cluster that is non-OpenShift such as AKS.
+		if cpContext.SetDefaultSecurityContext {
+			c.Env = append(c.Env, corev1.EnvVar{Name: "RUN_AS_USER", Value: strconv.Itoa(int(cpContext.DefaultSecurityContextUID))})
 		}
 	})
 
