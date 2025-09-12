@@ -90,9 +90,13 @@ func VerifyRequestServingEnvironment(ctx context.Context) error {
 				if _, reqServing := node.Labels["hypershift.openshift.io/request-serving-component"]; reqServing {
 					continue
 				}
+				// Skip nodes that don't have a zone label
+				if zone, exists := node.Labels[corev1.LabelTopologyZone]; !exists || zone == "" {
+					continue
+				}
 				actualCount[node.Labels[corev1.LabelTopologyZone]] = actualCount[node.Labels[corev1.LabelTopologyZone]] + 1
 			}
-			if len(actualCount) != 3 {
+			if len(actualCount) < 3 {
 				log.Info("waiting for non-request serving nodes to be created in all zones", "zone count", len(actualCount))
 				return false, nil
 			}
