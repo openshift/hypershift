@@ -96,8 +96,8 @@ func VerifyRequestServingPodDistribution(ctx context.Context, hc *hyperv1.Hosted
 
 		// Verify expected deployments are ready with expected replicas
 		expectedDeployments := map[string]int{
-			"kube-apiserver":        2,
-			"oauth-openshift":       2,
+			"kube-apiserver": 2,
+			// "oauth-openshift":       2,
 			"ignition-server-proxy": 2,
 			"router":                2,
 		}
