@@ -99,10 +99,13 @@ spec:
           postStart:
             exec:
               command:
-              - /bin/sh
+              - /bin/bash
               - -c
-              - until curl -ksf -o /dev/null https://localhost:6443/readyz; do echo
-                'Waiting for kube-apiserver to be ready...'; sleep 5; done
+              - |
+                until curl -k https://localhost:6443/readyz; do
+                  echo "Waiting for kube-apiserver to be ready..."
+                  sleep 5
+                done
         livenessProbe:
           failureThreshold: 6
           httpGet:

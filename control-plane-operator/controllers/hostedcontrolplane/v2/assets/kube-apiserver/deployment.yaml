@@ -33,6 +33,17 @@ spec:
               fieldPath: status.podIP
         image: hyperkube
         imagePullPolicy: IfNotPresent
+        lifecycle:
+          postStart:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                until curl -k https://localhost:6443/readyz; do
+                  echo "Waiting for kube-apiserver to be ready..."
+                  sleep 5
+                done
         livenessProbe:
           failureThreshold: 6
           httpGet:
@@ -43,7 +54,7 @@ spec:
           periodSeconds: 180
           successThreshold: 1
           timeoutSeconds: 160
-        name: kube-apiserver
+        name: kube-apiserver              
         ports:
         - containerPort: 6443
           name: client
