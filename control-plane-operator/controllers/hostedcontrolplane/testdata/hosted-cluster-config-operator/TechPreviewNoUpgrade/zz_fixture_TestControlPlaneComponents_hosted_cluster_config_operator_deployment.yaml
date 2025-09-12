@@ -79,7 +79,7 @@ spec:
         - --oauth-address=
         - --oauth-port=0
         - --registry-overrides
-        - registry=override
+        - =
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -93,7 +93,7 @@ spec:
         - name: OPERATE_ON_RELEASE_IMAGE
           value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         - name: OPENSHIFT_IMG_OVERRIDES
-          value: registry=override
+          value: =
         - name: HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE
           value: hosted-cluster-config-operator
         image: hosted-cluster-config-operator

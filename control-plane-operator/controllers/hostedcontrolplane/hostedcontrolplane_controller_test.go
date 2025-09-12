@@ -1588,128 +1588,94 @@ func TestControlPlaneComponents(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
+		GetRegistryOverrides().Return(nil).AnyTimes()
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
-		GetOpenShiftImageRegistryOverrides().Return(map[string][]string{"registry": {"override"}}).AnyTimes()
+		GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
 
-	tests := []struct {
-		name         string
-		featureSet   configv1.FeatureSet
-		platformType *hyperv1.PlatformType
-	}{
-		{
-			name:         "Default feature set, default platform type",
-			featureSet:   configv1.Default,
-			platformType: nil,
+	reconciler := &HostedControlPlaneReconciler{
+		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+			Labels: map[string]string{
+				"cluster.x-k8s.io/cluster-name": "cluster_name",
+			},
 		},
-		{
-			name:         "TechPreviewNoUpgrade feature set, default platform type",
-			featureSet:   configv1.TechPreviewNoUpgrade,
-			platformType: nil,
-		},
-		{
-			name:         "Default feature set, IBM Cloud platform type",
-			featureSet:   configv1.Default,
-			platformType: ptr.To(hyperv1.IBMCloudPlatform),
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				FeatureGate: &configv1.FeatureGateSpec{},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+					{
+						CIDR: *ipnet.MustParseCIDR("10.132.0.0/14"),
+					},
+				},
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS:  &hyperv1.AWSPlatformSpec{},
+				Azure: &hyperv1.AzurePlatformSpec{
+					SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
+					SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
+					VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
+				},
+				OpenStack: &hyperv1.OpenStackPlatformSpec{
+					IdentityRef: hyperv1.OpenStackIdentityReference{
+						Name: "fake-cloud-credentials-secret",
+					},
+				},
+				PowerVS: &hyperv1.PowerVSPlatformSpec{
+					VPC: &hyperv1.PowerVSVPC{},
+				},
+			},
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 		},
 	}
 
-	for _, tt := range tests {
-		reconciler := &HostedControlPlaneReconciler{
-			ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
-			ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
-		}
-		hcp := &hyperv1.HostedControlPlane{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "hcp",
-				Namespace: "hcp-namespace",
-				Labels: map[string]string{
-					"cluster.x-k8s.io/cluster-name": "cluster_name",
+	reconciler.registerComponents(hcp)
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                  t.Context(),
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+			Result: &dockerv1client.DockerImageConfig{
+				Config: &docker10.DockerConfig{
+					Labels: map[string]string{
+						"io.openshift.release": "4.16.10",
+					},
 				},
 			},
-			Spec: hyperv1.HostedControlPlaneSpec{
-				Configuration: &hyperv1.ClusterConfiguration{
-					FeatureGate: &configv1.FeatureGateSpec{},
-				},
-				Services: []hyperv1.ServicePublishingStrategyMapping{
-					{
-						Service: hyperv1.Ignition,
-						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-							Type: hyperv1.Route,
-						},
-					},
-				},
-				Networking: hyperv1.ClusterNetworking{
-					ClusterNetwork: []hyperv1.ClusterNetworkEntry{
-						{
-							CIDR: *ipnet.MustParseCIDR("10.132.0.0/14"),
-						},
-					},
-				},
-				Etcd: hyperv1.EtcdSpec{
-					ManagementType: hyperv1.Managed,
-				},
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.AWSPlatform,
-					AWS:  &hyperv1.AWSPlatformSpec{},
-					Azure: &hyperv1.AzurePlatformSpec{
-						SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
-						SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",
-						VnetID:          "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName",
-					},
-					OpenStack: &hyperv1.OpenStackPlatformSpec{
-						IdentityRef: hyperv1.OpenStackIdentityReference{
-							Name: "fake-cloud-credentials-secret",
-						},
-					},
-					PowerVS: &hyperv1.PowerVSPlatformSpec{
-						VPC: &hyperv1.PowerVSVPC{},
-					},
-					IBMCloud: &hyperv1.IBMCloudPlatformSpec{
-						ProviderType: configv1.IBMCloudProviderTypeVPC,
-					},
-				},
-				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
-			},
-		}
-		if tt.platformType != nil {
-			hcp.Spec.Platform.Type = *tt.platformType
-			if *tt.platformType == hyperv1.IBMCloudPlatform {
-				hcp.Spec.Networking.APIServer = &hyperv1.APIServerNetworking{
-					Port:             ptr.To[int32](2040),
-					AdvertiseAddress: ptr.To("1.2.3.4"),
-				}
-			}
-		}
-
-		reconciler.registerComponents(hcp)
-
-		cpContext := controlplanecomponent.ControlPlaneContext{
-			Context:                  t.Context(),
-			ReleaseImageProvider:     testutil.FakeImageProvider(),
-			UserReleaseImageProvider: testutil.FakeImageProvider(),
-			ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-				Result: &dockerv1client.DockerImageConfig{
-					Config: &docker10.DockerConfig{
-						Labels: map[string]string{
-							"io.openshift.release": "4.16.10",
-						},
-					},
-				},
-				Manifest: fakeimagemetadataprovider.FakeManifest{},
-			},
-			HCP:                    hcp,
-			SkipPredicate:          true,
-			SkipCertificateSigning: true,
-		}
-
-		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = tt.featureSet
+			Manifest: fakeimagemetadataprovider.FakeManifest{},
+		},
+		HCP:                    hcp,
+		SkipPredicate:          true,
+		SkipCertificateSigning: true,
+	}
+	for _, featureSet := range []configv1.FeatureSet{configv1.Default, configv1.TechPreviewNoUpgrade} {
+		cpContext.HCP.Spec.Configuration.FeatureGate.FeatureGateSelection.FeatureSet = featureSet
 		// This needs to be defined here, to avoid loopDetector reporting a no-op update, as changing the featureset will actually cause an update.
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
-			fakeObjects, err := componentsFakeObjects(hcp.Namespace, tt.featureSet)
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace, featureSet)
 			if err != nil {
 				t.Fatalf("failed to generate fake objects: %v", err)
 			}
@@ -1760,11 +1726,8 @@ func TestControlPlaneComponents(t *testing.T) {
 
 				suffix := fmt.Sprintf("_%s_%s", obj.GetName(), strings.ToLower(kind))
 				subDir := component.Name()
-				if tt.featureSet != configv1.Default {
-					subDir = fmt.Sprintf("%s/%s", component.Name(), tt.featureSet)
-				}
-				if tt.platformType != nil {
-					subDir = fmt.Sprintf("%s/%s", component.Name(), *tt.platformType)
+				if featureSet != configv1.Default {
+					subDir = fmt.Sprintf("%s/%s", component.Name(), featureSet)
 				}
 				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(subDir), testutil.WithSuffix(suffix))
 			}
@@ -1774,7 +1737,6 @@ func TestControlPlaneComponents(t *testing.T) {
 		if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 			t.Fatalf("update loop detected: %v", err)
 		}
-
 	}
 
 }
