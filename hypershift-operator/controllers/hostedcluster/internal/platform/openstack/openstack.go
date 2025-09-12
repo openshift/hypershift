@@ -346,6 +346,7 @@ func (a OpenStack) ReconcileCredentials(ctx context.Context, c client.Client, cr
 	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "cloud-network-config-controller-creds"); err != nil {
 		return err
 	}
+
 	// Sync Cinder CSI driver secret
 	if err := a.reconcileOpenStackCredentialsSecret(ctx, c, createOrUpdate, hcluster, controlPlaneNamespace, "openstack-cloud-credentials"); err != nil {
 		return err
