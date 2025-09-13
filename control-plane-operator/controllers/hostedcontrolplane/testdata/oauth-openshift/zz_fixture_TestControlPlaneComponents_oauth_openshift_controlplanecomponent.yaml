@@ -14,7 +14,7 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment oauth-openshift rollout to finish: 0 out of 1
+    message: 'Waiting for deployment oauth-openshift rollout to finish: 0 out of 3
       new replicas have been updated'
     reason: WaitingForRolloutComplete
     status: "False"
