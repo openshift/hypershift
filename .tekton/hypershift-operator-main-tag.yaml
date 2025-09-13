@@ -142,7 +142,7 @@ spec:
             - name: name
               value: init
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:ebfb603b73c2e1500fa1d2c757a585bc2da5043afe0798abdf61466e26fd2b0c
+              value: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:c158db5463517c59c51079bae3a8bc24348eec187c33c36829f7c6bce8d00c89
             - name: kind
               value: task
           resolver: bundles
@@ -159,7 +159,7 @@ spec:
             - name: name
               value: git-clone
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:b99d377c3e28fad51009849f6ba3a1bc47d1dc4c46f470ea12ed7b1b444599d7
+              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:c644bf9a00ecc120cc315b046883f988f57e959c89f0eae12d6f659ada5712ac
             - name: kind
               value: task
           resolver: bundles
@@ -187,7 +187,7 @@ spec:
             - name: name
               value: git-clone
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:b99d377c3e28fad51009849f6ba3a1bc47d1dc4c46f470ea12ed7b1b444599d7
+              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:c644bf9a00ecc120cc315b046883f988f57e959c89f0eae12d6f659ada5712ac
             - name: kind
               value: task
           resolver: bundles
@@ -215,7 +215,7 @@ spec:
             - name: name
               value: git-clone
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:b99d377c3e28fad51009849f6ba3a1bc47d1dc4c46f470ea12ed7b1b444599d7
+              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:c644bf9a00ecc120cc315b046883f988f57e959c89f0eae12d6f659ada5712ac
             - name: kind
               value: task
           resolver: bundles
@@ -243,7 +243,7 @@ spec:
             - name: name
               value: git-clone
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:b99d377c3e28fad51009849f6ba3a1bc47d1dc4c46f470ea12ed7b1b444599d7
+              value: quay.io/redhat-appstudio-tekton-catalog/task-git-clone:0.1@sha256:c644bf9a00ecc120cc315b046883f988f57e959c89f0eae12d6f659ada5712ac
             - name: kind
               value: task
           resolver: bundles
@@ -268,7 +268,7 @@ spec:
             - name: name
               value: prefetch-dependencies
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:881dded774190f5a0eeb446249596d61a1b640347b8c060e4af0197f3b8138ee
+              value: quay.io/redhat-appstudio-tekton-catalog/task-prefetch-dependencies:0.2@sha256:7431775bd4c2f0c1c7960e59a76181e6c5ceb218d64f9ab9be4ed74a011580c0
             - name: kind
               value: task
           resolver: bundles
@@ -303,7 +303,7 @@ spec:
             - name: name
               value: buildah
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:9e092438aab5ecbad8f416a6947b9cf6610d094617fe121fb7bcb58bcd68c5cb
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah:0.4@sha256:af07e267614a77fac2406a4ab8d2615a69bfb5ccbdb774df8dd8d6cb85fecc7e
             - name: kind
               value: task
           resolver: bundles
@@ -340,7 +340,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:3670d92991d7498efb910671e1e5a5a1a0d23046d043b5acc7f8ded6309209f4
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:bf9dbeeac08334becb4c9bc7906fcbd218dea0e27e85186b5e693379cf106a33
             - name: kind
               value: task
           resolver: bundles
@@ -377,7 +377,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:3670d92991d7498efb910671e1e5a5a1a0d23046d043b5acc7f8ded6309209f4
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:bf9dbeeac08334becb4c9bc7906fcbd218dea0e27e85186b5e693379cf106a33
             - name: kind
               value: task
           resolver: bundles
@@ -414,7 +414,7 @@ spec:
             - name: name
               value: buildah-remote
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:3670d92991d7498efb910671e1e5a5a1a0d23046d043b5acc7f8ded6309209f4
+              value: quay.io/redhat-appstudio-tekton-catalog/task-buildah-remote:0.4@sha256:bf9dbeeac08334becb4c9bc7906fcbd218dea0e27e85186b5e693379cf106a33
             - name: kind
               value: task
           resolver: bundles
@@ -474,7 +474,7 @@ spec:
             - name: name
               value: apply-tags
             - name: bundle
-              value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:e0de426d492e195f59c99d2ea1ca0df7bfb8c689f5d1468fe7f70eb8684b8d02
+              value: quay.io/konflux-ci/tekton-catalog/task-apply-tags:0.2@sha256:f44be1bf0262471f2f503f5e19da5f0628dcaf968c86272a2ad6b4871e708448
             - name: kind
               value: task
           resolver: bundles
@@ -511,7 +511,7 @@ spec:
             - name: name
               value: clair-scan
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.2@sha256:00593742ff42a413c1946d8f835fad7eb510a81e2abd006be85ee0c9fc6ea4f3
+              value: quay.io/redhat-appstudio-tekton-catalog/task-clair-scan:0.3@sha256:e00a5b8372546b894386b3c9154ed2472887e7b014cdf1a77154a2fb3efefd82
             - name: kind
               value: task
           resolver: bundles
@@ -528,7 +528,7 @@ spec:
             - name: name
               value: sast-snyk-check
             - name: bundle
-              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.4@sha256:4c049dc73f355f760e9dc756e4206d3b838ab6e45fa572383e7e4cddb9d265b2
+              value: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.4@sha256:a61ce3978e0d5c9f6239f4377110c0da88f115b8b204f9a292c1798e436c0382
             - name: kind
               value: task
           resolver: bundles
