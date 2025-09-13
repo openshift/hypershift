@@ -184,7 +184,7 @@ spec:
         - name: name
           value: prefetch-dependencies-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:b89fb66464d0069dd72ef070c8c2c16d79c4200702d8f91e20bfe46e0aa0ae8d
+          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:d08e349032c57367d543c0bbd070386709614ade1db8e5eddeab29b1338f6653
         - name: kind
           value: task
         resolver: bundles
@@ -289,7 +289,7 @@ spec:
         - name: name
           value: source-build-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-source-build-oci-ta:0.3@sha256:a54c27a0d8f913c787755422a09c4561971b506a043d872b5b07af8123ef0f41
+          value: quay.io/konflux-ci/tekton-catalog/task-source-build-oci-ta:0.3@sha256:21d33596cf7ff61cab38b68caf578e55509748962bf6f4030bf1dfb8cd68a257
         - name: kind
           value: task
         resolver: bundles
@@ -315,7 +315,7 @@ spec:
         - name: name
           value: deprecated-image-check
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:1d07d16810c26713f3d875083924d93697900147364360587ccb5a63f2c31012
+          value: quay.io/konflux-ci/tekton-catalog/task-deprecated-image-check:0.5@sha256:c49732039f105de809840be396f83ead8c46f6a6948e1335b76d37e9eb469574
         - name: kind
           value: task
         resolver: bundles
