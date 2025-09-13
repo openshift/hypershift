@@ -88,7 +88,7 @@ spec:
         - /var/run/secrets/ignition/serving-cert/tls.key
         - --feature-gate-manifest=/shared/99_feature-gate.yaml
         - --registry-overrides
-        - =
+        - registry=override
         - --platform
         - AWS
         command:
@@ -101,7 +101,7 @@ spec:
               apiVersion: v1
               fieldPath: metadata.namespace
         - name: OPENSHIFT_IMG_OVERRIDES
-          value: =
+          value: registry=override
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         livenessProbe:

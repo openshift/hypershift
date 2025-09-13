@@ -1,8 +1,8 @@
-apiVersion: route.openshift.io/v1
-kind: Route
+apiVersion: policy/v1
+kind: PodDisruptionBudget
 metadata:
   creationTimestamp: null
-  name: ignition-server
+  name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:
   - apiVersion: hypershift.openshift.io/v1beta1
@@ -13,12 +13,11 @@ metadata:
     uid: ""
   resourceVersion: "1"
 spec:
-  tls:
-    insecureEdgeTerminationPolicy: None
-    termination: passthrough
-  to:
-    kind: Service
-    name: ignition-server-proxy
-    weight: null
-  wildcardPolicy: None
-status: {}
+  selector:
+    matchLabels:
+      app: oauth-openshift
+status:
+  currentHealthy: 0
+  desiredHealthy: 0
+  disruptionsAllowed: 0
+  expectedPods: 0
