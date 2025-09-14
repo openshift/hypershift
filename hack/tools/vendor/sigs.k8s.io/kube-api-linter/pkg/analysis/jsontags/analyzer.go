@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -41,8 +41,12 @@ type analyzer struct {
 }
 
 // newAnalyzer creates a new analyzer with the given json tag regex.
-func newAnalyzer(cfg config.JSONTagsConfig) (*analysis.Analyzer, error) {
-	defaultConfig(&cfg)
+func newAnalyzer(cfg *JSONTagsConfig) (*analysis.Analyzer, error) {
+	if cfg == nil {
+		cfg = &JSONTagsConfig{}
+	}
+
+	defaultConfig(cfg)
 
 	jsonTagRegex, err := regexp.Compile(cfg.JSONTagRegex)
 	if err != nil {
@@ -61,7 +65,7 @@ func newAnalyzer(cfg config.JSONTagsConfig) (*analysis.Analyzer, error) {
 	}, nil
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
+func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -75,12 +79,12 @@ func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.FieldTagInfo) {
-	var prefix string
-	if len(field.Names) > 0 && field.Names[0] != nil {
-		prefix = fmt.Sprintf("field %s", field.Names[0].Name)
-	} else if ident, ok := field.Type.(*ast.Ident); ok {
-		prefix = fmt.Sprintf("embedded field %s", ident.Name)
+	prefix := "field %s"
+	if len(field.Names) == 0 || field.Names[0] == nil {
+		prefix = "embedded field %s"
 	}
+
+	prefix = fmt.Sprintf(prefix, utils.FieldName(field))
 
 	if tagInfo.Missing {
 		pass.Reportf(field.Pos(), "%s is missing json tag", prefix)
@@ -102,7 +106,7 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, tagInfo ext
 	}
 }
 
-func defaultConfig(cfg *config.JSONTagsConfig) {
+func defaultConfig(cfg *JSONTagsConfig) {
 	if cfg.JSONTagRegex == "" {
 		cfg.JSONTagRegex = camelCaseRegex
 	}
