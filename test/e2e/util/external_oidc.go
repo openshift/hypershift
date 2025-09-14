@@ -120,9 +120,7 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 						Prefix: config.GroupPrefix,
 					},
 					Username: configv1.UsernameClaimMapping{
-						TokenClaimMapping: configv1.TokenClaimMapping{
-							Claim: "email",
-						},
+						Claim: "email",
 						PrefixPolicy: configv1.Prefix,
 						Prefix: &configv1.UsernamePrefix{
 							PrefixString: config.UserPrefix,
