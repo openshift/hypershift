@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package api
 
 import (
@@ -18,6 +21,14 @@ const (
 	// and end of a file.
 	OriginStart = "start"
 	OriginEnd   = "end"
+
+	// FSLogNameStdout is the name given to the stdout log stream of a task. It
+	// can be used when calling AllocFS.Logs as the logType parameter.
+	FSLogNameStdout = "stdout"
+
+	// FSLogNameStderr is the name given to the stderr log stream of a task. It
+	// can be used when calling AllocFS.Logs as the logType parameter.
+	FSLogNameStderr = "stderr"
 )
 
 // AllocFileInfo holds information about a file inside the AllocDir
@@ -378,12 +389,23 @@ func (f *FrameReader) Read(p []byte) (n int, err error) {
 		case <-unblock:
 			return 0, nil
 		case err := <-f.errCh:
-			return 0, err
+			// check for race with f.frames before returning error
+			select {
+			case frame, ok := <-f.frames:
+				if !ok {
+					return 0, io.EOF
+				}
+				f.frame = frame
+
+				// Store the total offset into the file
+				f.byteOffset = int(f.frame.Offset)
+			default:
+				return 0, err
+			}
 		case <-f.cancelCh:
 			return 0, io.EOF
 		}
 	}
-
 	// Copy the data out of the frame and update our offset
 	n = copy(p, f.frame.Data[f.frameOffset:])
 	f.frameOffset += n
