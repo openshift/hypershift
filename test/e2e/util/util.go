@@ -2656,19 +2656,17 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 
 func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
+	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
+	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	if !hasWorkerNodes {
 		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
-	}
-	if IsLessThan(Version417) {
-		delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
 	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
