@@ -2,7 +2,7 @@
 
 ## Overview
 
-What do I need to do to test..
+What do I need to do to test.....
 
 * ...changes to `hypershift-operator`
 
