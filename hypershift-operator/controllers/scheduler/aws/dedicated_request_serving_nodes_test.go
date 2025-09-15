@@ -169,6 +169,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 		checkScheduledNodes   bool
 		checkScheduledCluster bool
 		expectError           bool
+		expectedPairLabel     string
 	}{
 		{
 			name: "deleted hosted cluster",
@@ -192,6 +193,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 				node("n4", "zone-c", "id2")),
 			checkScheduledNodes:   true,
 			checkScheduledCluster: true,
+			expectedPairLabel:     "id1",
 		},
 		{
 			name: "available node, existing assigned node",
@@ -201,6 +203,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 				node("n2", "zone-b", "id1")),
 			checkScheduledNodes:   true,
 			checkScheduledCluster: true,
+			expectedPairLabel:     "id1",
 		},
 		{
 			name: "When there's no paired Nodes in different AZs it should fail",
@@ -210,7 +213,8 @@ func TestHostedClusterScheduler(t *testing.T) {
 				node("n2", "zone-a", "id1"),
 				node("n3", "zone-b", "id2"),
 				node("n4", "zone-c", "id2")),
-			expectError: true,
+			expectError:       true,
+			expectedPairLabel: "id1",
 		},
 		{
 			name: "When all Nodes are already labeled with other HC it should fail",
@@ -228,6 +232,7 @@ func TestHostedClusterScheduler(t *testing.T) {
 				node("n2", "zone-b", "id1")),
 			checkScheduledNodes:   true,
 			checkScheduledCluster: true,
+			expectedPairLabel:     "id1",
 		},
 		{
 			name: "When HostedCluster is scheduled, without 2 existing Nodes and there's no Nodes available it should fail",
@@ -260,6 +265,8 @@ func TestHostedClusterScheduler(t *testing.T) {
 				err := c.Get(t.Context(), client.ObjectKeyFromObject(actual), actual)
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(actual.Annotations).To(HaveKey(hyperv1.HostedClusterScheduledAnnotation))
+				g.Expect(actual.Annotations[hyperv1.AWSLoadBalancerTargetNodesAnnotation]).
+					To(Equal(OSDFleetManagerPairedNodesLabel + "=" + test.expectedPairLabel))
 			}
 			if test.checkScheduledNodes {
 				hc := hostedcluster()
