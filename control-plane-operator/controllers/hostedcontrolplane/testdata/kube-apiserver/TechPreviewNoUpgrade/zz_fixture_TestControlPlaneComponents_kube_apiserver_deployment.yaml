@@ -29,7 +29,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b58dde8f0fc825c12fe7e69167
+        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b58a2366b58dde8f0fc825c12fe7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -187,6 +187,8 @@ spec:
         env:
         - name: KUBECONFIG
           value: /var/secrets/localhost-kubeconfig/kubeconfig
+        - name: KUBECONFIG_HCCO
+          value: /var/secrets/hcco-localhost-kubeconfig/kubeconfig
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         name: bootstrap
@@ -202,6 +204,8 @@ spec:
           name: bootstrap-manifests
         - mountPath: /var/secrets/localhost-kubeconfig
           name: localhost-kubeconfig
+        - mountPath: /var/secrets/hcco-localhost-kubeconfig
+          name: hcco-localhost-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -482,6 +486,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: localhost-kubeconfig
+      - name: hcco-localhost-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: hcco-localhost-kubeconfig
       - emptyDir: {}
         name: logs
       - configMap:

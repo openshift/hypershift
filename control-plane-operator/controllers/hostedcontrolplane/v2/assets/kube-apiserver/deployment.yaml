@@ -120,6 +120,8 @@ spec:
         env:
         - name: KUBECONFIG
           value: /var/secrets/localhost-kubeconfig/kubeconfig
+        - name: KUBECONFIG_HCCO
+          value: /var/secrets/hcco-localhost-kubeconfig/kubeconfig
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         name: bootstrap
@@ -132,6 +134,8 @@ spec:
           name: bootstrap-manifests
         - mountPath: /var/secrets/localhost-kubeconfig
           name: localhost-kubeconfig
+        - mountPath: /var/secrets/hcco-localhost-kubeconfig
+          name: hcco-localhost-kubeconfig
       - args:
         - --logtostderr=true
         - --log-file-max-size=0
@@ -333,6 +337,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: localhost-kubeconfig
+      - name: hcco-localhost-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: hcco-localhost-kubeconfig
       - emptyDir: {}
         name: logs
       - configMap:

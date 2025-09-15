@@ -12,11 +12,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	equality "k8s.io/apimachinery/pkg/api/equality"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	wait "k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/clientcmd"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -54,13 +56,22 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	hccoCFG, err := clientcmd.BuildConfigFromFlags("", os.Getenv("KUBECONFIG_HCCO"))
+	if err != nil {
+		return fmt.Errorf("failed to get HCCO config: %w", err)
+	}
+	hccoClient, err := client.New(hccoCFG, client.Options{Scheme: configScheme})
+	if err != nil {
+		return fmt.Errorf("failed to create client with HCCO kubeconfig: %w", err)
+	}
+
 	// This binary is meant to run next to the KAS container within the same pod.
 	// We briefly poll here to retry on race and transient network issues.
 	// 50s is a high margin chosen here as in CI aws kms is observed to take up to 30s to start.
 	// This to avoid unnecessary restarts of this container.
 	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
 		func(ctx context.Context) (done bool, err error) {
-			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
+			if err := applyBootstrapResources(ctx, &applyClient{client: c}, &applyClient{client: hccoClient}, opts.ResourcesPath); err != nil {
 				logger.Error(err, "failed to apply bootstrap resources, retrying")
 				return false, nil
 			}
@@ -172,7 +183,22 @@ func parseFeatureGateV1(objBytes []byte) (*configv1.FeatureGate, error) {
 	return requiredObj.(*configv1.FeatureGate), nil
 }
 
-func applyBootstrapResources(ctx context.Context, c client.Client, filesPath string) error {
+// NOTE: This is a temporary solution until the controller-runtime is upgraded to at least version 0.22.
+// The current controller-runtime version has a bug that prevents testing server side apply with the fake.Client.
+// This bug was fixed in version 0.22.
+type Apply interface {
+	Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error
+}
+
+type applyClient struct {
+	client client.Client
+}
+
+func (c *applyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
+	return c.client.Patch(ctx, obj, client.Apply, opts...)
+}
+
+func applyBootstrapResources(ctx context.Context, c, hccoClient Apply, filesPath string) error {
 	logger := ctrl.LoggerFrom(ctx).WithName("kas-bootstrap")
 
 	// Fail early if the specified path does not exist.
@@ -208,10 +234,20 @@ func applyBootstrapResources(ctx context.Context, c client.Client, filesPath str
 			return fmt.Errorf("failed to decode file %s: %w", path, err)
 		}
 
-		if _, err = ctrl.CreateOrUpdate(ctx, c, obj.(client.Object), func() error {
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to createOrUpdate file %s: %w", path, err)
+		unstructuredObj, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+		if err != nil {
+			return fmt.Errorf("failed to convert to unstructured: %w", err)
+		}
+
+		clientToUse := c
+		if _, ok := obj.(*configv1.FeatureGate); ok {
+			logger.Info("Using HCCO kubeconfig")
+			clientToUse = hccoClient
+		}
+
+		fieldOwner := filepath.Base(os.Args[0])
+		if err := clientToUse.Apply(ctx, &unstructured.Unstructured{Object: unstructuredObj}, client.FieldOwner(fieldOwner), client.ForceOwnership); err != nil {
+			return fmt.Errorf("failed to apply file %s: %w", path, err)
 		}
 
 		return nil
