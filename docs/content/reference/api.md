@@ -7791,6 +7791,47 @@ string
 </tr>
 </tbody>
 </table>
+###KubevirtHost { #hypershift.openshift.io/v1beta1.KubevirtHost }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtNodePoolPlatform">KubevirtNodePoolPlatform</a>)
+</p>
+<p>
+<p>KubevirtHost represents a host configuration with network settings</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the identifier for the host</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkConfig</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>networkConfig contains the network configuration for the host</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###KubevirtHostDevice { #hypershift.openshift.io/v1beta1.KubevirtHostDevice }
 <p>
 (<em>Appears on:</em>
@@ -8030,6 +8071,21 @@ Selector which must match a node&rsquo;s labels for the VM to be scheduled on th
 <em>(Optional)</em>
 <p>hostDevices specifies the host devices (e.g. GPU devices) to be passed
 from the management cluster, to the nodepool nodes</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>hosts</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtHost">
+[]KubevirtHost
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>hosts specifies a list of hosts with their network configurations
+for the nodepool nodes</p>
 </td>
 </tr>
 </tbody>

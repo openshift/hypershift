@@ -191,6 +191,12 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
+
+	// hosts specifies a list of hosts with their network configurations
+	// for the nodepool nodes
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	Hosts []KubevirtHost `json:"hosts,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine
@@ -219,6 +225,19 @@ type KubevirtHostDevice struct {
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=2147483647
 	Count int `json:"count,omitempty"`
+}
+
+// KubevirtHost represents a host configuration with network settings
+type KubevirtHost struct {
+	// name is the identifier for the host
+	// +kubebuilder:validation:MaxLength=255
+	// +required
+	Name string `json:"name"`
+
+	// networkConfig contains the network configuration for the host
+	// +kubebuilder:validation:MaxLength=4096
+	// +optional
+	NetworkConfig string `json:"networkConfig,omitempty"`
 }
 
 // KubeVirtNodePoolStatus contains the KubeVirt platform statuses

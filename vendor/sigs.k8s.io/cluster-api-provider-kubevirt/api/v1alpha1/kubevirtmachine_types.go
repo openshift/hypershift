@@ -128,6 +128,8 @@ type KubevirtMachineStatus struct {
 	// controller's output.
 	// +optional
 	FailureMessage *string `json:"failureMessage,omitempty"`
+
+	VirtualMachine *string `json:"virtualMachine,omitempty"`
 }
 
 // +kubebuilder:resource:path=kubevirtmachines,scope=Namespaced,categories=cluster-api

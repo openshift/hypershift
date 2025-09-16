@@ -340,6 +340,17 @@ func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bo
 	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
 
+func virtualMachinePool(kvPlatform *hyperv1.KubevirtNodePoolPlatform) []capikubevirt.VirtualMachinePoolEntry {
+	virtualMachinePoolSlice := []capikubevirt.VirtualMachinePoolEntry{}
+	for _, host := range kvPlatform.Hosts {
+		virtualMachinePoolSlice = append(virtualMachinePoolSlice, capikubevirt.VirtualMachinePoolEntry{
+			Name:                 host.Name,
+			CloudInitNetworkData: &host.NetworkConfig,
+		})
+	}
+	return virtualMachinePoolSlice
+}
+
 func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage, bootImage BootImage) (*capikubevirt.KubevirtMachineTemplateSpec, error) {
 	if bootImage == nil {
 		infraNS := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
@@ -444,6 +455,7 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 				BootstrapCheckSpec:     capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 			},
 		},
+		VirtualMachinePool: virtualMachinePool(nodePool.Spec.Platform.Kubevirt),
 	}, nil
 }
 

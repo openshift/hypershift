@@ -328,5 +328,120 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 	if len(o.KubevirtHostDevices) > 0 {
 		platform.KubevirtHostDevices = o.KubevirtHostDevices
 	}
+
+	platform.NetworkDataTemplate = 
+	Subnet: []string{"192.168.123.3/24-192.168.123.10/24"}
+	ExcludedSubnet: []string{"192.168.123.5/24"}
+	Template := `
+{
+  "version": 1,
+  "config": [
+    {
+      "type": "physical",
+      "name": "enp1s0",
+      "subnets": [
+        {
+          "type": "static",
+          "address": "{{ .Subnet }}",
+          "netmask": "255.255.255.0",
+          "gateway": "192.168.123.1"
+        }
+      ]
+    },
+    {
+      "type": "nameserver",
+      "address": [
+		"192.168.123.1"
+      ]
+    }
+  ]
+}
+	`
+	//TODO: Add a knob for this
+	platform.Hosts = []hyperv1.KubevirtHost{
+		{
+			Name: "worker1",
+			NetworkConfig: `
+{
+  "version": 1,
+  "config": [
+    {
+      "type": "physical",
+      "name": "enp1s0",
+      "subnets": [
+        {
+          "type": "static",
+          "address": "192.168.123.101",
+          "netmask": "255.255.255.0",
+          "gateway": "192.168.123.1"
+        }
+      ]
+    },
+    {
+      "type": "nameserver",
+      "address": [
+		"192.168.123.1"
+      ]
+    }
+  ]
+}`,
+		},
+		{
+			Name: "worker2",
+			NetworkConfig: `
+{
+  "version": 1,
+  "config": [
+    {
+      "type": "physical",
+      "name": "enp1s0",
+      "subnets": [
+        {
+          "type": "static",
+          "address": "192.168.123.102",
+          "netmask": "255.255.255.0",
+          "gateway": "192.168.123.1"
+        }
+      ]
+    },
+    {
+      "type": "nameserver",
+      "address": [
+		"192.168.123.1"
+      ]
+    }
+  ]
+}
+`,
+		},
+		{
+			Name: "worker3",
+			NetworkConfig: `
+{
+  "version": 1,
+  "config": [
+    {
+      "type": "physical",
+      "name": "enp1s0",
+      "subnets": [
+        {
+          "type": "static",
+          "address": "192.168.123.103",
+          "netmask": "255.255.255.0",
+          "gateway": "192.168.123.1"
+        }
+      ]
+    },
+    {
+      "type": "nameserver",
+      "address": [
+		"192.168.123.1"
+      ]
+    }
+  ]
+}
+`,
+		},
+	}
 	return platform
 }
