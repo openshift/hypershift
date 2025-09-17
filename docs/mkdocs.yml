@@ -306,7 +306,8 @@ nav:
   - reference/versioning-support.md
 - 'Contribute':
   - contribute/index.md
-  - 'Release Process': contribute/release-process.md
+  - 'HO/CPO Release Process': contribute/release-process.md
+  - 'OCP Branching Tasks': contribute/branch-process.md
   - 'Custom Images': contribute/custom-images.md
   - 'Onboard a Platform': contribute/onboard-a-platform.md
   - 'Run Tests': contribute/run-tests.md
