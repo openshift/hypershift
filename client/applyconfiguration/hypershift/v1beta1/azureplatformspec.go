@@ -29,6 +29,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
 	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
 	TenantID                  *string                                             `json:"tenantID,omitempty"`
+	ResourceTags              []AzureResourceTagApplyConfiguration                `json:"resourceTags,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -106,5 +107,18 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ResourceTags field.
+func (b *AzurePlatformSpecApplyConfiguration) WithResourceTags(values ...*AzureResourceTagApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithResourceTags")
+		}
+		b.ResourceTags = append(b.ResourceTags, *values[i])
+	}
 	return b
 }

@@ -98,6 +98,23 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// resourceTags is an optional list of additional tags to apply to Azure node
+	// instances. Changes to this field will be propagated in-place to Azure VM instances and their initial OS disks.
+	// Disks created by the storage operator and attached to instances after they are created do not get these tags applied.
+	//
+	// These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in Azure in case of conflicts.
+	//
+	// See https://docs.microsoft.com/en-us/rest/api/resources/tags for
+	// information on tagging Azure resources. Due to limitations on Automation,
+	// Content Delivery Network, DNS Azure resources, a maximum of 15 tags
+	// may be applied. OpenShift reserves 5 tags for its use, leaving 10 tags available
+	// for the user.
+	//
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
 }
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
@@ -433,6 +450,22 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// resourceTags is a list of additional tags to apply to Azure resources created
+	// for the cluster. See
+	// https://docs.microsoft.com/en-us/rest/api/resources/tags for
+	// information on tagging Azure resources. Due to limitations on Automation,
+	// Content Delivery Network, DNS Azure resources, a maximum of 15 tags
+	// may be applied. OpenShift reserves 5 tags for its use, leaving 10 tags available
+	// for the user.
+	// Changes to this field will be propagated in-place to Azure resources.
+	// These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile Azure resources created by them.
+	// Please consult the official documentation for a list of all Azure resources that support in-place tag updates.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in Azure in case of conflicts.
+	//
+	// +kubebuilder:validation:MaxItems=10
+	// +optional
+	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -734,4 +767,25 @@ type AzureAuthenticationConfiguration struct {
 	// This is required for self-managed Azure.
 	// +optional
 	WorkloadIdentities *AzureWorkloadIdentities `json:"workloadIdentities,omitempty"`
+}
+
+// AzureResourceTag is a tag to apply to Azure resources created for the cluster.
+type AzureResourceTag struct {
+	// key is the key part of the tag. A tag key can have a maximum of 128 characters and cannot be empty. Key
+	// must begin with a letter, end with a letter, number or underscore, and must contain only alphanumeric
+	// characters and the following special characters `_ . -`.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=128
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z]([0-9A-Za-z_.-]*[0-9A-Za-z_])?$`
+	Key string `json:"key"`
+	// value is the value part of the tag. A tag value can have a maximum of 256 characters and cannot be empty. Value
+	// must contain only alphanumeric characters and the following special characters `_ + , - . / : ; < = > ? @`.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_.=+-@]+$`
+	Value string `json:"value"`
 }
