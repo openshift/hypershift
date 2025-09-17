@@ -1,37 +1,34 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.23.6-1745588370 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.24.4-1754467841 AS builder
 
 WORKDIR /hypershift
 
 COPY --chown=default . .
 
-RUN make product-cli-release
-
-RUN for OS in linux; do \
-  for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
-    tar -czvf /hypershift/bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp \
-      || exit 1; \
-  done; \
-done
-
-RUN for OS in darwin windows; do \
-  for ARCH in amd64 arm64; do \
-    tar -czvf /hypershift/bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp \
-      || exit 1; \
-  done; \
-done
+RUN make product-cli-release && \
+    # Create tar.gz files for Linux architectures \
+    for ARCH in amd64 arm64 ppc64le s390x; do \
+      tar -czvf ./bin/linux/${ARCH}/hcp.tar.gz -C ./bin/linux/${ARCH} ./hcp || exit 1; \
+    done && \
+    # Create tar.gz files for Darwin and Windows architectures \
+    for OS in darwin windows; do \
+      for ARCH in amd64 arm64; do \
+        tar -czvf ./bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp || exit 1; \
+      done; \
+    done
 
 FROM registry.redhat.io/ubi9/nginx-122:1-1743076774
 
-COPY --from=builder /hypershift/bin/    /opt/app-root/src/
+COPY --from=builder /hypershift/bin/ /opt/app-root/src/
+RUN find /opt/app-root/src/ -type f ! -name "*.tar.gz" -delete
 
 CMD ["nginx", "-g", "daemon off;"]
 
-LABEL name="multicluster-engine/hypershift-cli-rhel9"
-LABEL description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines."
-LABEL summary="HyperShift HCP CLI"
-LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/"
-LABEL version=4.16
-LABEL com.redhat.component="multicluster-engine-hypershift-cli-container"
-LABEL io.openshift.tags="data,images"
-LABEL io.k8s.display-name="multicluster-engine-hypershift-cli"
-LABEL io.k8s.description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines."
+LABEL name="multicluster-engine/hypershift-cli-rhel9" \
+      description="HyperShift HCP CLI for managing the lifecycle of Hosted Clusters via the command line." \
+      summary="HyperShift HCP CLI" \
+      url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/" \
+      version="4.16" \
+      com.redhat.component="multicluster-engine-hypershift-cli-container" \
+      io.openshift.tags="data,images" \
+      io.k8s.display-name="multicluster-engine-hypershift-cli" \
+      io.k8s.description="HyperShift HCP CLI for managing the lifecycle of Hosted Clusters via the command line."
