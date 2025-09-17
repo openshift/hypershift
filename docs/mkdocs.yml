@@ -74,6 +74,8 @@ nav:
     - how-to/common/exposing-services-from-hcp.md
     - how-to/common/multi-arch-on-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
+  - 'CI':
+    - how-to/ci/checking-ci.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
   - 'Disaster Recovery':
