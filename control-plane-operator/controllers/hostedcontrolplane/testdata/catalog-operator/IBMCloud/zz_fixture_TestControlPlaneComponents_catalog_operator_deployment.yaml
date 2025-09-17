@@ -1,0 +1,207 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: catalog-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: catalog-operator
+  strategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        alpha.image.policy.openshift.io/resolve-names: '*'
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: catalog-operator
+        hypershift.openshift.io/control-plane-component: catalog-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --namespace
+        - openshift-marketplace
+        - --configmapServerImage=$(OPERATOR_REGISTRY_IMAGE)
+        - --opmImage=$(OPERATOR_REGISTRY_IMAGE)
+        - --util-image
+        - $(OLM_OPERATOR_IMAGE)
+        - --writeStatusName
+        - operator-lifecycle-manager-catalog
+        - --tls-cert
+        - /srv-cert/tls.crt
+        - --tls-key
+        - /srv-cert/tls.key
+        - --client-ca
+        - /client-ca/ca.crt
+        - --kubeconfig
+        - /etc/openshift/kubeconfig/kubeconfig
+        command:
+        - /bin/catalog
+        env:
+        - name: RELEASE_VERSION
+          value: 4.18.0
+        - name: KUBECONFIG
+          value: /etc/openshift/kubeconfig/kubeconfig
+        - name: OLM_OPERATOR_IMAGE
+          value: operator-lifecycle-manager
+        - name: OPERATOR_REGISTRY_IMAGE
+          value: operator-registry
+        - name: GRPC_PROXY
+          value: socks5://127.0.0.1:8090
+        - name: NO_PROXY
+          value: kube-apiserver
+        image: operator-lifecycle-manager
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+          initialDelaySeconds: 60
+        name: catalog-operator
+        ports:
+        - containerPort: 8443
+          name: metrics
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8443
+            scheme: HTTPS
+        resources:
+          requests:
+            cpu: 10m
+            memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /srv-cert
+          name: srv-cert
+          readOnly: true
+        - mountPath: /client-ca
+          name: profile-collector
+          readOnly: true
+        - mountPath: /etc/openshift/kubeconfig
+          name: kubeconfig
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - run
+        command:
+        - /usr/bin/control-plane-operator
+        - konnectivity-socks5-proxy
+        env:
+        - name: KUBECONFIG
+          value: /etc/kubernetes/secrets/kubeconfig/kubeconfig
+        image: controlplane-operator
+        name: konnectivity-proxy-socks5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes/secrets/kubeconfig
+          name: kubeconfig
+        - mountPath: /etc/konnectivity/proxy-client
+          name: konnectivity-proxy-cert
+        - mountPath: /etc/konnectivity/proxy-ca
+          name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      initContainers:
+      - command:
+        - /usr/bin/control-plane-operator
+        - availability-prober
+        - --target
+        - https://kube-apiserver:2040/readyz
+        - --kubeconfig=/var/kubeconfig/kubeconfig
+        - --required-api=operators.coreos.com,v1alpha1,CatalogSource
+        image: availability-prober
+        imagePullPolicy: IfNotPresent
+        name: availability-prober
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/kubeconfig
+          name: kubeconfig
+      priorityClassName: hypershift-control-plane
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: srv-cert
+        secret:
+          defaultMode: 416
+          secretName: catalog-operator-serving-cert
+      - name: profile-collector
+        secret:
+          defaultMode: 416
+          secretName: metrics-client
+      - name: kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - name: konnectivity-proxy-cert
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-client
+      - configMap:
+          name: konnectivity-ca-bundle
+        name: konnectivity-proxy-ca
+      - emptyDir: {}
+        name: tmp-dir
+status: {}
