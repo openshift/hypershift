@@ -6,7 +6,7 @@ COPY --chown=default . .
 
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
-    for ARCH in amd64 arm64 ppc64 ppc64le s390x; do \
+    for ARCH in amd64 arm64 ppc64le s390x; do \
       tar -czvf ./bin/linux/${ARCH}/hcp.tar.gz -C ./bin/linux/${ARCH} ./hcp || exit 1; \
     done && \
     # Create tar.gz files for Darwin and Windows architectures \
@@ -27,7 +27,7 @@ LABEL name="multicluster-engine/hypershift-cli-rhel9" \
       description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines" \
       summary="HyperShift HCP CLI" \
       url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/" \
-      version=4.20 \
+      version=4.21 \
       com.redhat.component="multicluster-engine-hypershift-cli-container" \
       io.openshift.tags="data,images" \
       io.k8s.display-name="multicluster-engine-hypershift-cli" \
