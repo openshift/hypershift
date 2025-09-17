@@ -29,6 +29,7 @@ LABEL name="multicluster-engine/hypershift-cli-rhel9" \
       url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/" \
       version="4.19" \
       com.redhat.component="multicluster-engine-hypershift-cli-container" \
+      cpe="cpe:/a:redhat:multicluster_engine:2.9::el9" \
       io.openshift.tags="data,images" \
       io.k8s.display-name="multicluster-engine-hypershift-cli" \
       io.k8s.description="HyperShift HCP CLI for managing the lifecycle of Hosted Clusters via the command line."
