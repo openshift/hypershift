@@ -301,8 +301,6 @@ func TestReconcileIgnitionServer(t *testing.T) {
 				t.Fatalf("failed to reconcile: %v", err)
 			}
 
-			_, hasPKIAnnotation := tt.annotations[hyperv1.DisablePKIReconciliationAnnotation]
-
 			gotCACert := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "ignition-server-ca-cert",
@@ -316,13 +314,22 @@ func TestReconcileIgnitionServer(t *testing.T) {
 				},
 			}
 
+			_, hasPKIAnnotation := tt.annotations[hyperv1.DisablePKIReconciliationAnnotation]
+			expectCACert := !hasPKIAnnotation || tt.caCert != nil
+			expectServingCert := !hasPKIAnnotation || tt.servingCert != nil
+
 			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotCACert), gotCACert)
-			if err != nil && !hasPKIAnnotation {
+			if err != nil && expectCACert {
 				t.Fatalf("ignition-server-ca-cert does not exist")
+			} else if err == nil && !expectCACert {
+				t.Fatalf("ignition-server-ca-cert exists")
 			}
+
 			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotServingCert), gotServingCert)
-			if err != nil && !hasPKIAnnotation {
+			if err != nil && expectServingCert {
 				t.Fatalf("ignition-server-serving-cert does not exist")
+			} else if err == nil && !expectServingCert {
+				t.Fatalf("ignition-server-serving-cert exists")
 			}
 
 			if tt.caCert != nil {
