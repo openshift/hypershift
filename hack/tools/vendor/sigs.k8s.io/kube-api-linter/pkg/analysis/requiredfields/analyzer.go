@@ -16,91 +16,98 @@ limitations under the License.
 package requiredfields
 
 import (
-	"fmt"
 	"go/ast"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
-	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	markershelper "sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils/serialization"
+	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
 
 const (
 	name = "requiredfields"
-
-	requiredMarker            = "required"
-	kubebuilderRequiredMarker = "kubebuilder:validation:Required"
 )
 
 func init() {
-	markers.DefaultRegistry().Register(requiredMarker, kubebuilderRequiredMarker)
+	markershelper.DefaultRegistry().Register(
+		markers.RequiredMarker,
+		markers.KubebuilderRequiredMarker,
+		markers.KubebuilderMinItemsMarker,
+		markers.KubebuilderMinLengthMarker,
+		markers.KubebuilderMinPropertiesMarker,
+		markers.KubebuilderMinimumMarker,
+		markers.KubebuilderEnumMarker,
+	)
 }
 
 type analyzer struct {
-	pointerPolicy config.RequiredFieldPointerPolicy
+	serializationCheck serialization.SerializationCheck
 }
 
 // newAnalyzer creates a new analyzer.
-func newAnalyzer(cfg config.RequiredFieldsConfig) *analysis.Analyzer {
-	defaultConfig(&cfg)
+func newAnalyzer(cfg *RequiredFieldsConfig) *analysis.Analyzer {
+	if cfg == nil {
+		cfg = &RequiredFieldsConfig{}
+	}
+
+	defaultConfig(cfg)
+
+	serializationCheck := serialization.New(&serialization.Config{
+		Pointers: serialization.PointersConfig{
+			Policy: serialization.PointersPolicy(cfg.Pointers.Policy),
+			// We only allow the WhenRequired preference for required fields.
+			// This works for both built-in types and custom resources, and
+			// avoids pointers unless absolutely necessary.
+			Preference: serialization.PointersPreferenceWhenRequired,
+		},
+		OmitEmpty: serialization.OmitEmptyConfig{
+			Policy: serialization.OmitEmptyPolicy(cfg.OmitEmpty.Policy),
+		},
+		OmitZero: serialization.OmitZeroConfig{
+			Policy: serialization.OmitZeroPolicy(cfg.OmitZero.Policy),
+		},
+	})
 
 	a := &analyzer{
-		pointerPolicy: cfg.PointerPolicy,
+		serializationCheck: serializationCheck,
 	}
 
 	return &analysis.Analyzer{
-		Name:     name,
-		Doc:      "Checks that all required fields are not pointers, and do not have the omitempty tag.",
+		Name: name,
+		Doc: `Checks that all required fields are serialized correctly.
+		Where the zero value is not valid, this means the field should not be a pointer, and should have the omitempty tag.
+		Where the zero value is valid, this means the field should be a pointer and should not have the omitempty tag.
+		`,
 		Run:      a.run,
-		Requires: []*analysis.Analyzer{inspector.Analyzer},
+		Requires: []*analysis.Analyzer{inspector.Analyzer, extractjsontags.Analyzer},
 	}
 }
 
-func (a *analyzer) run(pass *analysis.Pass) (interface{}, error) {
+func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
-		a.checkField(pass, field, markersAccess.FieldMarkers(field), jsonTagInfo)
+	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers) {
+		a.checkField(pass, field, markersAccess, jsonTagInfo)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarkers markers.MarkerSet, fieldTagInfo extractjsontags.FieldTagInfo) {
+func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, jsonTags extractjsontags.FieldTagInfo) {
 	if field == nil || len(field.Names) == 0 {
 		return
 	}
 
-	fieldName := field.Names[0].Name
-
-	if !fieldMarkers.Has(requiredMarker) && !fieldMarkers.Has(kubebuilderRequiredMarker) {
+	fieldMarkers := markersAccess.FieldMarkers(field)
+	if !isFieldRequired(fieldMarkers) {
 		// The field is not marked required, so we don't need to check it.
 		return
-	}
-
-	if fieldTagInfo.OmitEmpty {
-		pass.Report(analysis.Diagnostic{
-			Pos:     field.Pos(),
-			Message: fmt.Sprintf("field %s is marked as required, but has the omitempty tag", fieldName),
-			SuggestedFixes: []analysis.SuggestedFix{
-				{
-					Message: "should remove the omitempty tag",
-					TextEdits: []analysis.TextEdit{
-						{
-							Pos:     fieldTagInfo.Pos,
-							End:     fieldTagInfo.End,
-							NewText: []byte(strings.Replace(fieldTagInfo.RawValue, ",omitempty", "", 1)),
-						},
-					},
-				},
-			},
-		})
 	}
 
 	if field.Type == nil {
@@ -108,35 +115,24 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, fieldMarker
 		return
 	}
 
-	if starExpr, ok := field.Type.(*ast.StarExpr); ok {
-		var suggestedFixes []analysis.SuggestedFix
+	a.serializationCheck.Check(pass, field, markersAccess, jsonTags)
+}
 
-		switch a.pointerPolicy {
-		case config.RequiredFieldPointerWarn:
-			// Do not suggest a fix.
-		case config.RequiredFieldPointerSuggestFix:
-			suggestedFixes = append(suggestedFixes, analysis.SuggestedFix{
-				Message: "should remove the pointer",
-				TextEdits: []analysis.TextEdit{
-					{
-						Pos:     starExpr.Pos(),
-						End:     starExpr.X.Pos(),
-						NewText: nil,
-					},
-				},
-			})
-		}
+func defaultConfig(cfg *RequiredFieldsConfig) {
+	if cfg.Pointers.Policy == "" {
+		cfg.Pointers.Policy = RequiredFieldsPointerPolicySuggestFix
+	}
 
-		pass.Report(analysis.Diagnostic{
-			Pos:            field.Pos(),
-			Message:        fmt.Sprintf("field %s is marked as required, should not be a pointer", fieldName),
-			SuggestedFixes: suggestedFixes,
-		})
+	if cfg.OmitEmpty.Policy == "" {
+		cfg.OmitEmpty.Policy = RequiredFieldsOmitEmptyPolicySuggestFix
+	}
+
+	if cfg.OmitZero.Policy == "" {
+		cfg.OmitZero.Policy = RequiredFieldsOmitZeroPolicySuggestFix
 	}
 }
 
-func defaultConfig(cfg *config.RequiredFieldsConfig) {
-	if cfg.PointerPolicy == "" {
-		cfg.PointerPolicy = config.RequiredFieldPointerSuggestFix
-	}
+// isFieldRequired checks if a field has an required marker.
+func isFieldRequired(fieldMarkers markershelper.MarkerSet) bool {
+	return fieldMarkers.Has(markers.RequiredMarker) || fieldMarkers.Has(markers.KubebuilderRequiredMarker)
 }

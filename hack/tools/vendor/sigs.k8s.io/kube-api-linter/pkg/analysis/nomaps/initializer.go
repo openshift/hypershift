@@ -16,30 +16,48 @@ limitations under the License.
 package nomaps
 
 import (
+	"fmt"
+
 	"golang.org/x/tools/go/analysis"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/initializer"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/registry"
 )
+
+func init() {
+	registry.DefaultRegistry().RegisterLinter(Initializer())
+}
 
 // Initializer returns the AnalyzerInitializer for this
 // Analyzer so that it can be added to the registry.
-func Initializer() initializer {
-	return initializer{}
-}
-
-// intializer implements the AnalyzerInitializer interface.
-type initializer struct{}
-
-// Name returns the name of the Analyzer.
-func (initializer) Name() string {
-	return name
+func Initializer() initializer.AnalyzerInitializer {
+	return initializer.NewConfigurableInitializer(
+		name,
+		initAnalyzer,
+		true,
+		validateConfig,
+	)
 }
 
 // Init returns the intialized Analyzer.
-func (initializer) Init(cfg config.LintersConfig) (*analysis.Analyzer, error) {
-	return newAnalyzer(cfg.NoMaps), nil
+func initAnalyzer(nmc *NoMapsConfig) (*analysis.Analyzer, error) {
+	return newAnalyzer(nmc), nil
 }
 
-// Default determines whether this Analyzer is on by default, or not.
-func (initializer) Default() bool {
-	return true
+// validateConfig is used to validate the configuration in the config.NoMapsConfig struct.
+func validateConfig(nmc *NoMapsConfig, fldPath *field.Path) field.ErrorList {
+	if nmc == nil {
+		return field.ErrorList{}
+	}
+
+	fieldErrors := field.ErrorList{}
+
+	switch nmc.Policy {
+	case NoMapsEnforce, NoMapsAllowStringToStringMaps, NoMapsIgnore, "":
+		// Valid values
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("policy"), nmc.Policy, fmt.Sprintf("invalid value, must be one of %q, %q, %q or omitted", NoMapsEnforce, NoMapsAllowStringToStringMaps, NoMapsIgnore)))
+	}
+
+	return fieldErrors
 }

@@ -368,17 +368,17 @@ var (
 			Topology:     "ha",
 			NetworkStack: "dual",
 		},
+		{
+			Cloud:        "aws",
+			Architecture: "amd64",
+			Topology:     "single",
+		},
 
 		// TODO restore these once we run TechPreview jobs that contain them
 		//{
-		//	Cloud:        "aws",
-		//	Architecture: "amd64",
-		//	Topology:     "single-node",
-		//},
-		//{
 		//	Cloud:        "metal-ipi",
 		//	Architecture: "amd64",
-		//	Topology:     "single-node",
+		//	Topology:     "single",
 		//},
 	}
 
@@ -393,6 +393,42 @@ var (
 			Cloud:        "openstack",
 			Architecture: "amd64",
 			Topology:     "ha",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-arbiter",
+			NetworkStack: "ipv4",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-arbiter",
+			NetworkStack: "ipv6",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-arbiter",
+			NetworkStack: "dual",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-fencing",
+			NetworkStack: "ipv4",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-fencing",
+			NetworkStack: "ipv6",
+		},
+		{
+			Cloud:        "metal",
+			Architecture: "amd64",
+			Topology:     "two-node-fencing",
+			NetworkStack: "dual",
 		},
 	}
 
@@ -464,7 +500,7 @@ func testResultByName(results []TestResults, testName string) *TestResults {
 }
 
 func listTestResultFor(featureGate string, clusterProfiles sets.Set[string]) (map[JobVariant]*TestingResults, error) {
-	fmt.Printf("Query component readiness for all test run results for feature gate %q on clusterProfile %q\n", featureGate, sets.List(clusterProfiles))
+	fmt.Printf("Query sippy for all test run results for feature gate %q on clusterProfile %q\n", featureGate, sets.List(clusterProfiles))
 
 	results := map[JobVariant]*TestingResults{}
 
@@ -503,8 +539,9 @@ func filterVariants(featureGate string, variantsList ...[]JobVariant) []JobVaria
 		for _, variant := range variants {
 			normalizedCloud := strings.ReplaceAll(strings.ToLower(variant.Cloud), "-ipi", "") // The feature gate probably won't include the install type, but some cloud variants do
 			normalizedArchitecture := strings.ToLower(variant.Architecture)
+			normalizedTopology := strings.ToLower(variant.Topology)
 
-			if strings.Contains(normalizedFeatureGate, normalizedCloud) || strings.Contains(normalizedFeatureGate, normalizedArchitecture) {
+			if strings.Contains(normalizedFeatureGate, normalizedCloud) || strings.Contains(normalizedFeatureGate, normalizedArchitecture) || matchTwoNodeFeatureGates(normalizedFeatureGate, normalizedTopology) {
 				filteredVariants = append(filteredVariants, variant)
 			}
 		}
@@ -533,6 +570,10 @@ func getLatestRelease() (string, error) {
 
 	var result struct {
 		Releases []string `json:"releases"`
+		Dates    map[string]struct {
+			GA               *time.Time `json:"ga,omitempty"`
+			DevelopmentStart *time.Time `json:"development_start,omitempty"`
+		} `json:"dates"`
 	}
 	err = json.Unmarshal(body, &result)
 	if err != nil {
@@ -543,7 +584,15 @@ func getLatestRelease() (string, error) {
 		return "", fmt.Errorf("no releases found")
 	}
 
-	return result.Releases[0], nil
+	for _, release := range result.Releases {
+		if dates, ok := result.Dates[release]; ok {
+			if dates.DevelopmentStart != nil && !dates.DevelopmentStart.IsZero() && time.Now().After(*dates.DevelopmentStart) {
+				return release, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no valid development releases found")
 }
 
 func listTestResultForVariant(featureGate string, jobVariant JobVariant) (*TestingResults, error) {
@@ -555,7 +604,7 @@ func listTestResultForVariant(featureGate string, jobVariant JobVariant) (*Testi
 		testPattern = fmt.Sprintf("install should succeed")
 	}
 
-	fmt.Printf("Query component readiness for all test run results for pattern %q on variant %#v\n", testPattern, jobVariant)
+	fmt.Printf("Query sippy for all test run results for pattern %q on variant %#v\n", testPattern, jobVariant)
 
 	defaultTransport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -576,25 +625,27 @@ func listTestResultForVariant(featureGate string, jobVariant JobVariant) (*Testi
 
 	testNameToResults := map[string]*TestResults{}
 	queries := sippy.QueriesFor(jobVariant.Cloud, jobVariant.Architecture, jobVariant.Topology, jobVariant.NetworkStack, testPattern)
+	var release string
+	// if its not main branch, then use the ENV var to determine the release version
+	currentRelease := os.Getenv("PULL_BASE_REF")
+	if strings.Contains(currentRelease, "release-") {
+		// example: release-4.18, release-4.17
+		release = strings.TrimPrefix(currentRelease, "release-")
+	} else {
+		// means its main branch
+		var err error
+		release, err = getLatestRelease()
+		if err != nil {
+			return nil, fmt.Errorf("couldn't fetch latest release version: %w", err)
+		}
+	}
+	fmt.Printf("Querying sippy release %s for test run results\n", release)
+
 	for _, currQuery := range queries {
 		currURL := &url.URL{
 			Scheme: "https",
 			Host:   "sippy.dptools.openshift.org",
 			Path:   "api/tests",
-		}
-		var release string
-		// if its not main branch, then use the ENV var to determine the release version
-		currentRelease := os.Getenv("PULL_BASE_REF")
-		if strings.Contains(currentRelease, "release-") {
-			// example: release-4.18, release-4.17
-			release = strings.TrimPrefix(currentRelease, "release-")
-		} else {
-			// means its main branch
-			var err error
-			release, err = getLatestRelease()
-			if err != nil {
-				return nil, fmt.Errorf("couldn't fetch latest release version: %w", err)
-			}
 		}
 		queryParams := currURL.Query()
 		queryParams.Add("release", release)
@@ -665,4 +716,15 @@ func listTestResultForVariant(featureGate string, jobVariant JobVariant) (*Testi
 	}
 
 	return jobVariantResults, nil
+}
+
+// Check for Arbiter and DualReplica or Fencing featureGates as these have special topologies
+func matchTwoNodeFeatureGates(featureGate string, topology string) bool {
+	if strings.Contains(featureGate, "arbiter") && strings.Contains(topology, "arbiter") {
+		return true
+	}
+	if (strings.Contains(featureGate, "dualreplica") || strings.Contains(featureGate, "fencing")) && strings.Contains(topology, "fencing") {
+		return true
+	}
+	return false
 }
