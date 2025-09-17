@@ -37,6 +37,8 @@ func NewCommand() *cobra.Command {
 	flags.StringVar(&operator.Namespace, "namespace", operator.Namespace, "the namespace for control plane components on management cluster")
 	flags.StringVar(&operator.HostedControlPlaneName, "hosted-control-plane", operator.HostedControlPlaneName, "Name of the hosted control plane that owns this operator")
 
+	cmd.AddCommand(NewTransformDeploymentCommand())
+
 	return cmd
 }
 
