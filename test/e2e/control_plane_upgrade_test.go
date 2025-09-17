@@ -34,11 +34,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		var startingVersion string
-		if len(hostedCluster.Status.Version.History) > 0 {
-			startingVersion = hostedCluster.Status.Version.History[0].Version
-		}
-
 		// Set the semantic version to the latest release image for version gating tests
 		err := e2eutil.SetReleaseImageVersion(testContext, globalOpts.LatestReleaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
 		if err != nil {
@@ -58,11 +53,6 @@ func TestUpgradeControlPlane(t *testing.T) {
 			}
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed update hostedcluster image")
-
-		t.Run("Wait for control plane components to complete rollout", func(t *testing.T) {
-			e2eutil.AtLeast(t, e2eutil.Version420)
-			e2eutil.WaitForControlPlaneComponentRollout(t, ctx, mgtClient, hostedCluster, startingVersion)
-		})
 
 		// Wait for the new rollout to be complete
 		e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)

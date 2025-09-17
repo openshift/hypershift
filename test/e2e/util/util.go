@@ -538,6 +538,15 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	var startingVersion string
+	if len(hostedCluster.Status.Version.History) > 0 {
+		startingVersion = hostedCluster.Status.Version.History[0].Version
+	}
+	t.Run("Wait for control plane components to complete rollout", func(t *testing.T) {
+		AtLeast(t, Version420)
+		WaitForControlPlaneComponentRollout(t, ctx, client, hostedCluster, startingVersion)
+	})
+
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
