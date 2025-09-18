@@ -1658,6 +1658,8 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "network-node-identity"}:            {},
 			{label: "app", value: "ovnkube-control-plane"}:            {},
 			{label: "app", value: "cloud-network-config-controller"}:  {},
+			{label: "app", value: "vmi-console-debug"}:                {},
+			{label: "kubevirt.io", value: "virt-launcher"}:            {}, // virt-launcher pods have no app label
 			{label: "app", value: "csi-snapshot-controller"}:          {},
 			{label: "app", value: "csi-snapshot-webhook"}:             {},
 			{label: "app", value: "packageserver"}: {
