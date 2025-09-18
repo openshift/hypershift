@@ -48,6 +48,8 @@ func (p *ProviderWithOpenShiftImageRegistryOverridesDecorator) Lookup(ctx contex
 		}
 	}
 
+	// Reset mirrored release image when falling back to original
+	p.mirroredReleaseImage = ""
 	return p.Delegate.Lookup(ctx, image, pullSecret)
 }
 
