@@ -591,6 +591,10 @@ func TestGetImageArchitecture(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+			// Clear caches to avoid interference between tests
+			imageMetadataCache.Clear()
+			manifestsCache.Clear()
+			digestCache.Clear()
 			arch, err := getImageArchitecture(context.TODO(), tc.image, tc.pullSecretBytes, tc.imageMetadataProvider)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
