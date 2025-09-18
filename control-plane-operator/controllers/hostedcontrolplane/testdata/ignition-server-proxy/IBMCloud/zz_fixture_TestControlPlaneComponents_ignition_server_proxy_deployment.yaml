@@ -1,0 +1,152 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: ignition-server-proxy
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: ignition-server-proxy
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: ignition-server-proxy
+        hypershift.openshift.io/control-plane-component: ignition-server-proxy
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/request-serving-component: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: ignition-server-proxy
+                hypershift.openshift.io/control-plane-component: ignition-server-proxy
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: ignition-server-proxy
+                hypershift.openshift.io/control-plane-component: ignition-server-proxy
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/request-serving-component: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -e
+          cat /etc/ssl/serving-cert/tls.crt /etc/ssl/serving-cert/tls.key > /tmp/tls.pem
+          cat <<EOF > /tmp/haproxy.conf
+          defaults
+            mode http
+            timeout connect 5s
+            timeout client 30s
+            timeout server 30s
+
+          frontend ignition-server
+            bind :::8443 v4v6 ssl crt /tmp/tls.pem alpn http/1.1
+            default_backend ignition_servers
+
+          backend ignition_servers
+            server ignition-server ignition-server:443 check ssl ca-file /etc/ssl/root-ca/ca.crt alpn http/1.1
+          EOF
+          haproxy -f /tmp/haproxy.conf
+        command:
+        - /bin/bash
+        image: haproxy-router
+        imagePullPolicy: IfNotPresent
+        name: haproxy
+        ports:
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        securityContext:
+          capabilities:
+            add:
+            - NET_BIND_SERVICE
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/ssl/serving-cert
+          name: serving-cert
+        - mountPath: /etc/ssl/root-ca
+          name: root-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      priorityClassName: hypershift-control-plane
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: ignition-server-serving-cert
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - emptyDir: {}
+        name: tmp-dir
+status: {}

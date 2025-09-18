@@ -1,0 +1,232 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: ignition-server
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: ignition-server
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: payloads,bootstrap-manifests,manifests,shared,tmp-dir
+        component.hypershift.openshift.io/config-hash: 741638a5741638a5
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: ignition-server
+        hypershift.openshift.io/control-plane-component: ignition-server
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: ignition-server
+                hypershift.openshift.io/control-plane-component: ignition-server
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: ignition-server
+                hypershift.openshift.io/control-plane-component: ignition-server
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+                hypershift.openshift.io/need-management-kas-access: "true"
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - --cert-file
+        - /var/run/secrets/ignition/serving-cert/tls.crt
+        - --key-file
+        - /var/run/secrets/ignition/serving-cert/tls.key
+        - --feature-gate-manifest=/shared/99_feature-gate.yaml
+        - --registry-overrides
+        - registry=override
+        - --platform
+        - IBMCloud
+        command:
+        - /usr/bin/control-plane-operator
+        - ignition-server
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: OPENSHIFT_IMG_OVERRIDES
+          value: registry=override
+        image: controlplane-operator
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /healthz
+            port: 9090
+            scheme: HTTPS
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: ignition-server
+        ports:
+        - containerPort: 9090
+          name: https
+          protocol: TCP
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 9090
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/ignition/serving-cert
+          name: serving-cert
+        - mountPath: /payloads
+          name: payloads
+        - mountPath: /usr/share/bootkube/manifests/bootstrap-manifests
+          name: bootstrap-manifests
+        - mountPath: /usr/share/bootkube/manifests/manifests
+          name: manifests
+        - mountPath: /shared
+          name: shared
+        - mountPath: /etc/pki/ca-trust/extracted/pem
+          name: openshift-config-managed-trusted-ca-bundle
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
+      initContainers:
+      - args:
+        - -c
+        - |
+          #!/bin/bash
+          set -e
+          cd /tmp
+          mkdir input output manifests
+
+          touch /tmp/manifests/99_feature-gate.yaml
+          cat <<EOF >/tmp/manifests/99_feature-gate.yaml
+          $(FEATURE_GATE_YAML)
+
+          EOF
+
+          cp /tmp/manifests/99_feature-gate.yaml /shared/99_feature-gate.yaml
+        command:
+        - /bin/bash
+        env:
+        - name: FEATURE_GATE_YAML
+          value: |
+            apiVersion: config.openshift.io/v1
+            kind: FeatureGate
+            metadata:
+              creationTimestamp: null
+              name: cluster
+            spec: {}
+            status:
+              featureGates: null
+        image: cluster-config-api
+        name: fetch-feature-gate
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /shared
+          name: shared
+      priorityClassName: hypershift-control-plane
+      serviceAccount: ignition-server
+      serviceAccountName: ignition-server
+      terminationGracePeriodSeconds: 10
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: ignition-server-serving-cert
+      - emptyDir: {}
+        name: payloads
+      - emptyDir: {}
+        name: bootstrap-manifests
+      - emptyDir: {}
+        name: manifests
+      - emptyDir: {}
+        name: shared
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: openshift-config-managed-trusted-ca-bundle
+          optional: true
+        name: openshift-config-managed-trusted-ca-bundle
+      - emptyDir: {}
+        name: tmp-dir
+status: {}
