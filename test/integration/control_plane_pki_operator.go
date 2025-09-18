@@ -39,6 +39,9 @@ import (
 
 func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx context.Context, hostedCluster *hypershiftv1beta1.HostedCluster, mgmt, guest *framework.Clients) {
 	t.Run("break-glass-credentials", func(t *testing.T) {
+		if hostedCluster.Spec.Platform.Type == hypershiftv1beta1.KubevirtPlatform {
+			t.Skip("skipping break-glass credentials test on KubeVirt platform")
+		}
 		// control-plane-pki-operator is only available in 4.15 and later
 		e2eutil.AtLeast(t, e2eutil.Version415)
 		hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
