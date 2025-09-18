@@ -8,13 +8,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-// When HCP has AWSLoadBalancerSubnetsAnnotation it should not set Service subnets annotation
-func TestReconcileRouterService_DoesNotApplySubnetsAnnotation(t *testing.T) {
-	// Given a HostedControlPlane on AWS with the subnets annotation set
+// When HCP has AWSLoadBalancerSubnetsAnnotation it should NOT set Service subnets annotation.
+// When HCP has AWSLoadBalancerTargetNodesAnnotation it should set Service target node labels annotation.
+func TestReconcileRouterServiceAnnotations(t *testing.T) {
+	// Given a HostedControlPlane on AWS with annotations set
 	hcp := &hyperv1.HostedControlPlane{}
 	hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+	targetNodesLabel := "osd-fleet-manager.openshift.io/paired-nodes=serving-123"
 	hcp.Annotations = map[string]string{
-		hyperv1.AWSLoadBalancerSubnetsAnnotation: "subnet-123,subnet-456",
+		hyperv1.AWSLoadBalancerSubnetsAnnotation:     "subnet-123,subnet-456",
+		hyperv1.AWSLoadBalancerTargetNodesAnnotation: targetNodesLabel,
 	}
 
 	// And an empty Service to reconcile
@@ -42,5 +45,8 @@ func TestReconcileRouterService_DoesNotApplySubnetsAnnotation(t *testing.T) {
 	}
 	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"]; got != "true" {
 		t.Fatalf("expected cross-zone load balancing annotation to be 'true', got %q", got)
+	}
+	if got := svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-target-node-labels"]; got != targetNodesLabel {
+		t.Fatalf("expected target node labels annotation to be '%s', got %q", targetNodesLabel, got)
 	}
 }
