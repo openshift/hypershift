@@ -950,6 +950,41 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 	})
 }
 
+// NOTE: This function assumes that it is not called in the middle of a version rollout
+// i.e. It expects that the first entry in ClusterVersion history is Completed
+func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crclient.Client) {
+	t.Run("EnsureFeatureGateStatus", func(t *testing.T) {
+		AtLeast(t, Version419)
+
+		g := NewWithT(t)
+
+		clusterVersion := &configv1.ClusterVersion{}
+		err := guestClient.Get(ctx, crclient.ObjectKey{Name: "version"}, clusterVersion)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get ClusterVersion resource")
+
+		featureGate := &configv1.FeatureGate{}
+		err = guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, featureGate)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get FeatureGate resource")
+
+		// Expect at least one entry in ClusterVersion history
+		g.Expect(len(clusterVersion.Status.History)).To(BeNumerically(">", 0), "ClusterVersion history is empty")
+		currentVersion := clusterVersion.Status.History[0].Version
+
+		// Expect current version to be in Completed state
+		g.Expect(clusterVersion.Status.History[0].State).To(Equal(configv1.CompletedUpdate), "most recent ClusterVersion history entry is not in Completed state")
+
+		// Ensure that the current version in ClusterVersion is also present in FeatureGate status
+		versionFound := false
+		for _, details := range featureGate.Status.FeatureGates {
+			if details.Version == currentVersion {
+				versionFound = true
+				break
+			}
+		}
+		g.Expect(versionFound).To(BeTrue(), "current version %s from ClusterVersion not found in FeatureGate status", currentVersion)
+	})
+}
+
 func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, hostClient, guestClient crclient.Client, platform hyperv1.PlatformType, nodePoolNamespace string) {
 	t.Run("EnsureNodeCountMatchesNodePoolReplicas", func(t *testing.T) {
 		var nodePoolList hyperv1.NodePoolList
