@@ -1026,23 +1026,6 @@ TODO: This is set as optional to prevent validation from failing due to a limita
 TODO Add s390x to enum validation once the architecture is supported</p>
 </td>
 </tr>
-<tr>
-<td>
-<code>imageType</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.ImageType">
-ImageType
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>imageType specifies the type of image to use for node instances.
-Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows (&ldquo;windows&rdquo;).
-When set to ImageTypeWindows, the controller will automatically populate the AMI field
-with a Windows-compatible AMI based on the region and OpenShift version.</p>
-</td>
-</tr>
 </table>
 </td>
 </tr>
@@ -1494,6 +1477,23 @@ string
 <em>(Optional)</em>
 <p>ami is the image id to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageType">
+ImageType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageType specifies the type of image to use for node instances.
+Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows (&ldquo;windows&rdquo;).
+When set to ImageTypeWindows, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
 </td>
 </tr>
 <tr>
@@ -7403,7 +7403,7 @@ specifications.</p>
 ###ImageType { #hypershift.openshift.io/v1beta1.ImageType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
 <p>ImageType specifies the type of image to use for node instances.</p>
@@ -9734,23 +9734,6 @@ string
 TODO: This is set as optional to prevent validation from failing due to a limitation on client side validation with open API machinery:
 <a href="https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215">https://github.com/kubernetes/kubernetes/issues/108768#issuecomment-1253912215</a>
 TODO Add s390x to enum validation once the architecture is supported</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>imageType</code></br>
-<em>
-<a href="#hypershift.openshift.io/v1beta1.ImageType">
-ImageType
-</a>
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>imageType specifies the type of image to use for node instances.
-Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows (&ldquo;windows&rdquo;).
-When set to ImageTypeWindows, the controller will automatically populate the AMI field
-with a Windows-compatible AMI based on the region and OpenShift version.</p>
 </td>
 </tr>
 </tbody>

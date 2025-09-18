@@ -173,9 +173,10 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				Region: "us-east-1",
 			}}},
 			nodePool: hyperv1.NodePoolSpec{
-				ImageType: hyperv1.ImageTypeWindows,
-				Platform:  hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{}},
-				Arch:      hyperv1.ArchitectureAMD64,
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					ImageType: hyperv1.ImageTypeWindows,
+				}},
+				Arch: hyperv1.ArchitectureAMD64,
 			},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
 				tmpl.Spec.Template.Spec.AMI.ID = ptr.To("ami-0abcdef1234567890")
@@ -187,9 +188,9 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				Region: "us-east-1",
 			}}},
 			nodePool: hyperv1.NodePoolSpec{
-				ImageType: hyperv1.ImageTypeWindows,
 				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
-					AMI: "ami-custom-windows",
+					AMI:       "ami-custom-windows",
+					ImageType: hyperv1.ImageTypeWindows,
 				}},
 			},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {

@@ -40,7 +40,7 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	arch := nodePool.Spec.Arch
 	if nodePool.Spec.Platform.AWS.AMI != "" {
 		ami = nodePool.Spec.Platform.AWS.AMI
-	} else if nodePool.Spec.ImageType == hyperv1.ImageTypeWindows {
+	} else if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
 		// Use Windows AMI mapping when ImageType is set to Windows
 		var err error
 		ami, err = getWindowsAMI(region, arch, releaseImage)
@@ -264,7 +264,7 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 		if nodePool.Spec.Platform.AWS.AMI != "" {
 			// User-defined AMIs cannot be validated
 			removeStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
-		} else if nodePool.Spec.ImageType == hyperv1.ImageTypeWindows {
+		} else if nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
 			// Validate Windows AMI mapping
 			ami, err := getWindowsAMI(hcluster.Spec.Platform.AWS.Region, nodePool.Spec.Arch, releaseImage)
 			if err != nil {

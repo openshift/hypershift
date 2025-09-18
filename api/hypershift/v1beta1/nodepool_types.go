@@ -100,7 +100,7 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
-// +kubebuilder:validation:XValidation:rule="!has(self.imageType) || self.imageType != 'windows' || (self.arch == 'amd64' && self.platform.type == 'AWS')", message="ImageType 'windows' is only supported with arch 'amd64' and platform type 'AWS'"
+// +kubebuilder:validation:XValidation:rule="!has(self.platform.aws) || !has(self.platform.aws.imageType) || self.platform.aws.imageType != 'windows' || (self.arch == 'amd64' && self.platform.type == 'AWS')", message="ImageType 'windows' is only supported with arch 'amd64' and platform type 'AWS'"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
@@ -233,15 +233,6 @@ type NodePoolSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Arch is immutable"
 	// +optional
 	Arch string `json:"arch,omitempty"`
-
-	// imageType specifies the type of image to use for node instances.
-	// Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows ("windows").
-	// When set to ImageTypeWindows, the controller will automatically populate the AMI field
-	// with a Windows-compatible AMI based on the region and OpenShift version.
-	//
-	// +optional
-	// +kubebuilder:validation:Enum="";windows
-	ImageType ImageType `json:"imageType,omitempty"`
 }
 
 // NodePoolStatus is the latest observed status of a NodePool.

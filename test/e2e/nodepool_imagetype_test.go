@@ -93,8 +93,8 @@ func (it *NodePoolImageTypeTest) testDefaultImageType(t *testing.T, ctx context.
 	// Create nodepool without ImageType set (defaults to empty)
 	np := nodePool.DeepCopy()
 	np.Name = it.hostedCluster.Name + "-default-imagetype"
-	np.ResourceVersion = ""                      // Clear resourceVersion for object creation
-	np.Spec.ImageType = hyperv1.ImageTypeDefault // Explicitly set to default (empty string)
+	np.ResourceVersion = ""                                   // Clear resourceVersion for object creation
+	np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeDefault // Explicitly set to default (empty string)
 
 	if err := it.mgmtClient.Create(ctx, np); err != nil {
 		t.Fatalf("failed to create nodepool with default ImageType: %v", err)
@@ -144,7 +144,7 @@ func (it *NodePoolImageTypeTest) testWindowsImageType(t *testing.T, ctx context.
 	np := nodePool.DeepCopy()
 	np.Name = it.hostedCluster.Name + "-windows-imagetype"
 	np.ResourceVersion = "" // Clear resourceVersion for object creation
-	np.Spec.ImageType = hyperv1.ImageTypeWindows
+	np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
 
 	if err := it.mgmtClient.Create(ctx, np); err != nil {
 		t.Fatalf("failed to create nodepool with Windows ImageType: %v", err)
@@ -202,8 +202,8 @@ func (it *NodePoolImageTypeTest) testInvalidImageType(t *testing.T, ctx context.
 	// Create nodepool with invalid ImageType - this should fail at API level due to enum validation
 	np := nodePool.DeepCopy()
 	np.Name = it.hostedCluster.Name + "-invalid-imagetype"
-	np.ResourceVersion = ""            // Clear resourceVersion for object creation
-	np.Spec.ImageType = "invalid-type" // This should be rejected by the API
+	np.ResourceVersion = ""                         // Clear resourceVersion for object creation
+	np.Spec.Platform.AWS.ImageType = "invalid-type" // This should be rejected by the API
 
 	err := it.mgmtClient.Create(ctx, np)
 	if err == nil {

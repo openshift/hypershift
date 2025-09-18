@@ -25,6 +25,15 @@ type AWSNodePoolPlatform struct {
 	// +kubebuilder:validation:MaxLength=255
 	AMI string `json:"ami,omitempty"`
 
+	// imageType specifies the type of image to use for node instances.
+	// Valid values are ImageTypeDefault (empty string/default) or ImageTypeWindows ("windows").
+	// When set to ImageTypeWindows, the controller will automatically populate the AMI field
+	// with a Windows-compatible AMI based on the region and OpenShift version.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum="";windows
+	ImageType ImageType `json:"imageType,omitempty"`
+
 	// securityGroups is an optional set of security groups to associate with node
 	// instances.
 	//

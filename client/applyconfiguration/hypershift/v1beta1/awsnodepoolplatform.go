@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AWSNodePoolPlatformApplyConfiguration represents a declarative configuration of the AWSNodePoolPlatform type for use
 // with apply.
 type AWSNodePoolPlatformApplyConfiguration struct {
@@ -24,6 +28,7 @@ type AWSNodePoolPlatformApplyConfiguration struct {
 	InstanceProfile *string                                  `json:"instanceProfile,omitempty"`
 	Subnet          *AWSResourceReferenceApplyConfiguration  `json:"subnet,omitempty"`
 	AMI             *string                                  `json:"ami,omitempty"`
+	ImageType       *hypershiftv1beta1.ImageType             `json:"imageType,omitempty"`
 	SecurityGroups  []AWSResourceReferenceApplyConfiguration `json:"securityGroups,omitempty"`
 	RootVolume      *VolumeApplyConfiguration                `json:"rootVolume,omitempty"`
 	ResourceTags    []AWSResourceTagApplyConfiguration       `json:"resourceTags,omitempty"`
@@ -65,6 +70,14 @@ func (b *AWSNodePoolPlatformApplyConfiguration) WithSubnet(value *AWSResourceRef
 // If called multiple times, the AMI field is set to the value of the last call.
 func (b *AWSNodePoolPlatformApplyConfiguration) WithAMI(value string) *AWSNodePoolPlatformApplyConfiguration {
 	b.AMI = &value
+	return b
+}
+
+// WithImageType sets the ImageType field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageType field is set to the value of the last call.
+func (b *AWSNodePoolPlatformApplyConfiguration) WithImageType(value hypershiftv1beta1.ImageType) *AWSNodePoolPlatformApplyConfiguration {
+	b.ImageType = &value
 	return b
 }
 

@@ -18,7 +18,6 @@ limitations under the License.
 package v1beta1
 
 import (
-	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -40,7 +39,6 @@ type NodePoolSpecApplyConfiguration struct {
 	PausedUntil             *string                                `json:"pausedUntil,omitempty"`
 	TuningConfig            []v1.LocalObjectReference              `json:"tuningConfig,omitempty"`
 	Arch                    *string                                `json:"arch,omitempty"`
-	ImageType               *hypershiftv1beta1.ImageType           `json:"imageType,omitempty"`
 }
 
 // NodePoolSpecApplyConfiguration constructs a declarative configuration of the NodePoolSpec type for use with
@@ -173,13 +171,5 @@ func (b *NodePoolSpecApplyConfiguration) WithTuningConfig(values ...v1.LocalObje
 // If called multiple times, the Arch field is set to the value of the last call.
 func (b *NodePoolSpecApplyConfiguration) WithArch(value string) *NodePoolSpecApplyConfiguration {
 	b.Arch = &value
-	return b
-}
-
-// WithImageType sets the ImageType field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ImageType field is set to the value of the last call.
-func (b *NodePoolSpecApplyConfiguration) WithImageType(value hypershiftv1beta1.ImageType) *NodePoolSpecApplyConfiguration {
-	b.ImageType = &value
 	return b
 }
