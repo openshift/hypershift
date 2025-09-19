@@ -1,18 +1,23 @@
 <!--
-- Please ensure code changes are split into a series of logically independent commits.
-- Every commit should have a subject/title (What) and a description/body (Why).
-- Every PR must have a description.
-- As an example you can use git commit -m"What" -m"Why" to achieve the requirements above. GitHub automatically recognises the commit description (-m"Why") in single commit PRs and adds it as the PR description.
-- Use the [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) in the subject line for every commit. E.g `Mark infraID as required` instead of `This patch marks infraID as required` (This follows Git’s own built-in conventions). See https://github.com/openshift/hypershift/pull/485 as an example.
-- See https://hypershift-docs.netlify.app/contribute for more details.
+Please follow our contributing guidelines located at https://github.com/openshift/hypershift/blob/main/.github/CONTRIBUTING.md.
 
-Delete this text before submitting the PR.
+In general, please:
+- open the PR in draft mode
+- keep commits as small and focused on specific changes as much as possible
+- use conventional commits
+- test your changes locally with `make pre-commit` before moving any PR out of draft mode
+- prefix your PR with a Jira ticket number
+- fill out the PR description template below
+
+Feel free to delete this comment text block before submitting the PR.
 -->
 
 **What this PR does / why we need it**:
 
 **Which issue(s) this PR fixes** *(optional, use `fixes #<issue_number>(, fixes #<issue_number>, ...)` format, where issue_number might be a GitHub issue, or a Jira story*:
 Fixes #
+
+**Special notes for your reviewer**:
 
 **Checklist**
 - [ ] Subject and description added to both, commit and PR.
