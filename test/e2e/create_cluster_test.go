@@ -1845,7 +1845,7 @@ func TestCreateCluster(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
-		_ = e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
 		t.Logf("fetching mgmt kubeconfig")
 		mgmtCfg, err := e2eutil.GetConfig()
@@ -1871,6 +1871,7 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
 		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
