@@ -8,10 +8,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -23,13 +23,15 @@ import (
 )
 
 const (
-	ControllerName = "globalps"
+	ControllerName     = "globalps"
+	configSeedLabelKey = "hypershift.openshift.io/globalps-config-hash"
 )
 
 type Reconciler struct {
 	cpClient               crclient.Client
 	kubeSystemSecretClient crclient.Client
 	hcUncachedClient       crclient.Client
+	hcpName                string
 	hcpNamespace           string
 	hccoImage              string
 	upsert.CreateOrUpdateProvider
@@ -57,9 +59,21 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		originalPullSecretBytes     []byte
 		globalPullSecretBytes       []byte
 		err                         error
+		ok                          bool
 	)
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling global pull secret")
+
+	// Get the original pull secret once at the beginning (used in both scenarios)
+	originalPullSecret := manifests.PullSecret(r.hcpNamespace)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
+		return fmt.Errorf("failed to get original pull secret: %w", err)
+	}
+
+	originalPullSecretBytes, ok = originalPullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok || len(originalPullSecretBytes) == 0 {
+		return fmt.Errorf("original pull secret does not contain %s key", corev1.DockerConfigJsonKey)
+	}
 
 	// Get the user provided pull secret
 	exists, additionalPullSecret, err := additionalPullSecretExists(ctx, r.kubeSystemSecretClient)
@@ -67,19 +81,41 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to check if user provided pull secret exists: %w", err)
 	}
 
+	hcp := manifests.HostedControlPlane(r.hcpNamespace, r.hcpName)
+	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return fmt.Errorf("failed to get hosted control plane: %w", err)
+	}
+
 	if !exists || additionalPullSecret.Data == nil {
+		// Delete global pull secret if it exists
 		secret := manifests.GlobalPullSecret()
 		if err := r.kubeSystemSecretClient.Delete(ctx, secret); err != nil {
 			if !apierrors.IsNotFound(err) {
 				return fmt.Errorf("failed to delete global pull secret: %w", err)
 			}
 		}
-		return nil
-	}
 
-	// Reconcile the RBAC for the Global Pull Secret
-	if err := reconcileGlobalPullSecretRBAC(ctx, r.hcUncachedClient, r.CreateOrUpdate, "kube-system", "openshift-config"); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret RBAC: %w", err)
+		// Create/Update original pull secret in the DataPlane's kube-system namespace
+		originalSecret := manifests.OriginalPullSecret()
+		if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, originalSecret, func() error {
+			originalSecret.Data = map[string][]byte{
+				corev1.DockerConfigJsonKey: originalPullSecretBytes,
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to create original pull secret: %w", err)
+		}
+
+		// Generate a hash of the original pull secret content to trigger pod recreation
+		configSeed := util.HashSimple(originalPullSecretBytes)
+
+		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
+		daemonSet := manifests.GlobalPullSecretDaemonSet()
+		if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, "", configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
+		}
+
+		return nil
 	}
 
 	if userProvidedPullSecretBytes, err = validateAdditionalPullSecret(additionalPullSecret); err != nil {
@@ -88,21 +124,23 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 
 	log.Info("Valid additional pull secret found in the DataPlane, reconciling global pull secret")
 
-	// Get the original pull secret
-	originalPullSecret := manifests.PullSecret(r.hcpNamespace)
-	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
-		return fmt.Errorf("failed to get original pull secret: %w", err)
-	}
-
-	// Asumming hcp pull secret is valid
-	originalPullSecretBytes = originalPullSecret.Data[corev1.DockerConfigJsonKey]
-
 	// Merge the additional pull secret with the original pull secret
 	if globalPullSecretBytes, err = mergePullSecrets(ctx, originalPullSecretBytes, userProvidedPullSecretBytes); err != nil {
 		return fmt.Errorf("failed to merge pull secrets: %w", err)
 	}
 
-	// Create secret in the DataPlane
+	// Create original pull secret in the DataPlane's kube-system namespace
+	originalSecret := manifests.OriginalPullSecret()
+	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, originalSecret, func() error {
+		originalSecret.Data = map[string][]byte{
+			corev1.DockerConfigJsonKey: originalPullSecretBytes,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to create original pull secret: %w", err)
+	}
+
+	// Create global pull secret in the DataPlane
 	secret := manifests.GlobalPullSecret()
 	if _, err := r.CreateOrUpdate(ctx, r.kubeSystemSecretClient, secret, func() error {
 		secret.Data = map[string][]byte{
@@ -113,15 +151,17 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
 	}
 
+	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
+	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, originalSecret.Name, secret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, originalPullSecretName, globalPullSecretName, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
@@ -135,15 +175,14 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name": manifests.GlobalPullSecretDSName,
+						"name":             manifests.GlobalPullSecretDSName,
+						configSeedLabelKey: configSeed,
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:           manifests.GlobalPullSecretDSName,
-					AutomountServiceAccountToken: ptr.To(true),
-					SecurityContext:              &corev1.PodSecurityContext{},
-					DNSPolicy:                    corev1.DNSDefault,
-					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					Containers: []corev1.Container{
 						{
 							Name:            manifests.GlobalPullSecretDSName,
@@ -154,21 +193,35 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							},
 							Args: []string{
 								"sync-global-pullsecret",
-								fmt.Sprintf("--global-pull-secret-name=%s", globalPullSecretName),
 							},
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: ptr.To(true),
 							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "kubelet-config",
-									MountPath: "/var/lib/kubelet",
-								},
-								{
-									Name:      "dbus",
-									MountPath: "/var/run/dbus",
-								},
-							},
+							VolumeMounts: func() []corev1.VolumeMount {
+								volumeMounts := []corev1.VolumeMount{
+									{
+										Name:      "kubelet-config",
+										MountPath: "/var/lib/kubelet",
+									},
+									{
+										Name:      "dbus",
+										MountPath: "/var/run/dbus",
+									},
+									{
+										Name:      "original-pull-secret",
+										MountPath: "/etc/original-pull-secret",
+										ReadOnly:  true,
+									},
+								}
+								if globalPullSecretName != "" {
+									volumeMounts = append(volumeMounts, corev1.VolumeMount{
+										Name:      "global-pull-secret",
+										MountPath: "/etc/global-pull-secret",
+										ReadOnly:  true,
+									})
+								}
+								return volumeMounts
+							}(),
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -178,26 +231,48 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "kubelet-config",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/var/lib/kubelet",
-									Type: ptr.To(corev1.HostPathDirectory),
+					Volumes: func() []corev1.Volume {
+						volumes := []corev1.Volume{
+							{
+								Name: "kubelet-config",
+								VolumeSource: corev1.VolumeSource{
+									HostPath: &corev1.HostPathVolumeSource{
+										Path: "/var/lib/kubelet",
+										Type: ptr.To(corev1.HostPathDirectory),
+									},
 								},
 							},
-						},
-						{
-							Name: "dbus",
-							VolumeSource: corev1.VolumeSource{
-								HostPath: &corev1.HostPathVolumeSource{
-									Path: "/var/run/dbus",
-									Type: ptr.To(corev1.HostPathDirectory),
+							{
+								Name: "dbus",
+								VolumeSource: corev1.VolumeSource{
+									HostPath: &corev1.HostPathVolumeSource{
+										Path: "/var/run/dbus",
+										Type: ptr.To(corev1.HostPathDirectory),
+									},
 								},
 							},
-						},
-					},
+							{
+								Name: "original-pull-secret",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: originalPullSecretName,
+									},
+								},
+							},
+						}
+						if globalPullSecretName != "" {
+							volumes = append(volumes, corev1.Volume{
+								Name: "global-pull-secret",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: globalPullSecretName,
+										Optional:   ptr.To(true), // Make the secret optional
+									},
+								},
+							})
+						}
+						return volumes
+					}(),
 				},
 			},
 		}
@@ -242,12 +317,14 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	var (
 		originalAuths         map[string]any
 		userProvidedAuths     map[string]any
+		finalAuths            map[string]any
 		originalJSON          map[string]any
 		userProvidedJSON      map[string]any
 		globalPullSecretBytes []byte
 		err                   error
 	)
 
+	log := ctrl.LoggerFrom(ctx)
 	// Unmarshal original pull secret
 	if err = json.Unmarshal(originalPullSecret, &originalJSON); err != nil {
 		return nil, fmt.Errorf("invalid original pull secret format: %w", err)
@@ -260,14 +337,17 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	}
 	userProvidedAuths = userProvidedJSON["auths"].(map[string]any)
 
-	// Merge auths
-	for k, v := range userProvidedAuths {
-		originalAuths[k] = v
+	for k, v := range originalAuths {
+		if _, ok := userProvidedAuths[k]; ok {
+			log.Info("The registry provided in the additional-pull-secret secret already exists in the original pull secret, this is not allowed. Keeping the original pull secret registry authentication", "registry", k)
+		}
+		userProvidedAuths[k] = v
 	}
+	finalAuths = userProvidedAuths
 
 	// Create final JSON
 	finalJSON := map[string]any{
-		"auths": originalAuths,
+		"auths": finalAuths,
 	}
 
 	globalPullSecretBytes, err = json.Marshal(finalJSON)
@@ -276,97 +356,6 @@ func mergePullSecrets(ctx context.Context, originalPullSecret, userProvidedPullS
 	}
 
 	return globalPullSecretBytes, nil
-}
-
-func reconcileGlobalPullSecretRBAC(ctx context.Context, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, kubeSystemNS, openshiftConfigNS string) error {
-	// Remove the RBAC resources if the user provided pull secret is not present
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("reconciling global pull secret RBAC")
-
-	// Create ServiceAccount
-	sa := manifests.GlobalPullSecretSyncerServiceAccount()
-	if _, err := createOrUpdate(ctx, c, sa, func() error { return nil }); err != nil {
-		return fmt.Errorf("failed to reconcile service account: %w", err)
-	}
-
-	// Create Role and RoleBinding for kube-system namespace
-	globalPullSecretRole := manifests.GlobalPullSecretSyncerRole(kubeSystemNS)
-	if _, err := createOrUpdate(ctx, c, globalPullSecretRole, func() error {
-		globalPullSecretRole.Rules = []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
-				Verbs:     []string{"list", "watch"},
-			},
-			{
-				APIGroups:     []string{""},
-				Resources:     []string{"secrets"},
-				ResourceNames: []string{"additional-pull-secret", "global-pull-secret"},
-				Verbs:         []string{"get"},
-			},
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer role in kube-system: %w", err)
-	}
-
-	// Create RoleBinding for kube-system namespace
-	globalPullSecretRoleBinding := manifests.GlobalPullSecretSyncerRoleBinding(kubeSystemNS)
-	if _, err := createOrUpdate(ctx, c, globalPullSecretRoleBinding, func() error {
-		globalPullSecretRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     globalPullSecretRole.Name,
-		}
-		globalPullSecretRoleBinding.Subjects = []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      sa.Name,
-				Namespace: sa.Namespace,
-			},
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer role binding in kube-system: %w", err)
-	}
-
-	// Create Role and RoleBinding for openshift-config namespace
-	globalPullSecretOpenshiftConfigRole := manifests.GlobalPullSecretSyncerRole(openshiftConfigNS)
-	if _, err := createOrUpdate(ctx, c, globalPullSecretOpenshiftConfigRole, func() error {
-		globalPullSecretOpenshiftConfigRole.Rules = []rbacv1.PolicyRule{
-			{
-				APIGroups:     []string{""},
-				Resources:     []string{"secrets"},
-				ResourceNames: []string{"pull-secret"},
-				Verbs:         []string{"get"},
-			},
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer role in openshift-config: %w", err)
-	}
-
-	// Create RoleBinding for openshift-config namespace
-	globalPullSecretOpenshiftConfigRoleBinding := manifests.GlobalPullSecretSyncerRoleBinding(openshiftConfigNS)
-	if _, err := createOrUpdate(ctx, c, globalPullSecretOpenshiftConfigRoleBinding, func() error {
-		globalPullSecretOpenshiftConfigRoleBinding.RoleRef = rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     globalPullSecretOpenshiftConfigRole.Name,
-		}
-		globalPullSecretOpenshiftConfigRoleBinding.Subjects = []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      sa.Name,
-				Namespace: sa.Namespace,
-			},
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile global pull secret syncer role binding in openshift-config: %w", err)
-	}
-
-	return nil
 }
 
 func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *corev1.Secret, error) {
