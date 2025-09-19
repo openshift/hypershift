@@ -9,6 +9,20 @@ There are different components that might require independent versioning and sup
 - Hosted Control Plane (HCP) CLI
 
 ## Support Level
+
+### Managed Services
+Managed services, such as Red Hat OpenShift on IBM Cloud, often control
+versioning support of all components. As a result, you should refer
+to the managed service documentation for version support information.
+
+#### [Red Hat OpenShift on IBM Cloud](https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions)
+
+Red Hat OpenShift on IBM Cloud may support OCP versions beyond standard
+OCP version support timelines. Furthermore, Red Hat OpenShift on IBM
+Cloud may run HO on the following versions of OpenShift and Kubernetes:
+- Kubernetes version 1.30 or later
+- OpenShift version 4.15 or later
+
 ### Management Cluster
 In general, the upstream HyperShift project does not place strict requirements on the OpenShift version of your 
 management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management 
