@@ -12,14 +12,17 @@ In general, please:
 Feel free to delete this comment text block before submitting the PR.
 -->
 
-**What this PR does / why we need it**:
+## What this PR does / why we need it:
 
-**Which issue(s) this PR fixes** *(optional, use `fixes #<issue_number>(, fixes #<issue_number>, ...)` format, where issue_number might be a GitHub issue, or a Jira story*:
-Fixes #
+## Which issue(s) this PR fixes:
+<!--
+(optional, use `fixes #<issue_number>(, fixes #<issue_number>, ...)` format, where issue_number might be a GitHub issue, or a Jira story
+-->
+Fixes 
 
-**Special notes for your reviewer**:
+## Special notes for your reviewer:
 
-**Checklist**
+## Checklist:
 - [ ] Subject and description added to both, commit and PR.
 - [ ] Relevant issues have been referenced.
 - [ ] This change includes docs. 
