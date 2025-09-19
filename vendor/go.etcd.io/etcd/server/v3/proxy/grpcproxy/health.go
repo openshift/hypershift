@@ -16,14 +16,16 @@ package grpcproxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/etcdhttp"
 	"go.uber.org/zap"
+
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/etcdhttp"
 )
 
 // HandleHealth registers health handler on '/health'.
@@ -51,7 +53,7 @@ func checkHealth(c *clientv3.Client) etcdhttp.Health {
 	ctx, cancel := context.WithTimeout(c.Ctx(), time.Second)
 	_, err := c.Get(ctx, "a")
 	cancel()
-	if err == nil || err == rpctypes.ErrPermissionDenied {
+	if err == nil || errors.Is(err, rpctypes.ErrPermissionDenied) {
 		h.Health = "true"
 	} else {
 		h.Reason = fmt.Sprintf("GET ERROR:%s", err)
