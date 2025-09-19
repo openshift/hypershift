@@ -35,6 +35,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
 		deployment.Spec.Template.Spec.ServiceAccountName = "azure-cloud-controller-manager"
 	}
-	
+
 	return nil
 }
