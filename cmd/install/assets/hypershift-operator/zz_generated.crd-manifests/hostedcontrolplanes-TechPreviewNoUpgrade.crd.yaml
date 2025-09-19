@@ -6457,6 +6457,212 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              configuration:
+                description: configuration contains the cluster configuration status
+                  of the HostedCluster
+                properties:
+                  authentication:
+                    description: |-
+                      authentication contains the observed authentication configuration status from the hosted cluster.
+                      This field reflects the current state of the cluster authentication including OAuth metadata,
+                      OIDC client status, and other authentication-related configurations.
+                    properties:
+                      integratedOAuthMetadata:
+                        description: |-
+                          integratedOAuthMetadata contains the discovery endpoint data for OAuth 2.0
+                          Authorization Server Metadata for the in-cluster integrated OAuth server.
+                          This discovery document can be viewed from its served location:
+                          oc get --raw '/.well-known/oauth-authorization-server'
+                          For further details, see the IETF Draft:
+                          https://tools.ietf.org/html/draft-ietf-oauth-discovery-04#section-2
+                          This contains the observed value based on cluster state.
+                          An explicitly set value in spec.oauthMetadata has precedence over this field.
+                          This field has no meaning if authentication spec.type is not set to IntegratedOAuth.
+                          The key "oauthMetadata" is used to locate the data.
+                          If the config map or expected key is not found, no metadata is served.
+                          If the specified metadata is not valid, no metadata is served.
+                          The namespace for this config map is openshift-config-managed.
+                        properties:
+                          name:
+                            description: name is the metadata.name of the referenced
+                              config map
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      oidcClients:
+                        description: |-
+                          oidcClients is where participating operators place the current OIDC client status
+                          for OIDC clients that can be customized by the cluster-admin.
+                        items:
+                          description: |-
+                            OIDCClientStatus represents the current state
+                            of platform components and how they interact with
+                            the configured identity providers.
+                          properties:
+                            componentName:
+                              description: |-
+                                componentName is a required field that specifies the name of the platform
+                                component using the identity provider as an authentication mode.
+                                It is used in combination with componentNamespace as a unique identifier.
+
+                                componentName must not be an empty string ("") and must not exceed 256 characters in length.
+                              maxLength: 256
+                              minLength: 1
+                              type: string
+                            componentNamespace:
+                              description: |-
+                                componentNamespace is a required field that specifies the namespace in which the
+                                platform component using the identity provider as an authentication
+                                mode is running.
+                                It is used in combination with componentName as a unique identifier.
+
+                                componentNamespace must not be an empty string ("") and must not exceed 63 characters in length.
+                              maxLength: 63
+                              minLength: 1
+                              type: string
+                            conditions:
+                              description: |-
+                                conditions are used to communicate the state of the `oidcClients` entry.
+
+                                Supported conditions include Available, Degraded and Progressing.
+
+                                If Available is true, the component is successfully using the configured client.
+                                If Degraded is true, that means something has gone wrong trying to handle the client configuration.
+                                If Progressing is true, that means the component is taking some action related to the `oidcClients` entry.
+                              items:
+                                description: Condition contains details for one aspect
+                                  of the current state of this API Resource.
+                                properties:
+                                  lastTransitionTime:
+                                    description: |-
+                                      lastTransitionTime is the last time the condition transitioned from one status to another.
+                                      This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                                    format: date-time
+                                    type: string
+                                  message:
+                                    description: |-
+                                      message is a human readable message indicating details about the transition.
+                                      This may be an empty string.
+                                    maxLength: 32768
+                                    type: string
+                                  observedGeneration:
+                                    description: |-
+                                      observedGeneration represents the .metadata.generation that the condition was set based upon.
+                                      For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                                      with respect to the current state of the instance.
+                                    format: int64
+                                    minimum: 0
+                                    type: integer
+                                  reason:
+                                    description: |-
+                                      reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                                      Producers of specific condition types may define expected values and meanings for this field,
+                                      and whether the values are considered a guaranteed API.
+                                      The value should be a CamelCase string.
+                                      This field may not be empty.
+                                    maxLength: 1024
+                                    minLength: 1
+                                    pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                                    type: string
+                                  status:
+                                    description: status of the condition, one of True,
+                                      False, Unknown.
+                                    enum:
+                                    - "True"
+                                    - "False"
+                                    - Unknown
+                                    type: string
+                                  type:
+                                    description: type of condition in CamelCase or
+                                      in foo.example.com/CamelCase.
+                                    maxLength: 316
+                                    pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                    type: string
+                                required:
+                                - lastTransitionTime
+                                - message
+                                - reason
+                                - status
+                                - type
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - type
+                              x-kubernetes-list-type: map
+                            consumingUsers:
+                              description: |-
+                                consumingUsers is an optional list of ServiceAccounts requiring
+                                read permissions on the `clientSecret` secret.
+
+                                consumingUsers must not exceed 5 entries.
+                              items:
+                                description: ConsumingUser is an alias for string
+                                  which we add validation to. Currently only service
+                                  accounts are supported.
+                                maxLength: 512
+                                minLength: 1
+                                pattern: ^system:serviceaccount:[a-z0-9]([-a-z0-9]*[a-z0-9])?:[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                                type: string
+                              maxItems: 5
+                              type: array
+                              x-kubernetes-list-type: set
+                            currentOIDCClients:
+                              description: |-
+                                currentOIDCClients is an optional list of clients that the component is currently using.
+                                Entries must have unique issuerURL/clientID pairs.
+                              items:
+                                description: |-
+                                  OIDCClientReference is a reference to a platform component
+                                  client configuration.
+                                properties:
+                                  clientID:
+                                    description: |-
+                                      clientID is a required field that specifies the client identifier, from
+                                      the identity provider, that the platform component is using for authentication
+                                      requests made to the identity provider.
+
+                                      clientID must not be empty.
+                                    minLength: 1
+                                    type: string
+                                  issuerURL:
+                                    description: |-
+                                      issuerURL is a required field that specifies the URL of the identity
+                                      provider that this client is configured to make requests against.
+
+                                      issuerURL must use the 'https' scheme.
+                                    pattern: ^https:\/\/[^\s]
+                                    type: string
+                                  oidcProviderName:
+                                    description: |-
+                                      oidcProviderName is a required reference to the 'name' of the identity provider
+                                      configured in 'oidcProviders' that this client is associated with.
+
+                                      oidcProviderName must not be an empty string ("").
+                                    minLength: 1
+                                    type: string
+                                required:
+                                - clientID
+                                - issuerURL
+                                - oidcProviderName
+                                type: object
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - issuerURL
+                              - clientID
+                              x-kubernetes-list-type: map
+                          required:
+                          - componentName
+                          - componentNamespace
+                          type: object
+                        maxItems: 20
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - componentNamespace
+                        - componentName
+                        x-kubernetes-list-type: map
+                    type: object
+                type: object
               controlPlaneEndpoint:
                 description: |-
                   controlPlaneEndpoint contains the endpoint information by which

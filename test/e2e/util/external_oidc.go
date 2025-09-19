@@ -189,6 +189,21 @@ func ValidateAuthenticationSpec(t *testing.T, ctx context.Context, client crclie
 	}, cm)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(actualAuth.OIDCProviders[0].Issuer.CertificateAuthority.Name).Should(Equal(cm.Name))
+	
+	// Validate that configuration status reflects the authentication setup
+	ValidateConfigurationStatus(t, ctx, client, hostedCluster)
+	
+	// Additional OIDC-specific status validation
+	guestClient := WaitForGuestClient(t, ctx, client, hostedCluster)
+	var guestAuth configv1.Authentication
+	err = guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, &guestAuth)
+	g.Expect(err).NotTo(HaveOccurred())
+	
+	// Verify the guest cluster authentication is configured for OIDC
+	g.Expect(guestAuth.Spec.Type).To(Equal(configv1.AuthenticationTypeOIDC), 
+		"Guest cluster authentication should be configured for OIDC type")
+	
+	t.Logf("Successfully validated external OIDC configuration status")
 }
 
 // IsExternalOIDCCluster checks if the cluster is using external OIDC.
