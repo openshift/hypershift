@@ -31,7 +31,12 @@ The following guidelines will help ensure a smooth contribution process for both
 
 3. **Write a clear PR title**: Prefix with your Jira ticket number (e.g., "OCPBUGS-12345: Fix memory leak in controller"). See [example PR](https://github.com/openshift/hypershift/pull/2233).
 
-4. **Explain the value**: Always describe how your change improves the project in the PR description.
+4. **Open the PR in draft mode**: Use `/auto-cc` to assign reviewers to your PR in draft mode. Keep the PR in draft mode until:
+
+    - all the required labels are on the PR
+    - all required tests are passing
+
+5. **Explain the value**: Always describe how your change improves the project in the PR description.
 
 !!! note "Release Information"
     This repository contains code for both the HyperShift Operator and Control Plane Operator (part of OCP payload), which may have different release cadences.
