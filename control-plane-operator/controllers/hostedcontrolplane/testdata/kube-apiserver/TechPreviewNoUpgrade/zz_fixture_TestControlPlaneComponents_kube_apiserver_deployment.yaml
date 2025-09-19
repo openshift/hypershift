@@ -95,14 +95,6 @@ spec:
               fieldPath: status.podIP
         image: hyperkube
         imagePullPolicy: IfNotPresent
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/bash
-              - -c
-              - until curl -k https://localhost:6443/readyz; do echo 'Waiting for
-                kube-apiserver to be ready...'; sleep 5; done
         livenessProbe:
           failureThreshold: 6
           httpGet:
