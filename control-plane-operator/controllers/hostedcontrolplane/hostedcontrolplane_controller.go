@@ -1393,12 +1393,19 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
+
+	// Extract allowedCIDRBlocks for restricting router service access
+	var allowedCIDRBlocks []string
+	for _, block := range util.AllowedCIDRBlocks(hcp) {
+		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
+	}
+
 	// Create the Service type LB internal for private endpoints.
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
 		svc := manifests.PrivateRouterService(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, true, true, hcp)
+			return ingress.ReconcileRouterService(svc, true, true, hcp, allowedCIDRBlocks)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
@@ -1420,7 +1427,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	// When Public access endpoint we need to create a Service type LB external.
 	if util.IsPublicWithDNS(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
-			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp)
+			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp, allowedCIDRBlocks)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
 		}
