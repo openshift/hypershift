@@ -1,8 +1,13 @@
 package controlplanecomponent
 
 import (
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+
+	capiutil "sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -43,8 +48,23 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 	workloadContext := cpContext.workloadContext()
 
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
-		_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
-		return err
+		// get the existing object to read its ownerRefs
+		existing := obj.DeepCopyObject().(client.Object)
+		err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(obj), existing)
+
+		if err == nil {
+			objOwnerRefs := existing.GetOwnerReferences()
+			ownerRefHCP := config.OwnerRefFrom(cpContext.HCP)
+			if capiutil.HasOwnerRef(objOwnerRefs, *ownerRefHCP.Reference) {
+				// delete the object only if it has HCP ownerRef
+				_, err := util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
+				return err
+			}
+			return nil
+		} else if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
+			return err
+		}
+		return nil
 	}
 
 	if ga.reconcileExisting {
