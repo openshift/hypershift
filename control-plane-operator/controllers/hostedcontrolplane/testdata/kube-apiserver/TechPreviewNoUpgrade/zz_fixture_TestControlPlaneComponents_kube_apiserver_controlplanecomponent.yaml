@@ -48,6 +48,9 @@ status:
     kind: Secret
     name: hcco-kubeconfig
   - group: ""
+    kind: Secret
+    name: hcco-localhost-kubeconfig
+  - group: ""
     kind: ConfigMap
     name: kas-config
   - group: ""
