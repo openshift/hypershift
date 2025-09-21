@@ -126,7 +126,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eks v1.64.0 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
+	github.com/awslabs/operatorpkg 4250f4c35c6b // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
