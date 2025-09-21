@@ -16,8 +16,8 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.0
 	github.com/Azure/msi-dataplane v0.4.3
 	github.com/IBM-Cloud/power-go-client v1.11.0
-	github.com/IBM/go-sdk-core/v5 v5.19.1
-	github.com/IBM/ibm-cos-sdk-go v1.12.2
+	github.com/IBM/go-sdk-core/v5 v5.21.0
+	github.com/IBM/ibm-cos-sdk-go v1.12.3
 	github.com/IBM/networking-go-sdk v0.51.4
 	github.com/IBM/platform-services-go-sdk v0.81.0
 	github.com/IBM/vpc-go-sdk v0.68.0
@@ -72,7 +72,7 @@ require (
 	go.uber.org/mock v0.5.2
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.41.0
-	golang.org/x/net v0.42.0
+	golang.org/x/net v0.43.0
 	golang.org/x/sync v0.16.0
 	golang.org/x/time v0.11.0
 	google.golang.org/grpc v1.73.0
