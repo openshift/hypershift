@@ -264,7 +264,7 @@ github.com/asaskevich/govalidator
 # github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23
 ## explicit; go 1.13
 github.com/asaskevich/govalidator/v11
-# github.com/aws/aws-sdk-go v1.55.7
+# github.com/aws/aws-sdk-go v1.55.8
 ## explicit; go 1.19
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
