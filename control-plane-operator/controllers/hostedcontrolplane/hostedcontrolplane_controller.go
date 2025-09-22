@@ -3353,6 +3353,13 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 		}
 	}
 
+	serviceAccountSigningKeySecret := manifests.ServiceAccountSigningKeySecret(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(serviceAccountSigningKeySecret), serviceAccountSigningKeySecret); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get service account signing key secret: %w", err)
+		}
+	}
+
 	if _, err := createOrUpdate(ctx, r, kubeAPIServerDeployment, func() error {
 		return kas.ReconcileKubeAPIServerDeployment(kubeAPIServerDeployment,
 			hcp,
@@ -3374,6 +3381,7 @@ func (r *HostedControlPlaneReconciler) reconcileKubeAPIServer(ctx context.Contex
 			p.FeatureGate,
 			oidcCA,
 			p.CipherSuites(),
+			serviceAccountSigningKeySecret,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile api server deployment: %w", err)

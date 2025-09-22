@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -29,6 +30,7 @@ import (
 const (
 	kasNamedCertificateMountPathPrefix         = "/etc/kubernetes/certs/named"
 	authConfigHashAnnotation                   = "kube-apiserver.hypershift.openshift.io/auth-config-hash"
+	serviceAccountSigningKeyHashAnnotation     = "kube-apiserver.hypershift.openshift.io/service-account-signing-key-hash"
 	auditConfigHashAnnotation                  = "kube-apiserver.hypershift.openshift.io/audit-config-hash"
 	configHashAnnotation                       = "kube-apiserver.hypershift.openshift.io/config-hash"
 	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
@@ -118,7 +120,7 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 	featureGateSpec *configv1.FeatureGateSpec,
 	oidcCA *corev1.LocalObjectReference,
 	cipherSuites []string,
-) error {
+	serviceAccountSigningKeySecret *corev1.Secret) error {
 
 	secretEncryptionData := hcp.Spec.SecretEncryption
 	etcdMgmtType := hcp.Spec.Etcd.ManagementType
@@ -143,6 +145,19 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		return fmt.Errorf("kube apiserver authentication configuration is not expected to be empty")
 	}
 	authConfigHash := util.ComputeHash(authConfigBytes)
+
+	saSigningPrivateKeySecretBytes, ok := serviceAccountSigningKeySecret.Data[pki.ServiceSignerPrivateKey]
+	if !ok {
+		return fmt.Errorf("kube apiserver service account signing key is not expected to be empty")
+	}
+	saSigningPrivateKeyHash := util.ComputeHash(string(saSigningPrivateKeySecretBytes))
+
+	saSigningPublicKeySecretBytes, ok := serviceAccountSigningKeySecret.Data[pki.ServiceSignerPublicKey]
+	if !ok {
+		return fmt.Errorf("kube apiserver service account signing key is not expected to be empty")
+	}
+	saSigningPublicKeyHash := util.ComputeHash(string(saSigningPublicKeySecretBytes))
+	saSigningKeyHash := saSigningPrivateKeyHash + saSigningPublicKeyHash
 
 	// preserve existing resource requirements for main KAS container
 	kasContainer := util.FindContainer(kasContainerMain().Name, deployment.Spec.Template.Spec.Containers)
@@ -183,9 +198,10 @@ func ReconcileKubeAPIServerDeployment(deployment *appsv1.Deployment,
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: kasLabels(),
 			Annotations: map[string]string{
-				configHashAnnotation:      configHash,
-				auditConfigHashAnnotation: auditConfigHash,
-				authConfigHashAnnotation:  authConfigHash,
+				configHashAnnotation:                   configHash,
+				auditConfigHashAnnotation:              auditConfigHash,
+				authConfigHashAnnotation:               authConfigHash,
+				serviceAccountSigningKeyHashAnnotation: saSigningKeyHash,
 			},
 		},
 		Spec: corev1.PodSpec{
