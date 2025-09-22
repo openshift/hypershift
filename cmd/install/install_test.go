@@ -93,6 +93,26 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"when image pull policy is not set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectError: false,
+		},
+		"when valid image pull policy is set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				ImagePullPolicy: "Always",
+			},
+			expectError: false,
+		},
+		"when invalid image pull policy is set it errors": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				ImagePullPolicy: "InvalidPolicy",
+			},
+			expectError: true,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
