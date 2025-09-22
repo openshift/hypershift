@@ -56,5 +56,5 @@ func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
 	if sharedingress.UseSharedIngress() {
 		return false, nil
 	}
-	return util.IsPrivateHCP(cpContext.HCP) || util.IsPublicKASWithDNS(cpContext.HCP), nil
+	return util.IsPrivateHCP(cpContext.HCP) || util.IsPublicWithDNS(cpContext.HCP), nil
 }
