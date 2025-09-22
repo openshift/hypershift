@@ -163,6 +163,193 @@ func TestReconcileKubeadminPassword(t *testing.T) {
 	}
 }
 
+func TestReconcileIgnitionServer(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	mockedProviderWithOpenshiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.20.0"), nil).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetRegistryOverrides().Return(map[string]string{"registry": "override"}).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
+		GetOpenShiftImageRegistryOverrides().Return(map[string][]string{"registry": {"override"}}).AnyTimes()
+	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp",
+			Namespace: "hcp-namespace",
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Configuration: &hyperv1.ClusterConfiguration{
+				FeatureGate: &configv1.FeatureGateSpec{
+					FeatureGateSelection: configv1.FeatureGateSelection{
+						FeatureSet: configv1.Default,
+					},
+				},
+			},
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				APIServer: &hyperv1.APIServerNetworking{
+					Port:             ptr.To[int32](2040),
+					AdvertiseAddress: ptr.To("1.2.3.4"),
+				},
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.IBMCloudPlatform,
+				IBMCloud: &hyperv1.IBMCloudPlatformSpec{
+					ProviderType: configv1.IBMCloudProviderTypeVPC,
+				},
+			},
+		},
+	}
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:                  t.Context(),
+		ApplyProvider:            upsert.NewApplyProvider(true),
+		ReleaseImageProvider:     testutil.FakeImageProvider(),
+		UserReleaseImageProvider: testutil.FakeImageProvider(),
+		SkipPredicate:            false,
+		SkipCertificateSigning:   false,
+		HCP:                      hcp,
+	}
+
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		caCert      *corev1.Secret
+		servingCert *corev1.Secret
+	}{
+		{
+			name:        "No certs, no extra annotations",
+			annotations: map[string]string{},
+			caCert:      nil,
+			servingCert: nil,
+		},
+		{
+			name: "Premade certs, DisablePKIReconciliation annotation present",
+			annotations: map[string]string{
+				hyperv1.DisablePKIReconciliationAnnotation: "true",
+			},
+			caCert: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ignition-server-ca-cert",
+					Namespace: "hcp-namespace",
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       []byte("fake"),
+					corev1.TLSPrivateKeyKey: []byte("fake"),
+				},
+			},
+			servingCert: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ignition-server-serving-cert",
+					Namespace: "hcp-namespace",
+				},
+				Data: map[string][]byte{
+					corev1.TLSCertKey:       []byte("fake"),
+					corev1.TLSPrivateKeyKey: []byte("fake"),
+				},
+			},
+		},
+		{
+			name: "No certs, DisablePKIReconciliation annotation present",
+			annotations: map[string]string{
+				hyperv1.DisablePKIReconciliationAnnotation: "true",
+			},
+			caCert:      nil,
+			servingCert: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			hcp.ObjectMeta.Annotations = tt.annotations
+
+			ignitionComponent := ignitionserverv2.NewComponent(mockedProviderWithOpenshiftImageRegistryOverrides, "")
+			fakeObjects, err := componentsFakeObjects(hcp.Namespace, configv1.Default)
+			if err != nil {
+				t.Fatalf("failed to generate fake objects: %v", err)
+			}
+			fakeDeps := componentsFakeDependencies(ignitionComponent.Name(), hcp.Namespace)
+
+			ignitionCerts := []client.Object{}
+			if tt.caCert != nil {
+				ignitionCerts = append(ignitionCerts, tt.caCert)
+			}
+			if tt.servingCert != nil {
+				ignitionCerts = append(ignitionCerts, tt.servingCert)
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
+				WithObjects(fakeObjects...).
+				WithObjects(fakeDeps...).
+				WithObjects(ignitionCerts...).
+				Build()
+			cpContext.Client = fakeClient
+
+			if err := ignitionComponent.Reconcile(cpContext); err != nil {
+				t.Fatalf("failed to reconcile: %v", err)
+			}
+
+			gotCACert := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ignition-server-ca-cert",
+					Namespace: "hcp-namespace",
+				},
+			}
+			gotServingCert := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ignition-server-serving-cert",
+					Namespace: "hcp-namespace",
+				},
+			}
+
+			_, hasPKIAnnotation := tt.annotations[hyperv1.DisablePKIReconciliationAnnotation]
+			expectCACert := !hasPKIAnnotation || tt.caCert != nil
+			expectServingCert := !hasPKIAnnotation || tt.servingCert != nil
+
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotCACert), gotCACert)
+			if err != nil && expectCACert {
+				t.Fatalf("ignition-server-ca-cert does not exist")
+			} else if err == nil && !expectCACert {
+				t.Fatalf("ignition-server-ca-cert exists")
+			}
+
+			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotServingCert), gotServingCert)
+			if err != nil && expectServingCert {
+				t.Fatalf("ignition-server-serving-cert does not exist")
+			} else if err == nil && !expectServingCert {
+				t.Fatalf("ignition-server-serving-cert exists")
+			}
+
+			if tt.caCert != nil {
+				wantKey := string(tt.caCert.Data[corev1.TLSCertKey])
+				gotKey := string(gotCACert.Data[corev1.TLSCertKey])
+				if wantKey != gotKey {
+					t.Fatalf("ignition-server-ca-cert data mismatch: want %v, got %v", wantKey, gotKey)
+				}
+			}
+			if tt.servingCert != nil {
+				wantKey := string(tt.servingCert.Data[corev1.TLSCertKey])
+				gotKey := string(gotServingCert.Data[corev1.TLSCertKey])
+				if wantKey != gotKey {
+					t.Fatalf("ignition-server-serving-cert data mismatch: want %v, got %v", wantKey, gotKey)
+				}
+			}
+		})
+	}
+}
+
 func TestReconcileOAuthService(t *testing.T) {
 	targetNamespace := "test"
 	apiPort := int32(config.KASSVCPort)
