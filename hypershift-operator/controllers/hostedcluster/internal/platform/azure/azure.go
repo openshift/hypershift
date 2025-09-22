@@ -259,7 +259,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 					MountPath: "/var/run/secrets/openshift/serviceaccount",
 				},
 				{
-					Name:      "kubeconfig",
+					Name:      "svc-kubeconfig",
 					MountPath: "/etc/kubernetes",
 				},
 			},
@@ -287,52 +287,50 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		// Create credentials for each control plane operator using workload identity client IDs
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
 
-		// Ingress Operator credentials (only if capability enabled)
-		if capabilities.IsIngressCapabilityEnabled(hcluster.Spec.Capabilities) {
-			ingressCreds := manifests.AzureIngressCredentials(controlPlaneNamespace)
-			if _, err := createOrUpdate(ctx, c, ingressCreds, func() error {
-				secretData := maps.Clone(baseSecretData)
-				secretData["azure_client_id"] = []byte(workloadIdentities.Ingress.ClientID)
-				ingressCreds.Data = secretData
-				return nil
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile ingress credentials: %w", err)
+		// Define credential configurations for the utility function
+		credentialConfigs := []azureutil.AzureCredentialConfig{
+			// Ingress Operator credentials (only if capability enabled)
+			{
+				Name:              "ingress",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureIngressCredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.Ingress.ClientID),
+				CapabilityChecker: capabilities.IsIngressCapabilityEnabled,
+				ErrorContext:      "ingress credentials",
+			},
+			// Image Registry Operator credentials (only if capability enabled)
+			{
+				Name:              "image-registry",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureImageRegistryCredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.ImageRegistry.ClientID),
+				CapabilityChecker: capabilities.IsImageRegistryCapabilityEnabled,
+				ErrorContext:      "image registry credentials",
+			},
+			// Azure Disk CSI credentials
+			{
+				Name:              "disk-csi",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureDiskCSICredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.Disk.ClientID),
+				CapabilityChecker: nil, // Always enabled
+				ErrorContext:      "disk CSI credentials",
+			},
+			// Azure File CSI credentials
+			{
+				Name:              "file-csi",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureFileCSICredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.File.ClientID),
+				CapabilityChecker: nil, // Always enabled
+				ErrorContext:      "file CSI credentials",
+			},
+		}
+
+		// Use the utility function to reconcile credentials
+		if errs := azureutil.ReconcileAzureCredentials(ctx, c, createOrUpdate, baseSecretData, credentialConfigs, hcluster.Spec.Capabilities); len(errs) > 0 {
+			// Combine all errors into a single error
+			var errorStrings []string
+			for _, err := range errs {
+				errorStrings = append(errorStrings, err.Error())
 			}
-		}
-
-		// Image Registry Operator credentials (only if capability enabled)
-		if capabilities.IsImageRegistryCapabilityEnabled(hcluster.Spec.Capabilities) {
-			registryCreds := manifests.AzureImageRegistryCredentials(controlPlaneNamespace)
-			if _, err := createOrUpdate(ctx, c, registryCreds, func() error {
-				secretData := maps.Clone(baseSecretData)
-				secretData["azure_client_id"] = []byte(workloadIdentities.ImageRegistry.ClientID)
-				registryCreds.Data = secretData
-				return nil
-			}); err != nil {
-				return fmt.Errorf("failed to reconcile image registry credentials: %w", err)
-			}
-		}
-
-		// Azure Disk CSI credentials
-		diskCSICreds := manifests.AzureDiskCSICredentials(controlPlaneNamespace)
-		if _, err := createOrUpdate(ctx, c, diskCSICreds, func() error {
-			secretData := maps.Clone(baseSecretData)
-			secretData["azure_client_id"] = []byte(workloadIdentities.Disk.ClientID)
-			diskCSICreds.Data = secretData
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile disk CSI credentials: %w", err)
-		}
-
-		// Azure File CSI credentials
-		fileCSICreds := manifests.AzureFileCSICredentials(controlPlaneNamespace)
-		if _, err := createOrUpdate(ctx, c, fileCSICreds, func() error {
-			secretData := maps.Clone(baseSecretData)
-			secretData["azure_client_id"] = []byte(workloadIdentities.File.ClientID)
-			fileCSICreds.Data = secretData
-			return nil
-		}); err != nil {
-			return fmt.Errorf("failed to reconcile file CSI credentials: %w", err)
+			return fmt.Errorf("failed to reconcile Azure credentials: %s", strings.Join(errorStrings, "; "))
 		}
 	}
 

@@ -3,6 +3,7 @@ package azureutil
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -18,6 +20,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
@@ -197,7 +201,7 @@ func IsAroHCP() bool {
 }
 
 // IsSelfManagedAzure returns true when the platform is Azure and the managed service is not ARO-HCP
-func IsSelfManagedAzure(platform hyperv1.PlatformType ) bool {
+func IsSelfManagedAzure(platform hyperv1.PlatformType) bool {
 	return platform == hyperv1.AzurePlatform && !IsAroHCP()
 }
 
@@ -352,4 +356,61 @@ func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, err
 		KeyName:      parts[0],
 		KeyVersion:   parts[1],
 	}, nil
+}
+
+// AzureCredentialConfig defines the configuration for creating an Azure credential secret
+type AzureCredentialConfig struct {
+	Name              string
+	ManifestFunc      func() *corev1.Secret
+	ClientID          string
+	CapabilityChecker func(*hyperv1.Capabilities) bool
+	ErrorContext      string
+}
+
+// ReconcileAzureCredentials creates or updates Azure credential secrets based on the provided configurations
+func ReconcileAzureCredentials(
+	ctx context.Context,
+	client client.Client,
+	createOrUpdate upsert.CreateOrUpdateFN,
+	baseSecretData map[string][]byte,
+	configs []AzureCredentialConfig,
+	capabilities *hyperv1.Capabilities,
+) []error {
+	var errors []error
+
+	for _, config := range configs {
+		// Skip credentials that don't meet capability requirements
+		if config.CapabilityChecker != nil && !config.CapabilityChecker(capabilities) {
+			continue
+		}
+
+		// Get the secret manifest
+		secret := config.ManifestFunc()
+		if secret == nil {
+			errors = append(errors, fmt.Errorf("failed to get secret manifest for %s", config.Name))
+			continue
+		}
+
+		// Create or update the secret
+		if _, err := createOrUpdate(ctx, client, secret, func() error {
+			// Clone base secret data to avoid mutation
+			secretData := maps.Clone(baseSecretData)
+
+			// Add the client ID if provided
+			if config.ClientID != "" {
+				secretData["azure_client_id"] = []byte(config.ClientID)
+			}
+
+			secret.Data = secretData
+			return nil
+		}); err != nil {
+			errorMsg := fmt.Sprintf("failed to reconcile %s", config.ErrorContext)
+			if config.ErrorContext == "" {
+				errorMsg = fmt.Sprintf("failed to reconcile %s credentials", config.Name)
+			}
+			errors = append(errors, fmt.Errorf("%s: %w", errorMsg, err))
+		}
+	}
+
+	return errors
 }

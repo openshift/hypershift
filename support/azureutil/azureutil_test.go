@@ -1,16 +1,24 @@
 package azureutil
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestGetSubnetNameFromSubnetID(t *testing.T) {
@@ -331,4 +339,199 @@ func TestGetAzureEncryptionKeyInfo(t *testing.T) {
 			g.Expect(got.KeyVersion).To(Equal(tt.wantKeyVersion))
 		})
 	}
+}
+
+func TestReconcileAzureCredentials(t *testing.T) {
+	g := NewWithT(t)
+
+	baseSecretData := map[string][]byte{
+		"azure_region":          []byte("eastus"),
+		"azure_resource_prefix": []byte("test-cluster-abcd"),
+		"azure_resourcegroup":   []byte("test-rg"),
+		"azure_subscription_id": []byte("sub-123"),
+		"azure_tenant_id":       []byte("tenant-456"),
+	}
+
+	// Helper function to create a secret manifest
+	createTestSecretManifest := func(name, namespace string) *corev1.Secret {
+		return &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+		}
+	}
+
+	tests := []struct {
+		name                 string
+		configs              []AzureCredentialConfig
+		capabilities         *hyperv1.Capabilities
+		expectedSecretsCount int
+		expectedErrors       int
+		validateSecret       func(secret *corev1.Secret, config AzureCredentialConfig)
+	}{
+		{
+			name: "creates all secrets with correct client IDs when all capabilities enabled",
+			configs: []AzureCredentialConfig{
+				{
+					Name:         "ingress",
+					ManifestFunc: func() *corev1.Secret { return createTestSecretManifest("ingress-creds", "test-ns") },
+					ClientID:     "ingress-client-id",
+					CapabilityChecker: func(caps *hyperv1.Capabilities) bool {
+						return caps == nil || !isCapabilityDisabled(caps, hyperv1.IngressCapability)
+					},
+					ErrorContext: "ingress credentials",
+				},
+				{
+					Name:              "disk-csi",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("disk-creds", "test-ns") },
+					ClientID:          "disk-client-id",
+					CapabilityChecker: nil, // Always enabled
+					ErrorContext:      "disk CSI credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 2,
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				g.Expect(secret.Data["azure_client_id"]).To(Equal([]byte(config.ClientID)))
+				g.Expect(secret.Data["azure_region"]).To(Equal([]byte("eastus")))
+			},
+		},
+		{
+			name: "skips secrets when capability is disabled",
+			configs: []AzureCredentialConfig{
+				{
+					Name:         "ingress",
+					ManifestFunc: func() *corev1.Secret { return createTestSecretManifest("ingress-creds", "test-ns") },
+					ClientID:     "ingress-client-id",
+					CapabilityChecker: func(caps *hyperv1.Capabilities) bool {
+						return caps == nil || !isCapabilityDisabled(caps, hyperv1.IngressCapability)
+					},
+					ErrorContext: "ingress credentials",
+				},
+				{
+					Name:              "disk-csi",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("disk-creds", "test-ns") },
+					ClientID:          "disk-client-id",
+					CapabilityChecker: nil, // Always enabled
+					ErrorContext:      "disk CSI credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{Disabled: []hyperv1.OptionalCapability{hyperv1.IngressCapability}},
+			expectedSecretsCount: 1, // Only disk-csi should be created
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				if config.Name == "disk-csi" {
+					g.Expect(secret.Data["azure_client_id"]).To(Equal([]byte(config.ClientID)))
+				}
+			},
+		},
+		{
+			name: "creates secrets without client ID when not provided",
+			configs: []AzureCredentialConfig{
+				{
+					Name:              "test-secret",
+					ManifestFunc:      func() *corev1.Secret { return createTestSecretManifest("test-creds", "test-ns") },
+					ClientID:          "", // Empty client ID
+					CapabilityChecker: nil,
+					ErrorContext:      "test credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 1,
+			expectedErrors:       0,
+			validateSecret: func(secret *corev1.Secret, config AzureCredentialConfig) {
+				// Should not have azure_client_id when ClientID is empty
+				g.Expect(secret.Data["azure_client_id"]).To(BeNil())
+				g.Expect(secret.Data["azure_region"]).To(Equal([]byte("eastus")))
+			},
+		},
+		{
+			name: "handles nil manifest function gracefully",
+			configs: []AzureCredentialConfig{
+				{
+					Name:              "broken-secret",
+					ManifestFunc:      func() *corev1.Secret { return nil }, // Returns nil
+					ClientID:          "test-client-id",
+					CapabilityChecker: nil,
+					ErrorContext:      "broken credentials",
+				},
+			},
+			capabilities:         &hyperv1.Capabilities{},
+			expectedSecretsCount: 0,
+			expectedErrors:       1, // Should get an error for nil manifest
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a fake client for testing
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				Build()
+
+			// Mock createOrUpdate function that simulates secret creation
+			var createdSecrets []*corev1.Secret
+			mockCreateOrUpdate := func(ctx context.Context, client client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				secret, ok := obj.(*corev1.Secret)
+				if !ok {
+					return controllerutil.OperationResultNone, fmt.Errorf("expected Secret, got %T", obj)
+				}
+
+				// Call the mutate function to set up the secret data
+				if err := mutate(); err != nil {
+					return controllerutil.OperationResultNone, err
+				}
+
+				// Store the secret for validation
+				createdSecrets = append(createdSecrets, secret.DeepCopy())
+				return controllerutil.OperationResultCreated, nil
+			}
+
+			// Call the function under test
+			errs := ReconcileAzureCredentials(
+				t.Context(),
+				fakeClient,
+				mockCreateOrUpdate,
+				baseSecretData,
+				tt.configs,
+				tt.capabilities,
+			)
+
+			// Validate error count
+			g.Expect(len(errs)).To(Equal(tt.expectedErrors))
+
+			// Validate secret count
+			g.Expect(len(createdSecrets)).To(Equal(tt.expectedSecretsCount))
+
+			// Validate each created secret
+			for i, secret := range createdSecrets {
+				if i < len(tt.configs) && tt.validateSecret != nil {
+					// Find the corresponding config for this secret
+					for _, config := range tt.configs {
+						if (config.CapabilityChecker == nil || config.CapabilityChecker(tt.capabilities)) &&
+							config.ManifestFunc() != nil &&
+							config.ManifestFunc().Name == secret.Name {
+							tt.validateSecret(secret, config)
+							break
+						}
+					}
+				}
+			}
+		})
+	}
+}
+
+// Helper function to check if a capability is disabled
+func isCapabilityDisabled(capabilities *hyperv1.Capabilities, capability hyperv1.OptionalCapability) bool {
+	if capabilities == nil {
+		return false
+	}
+	for _, disabled := range capabilities.Disabled {
+		if disabled == capability {
+			return true
+		}
+	}
+	return false
 }
