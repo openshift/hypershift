@@ -76,6 +76,9 @@ func hccpAvailabilityProberOpts(caps *hyperv1.Capabilities) util.AvailabilityPro
 			{Group: "config.openshift.io", Version: "v1", Kind: "OperatorHub"},
 			{Group: "operator.openshift.io", Version: "v1", Kind: "Network"},
 			{Group: "operator.openshift.io", Version: "v1", Kind: "CloudCredential"},
+			{Group: "operator.openshift.io", Version: "v1", Kind: "Storage"},
+			{Group: "operator.openshift.io", Version: "v1", Kind: "CSISnapshotController"},
+			{Group: "operator.openshift.io", Version: "v1", Kind: "ClusterCSIDriver"},
 		},
 	}
 	if capabilities.IsIngressCapabilityEnabled(caps) {
