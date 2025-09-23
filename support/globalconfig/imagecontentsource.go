@@ -3,6 +3,8 @@ package globalconfig
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -168,6 +170,15 @@ func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) 
 	if len(imageContentSourcePolicies.Items) > 0 {
 		log.Info("Detected ImageContentSourcePolicy Custom Resources. ImageContentSourcePolicy will be deprecated in favor of ImageDigestMirrorSet. See https://issues.redhat.com/browse/OCPNODE-1258 for more details.")
 	}
+
+	// Sort the items by name to ensure consistent ordering
+	sort.Slice(imageContentSourcePolicies.Items, func(i, j int) bool {
+		// This sorts ascending by name, so we can unit test the output.
+		// The fake client, unlike the actual kubernetes client, returns
+		// items in descending order by name.  By inverting the returned
+		// sorting order, we can unit test that the output is deterministic.
+		return strings.Compare(imageContentSourcePolicies.Items[i].Name, imageContentSourcePolicies.Items[j].Name) > 0
+	})
 
 	// For each image content source policy in the management cluster, map the source with each of its mirrors
 	for _, item := range imageContentSourcePolicies.Items {
