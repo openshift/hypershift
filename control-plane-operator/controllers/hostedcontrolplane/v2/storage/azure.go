@@ -7,7 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
-	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/azureutil"
 	hyperconfig "github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/secretproviderclass"
@@ -17,21 +17,28 @@ import (
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 )
 
-func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hyperv1.ManagedIdentity, secret *corev1.Secret) error {
+func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hyperv1.ManagedIdentity, workloadIdentity hyperv1.WorkloadIdentity, secret *corev1.Secret) error {
 	azureSpec := cpContext.HCP.Spec.Platform.Azure
 
 	azureConfig := azure.AzureConfig{
-		Cloud:                       azureSpec.Cloud,
-		TenantID:                    azureSpec.TenantID,
-		SubscriptionID:              azureSpec.SubscriptionID,
-		ResourceGroup:               azureSpec.ResourceGroupName,
-		Location:                    azureSpec.Location,
-		AADMSIDataPlaneIdentityPath: path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CredentialsSecretName),
+		Cloud:          azureSpec.Cloud,
+		TenantID:       azureSpec.TenantID,
+		SubscriptionID: azureSpec.SubscriptionID,
+		ResourceGroup:  azureSpec.ResourceGroupName,
+		Location:       azureSpec.Location,
+	}
+
+	if azureutil.IsAroHCP() {
+		azureConfig.AADMSIDataPlaneIdentityPath = path.Join(hyperconfig.ManagedAzureCertificatePath, managedIdentity.CredentialsSecretName)
+	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+		azureConfig.UseFederatedWorkloadIdentityExtension = true
+		azureConfig.AADClientID = string(workloadIdentity.ClientID)
+		azureConfig.AADFederatedTokenFile = "/var/run/secrets/openshift/serviceaccount/token"
 	}
 
 	var getVnetNameAndResourceGroupErr error
 	// aro hcp csi nfs protocol provision volumes needs the vnetName/vnetResourceGroup config
-	azureConfig.VnetName, azureConfig.VnetResourceGroup, getVnetNameAndResourceGroupErr = hyperazureutil.GetVnetNameAndResourceGroupFromVnetID(azureSpec.VnetID)
+	azureConfig.VnetName, azureConfig.VnetResourceGroup, getVnetNameAndResourceGroupErr = azureutil.GetVnetNameAndResourceGroupFromVnetID(azureSpec.VnetID)
 	if getVnetNameAndResourceGroupErr != nil {
 		return fmt.Errorf("failed to get vnet info: %w", getVnetNameAndResourceGroupErr)
 	}
@@ -46,8 +53,14 @@ func adaptAzureCSISecret(cpContext component.WorkloadContext, managedIdentity hy
 }
 
 func adaptAzureCSIDiskSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk
-	return adaptAzureCSISecret(cpContext, managedIdentity, secret)
+	var managedIdentity hyperv1.ManagedIdentity
+	var workloadIdentity hyperv1.WorkloadIdentity
+	if azureutil.IsAroHCP() {
+		managedIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.Disk
+	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+		workloadIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Disk
+	}
+	return adaptAzureCSISecret(cpContext, managedIdentity, workloadIdentity, secret)
 }
 
 func adaptAzureCSIDiskSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {
@@ -57,8 +70,14 @@ func adaptAzureCSIDiskSecretProvider(cpContext component.WorkloadContext, secret
 }
 
 func adaptAzureCSIFileSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
-	managedIdentity := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File
-	return adaptAzureCSISecret(cpContext, managedIdentity, secret)
+	var managedIdentity hyperv1.ManagedIdentity
+	var workloadIdentity hyperv1.WorkloadIdentity
+	if azureutil.IsAroHCP() {
+		managedIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.File
+	} else if azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type) {
+		workloadIdentity = cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.File
+	}
+	return adaptAzureCSISecret(cpContext, managedIdentity, workloadIdentity, secret)
 }
 
 func adaptAzureCSIFileSecretProvider(cpContext component.WorkloadContext, secretProvider *secretsstorev1.SecretProviderClass) error {

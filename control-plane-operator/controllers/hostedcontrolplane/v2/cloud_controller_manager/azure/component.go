@@ -1,8 +1,13 @@
 package azure
 
 import (
+	"fmt"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+
+	corev1 "k8s.io/api/core/v1"
 )
 
 const (
@@ -34,6 +39,11 @@ func NewComponent() component.ControlPlaneComponent {
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(predicate).
 		WithManifestAdapter(
+			"serviceaccount.yaml",
+			component.WithAdaptFunction(adaptServiceAccount),
+			component.WithPredicate(isSelfManagedAzure),
+		).
+		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
 		).
@@ -44,11 +54,45 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secretprovider.yaml",
 			component.WithAdaptFunction(adaptSecretProvider),
+			component.WithPredicate(isAroHCP),
 		).
+		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountNameSpace: "kube-system",
+			ServiceAccountName:      "azure-cloud-provider",
+		}).
 		Build()
 
 }
 
 func predicate(cpContext component.WorkloadContext) (bool, error) {
 	return cpContext.HCP.Spec.Platform.Type == hyperv1.AzurePlatform, nil
+}
+
+func adaptServiceAccount(cpContext component.WorkloadContext, sa *corev1.ServiceAccount) error {
+	// Add Azure Workload Identity annotations
+	if sa.Annotations == nil {
+		sa.Annotations = make(map[string]string)
+	}
+
+	if cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities == nil {
+		return fmt.Errorf("AzureAuthenticationConfig.WorkloadIdentities is nil")
+	}
+
+	// Get the client ID from the HostedControlPlane spec
+	clientID := cpContext.HCP.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.CloudProvider.ClientID
+	tenantID := cpContext.HCP.Spec.Platform.Azure.TenantID
+
+	sa.Annotations["azure.workload.identity/client-id"] = string(clientID)
+	sa.Annotations["azure.workload.identity/tenant-id"] = tenantID
+
+	return nil
+}
+
+func isAroHCP(cpContext component.WorkloadContext) bool {
+	return azureutil.IsAroHCP()
+}
+
+func isSelfManagedAzure(cpContext component.WorkloadContext) bool {
+	return !azureutil.IsAroHCP()
 }

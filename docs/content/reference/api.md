@@ -3698,6 +3698,20 @@ WorkloadIdentity
 workload identity authentication.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }

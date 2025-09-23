@@ -26,6 +26,7 @@ type AzureWorkloadIdentitiesApplyConfiguration struct {
 	Disk               *WorkloadIdentityApplyConfiguration `json:"disk,omitempty"`
 	NodePoolManagement *WorkloadIdentityApplyConfiguration `json:"nodePoolManagement,omitempty"`
 	CloudProvider      *WorkloadIdentityApplyConfiguration `json:"cloudProvider,omitempty"`
+	Network            *WorkloadIdentityApplyConfiguration `json:"network,omitempty"`
 }
 
 // AzureWorkloadIdentitiesApplyConfiguration constructs a declarative configuration of the AzureWorkloadIdentities type for use with
@@ -79,5 +80,13 @@ func (b *AzureWorkloadIdentitiesApplyConfiguration) WithNodePoolManagement(value
 // If called multiple times, the CloudProvider field is set to the value of the last call.
 func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCloudProvider(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
 	b.CloudProvider = value
+	return b
+}
+
+// WithNetwork sets the Network field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Network field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithNetwork(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.Network = value
 	return b
 }

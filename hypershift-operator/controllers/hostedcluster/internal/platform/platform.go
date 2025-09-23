@@ -123,7 +123,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
 		}
-		platform = azure.New(capiImageProvider, payloadVersion)
+		platform = azure.New(utilitiesImage, capiImageProvider, payloadVersion)
 	case hyperv1.PowerVSPlatform:
 		if pullSecretBytes != nil {
 			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, PowerVSCAPIProvider, pullSecretBytes)

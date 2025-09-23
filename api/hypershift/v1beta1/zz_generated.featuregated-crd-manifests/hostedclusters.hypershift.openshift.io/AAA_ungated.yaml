@@ -4061,6 +4061,27 @@ spec:
                                 required:
                                 - clientID
                                 type: object
+                              network:
+                                description: |-
+                                  network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
+                                  workload identity authentication.
+                                properties:
+                                  clientID:
+                                    description: clientID is client ID of a federated
+                                      managed identity used in workload identity authentication
+                                    maxLength: 36
+                                    minLength: 36
+                                    pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                                required:
+                                - clientID
+                                type: object
                               nodePoolManagement:
                                 description: |-
                                   nodePoolManagement is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
@@ -4088,6 +4109,7 @@ spec:
                             - file
                             - imageRegistry
                             - ingress
+                            - network
                             - nodePoolManagement
                             type: object
                         required:

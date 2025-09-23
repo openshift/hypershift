@@ -67,6 +67,7 @@ type CreateInfraOptions struct {
 	SubnetID                    string
 	ManagedIdentitiesFile       string
 	DataPlaneIdentitiesFile     string
+	WorkloadIdentitiesFile      string
 	AssignServicePrincipalRoles bool
 	DNSZoneRG                   string
 	AssignCustomHCPRoles        bool
@@ -86,6 +87,7 @@ type CreateInfraOutput struct {
 	SecurityGroupID     string                                  `json:"securityGroupID"`
 	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
+	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
 }
 
 type ServicePrincipalResponse struct {
@@ -262,6 +264,55 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 			}
 
 			for component, clientID := range components {
+				objectID, err := getObjectIDFromClientID(string(clientID), token)
+				if err != nil {
+					return nil, err
+				}
+
+				role, scopes := azureutil.GetServicePrincipalScopes(subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, o.DNSZoneRG, component, o.AssignCustomHCPRoles)
+
+				// For each resource group (aka scope), assign the role to the service principal
+				for _, scope := range scopes {
+					if err := assignRole(ctx, subscriptionID, o.InfraID, component, objectID, role, scope, azureCreds); err != nil {
+						return nil, fmt.Errorf("failed to perform role assignment: %w", err)
+					}
+				}
+			}
+		}
+	}
+
+	if o.WorkloadIdentitiesFile != "" {
+		workloadIdentitiesRaw, err := os.ReadFile(o.WorkloadIdentitiesFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read --workload-identities-file %s: %w", o.WorkloadIdentitiesFile, err)
+		}
+		result.WorkloadIdentities = &hyperv1.AzureWorkloadIdentities{}
+		if err := json.Unmarshal(workloadIdentitiesRaw, result.WorkloadIdentities); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal --workload-identities-file: %w", err)
+		}
+
+		if o.AssignServicePrincipalRoles {
+			// Get an access token for Microsoft Graph API for getting the object IDs
+			token, err := getAzureToken(azureCreds)
+			if err != nil {
+				return nil, err
+			}
+
+			components := map[string]hyperv1.AzureClientID{
+				config.CIRO:          result.WorkloadIdentities.ImageRegistry.ClientID,
+				config.AzureDisk:     result.WorkloadIdentities.Disk.ClientID,
+				config.AzureFile:     result.WorkloadIdentities.File.ClientID,
+				config.Ingress:       result.WorkloadIdentities.Ingress.ClientID,
+				config.CNCC:          result.WorkloadIdentities.Network.ClientID,
+				config.NodePoolMgmt:  result.WorkloadIdentities.NodePoolManagement.ClientID,
+				config.CloudProvider: result.WorkloadIdentities.CloudProvider.ClientID,
+			}
+
+			for component, clientID := range components {
+				if clientID == "" {
+					return nil, fmt.Errorf("clientID is empty for component %s", component)
+				}
+
 				objectID, err := getObjectIDFromClientID(string(clientID), token)
 				if err != nil {
 					return nil, err
