@@ -268,6 +268,11 @@ e2e:
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 
+.PHONY: e2ev2
+e2ev2:
+	$(GO_E2E_RECIPE) -o bin/test-e2ev2 ./test/e2ev2
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/ginkgo github.com/onsi/ginkgo/v2/ginkgo
+
 # Run go fmt against code
 .PHONY: fmt
 fmt:
