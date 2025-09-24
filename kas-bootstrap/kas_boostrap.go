@@ -56,9 +56,11 @@ func run(ctx context.Context, opts Options) error {
 
 	// This binary is meant to run next to the KAS container within the same pod.
 	// We briefly poll here to retry on race and transient network issues.
-	// 50s is a high margin chosen here as in CI aws kms is observed to take up to 30s to start.
+	// 3m is chosen to provide adequate time for kube-apiserver startup and avoid restarts.
+	// It's been observed in aks-e2e tests with KMS that it may take up to 60s for the KAS to be ready
+	// to communicate with. This large margin is to avoid unnecessary restarts of this container.
 	// This to avoid unnecessary restarts of this container.
-	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 50*time.Second, true,
+	if err := wait.PollUntilContextTimeout(ctx, 500*time.Millisecond, 3*time.Minute, true,
 		func(ctx context.Context) (done bool, err error) {
 			if err := applyBootstrapResources(ctx, c, opts.ResourcesPath); err != nil {
 				logger.Error(err, "failed to apply bootstrap resources, retrying")
