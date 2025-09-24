@@ -1,0 +1,52 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  creationTimestamp: null
+  name: kube-scheduler
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  endpoints:
+  - honorLabels: true
+    interval: 30s
+    metricRelabelings:
+    - action: keep
+      regex: (kube_pod_resource_request|kube_pod_resource_limit)
+      sourceLabels:
+      - __name__
+    - action: replace
+      replacement: ""
+      targetLabel: _id
+    path: /metrics/resources
+    relabelings:
+    - action: replace
+      replacement: ""
+      targetLabel: _id
+    scheme: https
+    targetPort: client
+    tlsConfig:
+      ca:
+        configMap:
+          key: ca.crt
+          name: root-ca
+      cert:
+        secret:
+          key: tls.crt
+          name: kube-scheduler-server
+      keySecret:
+        key: tls.key
+        name: kube-scheduler-server
+      serverName: kube-scheduler
+  namespaceSelector:
+    matchNames:
+    - hcp-namespace
+  selector:
+    matchLabels:
+      app: kube-scheduler

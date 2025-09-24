@@ -40,6 +40,13 @@ func NewComponent() component.ControlPlaneComponent {
 			"kubeconfig.yaml",
 			component.WithAdaptFunction(adaptKubeconfig),
 		).
+		WithManifestAdapter(
+			"servicemonitor.yaml",
+			component.WithAdaptFunction(adaptServiceMonitor),
+		).
+		WithManifestAdapter(
+			"service.yaml",
+		).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
 }

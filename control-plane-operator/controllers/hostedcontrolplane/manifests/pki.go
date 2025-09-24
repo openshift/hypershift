@@ -225,6 +225,10 @@ func KubeSchedulerClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kube-scheduler-client")
 }
 
+func KubeSchedulerServerCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kube-scheduler-server")
+}
+
 func KubeControllerManagerClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kube-controller-manager")
 }

@@ -21,6 +21,8 @@ spec:
       - args:
         - --config=/etc/kubernetes/config/config.json
         - --cert-dir=/var/run/kubernetes
+        - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
+        - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
         - --secure-port=10259
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
@@ -30,6 +32,10 @@ spec:
         - kube-scheduler
         image: hyperkube
         imagePullPolicy: IfNotPresent
+        ports:
+          - containerPort: 10259
+            name: client
+            protocol: TCP
         livenessProbe:
           failureThreshold: 5
           httpGet:
@@ -46,19 +52,35 @@ spec:
             cpu: 25m
             memory: 150Mi
         volumeMounts:
-        - mountPath: /var/run/kubernetes
-          name: cert-work
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
         - mountPath: /etc/kubernetes/config
           name: scheduler-config
+        - mountPath: /etc/kubernetes/certs/root-ca
+          name: root-ca
+        - mountPath: /etc/kubernetes/certs/server
+          name: server-crt
       volumes:
+      - name: cluster-signer
+        secret:
+          defaultMode: 416
+          secretName: cluster-signer-ca
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - name: service-signer
+        secret:
+          defaultMode: 416
+          secretName: sa-signing-key
+      - name: server-crt
+        secret:
+          defaultMode: 416
+          secretName: kube-scheduler-server
       - configMap:
           defaultMode: 420
           name: kube-scheduler
         name: scheduler-config
-      - emptyDir: {}
-        name: cert-work
       - name: kubeconfig
         secret:
           defaultMode: 416
