@@ -23,21 +23,13 @@ import (
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
-	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	markershelper "sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
+	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
 
 const (
 	name = "maxlength"
-
-	kubebuilderMaxLength = "kubebuilder:validation:MaxLength"
-	kubebuilderEnum      = "kubebuilder:validation:Enum"
-	kubebuilderFormat    = "kubebuilder:validation:Format"
-
-	kubebuilderItemsMaxLength = "kubebuilder:validation:items:MaxLength"
-	kubebuilderItemsEnum      = "kubebuilder:validation:items:Enum"
-	kubebuilderItemsFormat    = "kubebuilder:validation:items:Format"
-
-	kubebuilderMaxItems = "kubebuilder:validation:MaxItems"
 )
 
 // Analyzer is the analyzer for the maxlength package.
@@ -49,38 +41,38 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspector.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
+	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers) {
 		checkField(pass, field, markersAccess)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func checkField(pass *analysis.Pass, field *ast.Field, markersAccess markers.Markers) {
-	if len(field.Names) == 0 || field.Names[0] == nil {
+func checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers) {
+	fieldName := utils.FieldName(field)
+	if fieldName == "" {
 		return
 	}
 
-	fieldName := field.Names[0].Name
 	prefix := fmt.Sprintf("field %s", fieldName)
 
-	checkTypeExpr(pass, field.Type, field, nil, markersAccess, prefix, kubebuilderMaxLength, needsStringMaxLength)
+	checkTypeExpr(pass, field.Type, field, nil, markersAccess, prefix, markers.KubebuilderMaxLengthMarker, needsStringMaxLength)
 }
 
-func checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix, marker string, needsMaxLength func(markers.MarkerSet) bool) {
-	if ident.Obj == nil { // Built-in type
+func checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix, marker string, needsMaxLength func(markershelper.MarkerSet) bool) {
+	if utils.IsBasicType(pass, ident) { // Built-in type
 		checkString(pass, ident, node, aliases, markersAccess, prefix, marker, needsMaxLength)
 
 		return
 	}
 
-	tSpec, ok := ident.Obj.Decl.(*ast.TypeSpec)
+	tSpec, ok := utils.LookupTypeSpec(pass, ident)
 	if !ok {
 		return
 	}
@@ -88,7 +80,7 @@ func checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []
 	checkTypeSpec(pass, tSpec, node, append(aliases, tSpec), markersAccess, fmt.Sprintf("%s type", prefix), marker, needsMaxLength)
 }
 
-func checkString(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix, marker string, needsMaxLength func(markers.MarkerSet) bool) {
+func checkString(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix, marker string, needsMaxLength func(markershelper.MarkerSet) bool) {
 	if ident.Name != "string" {
 		return
 	}
@@ -100,7 +92,7 @@ func checkString(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases [
 	}
 }
 
-func checkTypeSpec(pass *analysis.Pass, tSpec *ast.TypeSpec, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix, marker string, needsMaxLength func(markers.MarkerSet) bool) {
+func checkTypeSpec(pass *analysis.Pass, tSpec *ast.TypeSpec, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix, marker string, needsMaxLength func(markershelper.MarkerSet) bool) {
 	if tSpec.Name == nil {
 		return
 	}
@@ -111,7 +103,7 @@ func checkTypeSpec(pass *analysis.Pass, tSpec *ast.TypeSpec, node ast.Node, alia
 	checkTypeExpr(pass, tSpec.Type, node, aliases, markersAccess, prefix, marker, needsMaxLength)
 }
 
-func checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix, marker string, needsMaxLength func(markers.MarkerSet) bool) {
+func checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix, marker string, needsMaxLength func(markershelper.MarkerSet) bool) {
 	switch typ := typeExpr.(type) {
 	case *ast.Ident:
 		checkIdent(pass, typ, node, aliases, markersAccess, prefix, marker, needsMaxLength)
@@ -122,7 +114,7 @@ func checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node ast.Node, aliase
 	}
 }
 
-func checkArrayType(pass *analysis.Pass, arrayType *ast.ArrayType, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix string) {
+func checkArrayType(pass *analysis.Pass, arrayType *ast.ArrayType, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix string) {
 	if arrayType.Elt != nil {
 		if ident, ok := arrayType.Elt.(*ast.Ident); ok {
 			if ident.Name == "byte" {
@@ -132,7 +124,7 @@ func checkArrayType(pass *analysis.Pass, arrayType *ast.ArrayType, node ast.Node
 					NamePos: ident.NamePos,
 					Name:    "string",
 				}
-				checkString(pass, i, node, aliases, markersAccess, prefix, kubebuilderMaxLength, needsStringMaxLength)
+				checkString(pass, i, node, aliases, markersAccess, prefix, markers.KubebuilderMaxLengthMarker, needsStringMaxLength)
 
 				return
 			}
@@ -141,16 +133,16 @@ func checkArrayType(pass *analysis.Pass, arrayType *ast.ArrayType, node ast.Node
 		}
 	}
 
-	markers := getCombinedMarkers(markersAccess, node, aliases)
+	markerSet := getCombinedMarkers(markersAccess, node, aliases)
 
-	if !markers.Has(kubebuilderMaxItems) {
-		pass.Reportf(node.Pos(), "%s must have a maximum items, add %s marker", prefix, kubebuilderMaxItems)
+	if !markerSet.Has(markers.KubebuilderMaxItemsMarker) {
+		pass.Reportf(node.Pos(), "%s must have a maximum items, add %s marker", prefix, markers.KubebuilderMaxItemsMarker)
 	}
 }
 
-func checkArrayElementIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markers.Markers, prefix string) {
+func checkArrayElementIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, aliases []*ast.TypeSpec, markersAccess markershelper.Markers, prefix string) {
 	if ident.Obj == nil { // Built-in type
-		checkString(pass, ident, node, aliases, markersAccess, prefix, kubebuilderItemsMaxLength, needsItemsMaxLength)
+		checkString(pass, ident, node, aliases, markersAccess, prefix, markers.KubebuilderItemsMaxLengthMarker, needsItemsMaxLength)
 
 		return
 	}
@@ -162,13 +154,13 @@ func checkArrayElementIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node
 
 	// If the array element wasn't directly a string, allow a string alias to be used
 	// with either the items style markers or the on alias style markers.
-	checkTypeSpec(pass, tSpec, node, append(aliases, tSpec), markersAccess, fmt.Sprintf("%s type", prefix), kubebuilderMaxLength, func(ms markers.MarkerSet) bool {
+	checkTypeSpec(pass, tSpec, node, append(aliases, tSpec), markersAccess, fmt.Sprintf("%s type", prefix), markers.KubebuilderMaxLengthMarker, func(ms markershelper.MarkerSet) bool {
 		return needsStringMaxLength(ms) && needsItemsMaxLength(ms)
 	})
 }
 
-func getCombinedMarkers(markersAccess markers.Markers, node ast.Node, aliases []*ast.TypeSpec) markers.MarkerSet {
-	base := markers.NewMarkerSet(getMarkers(markersAccess, node).UnsortedList()...)
+func getCombinedMarkers(markersAccess markershelper.Markers, node ast.Node, aliases []*ast.TypeSpec) markershelper.MarkerSet {
+	base := markershelper.NewMarkerSet(getMarkers(markersAccess, node).UnsortedList()...)
 
 	for _, a := range aliases {
 		base.Insert(getMarkers(markersAccess, a).UnsortedList()...)
@@ -177,7 +169,7 @@ func getCombinedMarkers(markersAccess markers.Markers, node ast.Node, aliases []
 	return base
 }
 
-func getMarkers(markersAccess markers.Markers, node ast.Node) markers.MarkerSet {
+func getMarkers(markersAccess markershelper.Markers, node ast.Node) markershelper.MarkerSet {
 	switch t := node.(type) {
 	case *ast.Field:
 		return markersAccess.FieldMarkers(t)
@@ -191,10 +183,10 @@ func getMarkers(markersAccess markers.Markers, node ast.Node) markers.MarkerSet 
 // needsMaxLength returns true if the field needs a maximum length.
 // Fields do not need a maximum length if they are already marked with a maximum length,
 // or if they are an enum, or if they are a date, date-time or duration.
-func needsStringMaxLength(markerSet markers.MarkerSet) bool {
+func needsStringMaxLength(markerSet markershelper.MarkerSet) bool {
 	switch {
-	case markerSet.Has(kubebuilderMaxLength),
-		markerSet.Has(kubebuilderEnum),
+	case markerSet.Has(markers.KubebuilderMaxLengthMarker),
+		markerSet.Has(markers.KubebuilderEnumMarker),
 		markerSet.HasWithValue(kubebuilderFormatWithValue("date")),
 		markerSet.HasWithValue(kubebuilderFormatWithValue("date-time")),
 		markerSet.HasWithValue(kubebuilderFormatWithValue("duration")):
@@ -204,10 +196,10 @@ func needsStringMaxLength(markerSet markers.MarkerSet) bool {
 	return true
 }
 
-func needsItemsMaxLength(markerSet markers.MarkerSet) bool {
+func needsItemsMaxLength(markerSet markershelper.MarkerSet) bool {
 	switch {
-	case markerSet.Has(kubebuilderItemsMaxLength),
-		markerSet.Has(kubebuilderItemsEnum),
+	case markerSet.Has(markers.KubebuilderItemsMaxLengthMarker),
+		markerSet.Has(markers.KubebuilderItemsEnumMarker),
 		markerSet.HasWithValue(kubebuilderItemsFormatWithValue("date")),
 		markerSet.HasWithValue(kubebuilderItemsFormatWithValue("date-time")),
 		markerSet.HasWithValue(kubebuilderItemsFormatWithValue("duration")):
@@ -218,9 +210,9 @@ func needsItemsMaxLength(markerSet markers.MarkerSet) bool {
 }
 
 func kubebuilderFormatWithValue(value string) string {
-	return fmt.Sprintf("%s:=%s", kubebuilderFormat, value)
+	return fmt.Sprintf("%s:=%s", markers.KubebuilderFormatMarker, value)
 }
 
 func kubebuilderItemsFormatWithValue(value string) string {
-	return fmt.Sprintf("%s:=%s", kubebuilderItemsFormat, value)
+	return fmt.Sprintf("%s:=%s", markers.KubebuilderItemsFormatMarker, value)
 }
