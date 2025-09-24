@@ -18,7 +18,10 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -129,6 +132,54 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 					Name:      obj.GetName(),
 					Namespace: obj.GetNamespace(),
 				}}}
+			}),
+		).
+		Watches(
+			&appsv1.Deployment{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if obj.GetNamespace() == RouterNamespace && obj.GetName() == "router" {
+					return []ctrl.Request{{NamespacedName: client.ObjectKey{
+						Name:      obj.GetName(),
+						Namespace: obj.GetNamespace(),
+					}}}
+				}
+				return nil
+			}),
+		).
+		Watches(
+			&corev1.Service{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if obj.GetNamespace() == RouterNamespace && obj.GetName() == "router" {
+					return []ctrl.Request{{NamespacedName: client.ObjectKey{
+						Name:      obj.GetName(),
+						Namespace: obj.GetNamespace(),
+					}}}
+				}
+				return nil
+			}),
+		).
+		Watches(
+			&policyv1.PodDisruptionBudget{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if obj.GetNamespace() == RouterNamespace && obj.GetName() == "router" {
+					return []ctrl.Request{{NamespacedName: client.ObjectKey{
+						Name:      obj.GetName(),
+						Namespace: obj.GetNamespace(),
+					}}}
+				}
+				return nil
+			}),
+		).
+		Watches(
+			&networkingv1.NetworkPolicy{},
+			handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []ctrl.Request {
+				if obj.GetNamespace() == RouterNamespace && obj.GetName() == "router" {
+					return []ctrl.Request{{NamespacedName: client.ObjectKey{
+						Name:      obj.GetName(),
+						Namespace: obj.GetNamespace(),
+					}}}
+				}
+				return nil
 			}),
 		).
 		Named("SharedIngressController").
