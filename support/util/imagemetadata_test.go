@@ -164,7 +164,8 @@ func TestGetManifest(t *testing.T) {
 			}
 
 			if tc.validateCache {
-				_, exists := manifestsCache.Get(tc.expectedDigest)
+				// The cache is indexed by the full image reference, not just the digest
+				_, exists := manifestsCache.Get(tc.imageRef)
 				g.Expect(exists).To(BeTrue())
 			}
 		})
@@ -417,7 +418,7 @@ func TestSeekOverride(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
-			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
+			imgRef := SeekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}

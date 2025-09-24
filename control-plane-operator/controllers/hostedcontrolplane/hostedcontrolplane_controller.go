@@ -1150,6 +1150,28 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 
 	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
 		r.Log.Info("Reconciling ignition server")
+		var mirroredReleaseImage string
+
+		// Get pull secret for image availability verification
+		pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+			return fmt.Errorf("failed to get pull secret: %w", err)
+		}
+		pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
+
+		// Get the specific effective image for the control plane release image
+		controlPlaneReleaseImage := util.HCPControlPlaneReleaseImage(hostedControlPlane)
+		parsedImageRef, err := reference.Parse(controlPlaneReleaseImage)
+		if err == nil {
+			effectiveImageRef := util.SeekOverride(ctx, r.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), parsedImageRef, pullSecretBytes)
+			effectiveImage := effectiveImageRef.String()
+
+			// Only set MIRRORED_RELEASE_IMAGE if we're using a mirror
+			if effectiveImage != controlPlaneReleaseImage {
+				mirroredReleaseImage = effectiveImage
+			}
+		}
+
 		if err := ignitionserver.ReconcileIgnitionServer(ctx,
 			r.Client,
 			createOrUpdate,
@@ -1166,7 +1188,7 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
 			config.OwnerRefFrom(hostedControlPlane),
 			openShiftTrustedCABundleConfigMapForCPOExists,
-			r.ReleaseProvider.GetMirroredReleaseImage(),
+			mirroredReleaseImage,
 			labelHCPRoutes(hostedControlPlane),
 		); err != nil {
 			return fmt.Errorf("failed to reconcile ignition server: %w", err)
