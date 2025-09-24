@@ -19,8 +19,8 @@ objects:
   metadata:
     name: ${NAME}-dev-token
     namespace: ${NAME}
-  annotations:
-    kubernetes.io/service-account.name: ${NAME}-dev
+    annotations:
+      kubernetes.io/service-account.name: ${NAME}-dev
   type: kubernetes.io/service-account-token
 - apiVersion: rbac.authorization.k8s.io/v1
   kind: Role
