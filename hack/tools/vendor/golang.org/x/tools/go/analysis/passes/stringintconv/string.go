@@ -17,6 +17,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	"golang.org/x/tools/internal/analysisinternal"
 	"golang.org/x/tools/internal/typeparams"
+	"golang.org/x/tools/internal/typesinternal"
 )
 
 //go:embed doc.go
@@ -60,17 +61,16 @@ func describe(typ, inType types.Type, inName string) string {
 }
 
 func typeName(t types.Type) string {
-	type hasTypeName interface{ Obj() *types.TypeName } // Alias, Named, TypeParam
-	switch t := t.(type) {
-	case *types.Basic:
-		return t.Name()
-	case hasTypeName:
-		return t.Obj().Name()
+	if basic, ok := t.(*types.Basic); ok {
+		return basic.Name() // may be (e.g.) "untyped int", which has no TypeName
+	}
+	if tname := typesinternal.TypeNameFor(t); tname != nil {
+		return tname.Name()
 	}
 	return ""
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
 		(*ast.File)(nil),
