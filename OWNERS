@@ -23,6 +23,12 @@ filters:
     - core-reviewers
   # Labels for areas sorted alphabetically by directory.
   # Note: control-plane-pki-operator also has approvers defined.
+  "^\\.claude/.*":
+    labels:
+    - area/ai
+  "^\\.cursor/.*":
+    labels:
+    - area/ai
   "^api/.*":
     labels:
     - area/api
