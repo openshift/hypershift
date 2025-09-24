@@ -20,6 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -123,6 +124,14 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
 		t.Logf("Created workload. Node: %s, memcapacity: %s", nodes[0].Name, memCapacity.String())
+		defer func() {
+			// Clean up workload if WaitForNReadyNodes fails
+			cascadeDelete := metav1.DeletePropagationForeground
+			// Ignore error, might be already deleted
+			_ = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
+				PropagationPolicy: &cascadeDelete,
+			})
+		}()
 
 		// Wait for one more node.
 		// TODO (alberto): have ability for NodePool to label Nodes and let workload target specific Nodes.
@@ -180,27 +189,29 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		// TODO (alberto): have ability to label and get Nodes by NodePool. NodePool.Status.Nodes?
 		nodes := e2eutil.WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
-		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get latest HostedCluster")
 		// Enable HostedCluster downscaling, set expanders and ignore labels
-		hostedCluster.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
-			Scaling: hyperv1.ScaleUpAndScaleDown,
-			Expanders: []hyperv1.ExpanderString{
-				hyperv1.RandomExpander,
-			},
-			ScaleDown: &hyperv1.ScaleDownConfig{
-				DelayAfterAddSeconds:        ptr.To[int32](300),
-				UnneededDurationSeconds:     ptr.To[int32](600),
-				UtilizationThresholdPercent: ptr.To[int32](50),
-			},
-			BalancingIgnoredLabels: []string{
-				"custom.ignore.label",
-			},
-			MaxNodesTotal:                 ptr.To[int32](4),
-			MaxFreeDifferenceRatioPercent: ptr.To[int32](50),
-		}
-		// update HostedCluster
-		err = mgtClient.Update(ctx, hostedCluster)
+		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster); err != nil {
+				return err
+			}
+			hostedCluster.Spec.Autoscaling = hyperv1.ClusterAutoscaling{
+				Scaling: hyperv1.ScaleUpAndScaleDown,
+				Expanders: []hyperv1.ExpanderString{
+					hyperv1.RandomExpander,
+				},
+				ScaleDown: &hyperv1.ScaleDownConfig{
+					DelayAfterAddSeconds:        ptr.To[int32](300),
+					UnneededDurationSeconds:     ptr.To[int32](600),
+					UtilizationThresholdPercent: ptr.To[int32](50),
+				},
+				BalancingIgnoredLabels: []string{
+					"custom.ignore.label",
+				},
+				MaxNodesTotal:                 ptr.To[int32](4),
+				MaxFreeDifferenceRatioPercent: ptr.To[int32](50),
+			}
+			return mgtClient.Update(ctx, hostedCluster)
+		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to update HostedCluster")
 
 		// check NodePool autoscalingEnabled condition for both nodepools
