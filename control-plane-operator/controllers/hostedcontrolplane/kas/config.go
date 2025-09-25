@@ -235,6 +235,9 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 		if gate == "DynamicResourceAllocation=true" {
 			runtimeConfig = append(runtimeConfig, "resource.k8s.io/v1beta1=true")
 		}
+		if gate == "VolumeAttributesClass=true" {
+			runtimeConfig = append(runtimeConfig, "storage.k8s.io/v1beta1=true")
+		}
 	}
 	args.Set("runtime-config", runtimeConfig...)
 	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
