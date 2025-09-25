@@ -1020,7 +1020,7 @@ github.com/quasilyte/go-ruleguard/ruleguard/quasigo/stdlib/qstrconv
 github.com/quasilyte/go-ruleguard/ruleguard/quasigo/stdlib/qstrings
 github.com/quasilyte/go-ruleguard/ruleguard/textmatch
 github.com/quasilyte/go-ruleguard/ruleguard/typematch
-# github.com/quasilyte/go-ruleguard/dsl v0.3.22
+# github.com/quasilyte/go-ruleguard/dsl v0.3.23
 ## explicit; go 1.15
 github.com/quasilyte/go-ruleguard/dsl
 github.com/quasilyte/go-ruleguard/dsl/types
