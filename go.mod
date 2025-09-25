@@ -51,7 +51,7 @@ require (
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
-	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
+	github.com/openshift/hypershift/api v0.0.0-20250924235356-acbb2cb8fd0b
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
