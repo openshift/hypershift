@@ -1,4 +1,4 @@
-# cel.dev/expr v0.23.0
+# cel.dev/expr v0.24.0
 ## explicit; go 1.22.0
 cel.dev/expr
 # github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.2
