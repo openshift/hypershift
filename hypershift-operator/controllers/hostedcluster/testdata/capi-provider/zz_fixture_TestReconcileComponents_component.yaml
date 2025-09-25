@@ -14,7 +14,7 @@ status:
     status: "False"
     type: Available
   - lastTransitionTime: null
-    message: 'Waiting for deployment capi-provider rollout to finish: 0 out of 2 new
+    message: 'Waiting for deployment capi-provider rollout to finish: 0 out of 1 new
       replicas have been updated'
     reason: WaitingForRolloutComplete
     status: "False"
