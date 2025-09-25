@@ -62,6 +62,7 @@ Analyze a JIRA issue and create a pull request to solve it.
    - Create pull request with:
      - Clear title referencing JIRA issue as a prefix. For example: "OCPBUGS-12345: ..."
      - The PR description should satisfy the template within .github/PULL_REQUEST_TEMPLATE.md if the file exists
+     - The "🤖 Generated with Claude Code" sentence should include a reference to the slash command that triggered the execution, for example "via `/jira-solve OCPBUGS-12345 enxebre`"
      - Always create as draft PR
      - Always create the PR against https://github.com/openshift/hypershift
      - Use gh cli if you need to
