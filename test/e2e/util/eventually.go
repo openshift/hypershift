@@ -546,3 +546,46 @@ func ConditionPredicate[T client.Object](needle Condition) Predicate[T] {
 		return false, fmt.Sprintf("missing condition: wanted %s, did not find condition of this type", needle.String()), nil
 	}
 }
+
+// EventuallyNotFound polls until the object is not found (returns a NotFound error).
+func EventuallyNotFound(t *testing.T, ctx context.Context, objective string, getter func(context.Context) (client.Object, error), options ...EventuallyOption) {
+	t.Helper()
+	opts := defaultOptions()
+	for _, option := range options {
+		option(opts)
+	}
+
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Waiting for %s", objective)
+	}
+	start := time.Now()
+	lastTimestamp := time.Now()
+	var previousError string
+	err := wait.PollUntilContextTimeout(ctx, opts.interval, opts.timeout, opts.immediate, func(ctx context.Context) (bool, error) {
+		_, getErr := getter(ctx)
+		if getErr != nil {
+			if client.IgnoreNotFound(getErr) == nil {
+				// Object not found - this is what we want
+				return true, nil
+			}
+			if getErr.Error() != previousError {
+				previousError = getErr.Error()
+				t.Logf("Failed to get object: %v", getErr)
+			}
+			return false, nil
+		}
+		// Object still exists
+		if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+			t.Logf("Object still exists after %s", time.Since(lastTimestamp).Round(25*time.Millisecond))
+		}
+		lastTimestamp = time.Now()
+		return false, nil
+	})
+	duration := time.Since(start).Round(25 * time.Millisecond)
+
+	if err != nil {
+		t.Errorf("Failed to wait for %s in %s: %v", objective, duration, err)
+		t.FailNow()
+	}
+	t.Logf("Successfully waited for %s in %s", objective, duration)
+}

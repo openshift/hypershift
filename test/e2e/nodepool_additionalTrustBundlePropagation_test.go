@@ -21,17 +21,19 @@ import (
 
 type AdditionalTrustBundlePropagationTest struct {
 	DummyInfraSetup
-	ctx        context.Context
-	mgmtClient crclient.Client
+	ctx                 context.Context
+	mgmtClient          crclient.Client
+	hostedClusterClient crclient.Client
 
 	hostedCluster *hyperv1.HostedCluster
 }
 
-func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *AdditionalTrustBundlePropagationTest {
+func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client) *AdditionalTrustBundlePropagationTest {
 	return &AdditionalTrustBundlePropagationTest{
-		ctx:           ctx,
-		mgmtClient:    mgmtClient,
-		hostedCluster: hostedCluster,
+		ctx:                 ctx,
+		mgmtClient:          mgmtClient,
+		hostedClusterClient: hostedClusterClient,
+		hostedCluster:       hostedCluster,
 	}
 }
 
@@ -175,6 +177,25 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 				}),
 			},
 			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
+		)
+
+		// Use the guest cluster client to verify user-ca-bundle ConfigMap is deleted
+		guestClient := k.hostedClusterClient
+
+		// Verify that the user-ca-bundle ConfigMap is deleted from the guest cluster openshift-config namespace
+		t.Logf("Verifying that user-ca-bundle ConfigMap is deleted from guest cluster")
+		e2eutil.EventuallyNotFound(t, k.ctx, "Waiting for user-ca-bundle ConfigMap to be deleted from guest cluster",
+			func(ctx context.Context) (crclient.Object, error) {
+				userCABundle := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "user-ca-bundle",
+						Namespace: "openshift-config",
+					},
+				}
+				err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(userCABundle), userCABundle)
+				return userCABundle, err
+			},
+			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 		)
 	})
 }

@@ -536,9 +536,10 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	testNamespace := "master-cluster1"
 	testHCPName := "cluster1"
 	tests := map[string]struct {
-		inputHCP              *hyperv1.HostedControlPlane
-		inputObjects          []client.Object
-		expectUserCAConfigMap bool
+		inputHCP                   *hyperv1.HostedControlPlane
+		inputObjects               []client.Object
+		guestClusterInputObjects   []client.Object
+		expectUserCAConfigMap      bool
 	}{
 		"No AdditionalTrustBundle": {
 			inputHCP: &hyperv1.HostedControlPlane{
@@ -572,12 +573,32 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 			},
 			expectUserCAConfigMap: true,
 		},
+		"AdditionalTrustBundle removed should delete user-ca-bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				// No AdditionalTrustBundle in spec
+			},
+			inputObjects: []client.Object{},
+			guestClusterInputObjects: []client.Object{
+				// Pre-existing user-ca-bundle that should be deleted
+				&corev1.ConfigMap{
+					ObjectMeta: manifests.UserCABundle().ObjectMeta,
+					Data: map[string]string{
+						"ca-bundle.crt": "existing-cert-data",
+					},
+				},
+			},
+			expectUserCAConfigMap: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.guestClusterInputObjects...).Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
 				hcpName:                testHCPName,
