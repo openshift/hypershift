@@ -240,7 +240,7 @@ require (
 	github.com/vmware-archive/yaml-patch v0.0.11 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
-	github.com/xen0n/gosmopolitan v1.2.2 // indirect
+	github.com/xen0n/gosmopolitan v1.3.0 // indirect
 	github.com/yagipy/maintidx v1.0.0 // indirect
 	github.com/yeya24/promlinter v0.3.0 // indirect
 	github.com/ykadowak/zerologlint v0.1.5 // indirect
