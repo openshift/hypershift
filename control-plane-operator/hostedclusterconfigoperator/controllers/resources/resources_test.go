@@ -78,6 +78,7 @@ var initialObjects = []client.Object{
 	},
 	manifests.NodeTuningClusterOperator(),
 	manifests.NamespaceKubeSystem(),
+	manifests.UserCABundle(),
 	manifests.OpenShiftUserCABundle(),
 	&configv1.ClusterVersion{ObjectMeta: metav1.ObjectMeta{Name: "version"}},
 	manifests.ValidatingAdmissionPolicy(kas.AdmissionPolicyNameConfig),
@@ -538,6 +539,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	tests := map[string]struct {
 		inputHCP              *hyperv1.HostedControlPlane
 		inputObjects          []client.Object
+		existingGuestObjects  []client.Object
 		expectUserCAConfigMap bool
 	}{
 		"No AdditionalTrustBundle": {
@@ -548,6 +550,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				},
 			},
 			inputObjects:          []client.Object{},
+			existingGuestObjects:  []client.Object{},
 			expectUserCAConfigMap: false,
 		},
 		"AdditionalTrustBundle": {
@@ -570,14 +573,33 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 					},
 				},
 			},
+			existingGuestObjects:  []client.Object{},
 			expectUserCAConfigMap: true,
+		},
+		"AdditionalTrustBundle removed - should delete existing user-ca-bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+			},
+			inputObjects: []client.Object{},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: manifests.UserCABundle().ObjectMeta,
+					Data: map[string]string{
+						"ca-bundle.crt": "oldcertdata",
+					},
+				},
+			},
+			expectUserCAConfigMap: false,
 		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			r := &reconciler{
-				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingGuestObjects...).Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
 				hcpName:                testHCPName,
