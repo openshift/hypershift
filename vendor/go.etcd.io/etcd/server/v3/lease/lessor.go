@@ -26,11 +26,12 @@ import (
 	"time"
 
 	"github.com/coreos/go-semver/semver"
+	"go.uber.org/zap"
+
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
 	"go.etcd.io/etcd/server/v3/lease/leasepb"
 	"go.etcd.io/etcd/server/v3/mvcc/backend"
 	"go.etcd.io/etcd/server/v3/mvcc/buckets"
-	"go.uber.org/zap"
 )
 
 // NoLease is a special LeaseID representing the absence of a lease.
@@ -44,8 +45,8 @@ var v3_6 = semver.Version{Major: 3, Minor: 6}
 var (
 	forever = time.Time{}
 
-	// maximum number of leases to revoke per second; configurable for tests
-	leaseRevokeRate = 1000
+	// default number of leases to revoke per second; configurable for tests
+	defaultLeaseRevokeRate = 1000
 
 	// maximum number of lease checkpoints recorded to the consensus log per second; configurable for tests
 	leaseCheckpointRate = 1000
@@ -172,6 +173,9 @@ type lessor struct {
 	// requests for shorter TTLs are extended to the minimum TTL.
 	minLeaseTTL int64
 
+	// maximum number of leases to revoke per second
+	leaseRevokeRate int
+
 	expiredC chan []*Lease
 	// stopC is a channel whose closure indicates that the lessor should be stopped.
 	stopC chan struct{}
@@ -200,6 +204,8 @@ type LessorConfig struct {
 	CheckpointInterval         time.Duration
 	ExpiredLeasesRetryInterval time.Duration
 	CheckpointPersist          bool
+
+	leaseRevokeRate int
 }
 
 func NewLessor(lg *zap.Logger, b backend.Backend, cluster cluster, cfg LessorConfig) Lessor {
@@ -209,11 +215,15 @@ func NewLessor(lg *zap.Logger, b backend.Backend, cluster cluster, cfg LessorCon
 func newLessor(lg *zap.Logger, b backend.Backend, cluster cluster, cfg LessorConfig) *lessor {
 	checkpointInterval := cfg.CheckpointInterval
 	expiredLeaseRetryInterval := cfg.ExpiredLeasesRetryInterval
+	leaseRevokeRate := cfg.leaseRevokeRate
 	if checkpointInterval == 0 {
 		checkpointInterval = defaultLeaseCheckpointInterval
 	}
 	if expiredLeaseRetryInterval == 0 {
 		expiredLeaseRetryInterval = defaultExpiredleaseRetryInterval
+	}
+	if leaseRevokeRate == 0 {
+		leaseRevokeRate = defaultLeaseRevokeRate
 	}
 	l := &lessor{
 		leaseMap:                  make(map[LeaseID]*Lease),
@@ -222,6 +232,7 @@ func newLessor(lg *zap.Logger, b backend.Backend, cluster cluster, cfg LessorCon
 		leaseCheckpointHeap:       make(LeaseQueue, 0),
 		b:                         b,
 		minLeaseTTL:               cfg.MinLeaseTTL,
+		leaseRevokeRate:           leaseRevokeRate,
 		checkpointInterval:        checkpointInterval,
 		expiredLeaseRetryInterval: expiredLeaseRetryInterval,
 		checkpointPersist:         cfg.CheckpointPersist,
@@ -474,7 +485,7 @@ func (le *lessor) Promote(extend time.Duration) {
 		le.scheduleCheckpointIfNeeded(l)
 	}
 
-	if len(le.leaseMap) < leaseRevokeRate {
+	if len(le.leaseMap) < le.leaseRevokeRate {
 		// no possibility of lease pile-up
 		return
 	}
@@ -488,7 +499,7 @@ func (le *lessor) Promote(extend time.Duration) {
 	expires := 0
 	// have fewer expires than the total revoke rate so piled up leases
 	// don't consume the entire revoke limit
-	targetExpiresPerSecond := (3 * leaseRevokeRate) / 4
+	targetExpiresPerSecond := (3 * le.leaseRevokeRate) / 4
 	for _, l := range leases {
 		remaining := l.Remaining()
 		if remaining > nextWindow {
@@ -627,7 +638,7 @@ func (le *lessor) revokeExpiredLeases() {
 	var ls []*Lease
 
 	// rate limit
-	revokeLimit := leaseRevokeRate / 2
+	revokeLimit := le.leaseRevokeRate / 2
 
 	le.mu.RLock()
 	if le.isPrimary() {
@@ -898,6 +909,13 @@ func (l *Lease) forever() {
 	l.expiryMu.Lock()
 	defer l.expiryMu.Unlock()
 	l.expiry = forever
+}
+
+// Demoted returns true if the lease's expiry has been reset to forever.
+func (l *Lease) Demoted() bool {
+	l.expiryMu.RLock()
+	defer l.expiryMu.RUnlock()
+	return l.expiry == forever
 }
 
 // Keys returns all the keys attached to the lease.
