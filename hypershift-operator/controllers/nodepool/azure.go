@@ -117,23 +117,38 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
 	}
 
-	// The marketplace metadata is located in the RHCOS extensions under:
-	// .architectures.<arch>.rhel-coreos-extensions.marketplace.azure
-	//
-	// Since marketplace data is not part of the standard CoreOSArchitecture struct
-	// in the current release info package, this implementation is stubbed out.
-	// In a real implementation, this would need to be coordinated with the
-	// release-controller team to include the marketplace metadata in the
-	// appropriate format within the CoreOSStreamMetadata structure.
-	//
-	// The expected structure would be:
-	// archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen1/HyperVGen2
-	// where each generation contains: {publisher, offer, sku, version}
-	//
-	// For now, we return nil to indicate no marketplace metadata is available,
-	// which will cause the defaulting to be skipped.
-	_ = archData // Mark as used to avoid linter warnings
-	return nil, nil
+	// Extract marketplace metadata from the RHCOS extensions
+	// Structure: .architectures.<arch>.rhel-coreos-extensions.marketplace.azure.no-purchase-plan
+	azureMarketplace := archData.RHCOS.Marketplace.Azure.NoPurchasePlan
+
+	if azureMarketplace.HyperVGen1 == nil && azureMarketplace.HyperVGen2 == nil {
+		return nil, nil // No marketplace data available
+	}
+
+	// Convert from release info format to our internal format
+	result := &azureMarketplaceMetadata{
+		NoPurchasePlan: &azureMarketplaceImageInfo{},
+	}
+
+	if azureMarketplace.HyperVGen1 != nil {
+		result.NoPurchasePlan.HyperVGen1 = &hyperv1.AzureMarketplaceImage{
+			Publisher: azureMarketplace.HyperVGen1.Publisher,
+			Offer:     azureMarketplace.HyperVGen1.Offer,
+			SKU:       azureMarketplace.HyperVGen1.SKU,
+			Version:   azureMarketplace.HyperVGen1.Version,
+		}
+	}
+
+	if azureMarketplace.HyperVGen2 != nil {
+		result.NoPurchasePlan.HyperVGen2 = &hyperv1.AzureMarketplaceImage{
+			Publisher: azureMarketplace.HyperVGen2.Publisher,
+			Offer:     azureMarketplace.HyperVGen2.Offer,
+			SKU:       azureMarketplace.HyperVGen2.SKU,
+			Version:   azureMarketplace.HyperVGen2.Version,
+		}
+	}
+
+	return result, nil
 }
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
