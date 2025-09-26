@@ -1,14 +1,19 @@
 package metrics
 
 import (
+	"fmt"
 	"strconv"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go/service/pricing"
+	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
@@ -33,39 +38,51 @@ type nodePoolParams struct {
 
 type Ec2ClientMock struct {
 	ec2iface.EC2API
+
+	MockedDescribeInstanceTypesFunc func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error)
+	ResponseInstanceTypes           []*ec2.InstanceTypeInfo
+	ResponseError                   error
+}
+
+func initDescribeInstanceTypesOutput(instanceTypeInfo []*ec2.InstanceTypeInfo) *ec2.DescribeInstanceTypesOutput {
+	return &ec2.DescribeInstanceTypesOutput{
+		InstanceTypes: instanceTypeInfo,
+	}
+}
+
+func initInstanceTypeInfo(instanceType string, vCpusCount int64) *ec2.InstanceTypeInfo {
+	return &ec2.InstanceTypeInfo{
+		InstanceType: ptr.To[string](instanceType),
+		VCpuInfo: &ec2.VCpuInfo{
+			DefaultVCpus: ptr.To[int64](vCpusCount),
+		},
+	}
 }
 
 func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-	var instanceTypesInfo []*ec2.InstanceTypeInfo
+	return c.MockedDescribeInstanceTypesFunc(input)
+}
 
-	for _, instanceType := range input.InstanceTypes {
-		if instanceType != nil {
-			var vCpusCount *int64
+type PricingClientMock struct {
+	pricingiface.PricingAPI
 
-			switch *instanceType {
-			case "m5.xlarge":
-				vCpusCount = ptr.To[int64](4)
-			case "m5.2xlarge":
-				vCpusCount = ptr.To[int64](8)
-			}
+	MockedGetProductsFunc func(input *pricing.GetProductsInput) (*pricing.GetProductsOutput, error)
+}
 
-			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
-				InstanceType: instanceType,
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: vCpusCount,
-				},
-			})
-		}
-
-	}
-
-	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
+func (m *PricingClientMock) GetProducts(input *pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+	return m.MockedGetProductsFunc(input)
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
 	testCases := []struct {
-		name                          string
-		npsParams                     []nodePoolParams
+		name      string
+		npsParams []nodePoolParams
+
+		//exposed for mocking
+		MockedEC2DescribeInstanceTypesFunc func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error)
+		MockedPricingGetProductsFunc       func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error)
+
+		// expected results
 		expectedVCpusCount            float64
 		expectedVCpusCountErrorReason string
 	}{
@@ -79,12 +96,19 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{}), nil
+			},
 			expectedVCpusCount: 0,
 		},
 		{
 			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.xlarge", 4)}), nil
 			},
 			expectedVCpusCount: 8,
 		},
@@ -94,15 +118,156 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+					initInstanceTypeInfo("m5.2xlarge", 8)}), nil
+			},
 			expectedVCpusCount: 32,
+		},
+		{
+			name: "When the nodePool EC2 instance type is valid, the total number of worker vCpus is -1 since data is bad",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return &ec2.DescribeInstanceTypesOutput{}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: unexpectedAWSOutputErrorReason,
 		},
 		{
 			name: "When the nodePool EC2 instance type is invalid, the total number of worker vCpus is -1",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
 			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return &ec2.DescribeInstanceTypesOutput{}, fmt.Errorf("bad instance")
+			},
 			expectedVCpusCount:            -1,
-			expectedVCpusCountErrorReason: "unexpected AWS output",
+			expectedVCpusCountErrorReason: failedToCallAWSErrorReason,
+		},
+		{
+			name: "When AWS DescribeInstanceTypes return a generic error",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return nil, fmt.Errorf("Good instance but I can't")
+			},
+
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: failedToCallAWSErrorReason,
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			},
+			MockedPricingGetProductsFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+				return nil, fmt.Errorf("No man I don't know it")
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: failedToCallAWSErrorReason,
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error, pricing.GetProducts return valid but empty data",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			},
+			MockedPricingGetProductsFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []aws.JSONValue{
+						{
+							"bad": "data",
+						},
+					},
+				}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: unexpectedAWSOutputErrorReason,
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error, pricing.GetProducts return bad data",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			},
+			MockedPricingGetProductsFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					PriceList: []aws.JSONValue{
+						{
+							"product": aws.JSONValue{
+								"attributes": "foo",
+							},
+						},
+					},
+				}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: unableToUnMarshalPricingDataErrorReason,
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error, pricing.GetProducts return bad CPU value",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "i3.metal"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return nil, awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			},
+			MockedPricingGetProductsFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					FormatVersion: ptr.To("aws_v1"),
+					NextToken:     ptr.To("AAMA-TOKEN"),
+					PriceList: []aws.JSONValue{
+						{
+							"product": aws.JSONValue{
+								"attributes": aws.JSONValue{
+									"instanceType": "i3.metal",
+									"vcpu":         "should be a number",
+								},
+							},
+						},
+					}}, nil
+			},
+			expectedVCpusCount:            -1,
+			expectedVCpusCountErrorReason: unableToUnMarshalPricingDataErrorReason,
+		},
+		{
+			name: "When EC2 DescribeInstanceTypes return InvalidInstanceType error, pricing.GetProducts return valid  data",
+			npsParams: []nodePoolParams{
+				{availableNodesCount: 2, ec2InstanceType: "i3.metal"},
+			},
+			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
+				return nil, awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			},
+			MockedPricingGetProductsFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+				return &pricing.GetProductsOutput{
+					FormatVersion: ptr.To("aws_v1"),
+					NextToken:     ptr.To("AAMA-TOKEN"),
+					PriceList: []aws.JSONValue{
+						{
+							"product": aws.JSONValue{
+								"attributes": aws.JSONValue{
+									"instanceType": "i3.metal",
+									"vcpu":         "72",
+								},
+							},
+						},
+					}}, nil
+			},
+			expectedVCpusCount:            144,
+			expectedVCpusCountErrorReason: noErroReason,
 		},
 	}
 
@@ -122,6 +287,11 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcluster)
+			ec2MockedClient := &Ec2ClientMock{}
+			ec2MockedClient.MockedDescribeInstanceTypesFunc = tc.MockedEC2DescribeInstanceTypesFunc
+
+			pricingMockedClient := &PricingClientMock{}
+			pricingMockedClient.MockedGetProductsFunc = tc.MockedPricingGetProductsFunc
 
 			for k, npParam := range tc.npsParams {
 				nodePool := &hyperv1.NodePool{
@@ -147,7 +317,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), &Ec2ClientMock{}, clock.RealClock{}))
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), ec2MockedClient, pricingMockedClient, clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
 			if err != nil {
