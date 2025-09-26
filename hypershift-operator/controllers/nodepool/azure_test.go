@@ -688,7 +688,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			},
 			releaseImage: createMockReleaseImage("4.20.0", true),
 			expectedError: true,
-			expectedErrorMsg: "unsupported imageGeneration: Gen3",
+			expectedErrorMsg: "unsupported image generation \"Gen3\", must be Gen1 or Gen2",
 		},
 		{
 			name: "apply marketplace defaults for Gen2 when metadata is available",
@@ -717,6 +717,52 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								ImageGeneration: ptr.To(hyperv1.Gen1),
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "aro_419",
+				Version:   "419.6.20250523",
+			},
+		},
+		{
+			name: "apply marketplace defaults for ARM64 Gen2",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureARM64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "419-v2",
+				Version:   "419.6.20250523",
+			},
+		},
+		{
+			name: "apply marketplace defaults for ARM64 Gen1",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureARM64,
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
