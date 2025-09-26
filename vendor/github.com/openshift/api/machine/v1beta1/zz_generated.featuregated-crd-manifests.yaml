@@ -6,8 +6,7 @@ machines.machine.openshift.io:
   CRDName: machines.machine.openshift.io
   Capability: MachineAPI
   Category: ""
-  FeatureGates:
-  - MachineAPIMigration
+  FeatureGates: []
   FilenameOperatorName: machine-api
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_10"
@@ -102,8 +101,7 @@ machinesets.machine.openshift.io:
   CRDName: machinesets.machine.openshift.io
   Capability: MachineAPI
   Category: ""
-  FeatureGates:
-  - MachineAPIMigration
+  FeatureGates: []
   FilenameOperatorName: machine-api
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_10"

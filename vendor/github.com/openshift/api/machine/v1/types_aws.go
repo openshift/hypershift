@@ -20,7 +20,6 @@ type AWSResourceReference struct {
 	ARN *string `json:"arn,omitempty"`
 	// Filters is a set of filters used to identify a resource.
 	// +optional
-	// +listType=atomic
 	Filters *[]AWSResourceFilter `json:"filters,omitempty"`
 }
 
@@ -46,6 +45,5 @@ type AWSResourceFilter struct {
 	Name string `json:"name"`
 	// Values includes one or more filter values. Filter values are case-sensitive.
 	// +optional
-	// +listType=atomic
 	Values []string `json:"values,omitempty"`
 }
