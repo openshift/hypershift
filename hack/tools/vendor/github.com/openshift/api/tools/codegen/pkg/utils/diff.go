@@ -11,10 +11,12 @@ import (
 )
 
 const (
-	colourReset = "\x1b[0m"
-	colourRed   = "\x1b[31m"
-	colourGreen = "\x1b[32m"
-	colourCyan  = "\x1b[36m"
+	colourReset   = "\x1b[0m"
+	colourRed     = "\x1b[91m"
+	colourGreen   = "\x1b[92m"
+	colourYellow  = "\x1b[93m"
+	colourMagenta = "\x1b[95m"
+	colourCyan    = "\x1b[96m"
 )
 
 // Diff returns a string containing the diff between the two strings.

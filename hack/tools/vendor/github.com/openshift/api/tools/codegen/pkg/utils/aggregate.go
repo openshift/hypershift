@@ -52,9 +52,12 @@ func handleError(buf *bytes.Buffer, err error, indent int) {
 
 // printError prints the error after indenting it by the given amount.
 func printError(buf *bytes.Buffer, err error, indent int) {
+	buf.WriteString(colourRed)
+
 	for i := 0; i < indent; i++ {
 		buf.WriteString("\t")
 	}
+
 	buf.WriteString(err.Error())
-	buf.WriteString("\n")
+	buf.WriteString("\n" + colourReset)
 }
