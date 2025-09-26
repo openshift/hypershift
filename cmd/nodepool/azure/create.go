@@ -199,7 +199,15 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 
 	// Set ImageGeneration if specified by the user
 	if o.ImageGeneration != "" {
-		vmImage.ImageGeneration = ptr.To(hyperv1.AzureVMImageGeneration(o.ImageGeneration))
+		switch o.ImageGeneration {
+		case "Gen1":
+			vmImage.ImageGeneration = ptr.To(hyperv1.Gen1)
+		case "Gen2":
+			vmImage.ImageGeneration = ptr.To(hyperv1.Gen2)
+		default:
+			// This should never happen due to validation, but defensive programming
+			vmImage.ImageGeneration = ptr.To(hyperv1.Gen2)
+		}
 	}
 
 	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType

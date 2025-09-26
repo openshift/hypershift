@@ -92,7 +92,7 @@ func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, 
 	case hyperv1.Gen2:
 		marketplaceImage = azureMarketplace.NoPurchasePlan.HyperVGen2
 	default:
-		return fmt.Errorf("unsupported imageGeneration: %s", generation)
+		return fmt.Errorf("unsupported image generation %q, must be Gen1 or Gen2", generation)
 	}
 
 	if marketplaceImage == nil {
