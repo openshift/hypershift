@@ -1968,6 +1968,29 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
 		})
 
+		// Wait for all nodes to stabilize after global-pull-secret deletion
+		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
+			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
+
+			// Wait for the GlobalPullSecretDaemonSet to be ready and stable after processing the deletion
+			EventuallyObject(t, ctx, "GlobalPullSecretDaemonSet to be ready after global-pull-secret deletion", func(ctx context.Context) (*appsv1.DaemonSet, error) {
+				ds := hccomanifests.GlobalPullSecretDaemonSet()
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: ds.Name, Namespace: ds.Namespace}, ds)
+				return ds, err
+			}, []Predicate[*appsv1.DaemonSet]{func(ds *appsv1.DaemonSet) (done bool, reasons string, err error) {
+				if ds.Status.ObservedGeneration < ds.Generation {
+					return false, fmt.Sprintf("DaemonSet status has not observed generation %d yet (current %d)", ds.Generation, ds.Status.ObservedGeneration), nil
+				}
+				if ds.Status.UpdatedNumberScheduled != ds.Status.DesiredNumberScheduled {
+					return false, fmt.Sprintf("DaemonSet update in flight: %d/%d pods updated", ds.Status.UpdatedNumberScheduled, ds.Status.DesiredNumberScheduled), nil
+				}
+				if ds.Status.NumberReady != ds.Status.DesiredNumberScheduled {
+					return false, fmt.Sprintf("DaemonSet not ready: %d/%d pods ready", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
+				}
+				return true, fmt.Sprintf("DaemonSet ready: %d/%d pods", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
+			}}, WithTimeout(5*time.Minute), WithInterval(10*time.Second))
+		})
+
 		// Check if the config.json is updated in all of the nodes
 		t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
 			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage)
