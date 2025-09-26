@@ -1,12 +1,16 @@
 package nodepool
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
+	imageapi "github.com/openshift/api/image/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -515,5 +519,235 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 				g.Expect(azureSpec).To(Equal(tc.expectedAzureMachineTemplateSpec))
 			}
 		})
+	}
+}
+
+func TestDefaultAzureNodePoolImage(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		nodePool                *hyperv1.NodePool
+		releaseImage            *releaseinfo.ReleaseImage
+		expectedImageType       hyperv1.AzureVMImageType
+		expectedMarketplaceImage *hyperv1.AzureMarketplaceImage
+		expectedError           bool
+		expectedErrorMsg        string
+	}{
+		{
+			name: "skip defaulting when image is already set - ImageID",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("existing-image-id"),
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType:        hyperv1.ImageID,
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when AzureMarketplace is already set",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									Publisher: "existing-publisher",
+									Offer:     "existing-offer",
+									SKU:       "existing-sku",
+									Version:   "existing-version",
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "existing-publisher",
+				Offer:     "existing-offer",
+				SKU:       "existing-sku",
+				Version:   "existing-version",
+			},
+		},
+		{
+			name: "skip defaulting for OCP < 4.20",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.19.5", true),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when no marketplace metadata for OCP >= 4.20 (current behavior)",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting with Gen1 imageGeneration when no marketplace metadata",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								ImageGeneration: ptr.To("Gen1"),
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting with Gen2 imageGeneration when no marketplace metadata",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								ImageGeneration: ptr.To("Gen2"),
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when no marketplace metadata available",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", false),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting with unsupported imageGeneration when no marketplace metadata",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								ImageGeneration: ptr.To("Gen3"),
+							},
+						},
+					},
+				},
+			},
+			releaseImage: createMockReleaseImage("4.20.0", true),
+			expectedImageType: "",
+			expectedMarketplaceImage: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			err := defaultAzureNodePoolImage(context.Background(), tc.nodePool, tc.releaseImage)
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorMsg))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if tc.expectedImageType != "" {
+					g.Expect(tc.nodePool.Spec.Platform.Azure.Image.Type).To(Equal(tc.expectedImageType))
+				}
+				if tc.expectedMarketplaceImage != nil {
+					g.Expect(tc.nodePool.Spec.Platform.Azure.Image.AzureMarketplace).To(Equal(tc.expectedMarketplaceImage))
+				}
+			}
+		})
+	}
+}
+
+// createMockReleaseImage creates a mock release image for testing
+func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releaseinfo.ReleaseImage {
+	architectures := map[string]releaseinfo.CoreOSArchitecture{
+		"x86_64": {
+			Artifacts: map[string]releaseinfo.CoreOSArtifact{},
+			Images:    releaseinfo.CoreOSImages{},
+		},
+	}
+
+	streamMetadata := &releaseinfo.CoreOSStreamMetadata{
+		Stream:        "test-stream",
+		Architectures: architectures,
+	}
+
+	// Create a simple ImageStream for the version
+	// The Version() method returns ImageStream.Name, so we set that to the version
+	imageStream := &imageapi.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: version,
+		},
+		Status: imageapi.ImageStreamStatus{
+			Tags: []imageapi.NamedTagEventList{
+				{
+					Tag: version,
+					Items: []imageapi.TagEvent{
+						{},
+					},
+				},
+			},
+		},
+	}
+
+	return &releaseinfo.ReleaseImage{
+		ImageStream:    imageStream,
+		StreamMetadata: streamMetadata,
 	}
 }

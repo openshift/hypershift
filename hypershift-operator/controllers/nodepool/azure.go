@@ -1,12 +1,15 @@
 package nodepool
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/blang/semver"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -16,7 +19,112 @@ import (
 
 // dummySSHKey is a base64 encoded dummy SSH public key.
 // The CAPI AzureMachineTemplate requires an SSH key to be set, so we provide a dummy one here.
-const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JLN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
+const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JKN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
+
+// azureMarketplaceMetadata represents the Azure Marketplace metadata from the release payload
+type azureMarketplaceMetadata struct {
+	NoPurchasePlan *azureMarketplaceImageInfo `json:"no-purchase-plan,omitempty"`
+}
+
+type azureMarketplaceImageInfo struct {
+	HyperVGen1 *hyperv1.AzureMarketplaceImage `json:"hyperVGen1,omitempty"`
+	HyperVGen2 *hyperv1.AzureMarketplaceImage `json:"hyperVGen2,omitempty"`
+}
+
+// defaultAzureNodePoolImage applies Azure Marketplace image defaults for OCP >= 4.20
+// when no explicit image is configured and marketplace metadata is available in the release payload.
+func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
+	// Skip if image is already explicitly set
+	if nodePool.Spec.Platform.Azure.Image.ImageID != nil ||
+	   nodePool.Spec.Platform.Azure.Image.AzureMarketplace != nil {
+		return nil
+	}
+
+	// Check if OCP version >= 4.20 for marketplace defaulting
+	releaseVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		return fmt.Errorf("failed to parse release version %s: %w", releaseImage.Version(), err)
+	}
+
+	minVersionForMarketplace := semver.MustParse("4.20.0")
+	if releaseVersion.LT(minVersionForMarketplace) {
+		// Skip marketplace defaulting for versions < 4.20
+		return nil
+	}
+
+	// Get architecture for the nodepool
+	arch := nodePool.Spec.Arch
+	if arch == "" {
+		arch = hyperv1.ArchitectureAMD64 // Default to amd64 if not specified
+	}
+
+	// Map hypershift architecture to RHCOS stream architecture
+	streamArch := arch
+	if arch == hyperv1.ArchitectureARM64 {
+		streamArch = "aarch64"
+	} else if arch == hyperv1.ArchitectureAMD64 {
+		streamArch = "x86_64"
+	}
+
+	// Extract marketplace metadata from release payload
+	azureMarketplace, err := getAzureMarketplaceMetadata(releaseImage, streamArch)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure Marketplace metadata: %w", err)
+	}
+
+	if azureMarketplace == nil || azureMarketplace.NoPurchasePlan == nil {
+		// No marketplace metadata available, skip defaulting
+		return nil
+	}
+
+	// Determine which Hyper-V generation to use
+	generation := "Gen2" // Default to Gen2
+	if nodePool.Spec.Platform.Azure.Image.ImageGeneration != nil {
+		generation = *nodePool.Spec.Platform.Azure.Image.ImageGeneration
+	}
+
+	var marketplaceImage *hyperv1.AzureMarketplaceImage
+	switch generation {
+	case "Gen1":
+		marketplaceImage = azureMarketplace.NoPurchasePlan.HyperVGen1
+	case "Gen2":
+		marketplaceImage = azureMarketplace.NoPurchasePlan.HyperVGen2
+	default:
+		return fmt.Errorf("unsupported imageGeneration: %s", generation)
+	}
+
+	if marketplaceImage == nil {
+		return fmt.Errorf("no Azure Marketplace image available for %s generation %s", streamArch, generation)
+	}
+
+	// Apply the marketplace image defaults
+	nodePool.Spec.Platform.Azure.Image.Type = hyperv1.AzureMarketplace
+	nodePool.Spec.Platform.Azure.Image.AzureMarketplace = marketplaceImage
+
+	return nil
+}
+
+// getAzureMarketplaceMetadata extracts Azure Marketplace metadata from the release payload
+func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch string) (*azureMarketplaceMetadata, error) {
+	if releaseImage.StreamMetadata == nil {
+		return nil, nil // No stream metadata available
+	}
+
+	_, foundArch := releaseImage.StreamMetadata.Architectures[arch]
+	if !foundArch {
+		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
+	}
+
+	// Since marketplace data is not part of the standard CoreOSArchitecture struct
+	// in the current release info package, this implementation is stubbed out.
+	// In a real implementation, this would need to be coordinated with the
+	// release-controller team to include the marketplace metadata in the
+	// appropriate format within the CoreOSStreamMetadata structure.
+	//
+	// For now, we return nil to indicate no marketplace metadata is available,
+	// which will cause the defaulting to be skipped.
+	return nil, nil
+}
 
 func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
@@ -99,6 +207,11 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 }
 
 func (c *CAPI) azureMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
+	// Apply Azure Marketplace image defaults before generating machine template spec
+	if err := defaultAzureNodePoolImage(context.Background(), c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage); err != nil {
+		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)
+	}
+
 	spec, err := azureMachineTemplateSpec(c.nodePool)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)

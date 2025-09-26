@@ -3571,6 +3571,21 @@ AzureMarketplaceImage
 <p>azureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>imageGeneration</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+This field is only relevant when Type is unset or when defaults are applied from the release payload.
+Valid values are &ldquo;Gen1&rdquo; and &ldquo;Gen2&rdquo;. If unspecified, defaults to &ldquo;Gen2&rdquo;.
+This field has no effect when explicit imageID or azureMarketplace is set.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureVMImageType { #hypershift.openshift.io/v1beta1.AzureVMImageType }
