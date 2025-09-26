@@ -79,7 +79,7 @@ require (
 	k8s.io/kube-scheduler v0.28.3
 	k8s.io/kubectl v0.28.3
 	k8s.io/pod-security-admission v0.28.3
-	k8s.io/utils v0.0.0-20231127182322-b307cd553661
+	k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d
 	kubevirt.io/api v1.1.0
 	kubevirt.io/containerized-data-importer-api v1.57.0
 	sigs.k8s.io/cluster-api v1.5.3
