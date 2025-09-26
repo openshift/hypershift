@@ -841,7 +841,8 @@ func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releas
 	}
 
 	architectures := map[string]releaseinfo.CoreOSArchitecture{
-		"x86_64": architecture,
+		"x86_64":  architecture,
+		"aarch64": architecture, // ARM64 uses the same marketplace metadata
 	}
 
 	streamMetadata := &releaseinfo.CoreOSStreamMetadata{
