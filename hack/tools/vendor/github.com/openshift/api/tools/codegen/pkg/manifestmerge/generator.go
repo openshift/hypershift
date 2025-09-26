@@ -5,13 +5,17 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"os"
+	"sort"
+	"strings"
+	"sync"
+
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"math/rand"
-	"os"
-	"strings"
-	"sync"
+
+	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
 	"github.com/openshift/api/tools/codegen/pkg/utils"
@@ -25,7 +29,6 @@ import (
 	"k8s.io/kube-openapi/pkg/spec3"
 	"k8s.io/kube-openapi/pkg/validation/spec"
 	"k8s.io/utils/pointer"
-	"path/filepath"
 	kyaml "sigs.k8s.io/yaml"
 )
 
@@ -104,10 +107,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the schemapatch generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping %q for %s", g.Name(), groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	versionPaths := allVersionPaths(groupCtx.Versions)
@@ -128,10 +131,10 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	}
 
 	if len(errs) > 0 {
-		return kerrors.NewAggregate(errs)
+		return nil, kerrors.NewAggregate(errs)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // genGroupVersion runs the schemapatch generator against a particular version of the API group.
@@ -630,6 +633,18 @@ func mergeAllPertinentCRDsInDir(resourcePath string, filter ManifestFilter, star
 		errs = append(errs, err)
 		return nil, errs
 	}
+
+	// Sort the manifests such that any combination of feature gates is applied after the gates that it combines.
+	// This means that if we have a file that is "foo+bar" and a file that is "foo", the "foo+bar" file will be applied last.
+	// This enables more speicfic handling for combinations of feature gates that affect the same field.
+	sort.Slice(partialManifestFiles, func(i, j int) bool {
+		// Get the name of the files without the ".yaml" suffix.
+		// This should be the name of the feature gate, or, a list of feature gates separated by `+`.
+		iBase := strings.TrimSuffix(filepath.Base(partialManifestFiles[i].Name()), ".yaml")
+		jBase := strings.TrimSuffix(filepath.Base(partialManifestFiles[j].Name()), ".yaml")
+
+		return strings.Contains(jBase, "+") && strings.Contains(jBase, iBase)
+	})
 
 	foundAFile := false
 	for _, partialManifest := range partialManifestFiles {
