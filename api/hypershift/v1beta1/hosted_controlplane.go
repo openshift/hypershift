@@ -402,6 +402,10 @@ type HostedControlPlaneStatus struct {
 	// nodeCount tracks the number of nodes in the HostedControlPlane.
 	// +optional
 	NodeCount *int `json:"nodeCount,omitempty"`
+
+	// configuration contains the cluster configuration status of the HostedCluster
+	// +optional
+	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
