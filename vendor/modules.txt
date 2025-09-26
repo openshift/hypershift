@@ -2016,7 +2016,7 @@ k8s.io/kubectl/pkg/validation
 k8s.io/pod-security-admission/admission/api
 k8s.io/pod-security-admission/admission/api/v1beta1
 k8s.io/pod-security-admission/api
-# k8s.io/utils v0.0.0-20231127182322-b307cd553661
+# k8s.io/utils v0.0.0-20250820121507-0af2bda4dd1d
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock
