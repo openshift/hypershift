@@ -5,58 +5,36 @@ import (
 	"encoding/binary"
 )
 
-var (
-	xlsxSigFiles = []string{
-		"xl/worksheets/",
-		"xl/drawings/",
-		"xl/theme/",
-		"xl/_rels/",
-		"xl/styles.xml",
-		"xl/workbook.xml",
-		"xl/sharedStrings.xml",
-	}
-	docxSigFiles = []string{
-		"word/media/",
-		"word/_rels/document.xml.rels",
-		"word/document.xml",
-		"word/styles.xml",
-		"word/fontTable.xml",
-		"word/settings.xml",
-		"word/numbering.xml",
-		"word/header",
-		"word/footer",
-	}
-	pptxSigFiles = []string{
-		"ppt/slides/",
-		"ppt/media/",
-		"ppt/slideLayouts/",
-		"ppt/theme/",
-		"ppt/slideMasters/",
-		"ppt/tags/",
-		"ppt/notesMasters/",
-		"ppt/_rels/",
-		"ppt/handoutMasters/",
-		"ppt/notesSlides/",
-		"ppt/presentation.xml",
-		"ppt/tableStyles.xml",
-		"ppt/presProps.xml",
-		"ppt/viewProps.xml",
-	}
-)
-
 // Xlsx matches a Microsoft Excel 2007 file.
 func Xlsx(raw []byte, limit uint32) bool {
-	return zipContains(raw, xlsxSigFiles...)
+	return msoxml(raw, zipEntries{{
+		name: []byte("xl/"),
+		dir:  true,
+	}}, 100)
 }
 
 // Docx matches a Microsoft Word 2007 file.
 func Docx(raw []byte, limit uint32) bool {
-	return zipContains(raw, docxSigFiles...)
+	return msoxml(raw, zipEntries{{
+		name: []byte("word/"),
+		dir:  true,
+	}}, 100)
 }
 
 // Pptx matches a Microsoft PowerPoint 2007 file.
 func Pptx(raw []byte, limit uint32) bool {
-	return zipContains(raw, pptxSigFiles...)
+	return msoxml(raw, zipEntries{{
+		name: []byte("ppt/"),
+		dir:  true,
+	}}, 100)
+}
+
+// Visio matches a Microsoft Visio 2013+ file.
+func Visio(raw []byte, limit uint32) bool {
+	return msoxml(raw, zipEntries{{
+		name: []byte("visio/"),
+		dir:  true,
+	}}, 100)
 }
 
 // Ole matches an Open Linking and Embedding file.
@@ -193,6 +171,14 @@ func Msi(raw []byte, limit uint32) bool {
 	return matchOleClsid(raw, []byte{
 		0x84, 0x10, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
+	})
+}
+
+// One matches a Microsoft OneNote file.
+func One(raw []byte, limit uint32) bool {
+	return bytes.HasPrefix(raw, []byte{
+		0xe4, 0x52, 0x5c, 0x7b, 0x8c, 0xd8, 0xa7, 0x4d,
+		0xae, 0xb1, 0x53, 0x78, 0xd0, 0x29, 0x96, 0xd3,
 	})
 }
 
