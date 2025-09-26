@@ -108,9 +108,14 @@ nav:
         - how-to/aws/troubleshooting/debug-nodes.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
-    - how-to/azure/create-azure-cluster-on-aks.md
-    - how-to/azure/create-azure-cluster-with-options.md
-    - how-to/azure/scheduler.md
+    - 'Managed Azure':
+      - how-to/azure/create-azure-cluster-on-aks.md
+      - how-to/azure/create-azure-cluster-with-options.md
+      - how-to/azure/scheduler.md
+    - 'Self-managed Azure':
+      - how-to/azure/azure-workload-identity-setup.md
+      - how-to/azure/setup-management-cluster.md
+      - how-to/azure/create-self-managed-azure-cluster.md
     - 'Global Pull Secret': how-to/azure/global-pull-secret.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
