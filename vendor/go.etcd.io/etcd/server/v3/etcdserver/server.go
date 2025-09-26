@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -67,6 +68,7 @@ import (
 	"go.etcd.io/etcd/server/v3/lease/leasehttp"
 	"go.etcd.io/etcd/server/v3/mvcc"
 	"go.etcd.io/etcd/server/v3/mvcc/backend"
+	"go.etcd.io/etcd/server/v3/verify"
 	"go.etcd.io/etcd/server/v3/wal"
 )
 
@@ -615,10 +617,16 @@ func NewServer(cfg config.ServerConfig) (srv *EtcdServer, err error) {
 		cfg.Logger.Warn("failed to create token provider", zap.Error(err))
 		return nil, err
 	}
-	srv.kv = mvcc.New(srv.Logger(), srv.be, srv.lessor, mvcc.StoreConfig{CompactionBatchLimit: cfg.CompactionBatchLimit})
+
+	mvccStoreConfig := mvcc.StoreConfig{
+		CompactionBatchLimit:    cfg.CompactionBatchLimit,
+		CompactionSleepInterval: cfg.CompactionSleepInterval,
+	}
+	srv.kv = mvcc.New(srv.Logger(), srv.be, srv.lessor, mvccStoreConfig)
 
 	kvindex := ci.ConsistentIndex()
-	srv.lg.Debug("restore consistentIndex", zap.Uint64("index", kvindex))
+	srv.lg.Info("restore consistentIndex", zap.Uint64("index", kvindex))
+
 	if beExist {
 		// TODO: remove kvindex != 0 checking when we do not expect users to upgrade
 		// etcd from pre-3.0 release.
@@ -991,6 +999,14 @@ func (s *EtcdServer) Process(ctx context.Context, m raftpb.Message) error {
 		)
 		return httptypes.NewHTTPError(http.StatusForbidden, "cannot process message from removed member")
 	}
+	if s.ID() != types.ID(m.To) {
+		lg.Warn(
+			"rejected Raft message to mismatch member",
+			zap.String("local-member-id", s.ID().String()),
+			zap.String("mismatch-member-id", types.ID(m.To).String()),
+		)
+		return httptypes.NewHTTPError(http.StatusForbidden, "cannot process message to mismatch member")
+	}
 	if m.Type == raftpb.MsgApp {
 		s.stats.RecvAppendReq(types.ID(m.From).String(), m.Size())
 	}
@@ -1197,9 +1213,25 @@ func (s *EtcdServer) revokeExpiredLeases(leases []*lease.Lease) {
 	})
 }
 
+// isActive checks if the etcd instance is still actively processing the
+// heartbeat message (ticks). It returns false if no heartbeat has been
+// received within 3 * tickMs.
+func (s *EtcdServer) isActive() bool {
+	latestTickTs := s.r.getLatestTickTs()
+	threshold := 3 * time.Duration(s.Cfg.TickMs) * time.Millisecond
+	return latestTickTs.Add(threshold).After(time.Now())
+}
+
 // ensureLeadership checks whether current member is still the leader.
 func (s *EtcdServer) ensureLeadership() bool {
 	lg := s.Logger()
+
+	if s.isActive() {
+		lg.Debug("The member is active, skip checking leadership",
+			zap.Time("latestTickTs", s.r.getLatestTickTs()),
+			zap.Time("now", time.Now()))
+		return true
+	}
 
 	ctx, cancel := context.WithTimeout(s.ctx, s.Cfg.ReqTimeout())
 	defer cancel()
@@ -1302,6 +1334,7 @@ func (s *EtcdServer) applySnapshot(ep *etcdProgress, apply *apply) {
 	// wait for raftNode to persist snapshot onto the disk
 	<-apply.notifyc
 
+	// gofail: var applyBeforeOpenSnapshot struct{}
 	newbe, err := openSnapshotBackend(s.Cfg, s.snapshotter, apply.snapshot, s.beHooks)
 	if err != nil {
 		lg.Panic("failed to open snapshot backend", zap.Error(err))
@@ -2100,6 +2133,7 @@ func (s *EtcdServer) publish(timeout time.Duration) {
 		Val:    string(b),
 	}
 
+	// gofail: var beforePublishing struct{}
 	for {
 		ctx, cancel := context.WithTimeout(s.ctx, timeout)
 		_, err := s.Do(ctx, req)
@@ -2211,7 +2245,7 @@ func (s *EtcdServer) apply(
 				s.consistIndex.SetConsistentApplyingIndex(e.Index, e.Term)
 				shouldApplyV3 = membership.ApplyBoth
 			}
-
+			// gofail: var beforeApplyOneConfChange struct{}
 			var cc raftpb.ConfChange
 			pbutil.MustUnmarshal(&cc, e.Data)
 			removedSelf, err := s.applyConfChange(cc, confState, shouldApplyV3)
@@ -2343,7 +2377,9 @@ func (s *EtcdServer) notifyAboutFirstCommitInTerm() {
 // applyConfChange applies a ConfChange to the server. It is only
 // invoked with a ConfChange that has already passed through Raft
 func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.ConfState, shouldApplyV3 membership.ShouldApplyV3) (bool, error) {
+	lg := s.Logger()
 	if err := s.cluster.ValidateConfigurationChange(cc); err != nil {
+		lg.Error("Validation on configuration change failed", zap.Bool("shouldApplyV3", bool(shouldApplyV3)), zap.Error(err))
 		cc.NodeID = raft.None
 		s.r.ApplyConfChange(cc)
 
@@ -2356,7 +2392,6 @@ func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.Con
 		return false, err
 	}
 
-	lg := s.Logger()
 	*confState = *s.r.ApplyConfChange(cc)
 	s.beHooks.SetConfState(confState)
 	switch cc.Type {
@@ -2416,7 +2451,49 @@ func (s *EtcdServer) applyConfChange(cc raftpb.ConfChange, confState *raftpb.Con
 			s.r.transport.UpdatePeer(m.ID, m.PeerURLs)
 		}
 	}
+
+	s.verifyV3StoreInSyncWithV2Store(shouldApplyV3)
+
 	return false, nil
+}
+
+func (s *EtcdServer) verifyV3StoreInSyncWithV2Store(shouldApplyV3 membership.ShouldApplyV3) {
+	if !verify.VerifyEnabled() {
+		return
+	}
+
+	// If shouldApplyV3 == false, then it means v2store hasn't caught up with v3store.
+	if !shouldApplyV3 {
+		return
+	}
+
+	// clean up the Attributes, and we only care about the RaftAttributes
+	cleanAttributesFunc := func(members map[types.ID]*membership.Member) map[types.ID]*membership.Member {
+		processedMembers := make(map[types.ID]*membership.Member)
+		for id, m := range members {
+			clonedMember := m.Clone()
+			clonedMember.Attributes = membership.Attributes{}
+			processedMembers[id] = clonedMember
+		}
+
+		return processedMembers
+	}
+
+	v2Members, _ := s.cluster.MembersFromStore()
+	v3Members, _ := s.cluster.MembersFromBackend()
+
+	processedV2Members := cleanAttributesFunc(v2Members)
+	processedV3Members := cleanAttributesFunc(v3Members)
+
+	if match := reflect.DeepEqual(processedV2Members, processedV3Members); !match {
+		v2Data, v2Err := json.Marshal(processedV2Members)
+		v3Data, v3Err := json.Marshal(processedV3Members)
+
+		if v2Err != nil || v3Err != nil {
+			panic("members in v2store doesn't match v3store")
+		}
+		panic(fmt.Sprintf("members in v2store doesn't match v3store, v2store: %s, v3store: %s", string(v2Data), string(v3Data)))
+	}
 }
 
 // TODO: non-blocking snapshot
