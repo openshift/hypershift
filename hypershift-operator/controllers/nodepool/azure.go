@@ -119,11 +119,12 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 
 	// Extract marketplace metadata from the RHCOS extensions
 	// Structure: .architectures.<arch>.rhel-coreos-extensions.marketplace.azure.no-purchase-plan
-	azureMarketplace := archData.RHCOS.Marketplace.Azure.NoPurchasePlan
-
-	if azureMarketplace.HyperVGen1 == nil && azureMarketplace.HyperVGen2 == nil {
+	// Check for nil safety before accessing nested fields
+	if archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen1 == nil &&
+	   archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen2 == nil {
 		return nil, nil // No marketplace data available
 	}
+	azureMarketplace := archData.RHCOS.Marketplace.Azure.NoPurchasePlan
 
 	// Convert from release info format to our internal format
 	result := &azureMarketplaceMetadata{
