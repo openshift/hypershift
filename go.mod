@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift
 
-go 1.20
+go 1.21
+
+toolchain go1.24.6
 
 require (
 	github.com/Azure/azure-sdk-for-go v68.0.0+incompatible
@@ -42,7 +44,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
-	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
+	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250820090732-d58d915fd4b6
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/client_model v0.5.0
