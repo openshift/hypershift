@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-{{.versionName}}:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -87,6 +87,11 @@ spec:
       description: Add built image into an OCI image index
       name: build-image-index
       type: string
+    - default: docker
+      description: The format for the resulting image's mediaType. Valid values are
+        oci or docker.
+      name: buildah-format
+      type: string
     - default: []
       description: Array of --build-arg values ("arg=value" strings) for buildah
       name: build-args
@@ -133,7 +138,7 @@ spec:
         - name: name
           value: init
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-init:0.2@sha256:ec962d0be18f36ca7d331c99bf243800f569fc0a2ea6f8c8c3d3a574b71c44dc
+          value: quay.io/konflux-ci/tekton-catalog/task-init:0.2@sha256:abf231cfc5a68b56f68a8ac9bb26dca3c3e434c88dd9627c72bdec0b8c335c67
         - name: kind
           value: task
         resolver: bundles
@@ -222,6 +227,8 @@ spec:
         value: $(params.privileged-nested)
       - name: SOURCE_URL
         value: $(tasks.clone-repository.results.url)
+      - name: BUILDAH_FORMAT
+        value: $(params.buildah-format)
       - name: SOURCE_ARTIFACT
         value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
       - name: CACHI2_ARTIFACT
@@ -257,6 +264,8 @@ spec:
       - name: IMAGES
         value:
         - $(tasks.build-images.results.IMAGE_REF[*])
+      - name: BUILDAH_FORMAT
+        value: $(params.buildah-format)
       runAfter:
       - build-images
       taskRef:
