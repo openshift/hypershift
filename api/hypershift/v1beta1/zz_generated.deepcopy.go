@@ -736,7 +736,7 @@ func (in *AzureVMImage) DeepCopyInto(out *AzureVMImage) {
 	}
 	if in.ImageGeneration != nil {
 		in, out := &in.ImageGeneration, &out.ImageGeneration
-		*out = new(string)
+		*out = new(AzureVMImageGeneration)
 		**out = **in
 	}
 }

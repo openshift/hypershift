@@ -3575,18 +3575,43 @@ AzureMarketplaceImage
 <td>
 <code>imageGeneration</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImageGeneration">
+AzureVMImageGeneration
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
 <p>imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
 This field is only relevant when Type is unset or when defaults are applied from the release payload.
-Valid values are &ldquo;Gen1&rdquo; and &ldquo;Gen2&rdquo;. If unspecified, defaults to &ldquo;Gen2&rdquo;.
+Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
 This field has no effect when explicit imageID or azureMarketplace is set.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AzureVMImageGeneration { #hypershift.openshift.io/v1beta1.AzureVMImageGeneration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
+</p>
+<p>
+<p>AzureVMImageGeneration represents the Hyper-V generation of an Azure VM image.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Gen1&#34;</p></td>
+<td><p>Gen1 represents Hyper-V Generation 1 VMs</p>
+</td>
+</tr><tr><td><p>&#34;Gen2&#34;</p></td>
+<td><p>Gen2 represents Hyper-V Generation 2 VMs</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureVMImageType { #hypershift.openshift.io/v1beta1.AzureVMImageType }
 <p>

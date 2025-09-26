@@ -799,7 +799,7 @@ spec:
                             description: |-
                               imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
                               This field is only relevant when Type is unset or when defaults are applied from the release payload.
-                              Valid values are "Gen1" and "Gen2". If unspecified, defaults to "Gen2".
+                              Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
                               This field has no effect when explicit imageID or azureMarketplace is set.
                             enum:
                             - Gen1

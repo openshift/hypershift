@@ -625,7 +625,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
 							Image: hyperv1.AzureVMImage{
-								ImageGeneration: ptr.To("Gen1"),
+								ImageGeneration: ptr.To(hyperv1.Gen1),
 							},
 						},
 					},
@@ -644,7 +644,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
 							Image: hyperv1.AzureVMImage{
-								ImageGeneration: ptr.To("Gen2"),
+								ImageGeneration: ptr.To(hyperv1.Gen2),
 							},
 						},
 					},
@@ -680,7 +680,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzureNodePoolPlatform{
 							Image: hyperv1.AzureVMImage{
-								ImageGeneration: ptr.To("Gen3"),
+								ImageGeneration: ptr.To(hyperv1.AzureVMImageGeneration("Gen3")),
 							},
 						},
 					},
