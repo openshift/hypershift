@@ -141,11 +141,15 @@ type AzureVMImage struct {
 	AzureMarketplace *AzureMarketplaceImage `json:"azureMarketplace,omitempty"`
 
 	// imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
-	// This field is only relevant when Type is unset or when defaults are applied from the release payload.
-	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
+	// This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+	// from the release payload metadata when azureMarketplace is not explicitly provided.
+	// It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+	// encoded into the SKU field that CAPZ uses.
 	// This field has no effect when explicit imageID or azureMarketplace is set.
+	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
 	//
 	// +optional
+	// +kubebuilder:default=Gen2
 	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 }
 

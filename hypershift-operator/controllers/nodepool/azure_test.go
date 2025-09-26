@@ -5,10 +5,11 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
-	imageapi "github.com/openshift/api/image/v1"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
+
+	imageapi "github.com/openshift/api/image/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -524,13 +525,13 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 
 func TestDefaultAzureNodePoolImage(t *testing.T) {
 	testCases := []struct {
-		name                    string
-		nodePool                *hyperv1.NodePool
-		releaseImage            *releaseinfo.ReleaseImage
-		expectedImageType       hyperv1.AzureVMImageType
+		name                     string
+		nodePool                 *hyperv1.NodePool
+		releaseImage             *releaseinfo.ReleaseImage
+		expectedImageType        hyperv1.AzureVMImageType
 		expectedMarketplaceImage *hyperv1.AzureMarketplaceImage
-		expectedError           bool
-		expectedErrorMsg        string
+		expectedError            bool
+		expectedErrorMsg         string
 	}{
 		{
 			name: "skip defaulting when image is already set - ImageID",
@@ -548,7 +549,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:             createMockReleaseImage("4.20.0", true),
 			expectedImageType:        hyperv1.ImageID,
 			expectedMarketplaceImage: nil,
 		},
@@ -573,7 +574,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
 				Publisher: "existing-publisher",
@@ -595,7 +596,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.19.5", true),
+			releaseImage:             createMockReleaseImage("4.19.5", true),
 			expectedImageType:        "",
 			expectedMarketplaceImage: nil,
 		},
@@ -612,8 +613,8 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
-			expectedImageType: "",
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
 			expectedMarketplaceImage: nil,
 		},
 		{
@@ -631,8 +632,8 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
-			expectedImageType: "",
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
 			expectedMarketplaceImage: nil,
 		},
 		{
@@ -650,8 +651,8 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
-			expectedImageType: "",
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
 			expectedMarketplaceImage: nil,
 		},
 		{
@@ -667,7 +668,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", false),
+			releaseImage:             createMockReleaseImage("4.20.0", false),
 			expectedImageType:        "",
 			expectedMarketplaceImage: nil,
 		},
@@ -686,8 +687,8 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
-			expectedError: true,
+			releaseImage:     createMockReleaseImage("4.20.0", true),
+			expectedError:    true,
 			expectedErrorMsg: "unsupported image generation \"Gen3\", must be Gen1 or Gen2",
 		},
 		{
@@ -703,7 +704,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
 				Publisher: "azureopenshift",
@@ -727,7 +728,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
 				Publisher: "azureopenshift",
@@ -749,7 +750,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
 				Publisher: "azureopenshift",
@@ -773,7 +774,7 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 					},
 				},
 			},
-			releaseImage: createMockReleaseImage("4.20.0", true),
+			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
 				Publisher: "azureopenshift",
