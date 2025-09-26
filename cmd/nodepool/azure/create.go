@@ -29,6 +29,7 @@ type AzurePlatformCreateOptions struct {
 	DiskStorageAccountType        string
 	SubnetID                      string
 	ImageID                       string
+	ImageGeneration               string
 	Arch                          string
 	EncryptionAtHost              string
 }
@@ -70,6 +71,7 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, "The subnet id where the VMs will be placed.")
 	flags.StringVar(&opts.ImageID, "image-id", opts.ImageID, "The Image ID to boot the VMs with.")
+	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, "The Hyper-V generation of the Azure VM image. Supported values: Gen1, Gen2. If unspecified, defaults to Gen2.")
 	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, "The Azure Marketplace image publisher.")
 	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
 	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
@@ -125,6 +127,10 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 
 	if !slices.Contains([]string{"", "1", "2", "3"}, o.AvailabilityZone) {
 		return nil, fmt.Errorf("invalid value for --availability-zone: %s", o.AvailabilityZone)
+	}
+
+	if o.ImageGeneration != "" && !slices.Contains([]string{"Gen1", "Gen2"}, o.ImageGeneration) {
+		return nil, fmt.Errorf("invalid value for --image-generation: %s. Supported values: Gen1, Gen2", o.ImageGeneration)
 	}
 
 	return &ValidatedAzurePlatformCreateOptions{
@@ -189,6 +195,11 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 				Version:   o.MarketplaceVersion,
 			},
 		}
+	}
+
+	// Set ImageGeneration if specified by the user
+	if o.ImageGeneration != "" {
+		vmImage.ImageGeneration = ptr.To(hyperv1.AzureVMImageGeneration(o.ImageGeneration))
 	}
 
 	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType
