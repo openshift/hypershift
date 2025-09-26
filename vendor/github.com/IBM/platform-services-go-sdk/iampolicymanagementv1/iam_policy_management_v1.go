@@ -15,7 +15,7 @@
  */
 
 /*
- * IBM OpenAPI SDK Code Generator Version: 3.103.0-e8b84313-20250402-201816
+ * IBM OpenAPI SDK Code Generator Version: 3.106.0-09823488-20250707-071701
  */
 
 // Package iampolicymanagementv1 : Operations and models for the IamPolicyManagementV1 service
@@ -204,12 +204,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListPoliciesWithContext(ctx co
 		return
 	}
 
-	for headerName, headerValue := range listPoliciesOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicies")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicies")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listPoliciesOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -349,12 +349,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreatePolicyWithContext(ctx co
 		return
 	}
 
-	for headerName, headerValue := range createPolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createPolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -481,12 +481,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ReplacePolicyWithContext(ctx c
 		return
 	}
 
-	for headerName, headerValue := range replacePolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplacePolicy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplacePolicy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range replacePolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -576,12 +576,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetPolicyWithContext(ctx conte
 		return
 	}
 
-	for headerName, headerValue := range getPolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getPolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -646,12 +646,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeletePolicyWithContext(ctx co
 		return
 	}
 
-	for headerName, headerValue := range deletePolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deletePolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -706,12 +706,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) UpdatePolicyStateWithContext(c
 		return
 	}
 
-	for headerName, headerValue := range updatePolicyStateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdatePolicyState")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdatePolicyState")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range updatePolicyStateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -784,12 +784,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListRolesWithContext(ctx conte
 		return
 	}
 
-	for headerName, headerValue := range listRolesOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListRoles")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListRoles")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listRolesOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -871,12 +871,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateRoleWithContext(ctx cont
 		return
 	}
 
-	for headerName, headerValue := range createRoleOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateRole")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateRole")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createRoleOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -970,12 +970,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ReplaceRoleWithContext(ctx con
 		return
 	}
 
-	for headerName, headerValue := range replaceRoleOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceRole")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceRole")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range replaceRoleOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1059,12 +1059,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetRoleWithContext(ctx context
 		return
 	}
 
-	for headerName, headerValue := range getRoleOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetRole")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetRole")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getRoleOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1128,12 +1128,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeleteRoleWithContext(ctx cont
 		return
 	}
 
-	for headerName, headerValue := range deleteRoleOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteRole")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteRole")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deleteRoleOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -1187,12 +1187,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListV2PoliciesWithContext(ctx 
 		return
 	}
 
-	for headerName, headerValue := range listV2PoliciesOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListV2Policies")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListV2Policies")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listV2PoliciesOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1408,12 +1408,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateV2PolicyWithContext(ctx 
 		return
 	}
 
-	for headerName, headerValue := range createV2PolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateV2Policy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateV2Policy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createV2PolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1623,12 +1623,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ReplaceV2PolicyWithContext(ctx
 		return
 	}
 
-	for headerName, headerValue := range replaceV2PolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceV2Policy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceV2Policy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range replaceV2PolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1724,12 +1724,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetV2PolicyWithContext(ctx con
 		return
 	}
 
-	for headerName, headerValue := range getV2PolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetV2Policy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetV2Policy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getV2PolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1798,12 +1798,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeleteV2PolicyWithContext(ctx 
 		return
 	}
 
-	for headerName, headerValue := range deleteV2PolicyOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteV2Policy")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteV2Policy")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deleteV2PolicyOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -1858,12 +1858,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListPolicyTemplatesWithContext
 		return
 	}
 
-	for headerName, headerValue := range listPolicyTemplatesOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyTemplates")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyTemplates")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listPolicyTemplatesOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -1953,12 +1953,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreatePolicyTemplateWithContex
 		return
 	}
 
-	for headerName, headerValue := range createPolicyTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createPolicyTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2048,12 +2048,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetPolicyTemplateWithContext(c
 		return
 	}
 
-	for headerName, headerValue := range getPolicyTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getPolicyTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2123,12 +2123,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeletePolicyTemplateWithContex
 		return
 	}
 
-	for headerName, headerValue := range deletePolicyTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deletePolicyTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -2183,12 +2183,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreatePolicyTemplateVersionWit
 		return
 	}
 
-	for headerName, headerValue := range createPolicyTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createPolicyTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2272,12 +2272,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListPolicyTemplateVersionsWith
 		return
 	}
 
-	for headerName, headerValue := range listPolicyTemplateVersionsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyTemplateVersions")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyTemplateVersions")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listPolicyTemplateVersionsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2352,12 +2352,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ReplacePolicyTemplateWithConte
 		return
 	}
 
-	for headerName, headerValue := range replacePolicyTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplacePolicyTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplacePolicyTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range replacePolicyTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2447,12 +2447,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeletePolicyTemplateVersionWit
 		return
 	}
 
-	for headerName, headerValue := range deletePolicyTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deletePolicyTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -2507,12 +2507,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetPolicyTemplateVersionWithCo
 		return
 	}
 
-	for headerName, headerValue := range getPolicyTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getPolicyTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2578,12 +2578,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CommitPolicyTemplateWithContex
 		return
 	}
 
-	for headerName, headerValue := range commitPolicyTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CommitPolicyTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CommitPolicyTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range commitPolicyTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -2637,12 +2637,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListPolicyAssignmentsWithConte
 		return
 	}
 
-	for headerName, headerValue := range listPolicyAssignmentsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyAssignments")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListPolicyAssignments")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listPolicyAssignmentsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2721,12 +2721,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreatePolicyTemplateAssignment
 		return
 	}
 
-	for headerName, headerValue := range createPolicyTemplateAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplateAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreatePolicyTemplateAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createPolicyTemplateAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2809,12 +2809,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetPolicyAssignmentWithContext
 		return
 	}
 
-	for headerName, headerValue := range getPolicyAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetPolicyAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getPolicyAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2880,12 +2880,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) UpdatePolicyAssignmentWithCont
 		return
 	}
 
-	for headerName, headerValue := range updatePolicyAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdatePolicyAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdatePolicyAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range updatePolicyAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -2966,12 +2966,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeletePolicyAssignmentWithCont
 		return
 	}
 
-	for headerName, headerValue := range deletePolicyAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeletePolicyAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deletePolicyAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -3025,12 +3025,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetSettingsWithContext(ctx con
 		return
 	}
 
-	for headerName, headerValue := range getSettingsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetSettings")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetSettings")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getSettingsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3123,12 +3123,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) UpdateSettingsWithContext(ctx 
 		return
 	}
 
-	for headerName, headerValue := range updateSettingsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdateSettings")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdateSettings")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range updateSettingsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3210,12 +3210,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListActionControlTemplatesWith
 		return
 	}
 
-	for headerName, headerValue := range listActionControlTemplatesOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlTemplates")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlTemplates")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listActionControlTemplatesOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3286,12 +3286,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateActionControlTemplateWit
 		return
 	}
 
-	for headerName, headerValue := range createActionControlTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createActionControlTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3381,12 +3381,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetActionControlTemplateWithCo
 		return
 	}
 
-	for headerName, headerValue := range getActionControlTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getActionControlTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3456,12 +3456,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeleteActionControlTemplateWit
 		return
 	}
 
-	for headerName, headerValue := range deleteActionControlTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deleteActionControlTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -3516,12 +3516,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateActionControlTemplateVer
 		return
 	}
 
-	for headerName, headerValue := range createActionControlTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createActionControlTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3605,12 +3605,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListActionControlTemplateVersi
 		return
 	}
 
-	for headerName, headerValue := range listActionControlTemplateVersionsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlTemplateVersions")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlTemplateVersions")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listActionControlTemplateVersionsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3685,12 +3685,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ReplaceActionControlTemplateWi
 		return
 	}
 
-	for headerName, headerValue := range replaceActionControlTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceActionControlTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ReplaceActionControlTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range replaceActionControlTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3780,12 +3780,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeleteActionControlTemplateVer
 		return
 	}
 
-	for headerName, headerValue := range deleteActionControlTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deleteActionControlTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -3840,12 +3840,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetActionControlTemplateVersio
 		return
 	}
 
-	for headerName, headerValue := range getActionControlTemplateVersionOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlTemplateVersion")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlTemplateVersion")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getActionControlTemplateVersionOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -3911,12 +3911,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CommitActionControlTemplateWit
 		return
 	}
 
-	for headerName, headerValue := range commitActionControlTemplateOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CommitActionControlTemplate")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CommitActionControlTemplate")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range commitActionControlTemplateOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -3970,12 +3970,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) ListActionControlAssignmentsWi
 		return
 	}
 
-	for headerName, headerValue := range listActionControlAssignmentsOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlAssignments")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "ListActionControlAssignments")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range listActionControlAssignmentsOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -4053,12 +4053,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) CreateActionControlTemplateAss
 		return
 	}
 
-	for headerName, headerValue := range createActionControlTemplateAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplateAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "CreateActionControlTemplateAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range createActionControlTemplateAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -4139,12 +4139,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) GetActionControlAssignmentWith
 		return
 	}
 
-	for headerName, headerValue := range getActionControlAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "GetActionControlAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range getActionControlAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -4208,12 +4208,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) UpdateActionControlAssignmentW
 		return
 	}
 
-	for headerName, headerValue := range updateActionControlAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdateActionControlAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "UpdateActionControlAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range updateActionControlAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 	builder.AddHeader("Accept", "application/json")
@@ -4292,12 +4292,12 @@ func (iamPolicyManagement *IamPolicyManagementV1) DeleteActionControlAssignmentW
 		return
 	}
 
-	for headerName, headerValue := range deleteActionControlAssignmentOptions.Headers {
+	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlAssignment")
+	for headerName, headerValue := range sdkHeaders {
 		builder.AddHeader(headerName, headerValue)
 	}
 
-	sdkHeaders := common.GetSdkHeaders("iam_policy_management", "V1", "DeleteActionControlAssignment")
-	for headerName, headerValue := range sdkHeaders {
+	for headerName, headerValue := range deleteActionControlAssignmentOptions.Headers {
 		builder.AddHeader(headerName, headerValue)
 	}
 
@@ -4551,8 +4551,8 @@ type ActionControlAssignmentResourceActionControl struct {
 	// On success, it includes the action control assigned.
 	ResourceCreated *ActionControlAssignmentResourceCreated `json:"resource_created,omitempty"`
 
-	// The error response from API.
-	ErrorMessage *ErrorResponse `json:"error_message,omitempty"`
+	// Body parameters for assignment error.
+	ErrorMessage *AssignmentResourceError `json:"error_message,omitempty"`
 }
 
 // UnmarshalActionControlAssignmentResourceActionControl unmarshals an instance of ActionControlAssignmentResourceActionControl from the specified map of raw messages.
@@ -4563,7 +4563,7 @@ func UnmarshalActionControlAssignmentResourceActionControl(m map[string]json.Raw
 		err = core.SDKErrorf(err, "", "resource_created-error", common.GetComponentInfo())
 		return
 	}
-	err = core.UnmarshalModel(m, "error_message", &obj.ErrorMessage, UnmarshalErrorResponse)
+	err = core.UnmarshalModel(m, "error_message", &obj.ErrorMessage, UnmarshalAssignmentResourceError)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "error_message-error", common.GetComponentInfo())
 		return
@@ -4880,6 +4880,56 @@ func UnmarshalAssignmentResourceCreated(m map[string]json.RawMessage, result int
 	err = core.UnmarshalPrimitive(m, "id", &obj.ID)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "id-error", common.GetComponentInfo())
+		return
+	}
+	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
+	return
+}
+
+// AssignmentResourceError : Body parameters for assignment error.
+type AssignmentResourceError struct {
+	// Name of the error.
+	Name *string `json:"name,omitempty"`
+
+	// error code.
+	ErrorCode *string `json:"errorCode,omitempty"`
+
+	// Error message detailing the nature of the error.
+	Message *string `json:"message,omitempty"`
+
+	// Internal status code for the error.
+	Code *string `json:"code,omitempty"`
+
+	// The errors encountered during the response.
+	Errors []ErrorObject `json:"errors,omitempty"`
+}
+
+// UnmarshalAssignmentResourceError unmarshals an instance of AssignmentResourceError from the specified map of raw messages.
+func UnmarshalAssignmentResourceError(m map[string]json.RawMessage, result interface{}) (err error) {
+	obj := new(AssignmentResourceError)
+	err = core.UnmarshalPrimitive(m, "name", &obj.Name)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "name-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "errorCode", &obj.ErrorCode)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "errorCode-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "message", &obj.Message)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "message-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalPrimitive(m, "code", &obj.Code)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "code-error", common.GetComponentInfo())
+		return
+	}
+	err = core.UnmarshalModel(m, "errors", &obj.Errors, UnmarshalErrorObject)
+	if err != nil {
+		err = core.SDKErrorf(err, "", "errors-error", common.GetComponentInfo())
 		return
 	}
 	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
@@ -6367,40 +6417,6 @@ func UnmarshalErrorObject(m map[string]json.RawMessage, result interface{}) (err
 	err = core.UnmarshalPrimitive(m, "more_info", &obj.MoreInfo)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "more_info-error", common.GetComponentInfo())
-		return
-	}
-	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
-	return
-}
-
-// ErrorResponse : The error response from API.
-type ErrorResponse struct {
-	// The unique transaction ID for the request.
-	Trace *string `json:"trace" validate:"required"`
-
-	// The errors encountered during the response.
-	Errors []ErrorObject `json:"errors" validate:"required"`
-
-	// The HTTP error code of the response.
-	StatusCode *int64 `json:"status_code" validate:"required"`
-}
-
-// UnmarshalErrorResponse unmarshals an instance of ErrorResponse from the specified map of raw messages.
-func UnmarshalErrorResponse(m map[string]json.RawMessage, result interface{}) (err error) {
-	obj := new(ErrorResponse)
-	err = core.UnmarshalPrimitive(m, "trace", &obj.Trace)
-	if err != nil {
-		err = core.SDKErrorf(err, "", "trace-error", common.GetComponentInfo())
-		return
-	}
-	err = core.UnmarshalModel(m, "errors", &obj.Errors, UnmarshalErrorObject)
-	if err != nil {
-		err = core.SDKErrorf(err, "", "errors-error", common.GetComponentInfo())
-		return
-	}
-	err = core.UnmarshalPrimitive(m, "status_code", &obj.StatusCode)
-	if err != nil {
-		err = core.SDKErrorf(err, "", "status_code-error", common.GetComponentInfo())
 		return
 	}
 	reflect.ValueOf(result).Elem().Set(reflect.ValueOf(obj))
@@ -8252,8 +8268,8 @@ type PolicyAssignmentResourcePolicy struct {
 	// policy status.
 	Status *string `json:"status,omitempty"`
 
-	// The error response from API.
-	ErrorMessage *ErrorResponse `json:"error_message,omitempty"`
+	// Body parameters for assignment error.
+	ErrorMessage *AssignmentResourceError `json:"error_message,omitempty"`
 }
 
 // UnmarshalPolicyAssignmentResourcePolicy unmarshals an instance of PolicyAssignmentResourcePolicy from the specified map of raw messages.
@@ -8269,7 +8285,7 @@ func UnmarshalPolicyAssignmentResourcePolicy(m map[string]json.RawMessage, resul
 		err = core.SDKErrorf(err, "", "status-error", common.GetComponentInfo())
 		return
 	}
-	err = core.UnmarshalModel(m, "error_message", &obj.ErrorMessage, UnmarshalErrorResponse)
+	err = core.UnmarshalModel(m, "error_message", &obj.ErrorMessage, UnmarshalAssignmentResourceError)
 	if err != nil {
 		err = core.SDKErrorf(err, "", "error_message-error", common.GetComponentInfo())
 		return
