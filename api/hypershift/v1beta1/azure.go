@@ -128,6 +128,15 @@ type AzureVMImage struct {
 	// +optional
 	// +unionMember
 	AzureMarketplace *AzureMarketplaceImage `json:"azureMarketplace,omitempty"`
+
+	// imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+	// This field is only relevant when Type is unset or when defaults are applied from the release payload.
+	// Valid values are "Gen1" and "Gen2". If unspecified, defaults to "Gen2".
+	// This field has no effect when explicit imageID or azureMarketplace is set.
+	//
+	// +kubebuilder:validation:Enum=Gen1;Gen2
+	// +optional
+	ImageGeneration *string `json:"imageGeneration,omitempty"`
 }
 
 // AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.
