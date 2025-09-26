@@ -43,10 +43,10 @@ require (
 	github.com/onsi/gomega v1.34.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20240524162738-d899f8877d22
+	github.com/openshift/api v0.0.0-20240830023148-b7d0481c9094
 	github.com/openshift/client-go v0.0.0-20240405120947-c67c8325cdd8
 	github.com/openshift/cloud-credential-operator v0.0.0-20240814063301-26d835e0fa5e
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250908164308-2bc44cc6d363
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20240522104800-604a957be25e

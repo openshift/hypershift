@@ -61,7 +61,7 @@ var (
 						reportProblemsToJiraComponent("kube-apiserver").
 						contactPerson("benluddy").
 						productScope(kubernetes).
-						enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 						mustRegister()
 
 	FeatureGateGatewayAPI = newFeatureGate("GatewayAPI").
@@ -73,9 +73,9 @@ var (
 
 	FeatureGateOpenShiftPodSecurityAdmission = newFeatureGate("OpenShiftPodSecurityAdmission").
 							reportProblemsToJiraComponent("auth").
-							contactPerson("stlaz").
+							contactPerson("ibihim").
 							productScope(ocpSpecific).
-							enableIn(configv1.Default, configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
+							enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 							mustRegister()
 
 	FeatureGateExternalCloudProvider = newFeatureGate("ExternalCloudProvider").
@@ -419,13 +419,6 @@ var (
 				enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 				mustRegister()
 
-	FeatureGateExternalRouteCertificate = newFeatureGate("ExternalRouteCertificate").
-						reportProblemsToJiraComponent("network-edge").
-						contactPerson("miciah").
-						productScope(ocpSpecific).
-						enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
-						mustRegister()
-
 	FeatureGateInsightsOnDemandDataGather = newFeatureGate("InsightsOnDemandDataGather").
 						reportProblemsToJiraComponent("insights").
 						contactPerson("tremes").
@@ -535,10 +528,4 @@ var (
 				productScope(ocpSpecific).
 				enableIn(configv1.DevPreviewNoUpgrade, configv1.TechPreviewNoUpgrade).
 				mustRegister()
-
-	FeatureGateMachineAPIMigration = newFeatureGate("MachineAPIMigration").
-					reportProblemsToJiraComponent("OCPCLOUD").
-					contactPerson("jspeed").
-					productScope(ocpSpecific).
-					mustRegister()
 )
