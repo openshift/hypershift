@@ -9,12 +9,13 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/blang/semver"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+
+	"github.com/blang/semver"
 )
 
 // dummySSHKey is a base64 encoded dummy SSH public key.
@@ -38,7 +39,7 @@ type azureMarketplaceImageInfo struct {
 func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
 	// Skip if image is already explicitly set
 	if nodePool.Spec.Platform.Azure.Image.ImageID != nil ||
-	   nodePool.Spec.Platform.Azure.Image.AzureMarketplace != nil {
+		nodePool.Spec.Platform.Azure.Image.AzureMarketplace != nil {
 		return nil
 	}
 
@@ -121,7 +122,7 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 	// Structure: .architectures.<arch>.rhel-coreos-extensions.marketplace.azure.no-purchase-plan
 	// Check for nil safety before accessing nested fields
 	if archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen1 == nil &&
-	   archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen2 == nil {
+		archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen2 == nil {
 		return nil, nil // No marketplace data available
 	}
 	azureMarketplace := archData.RHCOS.Marketplace.Azure.NoPurchasePlan

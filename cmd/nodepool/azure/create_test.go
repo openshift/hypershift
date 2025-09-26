@@ -5,21 +5,22 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
 	"k8s.io/utils/ptr"
 )
 
 // Test data constants
 const (
-	testSubscriptionID         = "test"
-	testResourceGroup          = "test"
-	testVnetName              = "test"
-	testSubnetName            = "test"
-	testMarketplacePublisher  = "redhat"
-	testMarketplaceOffer      = "aro4"
-	testMarketplaceSKU        = "aro_414"
-	testMarketplaceVersion    = "414.1.20240101"
-	testInstanceType          = "Standard_D4s_v3"
-	testDiskStorageType       = "Premium_LRS"
+	testSubscriptionID       = "test"
+	testResourceGroup        = "test"
+	testVnetName             = "test"
+	testSubnetName           = "test"
+	testMarketplacePublisher = "redhat"
+	testMarketplaceOffer     = "aro4"
+	testMarketplaceSKU       = "aro_414"
+	testMarketplaceVersion   = "414.1.20240101"
+	testInstanceType         = "Standard_D4s_v3"
+	testDiskStorageType      = "Premium_LRS"
 )
 
 var testSubnetID = "/subscriptions/" + testSubscriptionID + "/resourceGroups/" + testResourceGroup +
@@ -75,9 +76,9 @@ func TestNodePoolPlatformImageGeneration(t *testing.T) {
 			opts := &CompletedAzurePlatformCreateOptions{
 				completetedAzurePlatformCreateOptions: &completetedAzurePlatformCreateOptions{
 					AzurePlatformCreateOptions: &AzurePlatformCreateOptions{
-						ImageGeneration:      tc.imageGeneration,
-						InstanceType:         testInstanceType,
-						SubnetID:             testSubnetID,
+						ImageGeneration:        tc.imageGeneration,
+						InstanceType:           testInstanceType,
+						SubnetID:               testSubnetID,
 						DiskStorageAccountType: testDiskStorageType,
 					},
 					AzureMarketPlaceImageInfo: &AzureMarketPlaceImageInfo{
@@ -209,10 +210,10 @@ func TestValidateImageGeneration(t *testing.T) {
 
 func TestAzureBoundaryConditions(t *testing.T) {
 	testCases := []struct {
-		name           string
-		modifyOpts     func(*RawAzurePlatformCreateOptions)
-		shouldError    bool
-		expectedError  string
+		name          string
+		modifyOpts    func(*RawAzurePlatformCreateOptions)
+		shouldError   bool
+		expectedError string
 	}{
 		{
 			name: "valid minimal configuration",
@@ -226,7 +227,7 @@ func TestAzureBoundaryConditions(t *testing.T) {
 			modifyOpts: func(opts *RawAzurePlatformCreateOptions) {
 				opts.ImageGeneration = "  "
 			},
-			shouldError: true,
+			shouldError:   true,
 			expectedError: "invalid value for --image-generation",
 		},
 	}

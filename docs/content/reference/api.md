@@ -3583,6 +3583,9 @@ AzureVMImageGeneration
 <td>
 <em>(Optional)</em>
 <p>imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+This field is only used by HyperShift to select the appropriate marketplace image
+from the release payload metadata. It is not passed to CAPZ (Cluster API Provider Azure).
+The generation information is encoded into the SKU field that CAPZ uses.
 This field is only relevant when Type is unset or when defaults are applied from the release payload.
 Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
 This field has no effect when explicit imageID or azureMarketplace is set.</p>
