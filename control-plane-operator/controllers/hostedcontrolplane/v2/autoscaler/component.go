@@ -40,6 +40,9 @@ func (a *Autoscaler) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &Autoscaler{}).
 		WithAdaptFunction(adaptDeployment).
+		WithManifestAdapter("podmonitor.yaml",
+			component.WithAdaptFunction(adaptPodMonitor),
+		).
 		WithPredicate(predicate).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
