@@ -17,6 +17,17 @@ const (
 	AzureMarketplace AzureVMImageType = "AzureMarketplace"
 )
 
+// AzureVMImageGeneration represents the Hyper-V generation of an Azure VM image.
+// +kubebuilder:validation:Enum=Gen1;Gen2
+type AzureVMImageGeneration string
+
+const (
+	// Gen1 represents Hyper-V Generation 1 VMs
+	Gen1 AzureVMImageGeneration = "Gen1"
+	// Gen2 represents Hyper-V Generation 2 VMs
+	Gen2 AzureVMImageGeneration = "Gen2"
+)
+
 // AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.
 type AzureNodePoolPlatform struct {
 	// vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
@@ -130,13 +141,15 @@ type AzureVMImage struct {
 	AzureMarketplace *AzureMarketplaceImage `json:"azureMarketplace,omitempty"`
 
 	// imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
-	// This field is only relevant when Type is unset or when defaults are applied from the release payload.
-	// Valid values are "Gen1" and "Gen2". If unspecified, defaults to "Gen2".
+	// This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+	// from the release payload metadata when azureMarketplace is not explicitly provided.
+	// It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+	// encoded into the SKU field that CAPZ uses.
 	// This field has no effect when explicit imageID or azureMarketplace is set.
+	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
 	//
-	// +kubebuilder:validation:Enum=Gen1;Gen2
 	// +optional
-	ImageGeneration *string `json:"imageGeneration,omitempty"`
+	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 }
 
 // AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.

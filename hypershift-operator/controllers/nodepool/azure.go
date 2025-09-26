@@ -22,6 +22,8 @@ import (
 const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JKN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
 
 // azureMarketplaceMetadata represents the Azure Marketplace metadata from the release payload
+// This matches the structure found in the release-manifests/0000_50_installer_coreos-bootimages.yaml
+// under .data.stream.architectures.<arch>.rhel-coreos-extensions.marketplace.azure
 type azureMarketplaceMetadata struct {
 	NoPurchasePlan *azureMarketplaceImageInfo `json:"no-purchase-plan,omitempty"`
 }
@@ -78,16 +80,16 @@ func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, 
 	}
 
 	// Determine which Hyper-V generation to use
-	generation := "Gen2" // Default to Gen2
+	generation := hyperv1.Gen2 // Default to Gen2
 	if nodePool.Spec.Platform.Azure.Image.ImageGeneration != nil {
 		generation = *nodePool.Spec.Platform.Azure.Image.ImageGeneration
 	}
 
 	var marketplaceImage *hyperv1.AzureMarketplaceImage
 	switch generation {
-	case "Gen1":
+	case hyperv1.Gen1:
 		marketplaceImage = azureMarketplace.NoPurchasePlan.HyperVGen1
-	case "Gen2":
+	case hyperv1.Gen2:
 		marketplaceImage = azureMarketplace.NoPurchasePlan.HyperVGen2
 	default:
 		return fmt.Errorf("unsupported imageGeneration: %s", generation)
@@ -110,19 +112,27 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 		return nil, nil // No stream metadata available
 	}
 
-	_, foundArch := releaseImage.StreamMetadata.Architectures[arch]
+	archData, foundArch := releaseImage.StreamMetadata.Architectures[arch]
 	if !foundArch {
 		return nil, fmt.Errorf("architecture %s not found in stream metadata", arch)
 	}
 
+	// The marketplace metadata is located in the RHCOS extensions under:
+	// .architectures.<arch>.rhel-coreos-extensions.marketplace.azure
+	//
 	// Since marketplace data is not part of the standard CoreOSArchitecture struct
 	// in the current release info package, this implementation is stubbed out.
 	// In a real implementation, this would need to be coordinated with the
 	// release-controller team to include the marketplace metadata in the
 	// appropriate format within the CoreOSStreamMetadata structure.
 	//
+	// The expected structure would be:
+	// archData.RHCOS.Marketplace.Azure.NoPurchasePlan.HyperVGen1/HyperVGen2
+	// where each generation contains: {publisher, offer, sku, version}
+	//
 	// For now, we return nil to indicate no marketplace metadata is available,
 	// which will cause the defaulting to be skipped.
+	_ = archData // Mark as used to avoid linter warnings
 	return nil, nil
 }
 
