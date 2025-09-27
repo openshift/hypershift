@@ -72,12 +72,37 @@ type CoreOSImages struct {
 }
 
 type CoreRHCOSImage struct {
-	AzureDisk CoreAzureDisk `json:"azure-disk"`
+	AzureDisk   CoreAzureDisk   `json:"azure-disk"`
+	Marketplace CoreMarketplace `json:"marketplace"`
 }
 
 type CoreAzureDisk struct {
 	Release string `json:"release"`
 	URL     string `json:"url"`
+}
+
+// CoreMarketplace represents marketplace information for different cloud providers
+type CoreMarketplace struct {
+	Azure CoreAzureMarketplace `json:"azure"`
+}
+
+// CoreAzureMarketplace contains Azure marketplace image information
+type CoreAzureMarketplace struct {
+	NoPurchasePlan CoreAzureMarketplaceNoPurchasePlan `json:"no-purchase-plan"`
+}
+
+// CoreAzureMarketplaceNoPurchasePlan contains marketplace images that don't require a purchase plan
+type CoreAzureMarketplaceNoPurchasePlan struct {
+	HyperVGen1 *CoreAzureMarketplaceImage `json:"hyperVGen1,omitempty"`
+	HyperVGen2 *CoreAzureMarketplaceImage `json:"hyperVGen2,omitempty"`
+}
+
+// CoreAzureMarketplaceImage represents an Azure marketplace image specification
+type CoreAzureMarketplaceImage struct {
+	Publisher string `json:"publisher"`
+	Offer     string `json:"offer"`
+	SKU       string `json:"sku"`
+	Version   string `json:"version"`
 }
 
 type CoreOSAWSImages struct {
