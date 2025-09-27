@@ -21,17 +21,19 @@ import (
 
 type AdditionalTrustBundlePropagationTest struct {
 	DummyInfraSetup
-	ctx        context.Context
-	mgmtClient crclient.Client
+	ctx         context.Context
+	mgmtClient  crclient.Client
+	guestClient crclient.Client
 
 	hostedCluster *hyperv1.HostedCluster
 }
 
-func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *AdditionalTrustBundlePropagationTest {
+func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) *AdditionalTrustBundlePropagationTest {
 	return &AdditionalTrustBundlePropagationTest{
 		ctx:           ctx,
 		mgmtClient:    mgmtClient,
 		hostedCluster: hostedCluster,
+		guestClient:   guestClient,
 	}
 }
 
@@ -143,6 +145,17 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 					return true, "Additional trust bundle configmap is not included in CPO", nil
 				},
 			},
+		)
+
+		// Ensure the user-ca-bundle configmap is deleted from the guest cluster
+		userCAConfigMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-ca-bundle",
+				Namespace: "openshift-config",
+			},
+		}
+		e2eutil.EventuallyNotFound(t, k.ctx, k.guestClient, userCAConfigMap,
+			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 		)
 
 		e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("Waiting for NodePool %s/%s to begin updating", nodePool.Namespace, nodePool.Name),
