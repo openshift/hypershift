@@ -34,7 +34,7 @@ const (
 	// BothFormDataAndBodyError indicates that an operation specifies both a body and a formData parameter, which is forbidden
 	BothFormDataAndBodyError = "operation %q has both formData and body parameters. Only one such In: type may be used for a given operation"
 
-	// CannotResolveRefError when a $ref could not be resolved
+	// CannotResolveReferenceError when a $ref could not be resolved
 	CannotResolveReferenceError = "could not resolve reference in %s to $ref %s: %v"
 
 	// CircularAncestryDefinitionError ...
@@ -135,7 +135,7 @@ const (
 	// PathParamNotUniqueError ...
 	PathParamNotUniqueError = "params in path %q must be unique: %q conflicts with %q"
 
-	// PathParamNotRequiredError ...
+	// PathParamRequiredError ...
 	PathParamRequiredError = "in operation %q,path param %q must be declared as required"
 
 	// RefNotAllowedInHeaderError indicates a $ref was found in a header definition, which is not allowed by Swagger
@@ -187,6 +187,8 @@ const (
 
 	// UnusedResponseWarning ...
 	UnusedResponseWarning = "response %q is not used anywhere"
+
+	InvalidObject = "expected an object in %q.%s"
 )
 
 // Additional error codes
@@ -346,6 +348,9 @@ func invalidParameterDefinitionAsSchemaMsg(path, method, operationID string) err
 }
 func parameterValidationTypeMismatchMsg(param, path, typ string) errors.Error {
 	return errors.New(errors.CompositeErrorCode, ParamValidationTypeMismatch, param, path, typ)
+}
+func invalidObjectMsg(path, in string) errors.Error {
+	return errors.New(errors.CompositeErrorCode, InvalidObject, path, in)
 }
 
 // disabled
