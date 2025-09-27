@@ -487,7 +487,7 @@ func getBaseDomainID(ctx context.Context, subscriptionID string, azureCreds azco
 	}
 
 	pager := zonesClient.NewListPager(nil)
-	if pager.More() {
+	for pager.More() {
 		pagerResults, err := pager.NextPage(ctx)
 		if err != nil {
 			return "", fmt.Errorf("failed to retrieve list of DNS zones: %w", err)
