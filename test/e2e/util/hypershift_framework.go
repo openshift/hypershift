@@ -346,10 +346,13 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 							},
 						},
 					}
+				}
 
-					if opts.ExtOIDCConfig != nil {
-						v.Spec.Configuration.Authentication = opts.ExtOIDCConfig.GetAuthenticationConfig()
+				if opts.ExtOIDCConfig != nil {
+					if v.Spec.Configuration == nil {
+						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
 					}
+					v.Spec.Configuration.Authentication = opts.ExtOIDCConfig.GetAuthenticationConfig()
 				}
 			}
 		}
