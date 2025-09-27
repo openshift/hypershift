@@ -107,10 +107,24 @@ func TestMergePullSecrets(t *testing.T) {
 			wantErr:          false,
 		},
 		{
-			name:             "overwrite existing registry",
+			name:             "conflict resolution - original always wins",
 			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
 			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth}),
-			expectedResult:   composePullSecretBytes(map[string]string{"registry1": validAuth}),
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "precedence test - original always has precedence",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry3": validAuth}),
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth, "registry3": validAuth}),
+			wantErr:          false,
+		},
+		{
+			name:             "multiple conflicts - original always wins",
+			originalSecret:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth}),
+			additionalSecret: composePullSecretBytes(map[string]string{"registry1": validAuth, "registry2": validAuth, "registry3": validAuth}),
+			expectedResult:   composePullSecretBytes(map[string]string{"registry1": oldAuth, "registry2": oldAuth, "registry3": validAuth}),
 			wantErr:          false,
 		},
 		{
