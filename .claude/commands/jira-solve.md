@@ -51,9 +51,10 @@ Analyze a JIRA issue and create a pull request to solve it.
    - Follow existing code patterns and conventions
    - Add or update tests as needed
    - Update documentation if needed within the docs/ folder
-   - Ensure code builds and passes existing tests:
-      - Use `make pre-commit` if needed, or `make build` and `make test` if you need to be more specific
    - If the problem is too complex consider delegating to one of the SME agents.
+   - Always ensure code builds and passes existing tests:
+   - Run `make pre-commit`, or `make verify`, `make build` and `make test` if you need to be more specific
+   - Do not go to the "PR Creation" step until `make pre-commit` passes
 
 4. **PR Creation**: 
    - Create feature branch using the jira-key $1 as the branch name. For example: "git checkout -b fix-{jira-key}"
