@@ -2703,7 +2703,13 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	// Extend the timeout to 20 minutes if there are no worker nodes as
+	// 10 minutes might not be enough if image pulls are slow.
+	timeout := 10 * time.Minute
+	if numNodes == 0 {
+		timeout = 20 * time.Minute
+	}
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -2746,7 +2752,13 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).ToNot(ContainSubstring("hypershift.local"))
 	}
 
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+	// Extend the timeout to 20 minutes if there are no worker nodes as
+	// 10 minutes might not be enough if image pulls are slow.
+	timeout := 10 * time.Minute
+	if numNodes == 0 {
+		timeout = 20 * time.Minute
+	}
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
