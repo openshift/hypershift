@@ -37,6 +37,9 @@ spec:
     value: "true"
   - name: hermetic
     value: "true"
+  - name: additional-tags
+    value:
+    - "latest"
   pipelineRef:
     resolver: git
     params:
