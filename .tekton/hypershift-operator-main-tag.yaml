@@ -457,18 +457,44 @@ spec:
             operator: in
             values:
               - "true"
+      - name: extract-tag
+        params:
+          - name: target-branch
+            value: "{{target_branch}}"
+        taskSpec:
+          params:
+            - name: target-branch
+              type: string
+          results:
+            - name: tag-name
+              description: Extracted tag name from the target branch
+          steps:
+            - name: extract
+              image: registry.redhat.io/ubi8/ubi-minimal:latest
+              script: |
+                #!/bin/bash
+                set -euo pipefail
+
+                # Extract tag name from refs/tags/v0.1.123 -> v0.1.123
+                TARGET_BRANCH="$(params.target-branch)"
+                TAG_NAME="${TARGET_BRANCH##*/}"
+
+                echo "Input target branch: $TARGET_BRANCH"
+                echo "Extracted tag name: $TAG_NAME"
+                echo -n "$TAG_NAME" | tee $(results.tag-name.path)
+        runAfter:
+          - build-container
       - name: apply-tags
         params:
           - name: ADDITIONAL_TAGS
             value:
-              - |-
-                {{ target_branch.split("/")[2] }}
+              - $(tasks.extract-tag.results.tag-name)
           - name: IMAGE_URL
             value: $(tasks.build-container.results.IMAGE_URL)
           - name: IMAGE_DIGEST
             value: $(tasks.build-container.results.IMAGE_DIGEST)
         runAfter:
-          - build-container
+          - extract-tag
         taskRef:
           params:
             - name: name
