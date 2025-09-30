@@ -10,16 +10,17 @@ import (
 )
 
 const (
-	configKey                       = "aws.conf"
-	defaultProbeMode                = "Shared"
-	defaultKubeProxyHealthCheckPort = 10256
-	defaultKubeProxyHealthCheckPath = "/healthz"
+	configKey                                  = "aws.conf"
+	loadBalancerHealthProbeModeShared          = "Shared"
+	loadBalancerHealthProbeModeServiceNodePort = "ServiceNodePort"
+	defaultKubeProxyHealthCheckPort            = 10256
+	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	clusterID := cpContext.HCP.Spec.InfraID
 	config := cpContext.HCP.Spec.Platform.AWS.CloudProviderConfig
-	probeMode := defaultProbeMode
+	probeMode := loadBalancerHealthProbeModeShared
 	probePath := defaultKubeProxyHealthCheckPath
 	probePort := strconv.Itoa(int(defaultKubeProxyHealthCheckPort))
 	var zone, vpc, subnetID string
@@ -30,6 +31,9 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 			subnetID = *id
 		}
 		if config.ClusterServiceLoadBalancerHealthProbeMode != "" {
+			if config.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeShared && config.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeServiceNodePort {
+				return fmt.Errorf("invalid value for clusterServiceLoadBalancerHealthProbeMode: %s", config.ClusterServiceLoadBalancerHealthProbeMode)
+			}
 			probeMode = config.ClusterServiceLoadBalancerHealthProbeMode
 		}
 		if config.ClusterServiceSharedLoadBalancerHealthProbePath != "" {

@@ -19,7 +19,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -374,10 +373,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Annotations[hyperv1.AWSMachinePublicIPs] = "true"
 	}
 
-	allowedProbeModes := sets.NewString(loadBalancerHealthProbeModeShared,
-		loadBalancerHealthProbeModeServiceNodePort)
 	if o.LoadBalancerHealthProbeMode != "" {
-		if !allowedProbeModes.Has(o.LoadBalancerHealthProbeMode) {
+		if o.LoadBalancerHealthProbeMode != loadBalancerHealthProbeModeShared && o.LoadBalancerHealthProbeMode != loadBalancerHealthProbeModeServiceNodePort {
 			return fmt.Errorf("invalid value for --load-balancer-health-probe-mode: %s", o.LoadBalancerHealthProbeMode)
 		}
 		cluster.Spec.Platform.AWS.CloudProviderConfig.ClusterServiceLoadBalancerHealthProbeMode = o.LoadBalancerHealthProbeMode

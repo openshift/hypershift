@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	ConfigKey                       = "cloud.conf"
-	defaultProbeMode                = "shared"
-	defaultKubeProxyHealthCheckPort = 10256
-	defaultKubeProxyHealthCheckPath = "/healthz"
+	ConfigKey                                  = "cloud.conf"
+	loadBalancerHealthProbeModeShared          = "shared"
+	loadBalancerHealthProbeModeServiceNodePort = "servicenodeport"
+	defaultKubeProxyHealthCheckPort            = 10256
+	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -82,14 +83,20 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		return AzureConfig{}, fmt.Errorf("failed to determine vnet name from VnetID: %w", err)
 	}
 
-	if azureplatform.ClusterServiceLoadBalancerHealthProbeMode == "" {
-		azureplatform.ClusterServiceLoadBalancerHealthProbeMode = defaultProbeMode
+	probeMode := loadBalancerHealthProbeModeShared
+	if azureplatform.ClusterServiceLoadBalancerHealthProbeMode != "" {
+		if azureplatform.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeShared && azureplatform.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeServiceNodePort {
+			return AzureConfig{}, fmt.Errorf("invalid value for clusterServiceLoadBalancerHealthProbeMode: %s", azureplatform.ClusterServiceLoadBalancerHealthProbeMode)
+		}
+		probeMode = azureplatform.ClusterServiceLoadBalancerHealthProbeMode
 	}
-	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath == "" {
-		azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath = defaultKubeProxyHealthCheckPath
+	probePath := defaultKubeProxyHealthCheckPath
+	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath != "" {
+		probePath = azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath
 	}
-	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort == 0 {
-		azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort = defaultKubeProxyHealthCheckPort
+	probePort := int32(defaultKubeProxyHealthCheckPort)
+	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort != 0 {
+		probePort = int32(azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort)
 	}
 
 	azureConfig := AzureConfig{
@@ -108,9 +115,9 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		CloudProviderBackoffDuration: 6,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
-		ClusterServiceLoadBalancerHealthProbeMode:       azureplatform.ClusterServiceLoadBalancerHealthProbeMode,
-		ClusterServiceSharedLoadBalancerHealthProbePath: azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath,
-		ClusterServiceSharedLoadBalancerHealthProbePort: azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort,
+		ClusterServiceLoadBalancerHealthProbeMode:       probeMode,
+		ClusterServiceSharedLoadBalancerHealthProbePath: probePath,
+		ClusterServiceSharedLoadBalancerHealthProbePort: probePort,
 		UseInstanceMetadata:                             true,
 	}
 
