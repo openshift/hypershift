@@ -69,7 +69,7 @@ func KeyParts(key string) SplitKey {
 	return res
 }
 
-// SplitKey holds of the parts of a /-separated key, soi that their location may be determined.
+// SplitKey holds of the parts of a /-separated key, so that their location may be determined.
 type SplitKey []string
 
 // IsDefinition is true when the split key is in the #/definitions section of a spec
@@ -84,22 +84,6 @@ func (s SplitKey) DefinitionName() string {
 	}
 
 	return s[1]
-}
-
-func (s SplitKey) isKeyName(i int) bool {
-	if i <= 0 {
-		return false
-	}
-
-	count := 0
-	for idx := i - 1; idx > 0; idx-- {
-		if s[idx] != "properties" {
-			break
-		}
-		count++
-	}
-
-	return count%2 != 0
 }
 
 // PartAdder know how to construct the components of a new name
@@ -179,7 +163,8 @@ func (s SplitKey) ResponseName() string {
 
 // PathItemRef constructs a $ref object from a split key of the form /{path}/{method}
 func (s SplitKey) PathItemRef() spec.Ref {
-	if len(s) < 3 {
+	const minValidPathItems = 3
+	if len(s) < minValidPathItems {
 		return spec.Ref{}
 	}
 
@@ -198,4 +183,20 @@ func (s SplitKey) PathRef() spec.Ref {
 	}
 
 	return spec.MustCreateRef("#" + path.Join("/", paths, jsonpointer.Escape(s[1])))
+}
+
+func (s SplitKey) isKeyName(i int) bool {
+	if i <= 0 {
+		return false
+	}
+
+	count := 0
+	for idx := i - 1; idx > 0; idx-- {
+		if s[idx] != "properties" {
+			break
+		}
+		count++
+	}
+
+	return count%2 != 0
 }
