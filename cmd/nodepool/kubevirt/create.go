@@ -328,5 +328,17 @@ func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNode
 	if len(o.KubevirtHostDevices) > 0 {
 		platform.KubevirtHostDevices = o.KubevirtHostDevices
 	}
+	//TODO: Add a knob for this
+	platform.Hosts = []hyperv1.KubevirtHost{
+		{
+			Name: "worker1",
+		},
+		{
+			Name: "worker2",
+		},
+		{
+			Name: "worker3",
+		},
+	}
 	return platform
 }
