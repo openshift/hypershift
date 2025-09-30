@@ -1064,6 +1064,28 @@ spec:
                           type: object
                         maxItems: 10
                         type: array
+                      hosts:
+                        description: |-
+                          hosts specifies a list of hosts with their network configurations
+                          for the nodepool nodes
+                        items:
+                          description: KubevirtHost represents a host configuration
+                            with network settings
+                          properties:
+                            name:
+                              description: name is the identifier for the host
+                              maxLength: 255
+                              type: string
+                            networkConfig:
+                              description: networkConfig contains the network configuration
+                                for the host
+                              maxLength: 4096
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        maxItems: 100
+                        type: array
                       networkInterfaceMultiqueue:
                         default: Enable
                         description: |-
