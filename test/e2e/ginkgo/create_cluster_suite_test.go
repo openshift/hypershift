@@ -5,11 +5,13 @@ package ginkgo
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 )
 
@@ -26,12 +28,19 @@ func TestCreateClusterGinkgo(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	// Initialize options
-	// TODO: This is a simplified initialization for the pilot migration
-	// Full flag parsing can be added in future iterations
-	globalOpts = &e2eutil.Options{}
-	// Set defaults - actual values will come from test invocation flags
-	testContext = context.Background()
+	// For pilot migration, we rely on e2e package's TestMain having run first
+	// which initializes globalOpts via flags. We just create a basic options
+	// struct here. In a real scenario, this would need proper flag integration.
+	globalOpts = &e2eutil.Options{
+		Platform: hyperv1.AWSPlatform, // Default, can be overridden
+	}
+	// Parse basic options from environment for pilot
+	if platform := os.Getenv("E2E_PLATFORM"); platform != "" {
+		globalOpts.Platform = hyperv1.PlatformType(platform)
+	}
+	if artifactDir := os.Getenv("E2E_ARTIFACT_DIR"); artifactDir != "" {
+		globalOpts.ArtifactDir = artifactDir
+	}
 
-	// Note: Ginkgo will handle flag parsing, and test invocations will need to
-	// pass the appropriate e2e.* flags
+	testContext = context.Background()
 })
