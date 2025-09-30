@@ -7,7 +7,7 @@ COPY --chown=default . .
 RUN make control-plane-operator \
   && make control-plane-pki-operator
 
-FROM registry.redhat.io/rhel9-2-els/rhel:9.2
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
 

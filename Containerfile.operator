@@ -9,12 +9,12 @@ RUN make hypershift \
   && make product-cli \
   && make karpenter-operator
 
-FROM registry.redhat.io/rhel9-4-els/rhel:9.4
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.4
 COPY --from=builder /hypershift/bin/hypershift \
-                    /hypershift/bin/hcp \
-                    /hypershift/bin/hypershift-operator \
-                    /hypershift/bin/karpenter-operator \
-     /usr/bin/
+  /hypershift/bin/hcp \
+  /hypershift/bin/hypershift-operator \
+  /hypershift/bin/karpenter-operator \
+  /usr/bin/
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
