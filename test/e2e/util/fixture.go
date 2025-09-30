@@ -415,3 +415,36 @@ func newClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, 
 func artifactSubdirFor(t *testing.T) string {
 	return strings.ReplaceAll(t.Name(), "/", "_")
 }
+
+// Exported wrappers for Ginkgo framework package
+// These functions are used by test/e2e/framework/hypershift.go
+
+// ArtifactSubdirFor returns the artifact subdirectory name for a test
+func ArtifactSubdirFor(t *testing.T) string {
+	return artifactSubdirFor(t)
+}
+
+// NewClusterDumper returns a function that dumps cluster resources
+func NewClusterDumper(hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string) func(ctx context.Context, t *testing.T, dumpGuestCluster bool) error {
+	return newClusterDumper(hc, opts, artifactDir)
+}
+
+// DestroyCluster destroys a hosted cluster
+func DestroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster, createOpts *PlatformAgnosticOptions, outputDir string) error {
+	return destroyCluster(ctx, t, hc, createOpts, outputDir)
+}
+
+// DeleteIngressRoute53Records deletes ingress Route53 records for OpenStack clusters
+func DeleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+	deleteIngressRoute53Records(t, ctx, hostedCluster, clusterOpts)
+}
+
+// CreateClusterOpts creates platform-specific cluster options
+func CreateClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
+	return createClusterOpts(ctx, client, hc, opts)
+}
+
+// CreateCluster creates a hosted cluster
+func CreateCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string) error {
+	return createCluster(ctx, hc, opts, artifactDir)
+}
