@@ -11,21 +11,33 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/zap/zapcore"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var (
 	// Global test context and options initialized in TestMain
 	testContext context.Context
 	globalOpts  = &e2eutil.Options{}
+
+	// Logger following e2e_test.go pattern (lines 51-54)
+	log = crzap.New(crzap.UseDevMode(true), crzap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	}))
 )
 
 // TestMain deals with global options and flag parsing for the Ginkgo suite.
 // This is a surgical duplication of e2e_test.go TestMain, keeping only
 // flag definitions and basic initialization.
 func TestMain(m *testing.M) {
+	// Set controller-runtime logger following e2e_test.go:63
+	ctrl.SetLogger(log)
+
 	// Platform-agnostic flags - duplicated from e2e_test.go
 	flag.BoolVar(&globalOpts.DisablePKIReconciliation, "e2e.disable-pki-reconciliation", false, "If set, TestUpgradeControlPlane will upgrade the control plane without reconciling the pki components")
 	flag.BoolVar(&globalOpts.RequestServingIsolation, "e2e.test-request-serving-isolation", false, "If set, TestCreate creates a cluster with request serving isolation topology")
@@ -162,4 +174,15 @@ var _ = BeforeSuite(func() {
 	// Just verify they're set up correctly
 	Expect(globalOpts).NotTo(BeNil())
 	Expect(testContext).NotTo(BeNil())
+
+	// Set the semantic version of the previous release image for version gating tests.
+	// Following e2e_test.go:227-236 pattern
+	// IMPORTANT: This MUST be in BeforeSuite, not TestMain, because flag values
+	// are only fully available after Ginkgo processes them during test initialization
+	releaseImage := globalOpts.PreviousReleaseImage
+	if releaseImage == "" {
+		releaseImage = globalOpts.LatestReleaseImage
+	}
+	err := e2eutil.SetReleaseImageVersion(context.Background(), releaseImage, globalOpts.ConfigurableClusterOptions.PullSecretFile)
+	Expect(err).NotTo(HaveOccurred(), "failed to set release image version")
 })

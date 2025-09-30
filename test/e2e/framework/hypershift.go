@@ -58,9 +58,10 @@ func NewHypershiftTest(t GinkgoTInterface, ctx context.Context, test hypershiftT
 
 	return &hypershiftTest{
 		GinkgoTInterface: t,
-		ctx:              ctx,
-		client:           client,
-		test:             test,
+		// T is kept as nil for the pilot - teardown won't work yet, will be fixed in next phase
+		ctx:    ctx,
+		client: client,
+		test:   test,
 	}
 }
 
@@ -246,14 +247,15 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 	}
 	h.hasBeenTornedDown = true
 
+	// Pure Ginkgo teardown - use teardownHostedClusterGinkgo which doesn't require testing.T
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
-		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
+		teardownHostedClusterGinkgo(context.Background(), hostedCluster, h.client, opts, artifactDir)
 		return
 	}
 
 	By("tearing down hosted cluster")
-	teardownHostedCluster(h.T, h.ctx, hostedCluster, h.client, opts, artifactDir)
+	teardownHostedClusterGinkgo(h.ctx, hostedCluster, h.client, opts, artifactDir)
 }
 
 func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
@@ -507,6 +509,53 @@ func teardownHostedCluster(t *testing.T, ctx context.Context, hc *hyperv1.Hosted
 	if hc.Spec.Platform.Type == hyperv1.OpenStackPlatform && opts.AWSPlatform.Credentials.AWSCredentialsFile != "" {
 		e2eutil.DeleteIngressRoute53Records(t, ctx, hc, opts)
 	}
+}
+
+// teardownHostedClusterGinkgo is a pure Ginkgo version of teardownHostedCluster
+// Surgically duplicated with minimal changes - skip archiving/dumping for pilot
+// NOTE: Do not use t.Run() here as this function can be called in the Cleanup context and will fail immediately
+func teardownHostedClusterGinkgo(ctx context.Context, hc *hyperv1.HostedCluster, client crclient.Client, opts *PlatformAgnosticOptions, artifactDir string) {
+	GinkgoHelper()
+
+	// For the pilot, skip dumping and archiving (too complex, requires extensive testing.T migration)
+	// Focus on core teardown: destroy cluster + delete namespace
+
+	// Try repeatedly to destroy the cluster gracefully
+	logf("Waiting for HostedCluster %s/%s to be destroyed", hc.Namespace, hc.Name)
+
+	var previousError string
+	err := wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
+		err := DestroyCluster(ctx, hc, opts, artifactDir)
+		if err != nil {
+			if strings.Contains(err.Error(), "required inputs are missing") {
+				return false, err
+			}
+			if strings.Contains(err.Error(), "NoCredentialProviders") {
+				return false, err
+			}
+			if previousError != err.Error() {
+				logf("Failed to destroy cluster, will retry: %v", err)
+				previousError = err.Error()
+			}
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		logf("Failed to destroy cluster: %v", err)
+	} else {
+		logf("Destroyed cluster. Namespace: %s, name: %s", hc.Namespace, hc.Name)
+	}
+
+	// Finally, delete the test namespace containing the HostedCluster/NodePool resources
+	deleteTimeout, cancel := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancel()
+	err = DeleteNamespace(deleteTimeout, client, hc.Namespace)
+	if err != nil {
+		logf("Failed to delete test namespace: %v", err)
+	}
+
+	// Skip OpenStack DNS cleanup for pilot - not needed for AWS
 }
 
 // archive re-packs the dir into the destination

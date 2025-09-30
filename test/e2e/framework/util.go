@@ -6,6 +6,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -18,10 +19,12 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/conditions"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -202,4 +205,90 @@ func ArtifactSubdirFor() string {
 	// Use the full text of the spec (like "CreateCluster should create and validate a hypershift cluster")
 	// Replace "/" with "_" to make it filesystem-safe, just like the testing.T version
 	return strings.ReplaceAll(report.FullText(), "/", "_")
+}
+
+// DeleteNamespace deletes a namespace and waits for it to be finalized
+// Pure Ginkgo version - surgically duplicated from util/util.go:DeleteNamespace
+func DeleteNamespace(ctx context.Context, client crclient.Client, namespace string) error {
+	GinkgoHelper()
+
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		logf("Deleting namespace %s", namespace)
+	}
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+		if err := client.Delete(ctx, ns, &crclient.DeleteOptions{}); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			logf("Failed to delete namespace: %s, will retry: %v", namespace, err)
+			return false, nil
+		}
+		return true, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to delete namespace: %w", err)
+	}
+
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		logf("Waiting for namespace %s to be finalized", namespace)
+	}
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
+		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			logf("Failed to get namespace: %s. %v", namespace, err)
+			return false, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return fmt.Errorf("namespace still exists after deletion timeout: %v", err)
+	}
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		logf("Deleted namespace %s", namespace)
+	}
+	return nil
+}
+
+// ValidateHostedClusterConditions waits for the HostedCluster to have all expected conditions
+// Pure Ginkgo version - surgically duplicated from util/util.go:ValidateHostedClusterConditions
+// This function waits for the cluster rollout to complete (ClusterVersionProgressing: False)
+func ValidateHostedClusterConditions(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+	GinkgoHelper()
+
+	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
+
+	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
+	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
+
+	if !hasWorkerNodes {
+		expectedConditions[hyperv1.ClusterVersionAvailable] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionSucceeding] = metav1.ConditionFalse
+		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+	}
+
+	if e2eutil.IsLessThan(e2eutil.Version415) {
+		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
+		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
+	}
+
+	var predicates []Predicate[*hyperv1.HostedCluster]
+	for conditionType, conditionStatus := range expectedConditions {
+		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
+			Type:   string(conditionType),
+			Status: conditionStatus,
+		}))
+	}
+
+	EventuallyObject(ctx, fmt.Sprintf("HostedCluster %s/%s to have valid conditions", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		}, predicates, WithTimeout(timeout), WithoutConditionDump(),
+	)
 }

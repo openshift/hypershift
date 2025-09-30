@@ -6,6 +6,7 @@ package framework
 import (
 	"context"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -212,17 +213,21 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(ctx context.Context, ho
 }
 
 // ValidatePublicCluster validates a public hosted cluster
-// Pure Ginkgo version - minimal implementation for Phase 1
+// Pure Ginkgo version - waits for guest API and cluster rollout completion
 func ValidatePublicCluster(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions) {
 	GinkgoHelper()
 
-	// For Phase 1, just verify we can get the guest kubeconfig
-	// The WaitForGuestClient function in framework/util.go is already pure Ginkgo
+	// Wait for guest API to be accessible
 	_ = WaitForGuestClient(ctx, client, hostedCluster)
 
-	logf("ValidatePublicCluster: Phase 1 - successfully obtained guest client")
-	// TODO: Additional validation steps can be surgically migrated as needed:
-	// - WaitForNReadyNodes
-	// - WaitForImageRollout
-	// - createIngressRoute53Record (for OpenStack)
+	logf("ValidatePublicCluster: successfully obtained guest client")
+
+	// Wait for cluster rollout to complete before returning
+	// This ensures ClusterVersionProgressing: False and all other expected conditions are met
+	// This is critical for validations like EnsureFeatureGateStatus which expect the cluster
+	// to be in Completed state, not Partial/Progressing
+	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	ValidateHostedClusterConditions(ctx, client, hostedCluster, numNodes > 0, 10*time.Minute)
+
+	logf("ValidatePublicCluster: cluster rollout complete, all conditions met")
 }
