@@ -380,7 +380,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		if !allowedProbeModes.Has(o.LoadBalancerHealthProbeMode) {
 			return fmt.Errorf("invalid value for --load-balancer-health-probe-mode: %s", o.LoadBalancerHealthProbeMode)
 		}
-		cluster.Spec.Platform.Azure.ClusterServiceLoadBalancerHealthProbeMode = o.LoadBalancerHealthProbeMode
+		cluster.Spec.Platform.AWS.CloudProviderConfig.ClusterServiceLoadBalancerHealthProbeMode = o.LoadBalancerHealthProbeMode
 	}
 
 	if o.LoadBalancerHealthProbeMode == loadBalancerHealthProbeModeShared {

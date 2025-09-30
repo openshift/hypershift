@@ -246,7 +246,7 @@ type AWSCloudProviderConfig struct {
 	// clusterServiceSharedLoadBalancerHealthProbePort defines the target port of the shared health probe.
 	//
 	// +optional
-	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	ClusterServiceSharedLoadBalancerHealthProbePort int32 `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
 

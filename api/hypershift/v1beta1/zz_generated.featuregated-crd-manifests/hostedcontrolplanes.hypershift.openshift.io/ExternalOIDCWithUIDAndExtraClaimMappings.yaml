@@ -3363,7 +3363,7 @@ spec:
                               defines the target port of the shared health probe.
                             format: int32
                             maximum: 65535
-                            minimum: 0
+                            minimum: 1
                             type: integer
                           subnet:
                             description: subnet is the subnet to use for control plane
@@ -4548,7 +4548,7 @@ spec:
                           defines the target port of the shared health probe.
                         format: int32
                         maximum: 65535
-                        minimum: 0
+                        minimum: 1
                         type: integer
                       location:
                         description: |-
