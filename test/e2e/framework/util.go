@@ -6,6 +6,7 @@ package framework
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -191,4 +192,14 @@ func WaitForGuestClient(ctx context.Context, client crclient.Client, hostedClust
 		Fail(fmt.Sprintf("could not create client for guest cluster: %v", err))
 	}
 	return guestClient
+}
+
+// ArtifactSubdirFor returns the artifact subdirectory name for the current Ginkgo spec
+// Pure Ginkgo version - uses CurrentSpecReport() instead of testing.T.Name()
+func ArtifactSubdirFor() string {
+	// Get the current spec report from Ginkgo
+	report := CurrentSpecReport()
+	// Use the full text of the spec (like "CreateCluster should create and validate a hypershift cluster")
+	// Replace "/" with "_" to make it filesystem-safe, just like the testing.T version
+	return strings.ReplaceAll(report.FullText(), "/", "_")
 }

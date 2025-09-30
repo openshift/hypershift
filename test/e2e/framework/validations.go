@@ -204,9 +204,25 @@ func EnsureGlobalPullSecret(ctx context.Context, client crclient.Client, hostedC
 }
 
 // RunTestControlPlanePKIOperatorBreakGlassCredentials runs PKI operator break glass credentials test
+// TODO: Requires full surgical duplication of integration test (200+ lines with nested t.Run)
+// Skipped for pilot - demonstrates pattern with simpler functions
 func RunTestControlPlanePKIOperatorBreakGlassCredentials(ctx context.Context, hostedCluster *hyperv1.HostedCluster,
 	mgmtClients, guestClients *integrationframework.Clients) {
-	// TODO: This function requires *testing.T which GinkgoT() doesn't satisfy
-	// Skip for now in the pilot migration
-	Skip("RunTestControlPlanePKIOperatorBreakGlassCredentials requires full migration - tracked in TODO")
+	Skip("PKI test requires full surgical migration - complex integration test with nested subtests. Skipped for pilot.")
+}
+
+// ValidatePublicCluster validates a public hosted cluster
+// Pure Ginkgo version - minimal implementation for Phase 1
+func ValidatePublicCluster(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *e2eutil.PlatformAgnosticOptions) {
+	GinkgoHelper()
+
+	// For Phase 1, just verify we can get the guest kubeconfig
+	// The WaitForGuestClient function in framework/util.go is already pure Ginkgo
+	_ = WaitForGuestClient(ctx, client, hostedCluster)
+
+	logf("ValidatePublicCluster: Phase 1 - successfully obtained guest client")
+	// TODO: Additional validation steps can be surgically migrated as needed:
+	// - WaitForNReadyNodes
+	// - WaitForImageRollout
+	// - createIngressRoute53Record (for OpenStack)
 }
