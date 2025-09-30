@@ -433,6 +433,27 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// clusterServiceLoadBalancerHealthProbeMode determines the health
+	// probe mode for cluster service load balancer.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=shared;servicenodeport
+	// +kubebuilder:default=shared
+	ClusterServiceLoadBalancerHealthProbeMode string `json:"clusterServiceLoadBalancerHealthProbeMode,omitempty"`
+
+	// clusterServiceSharedLoadBalancerHealthProbePort defines the target port of the shared health probe.
+	//
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=65535
+	ClusterServiceSharedLoadBalancerHealthProbePort int32 `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
+
+	// clusterServiceSharedLoadBalancerHealthProbePath defines the target path of the shared health probe.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=255
+	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to

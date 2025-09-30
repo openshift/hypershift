@@ -18,6 +18,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,8 +30,10 @@ import (
 )
 
 const (
-	SATokenIssuerSecret = "sa-token-issuer-key"
-	ObjectEncoding      = "utf-8"
+	SATokenIssuerSecret                        = "sa-token-issuer-key"
+	ObjectEncoding                             = "utf-8"
+	loadBalancerHealthProbeModeShared          = "shared"
+	loadBalancerHealthProbeModeServiceNodePort = "servicenodeport"
 )
 
 func DefaultOptions(client crclient.Client, log logr.Logger) (*RawCreateOptions, error) {
@@ -70,6 +73,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
 	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
+	flags.StringVar(&opts.LoadBalancerHealthProbeMode, "load-balancer-health-probe-mode", opts.LoadBalancerHealthProbeMode, "The health probe mode for cluster service load balancer (shared or servicenodeport)")
+	flags.Int32Var(&opts.SharedLoadBalancerHealthProbePort, "shared-load-balancer-health-probe-port", opts.SharedLoadBalancerHealthProbePort, "The target port of the shared health probe")
+	flags.StringVar(&opts.SharedLoadBalancerHealthProbePath, "shared-load-balancer-health-probe-path", opts.SharedLoadBalancerHealthProbePath, "The target path of the shared health probe")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -101,7 +107,10 @@ type RawCreateOptions struct {
 	ServiceAccountTokenIssuerKeyPath string
 	MultiArch                        bool
 
-	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
+	NodePoolOpts                      *azurenodepool.RawAzurePlatformCreateOptions
+	LoadBalancerHealthProbeMode       string
+	SharedLoadBalancerHealthProbePort int32
+	SharedLoadBalancerHealthProbePath string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -329,6 +338,25 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			}
 		}
 	}
+
+	allowedProbeModes := sets.NewString(loadBalancerHealthProbeModeShared,
+		loadBalancerHealthProbeModeServiceNodePort)
+	if o.LoadBalancerHealthProbeMode != "" {
+		if !allowedProbeModes.Has(o.LoadBalancerHealthProbeMode) {
+			return fmt.Errorf("invalid value for --load-balancer-health-probe-mode: %s", o.LoadBalancerHealthProbeMode)
+		}
+		cluster.Spec.Platform.Azure.ClusterServiceLoadBalancerHealthProbeMode = o.LoadBalancerHealthProbeMode
+	}
+
+	if o.LoadBalancerHealthProbeMode == loadBalancerHealthProbeModeShared {
+		if o.SharedLoadBalancerHealthProbePort != 0 {
+			cluster.Spec.Platform.Azure.ClusterServiceSharedLoadBalancerHealthProbePort = o.SharedLoadBalancerHealthProbePort
+		}
+		if o.SharedLoadBalancerHealthProbePath != "" {
+			cluster.Spec.Platform.Azure.ClusterServiceSharedLoadBalancerHealthProbePath = o.SharedLoadBalancerHealthProbePath
+		}
+	}
+
 	return nil
 }
 

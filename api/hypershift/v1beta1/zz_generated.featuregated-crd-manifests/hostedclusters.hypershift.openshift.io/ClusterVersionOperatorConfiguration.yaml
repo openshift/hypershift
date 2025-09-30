@@ -2982,6 +2982,27 @@ spec:
                           This is mainly used for cloud provider controller config:
                           https://github.com/kubernetes/kubernetes/blob/f5be5052e3d0808abb904aebd3218fe4a5c2dd82/staging/src/k8s.io/legacy-cloud-providers/aws/aws.go#L1347-L1364
                         properties:
+                          clusterServiceLoadBalancerHealthProbeMode:
+                            default: Shared
+                            description: |-
+                              clusterServiceLoadBalancerHealthProbeMode determines the health
+                              probe mode for cluster service load balancer.
+                            enum:
+                            - Shared
+                            - ServiceNodePort
+                            type: string
+                          clusterServiceSharedLoadBalancerHealthProbePath:
+                            description: clusterServiceSharedLoadBalancerHealthProbePath
+                              defines the target path of the shared health probe.
+                            maxLength: 255
+                            type: string
+                          clusterServiceSharedLoadBalancerHealthProbePort:
+                            description: clusterServiceSharedLoadBalancerHealthProbePort
+                              defines the target port of the shared health probe.
+                            format: int32
+                            maximum: 65535
+                            minimum: 0
+                            type: integer
                           subnet:
                             description: subnet is the subnet to use for control plane
                               cloud resources.
@@ -4146,6 +4167,27 @@ spec:
                         - AzureGermanCloud
                         - AzureStackCloud
                         type: string
+                      clusterServiceLoadBalancerHealthProbeMode:
+                        default: shared
+                        description: |-
+                          clusterServiceLoadBalancerHealthProbeMode determines the health
+                          probe mode for cluster service load balancer.
+                        enum:
+                        - shared
+                        - servicenodeport
+                        type: string
+                      clusterServiceSharedLoadBalancerHealthProbePath:
+                        description: clusterServiceSharedLoadBalancerHealthProbePath
+                          defines the target path of the shared health probe.
+                        maxLength: 255
+                        type: string
+                      clusterServiceSharedLoadBalancerHealthProbePort:
+                        description: clusterServiceSharedLoadBalancerHealthProbePort
+                          defines the target port of the shared health probe.
+                        format: int32
+                        maximum: 65535
+                        minimum: 0
+                        type: integer
                       location:
                         description: |-
                           location is the Azure region in where all the cloud infrastructure resources will be created.

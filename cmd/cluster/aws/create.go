@@ -19,6 +19,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,38 +29,43 @@ import (
 )
 
 const (
-	SATokenIssuerSecret = "sa-token-issuer-key"
+	SATokenIssuerSecret                        = "sa-token-issuer-key"
+	loadBalancerHealthProbeModeShared          = "Shared"
+	loadBalancerHealthProbeModeServiceNodePort = "ServiceNodePort"
 )
 
 type RawCreateOptions struct {
-	Credentials                      awsutil.AWSCredentialsOptions
-	CredentialSecretName             string
-	AdditionalTags                   []string
-	IAMJSON                          string
-	InstanceType                     string
-	IssuerURL                        string
-	ServiceAccountTokenIssuerKeyPath string
-	PrivateZoneID                    string
-	PublicZoneID                     string
-	Region                           string
-	RootVolumeIOPS                   int64
-	RootVolumeSize                   int64
-	RootVolumeType                   string
-	RootVolumeEncryptionKey          string
-	EndpointAccess                   string
-	Zones                            []string
-	EtcdKMSKeyARN                    string
-	EnableProxy                      bool
-	EnableSecureProxy                bool
-	ProxyVPCEndpointServiceName      string
-	SingleNATGateway                 bool
-	MultiArch                        bool
-	VPCCIDR                          string
-	VPCOwnerCredentials              awsutil.AWSCredentialsOptions
-	PrivateZonesInClusterAccount     bool
-	PublicOnly                       bool
-	AutoNode                         bool
-	UseROSAManagedPolicies           bool
+	Credentials                       awsutil.AWSCredentialsOptions
+	CredentialSecretName              string
+	AdditionalTags                    []string
+	IAMJSON                           string
+	InstanceType                      string
+	IssuerURL                         string
+	ServiceAccountTokenIssuerKeyPath  string
+	PrivateZoneID                     string
+	PublicZoneID                      string
+	Region                            string
+	RootVolumeIOPS                    int64
+	RootVolumeSize                    int64
+	RootVolumeType                    string
+	RootVolumeEncryptionKey           string
+	EndpointAccess                    string
+	Zones                             []string
+	EtcdKMSKeyARN                     string
+	EnableProxy                       bool
+	EnableSecureProxy                 bool
+	ProxyVPCEndpointServiceName       string
+	SingleNATGateway                  bool
+	MultiArch                         bool
+	VPCCIDR                           string
+	VPCOwnerCredentials               awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount      bool
+	PublicOnly                        bool
+	AutoNode                          bool
+	UseROSAManagedPolicies            bool
+	LoadBalancerHealthProbeMode       string
+	SharedLoadBalancerHealthProbePort int32
+	SharedLoadBalancerHealthProbePath string
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -368,6 +374,24 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 		cluster.Annotations[hyperv1.AWSMachinePublicIPs] = "true"
 	}
 
+	allowedProbeModes := sets.NewString(loadBalancerHealthProbeModeShared,
+		loadBalancerHealthProbeModeServiceNodePort)
+	if o.LoadBalancerHealthProbeMode != "" {
+		if !allowedProbeModes.Has(o.LoadBalancerHealthProbeMode) {
+			return fmt.Errorf("invalid value for --load-balancer-health-probe-mode: %s", o.LoadBalancerHealthProbeMode)
+		}
+		cluster.Spec.Platform.Azure.ClusterServiceLoadBalancerHealthProbeMode = o.LoadBalancerHealthProbeMode
+	}
+
+	if o.LoadBalancerHealthProbeMode == loadBalancerHealthProbeModeShared {
+		if o.SharedLoadBalancerHealthProbePort != 0 {
+			cluster.Spec.Platform.AWS.CloudProviderConfig.ClusterServiceSharedLoadBalancerHealthProbePort = o.SharedLoadBalancerHealthProbePort
+		}
+		if o.SharedLoadBalancerHealthProbePath != "" {
+			cluster.Spec.Platform.AWS.CloudProviderConfig.ClusterServiceSharedLoadBalancerHealthProbePath = o.SharedLoadBalancerHealthProbePath
+		}
+	}
+
 	return nil
 }
 
@@ -502,6 +526,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
 	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
+	flags.StringVar(&opts.LoadBalancerHealthProbeMode, "load-balancer-health-probe-mode", opts.LoadBalancerHealthProbeMode, "The health probe mode for cluster service load balancer (Shared or ServiceNodePort)")
+	flags.Int32Var(&opts.SharedLoadBalancerHealthProbePort, "shared-load-balancer-health-probe-port", opts.SharedLoadBalancerHealthProbePort, "The target port of the shared health probe")
+	flags.StringVar(&opts.SharedLoadBalancerHealthProbePath, "shared-load-balancer-health-probe-path", opts.SharedLoadBalancerHealthProbePath, "The target path of the shared health probe")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }

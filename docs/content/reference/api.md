@@ -1216,6 +1216,43 @@ string
 <p>vpc is the VPC to use for control plane cloud resources.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>clusterServiceLoadBalancerHealthProbeMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceLoadBalancerHealthProbeMode determines the health
+probe mode for cluster service load balancer.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterServiceSharedLoadBalancerHealthProbePort</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceSharedLoadBalancerHealthProbePort defines the target port of the shared health probe.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterServiceSharedLoadBalancerHealthProbePath</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceSharedLoadBalancerHealthProbePath defines the target path of the shared health probe.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSEndpointAccessType { #hypershift.openshift.io/v1beta1.AWSEndpointAccessType }
@@ -3460,6 +3497,43 @@ string
 </td>
 <td>
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterServiceLoadBalancerHealthProbeMode</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceLoadBalancerHealthProbeMode determines the health
+probe mode for cluster service load balancer.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterServiceSharedLoadBalancerHealthProbePort</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceSharedLoadBalancerHealthProbePort defines the target port of the shared health probe.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>clusterServiceSharedLoadBalancerHealthProbePath</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterServiceSharedLoadBalancerHealthProbePath defines the target path of the shared health probe.</p>
 </td>
 </tr>
 </tbody>
