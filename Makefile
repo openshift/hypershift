@@ -265,6 +265,7 @@ test: generate
 .PHONY: e2e
 e2e:
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
+	$(GO_E2E_RECIPE) -o bin/test-e2e-ginkgo ./test/e2e/ginkgo
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 

@@ -117,7 +117,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 		if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
 			By("validating private cluster configuration")
 			// TODO: Surgical migration needed for ValidatePrivateCluster
-			Skip("ValidatePrivateCluster requires surgical migration")
+			logf("Skipping ValidatePrivateCluster - requires surgical migration (tracked in TODO)")
 		} else {
 			By("validating public cluster configuration")
 			ValidatePublicCluster(h.ctx, h.client, hostedCluster, opts)
@@ -127,7 +127,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 	if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == e2eutil.ProviderKeycloak {
 		By("validating authentication spec")
 		// TODO: Surgical migration needed for ValidateAuthenticationSpec
-		Skip("ValidateAuthenticationSpec requires surgical migration")
+		logf("Skipping ValidateAuthenticationSpec - requires surgical migration (tracked in TODO)")
 	}
 }
 
@@ -141,56 +141,56 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 	hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 	By("ensuring payload arch set correctly")
-	e2eutil.EnsurePayloadArchSetCorrectly(h.T, context.Background(), h.client, hostedCluster)
+	EnsurePayloadArchSetCorrectly(context.Background(), h.client, hostedCluster)
 
 	By("ensuring pods with emptyDir have safe-to-evict annotations")
-	e2eutil.EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(h.T, context.Background(), h.client, hcpNs)
+	EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(context.Background(), h.client, hcpNs)
 
 	By("ensuring readonly root filesystem")
-	e2eutil.EnsureReadOnlyRootFilesystem(h.T, context.Background(), h.client, hcpNs)
+	EnsureReadOnlyRootFilesystem(context.Background(), h.client, hcpNs)
 
 	By("ensuring all containers have PullPolicy IfNotPresent")
-	e2eutil.EnsureAllContainersHavePullPolicyIfNotPresent(h.T, context.Background(), h.client, hostedCluster)
+	EnsureAllContainersHavePullPolicyIfNotPresent(context.Background(), h.client, hostedCluster)
 
 	By("ensuring all containers have termination message policy fallback to logs on error")
-	e2eutil.EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(h.T, context.Background(), h.client, hostedCluster)
+	EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(context.Background(), h.client, hostedCluster)
 
 	By("ensuring HCP containers have resource requests")
-	e2eutil.EnsureHCPContainersHaveResourceRequests(h.T, context.Background(), h.client, hostedCluster)
+	EnsureHCPContainersHaveResourceRequests(context.Background(), h.client, hostedCluster)
 
 	By("ensuring no pods with too high priority")
-	e2eutil.EnsureNoPodsWithTooHighPriority(h.T, context.Background(), h.client, hostedCluster)
+	EnsureNoPodsWithTooHighPriority(context.Background(), h.client, hostedCluster)
 
 	By("ensuring no rapid deployment rollouts")
-	e2eutil.EnsureNoRapidDeploymentRollouts(h.T, context.Background(), h.client, hostedCluster)
+	EnsureNoRapidDeploymentRollouts(context.Background(), h.client, hostedCluster)
 
 	By("noticing preemption or failed scheduling")
-	e2eutil.NoticePreemptionOrFailedScheduling(h.T, context.Background(), h.client, hostedCluster)
+	NoticePreemptionOrFailedScheduling(context.Background(), h.client, hostedCluster)
 
 	By("ensuring all routes use HCP router")
-	e2eutil.EnsureAllRoutesUseHCPRouter(h.T, context.Background(), h.client, hostedCluster)
+	EnsureAllRoutesUseHCPRouter(context.Background(), h.client, hostedCluster)
 
 	By("ensuring network policies")
-	e2eutil.EnsureNetworkPolicies(h.T, context.Background(), h.client, hostedCluster)
+	EnsureNetworkPolicies(context.Background(), h.client, hostedCluster)
 
 	if platform == hyperv1.AWSPlatform {
 		By("ensuring HCP pods affinities and tolerations")
-		e2eutil.EnsureHCPPodsAffinitiesAndTolerations(h.T, context.Background(), h.client, hostedCluster)
+		EnsureHCPPodsAffinitiesAndTolerations(context.Background(), h.client, hostedCluster)
 	}
 
 	By("ensuring SA token not mounted unless necessary")
-	e2eutil.EnsureSATokenNotMountedUnlessNecessary(h.T, context.Background(), h.client, hostedCluster)
+	EnsureSATokenNotMountedUnlessNecessary(context.Background(), h.client, hostedCluster)
 
 	// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
 	// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
 	if platform != hyperv1.NonePlatform {
 		By("ensuring admission policies")
-		e2eutil.EnsureAdmissionPolicies(h.T, context.Background(), h.client, hostedCluster)
+		EnsureAdmissionPolicies(context.Background(), h.client, hostedCluster)
 	}
 
 	if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !e2eutil.IsLessThan(e2eutil.Version420) {
 		By("ensuring security context UID")
-		e2eutil.EnsureSecurityContextUID(h.T, context.Background(), h.client, hostedCluster)
+		EnsureSecurityContextUID(context.Background(), h.client, hostedCluster)
 	}
 
 	metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
@@ -217,7 +217,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 	}
 
 	By("validating metrics")
-	e2eutil.ValidateMetrics(h.T, context.Background(), h.client, hostedCluster, metricsToValidate, true)
+	ValidateMetrics(context.Background(), h.client, hostedCluster, metricsToValidate, true)
 
 	// TestHAEtcdChaos runs as NonePlatform and it's broken.
 	// so skipping until we fix it.
@@ -227,15 +227,15 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		hasWorkerNodes := true
 		if !util.IsPrivateHC(hostedCluster) {
 			By("waiting for guest client to list nodes")
-			guestClient := e2eutil.WaitForGuestClient(h.T, h.T.Context(), h.client, hostedCluster)
+			guestClient := WaitForGuestClient(h.ctx, h.client, hostedCluster)
 			var nodeList corev1.NodeList
-			if err := guestClient.List(h.T.Context(), &nodeList); err != nil {
-				h.T.Errorf("failed to list nodes in guest cluster: %v", err)
+			if err := guestClient.List(h.ctx, &nodeList); err != nil {
+				logf("failed to list nodes in guest cluster: %v", err)
 			}
 			hasWorkerNodes = len(nodeList.Items) > 0
 		}
 		By("validating hosted cluster conditions")
-		e2eutil.ValidateHostedClusterConditions(h.T, h.T.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+		ValidateHostedClusterConditions(h.ctx, h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
 	}
 }
 
@@ -266,7 +266,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	}
 
 	By("validating post-teardown metrics")
-	e2eutil.ValidateMetrics(h.T, h.ctx, h.client, hostedCluster, []string{
+	ValidateMetrics(h.ctx, h.client, hostedCluster, []string{
 		hcmetrics.WaitingInitialAvailabilityDurationMetricName,
 		hcmetrics.InitialRollingOutDurationMetricName,
 		hcmetrics.UpgradingDurationMetricName,

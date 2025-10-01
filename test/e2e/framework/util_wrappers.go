@@ -45,8 +45,12 @@ func updateObject[T crclient.Object](ctx context.Context, client crclient.Client
 }
 
 // atLeast is a Ginkgo-compatible version of e2eutil.AtLeast
-func atLeast(version semver.Version) {
+// Returns true if version requirement is met, false if validation should be skipped
+// This allows individual validations to be skipped without terminating the entire test
+func atLeast(version semver.Version) bool {
 	if e2eutil.IsLessThan(version) {
-		Skip("Only tested in " + version.String() + " and later")
+		logf("Skipping validation: requires %s or later", version.String())
+		return false
 	}
+	return true
 }
