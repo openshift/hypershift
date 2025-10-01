@@ -1020,6 +1020,32 @@ func EnsureMachineDeploymentGeneration(t *testing.T, ctx context.Context, hostCl
 func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsurePSANotPrivileged", func(t *testing.T) {
 		AtLeast(t, Version421)
+
+		// Check if OpenShiftPodSecurityAdmission feature gate is enabled
+		featureGate := &configv1.FeatureGate{}
+		err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, featureGate)
+		if err != nil {
+			t.Logf("failed to get FeatureGate resource: %v", err)
+			return
+		}
+
+		// Find the current version and check if OpenShiftPodSecurityAdmission is enabled
+		var psaEnabled bool
+		for _, details := range featureGate.Status.FeatureGates {
+			for _, enabled := range details.Enabled {
+				if enabled.Name == "OpenShiftPodSecurityAdmission" {
+					psaEnabled = true
+					break
+				}
+			}
+			if psaEnabled {
+				break
+			}
+		}
+
+		if !psaEnabled {
+			t.Skip("OpenShiftPodSecurityAdmission feature gate is not enabled, skipping PSA test")
+		}
 		testNamespaceName := "e2e-psa-check"
 		namespace := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1044,7 +1070,7 @@ func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crcli
 				HostPID: true, // enforcement of restricted or baseline policy should reject this
 			},
 		}
-		err := guestClient.Create(ctx, pod)
+		err = guestClient.Create(ctx, pod)
 		if err == nil {
 			t.Errorf("pod admitted when rejection was expected")
 		}
