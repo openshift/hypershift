@@ -4,6 +4,7 @@ import (
 	_ "embed"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -19,7 +20,7 @@ func hcpRouterLabels() map[string]string {
 	}
 }
 
-func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool, hcp *hyperv1.HostedControlPlane) error {
+func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool, hcp *hyperv1.HostedControlPlane, allowedCIDRBlocks []string) error {
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if svc.Annotations == nil {
 			svc.Annotations = map[string]string{}
@@ -60,6 +61,12 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 			TargetPort: intstr.FromString("https"),
 			Protocol:   corev1.ProtocolTCP,
 		})
+	}
+
+	// Apply LoadBalancerSourceRanges for external router services to restrict CIDR access
+	// Only apply for external (non-internal) services and when not running on ARO HCP
+	if !internal && len(allowedCIDRBlocks) > 0 && !azureutil.IsAroHCP() {
+		svc.Spec.LoadBalancerSourceRanges = allowedCIDRBlocks
 	}
 
 	return nil
