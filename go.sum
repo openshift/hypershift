@@ -974,8 +974,8 @@ k8s.io/pod-security-admission v0.32.2 h1:zDfAb/t0LbNU3z0ZMHtCb1zp8x05gWCGhmBYpUp
 k8s.io/pod-security-admission v0.32.2/go.mod h1:yxMPB3i1pGMLfxbe4BiWMuowMD7cdHR32y4nCj4wH+s=
 k8s.io/utils v0.0.0-20210802155522-efc7438f0176/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
 k8s.io/utils v0.0.0-20211116205334-6203023598ed/go.mod h1:jPW/WVKK9YHAvNhRxK0md/EJ228hCsBRufyofKtW8HA=
-k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e h1:KqK5c/ghOm8xkHYhlodbp6i6+r+ChV2vuAuVRdFbLro=
-k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
+k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 h1:SjGebBtkBqHFOli+05xYbK8YF1Dzkbzn+gDM4X9T4Ck=
+k8s.io/utils v0.0.0-20251002143259-bc988d571ff4/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 kubevirt.io/api v1.4.0 h1:dDLyQLSp9obzsDrv3cyL1olIc/66IWVaGiR3gfPfgT0=
 kubevirt.io/api v1.4.0/go.mod h1:qcnumjJeOCo+qdYXf0OjpHGMhad0SAn4i0h6IAP+6Eg=
 kubevirt.io/containerized-data-importer-api v1.61.1 h1:MoFyh6ryfT78y345rMe7PvZU/R30ZSMMPvvdjTZ/SMU=
