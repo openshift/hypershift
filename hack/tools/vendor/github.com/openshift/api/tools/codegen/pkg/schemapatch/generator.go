@@ -84,10 +84,10 @@ func (g *generator) Name() string {
 }
 
 // GenGroup runs the schemapatch generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
+func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping API schema generation for %s", groupCtx.Name)
-		return nil
+		return nil, nil
 	}
 
 	versionPaths := allVersionPaths(groupCtx.Versions)
@@ -97,7 +97,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	for _, version := range groupCtx.Versions {
 		versionRequired, err := shouldProcessGroupVersion(version, g.requiredFeatureSets)
 		if err != nil {
-			return fmt.Errorf("could not determine if version %s is required: %w", version.Name, err)
+			return nil, fmt.Errorf("could not determine if version %s is required: %w", version.Name, err)
 		}
 
 		if !versionRequired {
@@ -117,10 +117,10 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) error {
 	}
 
 	if len(errs) > 0 {
-		return kerrors.NewAggregate(errs)
+		return nil, kerrors.NewAggregate(errs)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // genGroupVersion runs the schemapatch generator against a particular version of the API group.
