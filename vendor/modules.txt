@@ -817,8 +817,8 @@ github.com/openshift/cloud-credential-operator/pkg/apis/cloudcredential/v1
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning
 github.com/openshift/cloud-credential-operator/pkg/cmd/provisioning/ibmcloud
 github.com/openshift/cloud-credential-operator/pkg/ibmcloud
-# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
-## explicit; go 1.17
+# github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250929222236-0e5a736af5a5
+## explicit; go 1.21
 github.com/openshift/cluster-api-provider-agent/api/v1alpha1
 github.com/openshift/cluster-api-provider-agent/api/v1beta1
 # github.com/openshift/cluster-node-tuning-operator v0.0.0-20240131125539-0e319439e65a
@@ -2174,7 +2174,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.7.2
+# sigs.k8s.io/cluster-api v1.7.6
 ## explicit; go 1.21
 sigs.k8s.io/cluster-api/api/v1beta1
 sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3
