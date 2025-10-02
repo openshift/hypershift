@@ -17,6 +17,9 @@ import (
 //
 // Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).
 // +openshift:compatibility-gen:level=1
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=BootImageSkewEnforcement,rule="self.?status.bootImageSkewEnforcementStatus.mode.orValue(\"\") == 'Automatic' ? self.?spec.managedBootImages.hasValue() || self.?status.managedBootImagesStatus.hasValue() : true",message="when skew enforcement is in Automatic mode, a boot image configuration is required"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=BootImageSkewEnforcement,rule="self.?status.bootImageSkewEnforcementStatus.mode.orValue(\"\") == 'Automatic' ? !(self.?spec.managedBootImages.machineManagers.hasValue()) || self.spec.managedBootImages.machineManagers.exists(m, m.selection.mode == 'All' && m.resource == 'machinesets' && m.apiGroup == 'machine.openshift.io') : true",message="when skew enforcement is in Automatic mode, managedBootImages must contain a MachineManager opting in all MachineAPI MachineSets"
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=BootImageSkewEnforcement,rule="self.?status.bootImageSkewEnforcementStatus.mode.orValue(\"\") == 'Automatic' ? !(self.?status.managedBootImagesStatus.machineManagers.hasValue()) || self.status.managedBootImagesStatus.machineManagers.exists(m, m.selection.mode == 'All' && m.resource == 'machinesets' && m.apiGroup == 'machine.openshift.io'): true",message="when skew enforcement is in Automatic mode, managedBootImagesStatus must contain a MachineManager opting in all MachineAPI MachineSets"
 type MachineConfiguration struct {
 	metav1.TypeMeta `json:",inline"`
 
@@ -36,8 +39,6 @@ type MachineConfiguration struct {
 type MachineConfigurationSpec struct {
 	StaticPodOperatorSpec `json:",inline"`
 
-	// TODO(jkyros): This is where we put our knobs and dials
-
 	// managedBootImages allows configuration for the management of boot images for machine
 	// resources within the cluster. This configuration allows users to select resources that should
 	// be updated to the latest boot images during cluster upgrades, ensuring that new machines
@@ -53,10 +54,197 @@ type MachineConfigurationSpec struct {
 	// MachineConfig-based updates, such as drains, service reloads, etc. Specifying this will allow
 	// for less downtime when doing small configuration updates to the cluster. This configuration
 	// has no effect on cluster upgrades which will still incur node disruption where required.
-	// +openshift:enable:FeatureGate=NodeDisruptionPolicy
 	// +optional
 	NodeDisruptionPolicy NodeDisruptionPolicyConfig `json:"nodeDisruptionPolicy"`
+
+	// irreconcilableValidationOverrides is an optional field that can used to make changes to a MachineConfig that
+	// cannot be applied to existing nodes.
+	// When specified, the fields configured with validation overrides will no longer reject changes to those
+	// respective fields due to them not being able to be applied to existing nodes.
+	// Only newly provisioned nodes will have these configurations applied.
+	// Existing nodes will report observed configuration differences in their MachineConfigNode status.
+	// +openshift:enable:FeatureGate=IrreconcilableMachineConfig
+	// +optional
+	IrreconcilableValidationOverrides IrreconcilableValidationOverrides `json:"irreconcilableValidationOverrides,omitempty,omitzero"`
+
+	// bootImageSkewEnforcement allows an admin to configure how boot image version skew is
+	// enforced on the cluster.
+	// When omitted, this will default to Automatic for clusters that support automatic boot image updates.
+	// For clusters that do not support automatic boot image updates, cluster upgrades will be disabled until
+	// a skew enforcement mode has been specified.
+	// When version skew is being enforced, cluster upgrades will be disabled until the version skew is deemed
+	// acceptable for the current release payload.
+	// +openshift:enable:FeatureGate=BootImageSkewEnforcement
+	// +optional
+	BootImageSkewEnforcement BootImageSkewEnforcementConfig `json:"bootImageSkewEnforcement,omitempty,omitzero"`
 }
+
+// BootImageSkewEnforcementConfig is used to configure how boot image version skew is enforced on the cluster.
+// +kubebuilder:validation:XValidation:rule="has(self.mode) && (self.mode =='Manual') ?  has(self.manual) : !has(self.manual)",message="manual is required when mode is Manual, and forbidden otherwise"
+// +union
+type BootImageSkewEnforcementConfig struct {
+	// mode determines the underlying behavior of skew enforcement mechanism.
+	// Valid values are Manual and None.
+	// Manual means that the cluster admin is expected to perform manual boot image updates and store the OCP
+	// & RHCOS version associated with the last boot image update in the manual field.
+	// In Manual mode, the MCO will prevent upgrades when the boot image skew exceeds the
+	// skew limit described by the release image.
+	// None means that the MCO will no longer monitor the boot image skew. This may affect
+	// the cluster's ability to scale.
+	// This field is required.
+	// +unionDiscriminator
+	// +required
+	Mode BootImageSkewEnforcementConfigMode `json:"mode,omitempty"`
+
+	// manual describes the current boot image of the cluster.
+	// This should be set to the oldest boot image used amongst all machine resources in the cluster.
+	// This must include either the RHCOS version of the boot image or the OCP release version which shipped with that
+	// RHCOS boot image.
+	// Required when mode is set to "Manual" and forbidden otherwise.
+	// +optional
+	Manual ClusterBootImageManual `json:"manual,omitempty,omitzero"`
+}
+
+// ClusterBootImageManual is used to describe the cluster boot image in Manual mode.
+// +kubebuilder:validation:XValidation:rule="has(self.mode) && (self.mode =='OCPVersion') ?  has(self.ocpVersion) : !has(self.ocpVersion)",message="ocpVersion is required when mode is OCPVersion, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.mode) && (self.mode =='RHCOSVersion') ?  has(self.rhcosVersion) : !has(self.rhcosVersion)",message="rhcosVersion is required when mode is RHCOSVersion, and forbidden otherwise"
+// +union
+type ClusterBootImageManual struct {
+	// mode is used to configure which boot image field is defined in Manual mode.
+	// Valid values are OCPVersion and RHCOSVersion.
+	// OCPVersion means that the cluster admin is expected to set the OCP version associated with the last boot image update
+	// in the OCPVersion field.
+	// RHCOSVersion means that the cluster admin is expected to set the RHCOS version associated with the last boot image update
+	// in the RHCOSVersion field.
+	// This field is required.
+	// +unionDiscriminator
+	// +required
+	Mode ClusterBootImageManualMode `json:"mode,omitempty"`
+
+	// ocpVersion provides a string which represents the OCP version of the boot image.
+	// This field must match the OCP semver compatible format of x.y.z. This field must be between
+	// 5 and 10 characters long.
+	// Required when mode is set to "OCPVersion" and forbidden otherwise.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$')",message="ocpVersion must match the OCP semver compatible format of x.y.z"
+	// +kubebuilder:validation:MaxLength:=10
+	// +kubebuilder:validation:MinLength:=5
+	// +optional
+	OCPVersion string `json:"ocpVersion,omitempty"`
+
+	// rhcosVersion provides a string which represents the RHCOS version of the boot image
+	// This field must match rhcosVersion formatting of [major].[minor].[datestamp(YYYYMMDD)]-[buildnumber] or the legacy
+	// format of [major].[minor].[timestamp(YYYYMMDDHHmm)]-[buildnumber]. This field must be between
+	// 14 and 21 characters long.
+	// Required when mode is set to "RHCOSVersion" and forbidden otherwise.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+\\\\.[0-9]+\\\\.([0-9]{8}|[0-9]{12})-[0-9]+$')",message="rhcosVersion must match format [major].[minor].[datestamp(YYYYMMDD)]-[buildnumber] or must match legacy format [major].[minor].[timestamp(YYYYMMDDHHmm)]-[buildnumber]"
+	// +kubebuilder:validation:MaxLength:=21
+	// +kubebuilder:validation:MinLength:=14
+	// +optional
+	RHCOSVersion string `json:"rhcosVersion,omitempty"`
+}
+
+// ClusterBootImageManualMode is a string enum used to define the cluster's boot image in manual mode.
+// +kubebuilder:validation:Enum:="OCPVersion";"RHCOSVersion"
+type ClusterBootImageManualMode string
+
+const (
+	// OCPVersion represents a configuration mode used to define the OCPVersion.
+	ClusterBootImageSpecModeOCPVersion ClusterBootImageManualMode = "OCPVersion"
+
+	// RHCOSVersion represents a configuration mode used to define the RHCOSVersion.
+	ClusterBootImageSpecModeRHCOSVersion ClusterBootImageManualMode = "RHCOSVersion"
+)
+
+// BootImageSkewEnforcementStatus is the type for the status object. It represents the cluster defaults when
+// the boot image skew enforcement configuration is undefined and reflects the actual configuration when it is defined.
+// +kubebuilder:validation:XValidation:rule="has(self.mode) && (self.mode == 'Automatic') ?  has(self.automatic) : !has(self.automatic)",message="automatic is required when mode is Automatic, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.mode) && (self.mode == 'Manual') ?  has(self.manual) : !has(self.manual)",message="manual is required when mode is Manual, and forbidden otherwise"
+// +union
+type BootImageSkewEnforcementStatus struct {
+	// mode determines the underlying behavior of skew enforcement mechanism.
+	// Valid values are Automatic, Manual and None.
+	// Automatic means that the MCO will perform boot image updates and store the
+	// OCP & RHCOS version associated with the last boot image update in the automatic field.
+	// Manual means that the cluster admin is expected to perform manual boot image updates and store the OCP
+	// & RHCOS version associated with the last boot image update in the manual field.
+	// In Automatic and Manual mode, the MCO will prevent upgrades when the boot image skew exceeds the
+	// skew limit described by the release image.
+	// None means that the MCO will no longer monitor the boot image skew. This may affect
+	// the cluster's ability to scale.
+	// This field is required.
+	// +unionDiscriminator
+	// +required
+	Mode BootImageSkewEnforcementModeStatus `json:"mode,omitempty"`
+
+	// automatic describes the current boot image of the cluster.
+	// This will be populated by the MCO when performing boot image updates. This value will be compared against
+	// the cluster's skew limit to determine skew compliance.
+	// Required when mode is set to "Automatic" and forbidden otherwise.
+	// +optional
+	Automatic ClusterBootImageAutomatic `json:"automatic,omitempty,omitzero"`
+
+	// manual describes the current boot image of the cluster.
+	// This will be populated by the MCO using the values provided in the spec.bootImageSkewEnforcement.manual field.
+	// This value will be compared against the cluster's skew limit to determine skew compliance.
+	// Required when mode is set to "Manual" and forbidden otherwise.
+	// +optional
+	Manual ClusterBootImageManual `json:"manual,omitempty,omitzero"`
+}
+
+// ClusterBootImageAutomatic is used to describe the cluster boot image in Automatic mode. It stores the RHCOS version of the
+// boot image and the OCP release version which shipped with that RHCOS boot image. At least one of these values are required.
+// If ocpVersion and rhcosVersion are defined, both values will be used for checking skew compliance.
+// If only ocpVersion is defined, only that value will be used for checking skew compliance.
+// If only rhcosVersion is defined, only that value will be used for checking skew compliance.
+// +kubebuilder:validation:XValidation:rule="has(self.ocpVersion) || has(self.rhcosVersion)",message="at least one of ocpVersion or rhcosVersion is required"
+// +kubebuilder:validation:MinProperties=1
+type ClusterBootImageAutomatic struct {
+	// ocpVersion provides a string which represents the OCP version of the boot image.
+	// This field must match the OCP semver compatible format of x.y.z. This field must be between
+	// 5 and 10 characters long.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$')",message="ocpVersion must match the OCP semver compatible format of x.y.z"
+	// +kubebuilder:validation:MaxLength:=10
+	// +kubebuilder:validation:MinLength:=5
+	// +optional
+	OCPVersion string `json:"ocpVersion,omitempty"`
+
+	// rhcosVersion provides a string which represents the RHCOS version of the boot image
+	// This field must match rhcosVersion formatting of [major].[minor].[datestamp(YYYYMMDD)]-[buildnumber] or the legacy
+	// format of [major].[minor].[timestamp(YYYYMMDDHHmm)]-[buildnumber]. This field must be between
+	// 14 and 21 characters long.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+\\\\.[0-9]+\\\\.([0-9]{8}|[0-9]{12})-[0-9]+$')",message="rhcosVersion must match format [major].[minor].[datestamp(YYYYMMDD)]-[buildnumber] or must match legacy format [major].[minor].[timestamp(YYYYMMDDHHmm)]-[buildnumber]"
+	// +kubebuilder:validation:MaxLength:=21
+	// +kubebuilder:validation:MinLength:=14
+	// +optional
+	RHCOSVersion string `json:"rhcosVersion,omitempty"`
+}
+
+// BootImageSkewEnforcementConfigMode is a string enum used to configure the cluster's boot image skew enforcement mode.
+// +kubebuilder:validation:Enum:="Manual";"None"
+type BootImageSkewEnforcementConfigMode string
+
+const (
+	// Manual represents a configuration mode that allows manual skew enforcement.
+	BootImageSkewEnforcementConfigModeManual BootImageSkewEnforcementConfigMode = "Manual"
+
+	// None represents a configuration mode that disables boot image skew enforcement.
+	BootImageSkewEnforcementConfigModeNone BootImageSkewEnforcementConfigMode = "None"
+)
+
+// BootImageSkewEnforcementModeStatus is a string enum used to indicate the cluster's boot image skew enforcement mode.
+// +kubebuilder:validation:Enum:="Automatic";"Manual";"None"
+type BootImageSkewEnforcementModeStatus string
+
+const (
+	// Automatic represents a configuration mode that allows automatic skew enforcement.
+	BootImageSkewEnforcementModeStatusAutomatic BootImageSkewEnforcementModeStatus = "Automatic"
+
+	// Manual represents a configuration mode that allows manual skew enforcement.
+	BootImageSkewEnforcementModeStatusManual BootImageSkewEnforcementModeStatus = "Manual"
+
+	// None represents a configuration mode that disables boot image skew enforcement.
+	BootImageSkewEnforcementModeStatusNone BootImageSkewEnforcementModeStatus = "None"
+)
 
 type MachineConfigurationStatus struct {
 	// observedGeneration is the last generation change you've dealt with
@@ -94,7 +282,6 @@ type MachineConfigurationStatus struct {
 
 	// nodeDisruptionPolicyStatus status reflects what the latest cluster-validated policies are,
 	// and will be used by the Machine Config Daemon during future node updates.
-	// +openshift:enable:FeatureGate=NodeDisruptionPolicy
 	// +optional
 	NodeDisruptionPolicyStatus NodeDisruptionPolicyStatus `json:"nodeDisruptionPolicyStatus"`
 
@@ -103,6 +290,16 @@ type MachineConfigurationStatus struct {
 	// +openshift:enable:FeatureGate=ManagedBootImages
 	// +optional
 	ManagedBootImagesStatus ManagedBootImages `json:"managedBootImagesStatus"`
+
+	// bootImageSkewEnforcementStatus reflects what the latest cluster-validated boot image skew enforcement
+	// configuration is and will be used by Machine Config Controller while performing boot image skew enforcement.
+	// When omitted, the MCO has no knowledge of how to enforce boot image skew. When the MCO does not know how
+	// boot image skew should be enforced, cluster upgrades will be blocked until it can either automatically
+	// determine skew enforcement or there is an explicit skew enforcement configuration provided in the
+	// spec.bootImageSkewEnforcement field.
+	// +openshift:enable:FeatureGate=BootImageSkewEnforcement
+	// +optional
+	BootImageSkewEnforcementStatus BootImageSkewEnforcementStatus `json:"bootImageSkewEnforcementStatus,omitempty,omitzero"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -120,6 +317,40 @@ type MachineConfigurationList struct {
 
 	// items contains the items
 	Items []MachineConfiguration `json:"items"`
+}
+
+// IrreconcilableValidationOverridesStorage defines available storage irreconcilable overrides.
+// +kubebuilder:validation:Enum=Disks;FileSystems;Raid
+type IrreconcilableValidationOverridesStorage string
+
+const (
+	// Disks enables changes to the `spec.config.storage.disks` section of MachineConfig CRs.
+	IrreconcilableValidationOverridesStorageDisks IrreconcilableValidationOverridesStorage = "Disks"
+
+	// FileSystems enables changes to the `spec.config.storage.filesystems` section of MachineConfig CRs.
+	IrreconcilableValidationOverridesStorageFileSystems IrreconcilableValidationOverridesStorage = "FileSystems"
+
+	// Raid enables changes to the `spec.config.storage.raid` section of MachineConfig CRs.
+	IrreconcilableValidationOverridesStorageRaid IrreconcilableValidationOverridesStorage = "Raid"
+)
+
+// IrreconcilableValidationOverrides holds the irreconcilable validations overrides to be applied on each rendered
+// MachineConfig generation.
+// +kubebuilder:validation:MinProperties=1
+type IrreconcilableValidationOverrides struct {
+	// storage can be used to allow making irreconcilable changes to the selected sections under the
+	// `spec.config.storage` field of MachineConfig CRs
+	// It must have at least one item, may not exceed 3 items and must not contain duplicates.
+	// Allowed element values are "Disks", "FileSystems", "Raid" and omitted.
+	// When contains "Disks" changes to the `spec.config.storage.disks` section of MachineConfig CRs are allowed.
+	// When contains "FileSystems" changes to the `spec.config.storage.filesystems` section of MachineConfig CRs are allowed.
+	// When contains "Raid" changes to the `spec.config.storage.raid` section of MachineConfig CRs are allowed.
+	// When omitted changes to the `spec.config.storage` section are forbidden.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=3
+	Storage []IrreconcilableValidationOverridesStorage `json:"storage,omitempty,omitzero"`
 }
 
 type ManagedBootImages struct {
