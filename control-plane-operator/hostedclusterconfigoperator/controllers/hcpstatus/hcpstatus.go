@@ -46,6 +46,14 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch clusterversion: %w", err)
 	}
 
+	clusterAuthenticationMapper := func(context.Context, crclient.Object) []reconcile.Request {
+		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: opts.Namespace, Name: opts.HCPName}}}
+	}
+
+	if err := c.Watch(source.Kind[crclient.Object](opts.Manager.GetCache(), &configv1.Authentication{}, handler.EnqueueRequestsFromMapFunc(clusterAuthenticationMapper))); err != nil {
+		return fmt.Errorf("failed to watch authentication: %w", err)
+	}
+
 	return nil
 }
 
@@ -56,6 +64,7 @@ type hcpStatusReconciler struct {
 }
 
 func (h *hcpStatusReconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
 	hcp := &hyperv1.HostedControlPlane{}
 	if err := h.mgtClusterClient.Get(ctx, req.NamespacedName, hcp); err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to get hcp %s: %w", req, err)
@@ -66,9 +75,11 @@ func (h *hcpStatusReconciler) Reconcile(ctx context.Context, req reconcile.Reque
 	}
 
 	if !reflect.DeepEqual(hcp.Status, originalHCP.Status) {
+		log.Info("Updating HCP status with new configuration and version status")
 		if err := h.mgtClusterClient.Status().Update(ctx, hcp); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to update hcp: %w", err)
 		}
+		log.Info("Successfully updated HCP status")
 	}
 
 	return reconcile.Result{}, nil
@@ -162,7 +173,15 @@ func (h *hcpStatusReconciler) reconcile(ctx context.Context, hcp *hyperv1.Hosted
 
 		meta.SetStatusCondition(&hcp.Status.Conditions, hcpCVOCondition)
 	}
-	log.Info("Finished reconciling hosted cluster version conditions")
 
+	var authentication configv1.Authentication
+	if err = h.hostedClusterClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, &authentication); err != nil {
+		return fmt.Errorf("failed to get Authentication resource \"cluster\": %w", err)
+	}
+	hcp.Status.Configuration = &hyperv1.ConfigurationStatus{
+		Authentication: authentication.Status,
+	}
+
+	log.Info("Finished reconciling configuration and version status")
 	return nil
 }
