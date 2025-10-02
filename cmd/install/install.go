@@ -128,6 +128,7 @@ type Options struct {
 	RegistryOverrides                         string
 	RenderNamespace                           bool
 	PlatformsToInstall                        []string
+	ImagePullPolicy                           string
 }
 
 func (o *Options) Validate() error {
@@ -146,6 +147,7 @@ func (o *Options) Validate() error {
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --oidc-storage-provider-s3-secret or --oidc-storage-provider-s3-credentials is supported"))
 	}
+
 	if (len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0) &&
 		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
@@ -217,6 +219,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", opts.HyperShiftImage, "The HyperShift image to deploy")
+	cmd.PersistentFlags().StringVar(&opts.ImagePullPolicy, "image-pull-policy", opts.ImagePullPolicy, "The image pull policy to use for HyperShift operator containers (Always, Never, IfNotPresent). Defaults to IfNotPresent")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", opts.Development, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
@@ -264,6 +267,17 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
+
+	cmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if len(opts.ImagePullPolicy) > 0 {
+			switch opts.ImagePullPolicy {
+			case "Always", "Never", "IfNotPresent":
+			default:
+				return fmt.Errorf("invalid --image-pull-policy: %s (want Always|Never|IfNotPresent)", opts.ImagePullPolicy)
+			}
+		}
+		return nil
+	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -333,6 +347,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.Namespace = "hypershift"
 	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.ImagePullPolicy = "IfNotPresent"
 
 	return opts
 }
@@ -801,6 +816,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
+		ImagePullPolicy:                         opts.ImagePullPolicy,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
