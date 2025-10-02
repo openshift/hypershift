@@ -2290,7 +2290,7 @@ k8s.io/kubelet/config/v1beta1
 k8s.io/pod-security-admission/admission/api
 k8s.io/pod-security-admission/admission/api/v1
 k8s.io/pod-security-admission/api
-# k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e
+# k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 ## explicit; go 1.18
 k8s.io/utils/buffer
 k8s.io/utils/clock
