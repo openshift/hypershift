@@ -30,7 +30,15 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// from hypershift-operator/controllers/nodepool/nodepool_controller.go
+const nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+
+// karpenterNodePoolAnnotationCurrentConfigVersion tracks the current config version for the singleton karpenter hyperv1.NodePool
+const karpenterNodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/karpenterNodePoolCurrentConfigVersion"
 
 func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
 	if !karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) || hcluster.Status.KubeConfig == nil {
@@ -69,8 +77,9 @@ spec:
 
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hyperkarpenterv1.KarpenterNodePool,
-			Namespace: hcluster.Namespace,
+			Name:        hyperkarpenterv1.KarpenterNodePool,
+			Namespace:   hcluster.Namespace,
+			Annotations: map[string]string{},
 		},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: hcluster.Name,
@@ -150,8 +159,32 @@ func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(cpContext con
 		return err
 	}
 
+	currentConfigVersion, ok := hcluster.GetAnnotations()[karpenterNodePoolAnnotationCurrentConfigVersion]
+	if !ok || currentConfigVersion == "" {
+		// annotation is needed in token.Reconcile in order to check for outdated token
+		nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = configGenerator.Hash()
+	} else {
+		nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+	}
+
 	if err := token.Reconcile(cpContext); err != nil {
 		return err
+	}
+
+	// skip updating the annotation if nothing has changed
+	if currentConfigVersion == configGenerator.Hash() {
+		return nil
+	}
+
+	original := hcluster.DeepCopy()
+	if hcluster.Annotations == nil {
+		hcluster.Annotations = make(map[string]string)
+	}
+	hcluster.Annotations[karpenterNodePoolAnnotationCurrentConfigVersion] = configGenerator.Hash()
+	// persists the current config on the hcluster, since the NodePool itself does not actually exist
+	err = r.Patch(cpContext, hcluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+	if err != nil {
+		return fmt.Errorf("failed to patch: %w", err)
 	}
 
 	return nil
