@@ -25,8 +25,13 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
-
+	"k8s.io/utils/set"
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
+)
+
+const (
+	omitEmpty = "omitempty"
+	omitZero  = "omitzero"
 )
 
 // StructFieldTags is used to find information about
@@ -64,7 +69,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(newStructFieldTags()),
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -137,10 +142,12 @@ func extractTagInfo(tag *ast.BasicLit) FieldTagInfo {
 	}
 
 	tagName := tagValues[0]
+	tagSet := set.New[string](tagValues...)
 
 	return FieldTagInfo{
 		Name:      tagName,
-		OmitEmpty: len(tagValues) == 2 && tagValues[1] == "omitempty",
+		OmitEmpty: tagSet.Has(omitEmpty),
+		OmitZero:  tagSet.Has(omitZero),
 		RawValue:  tagValue,
 		Pos:       pos,
 		End:       end,
@@ -158,6 +165,9 @@ type FieldTagInfo struct {
 
 	// OmitEmpty is true if the field has the omitempty option in the json tag.
 	OmitEmpty bool
+
+	// OmitZero is true if the field has the omitzero option in the json tag.
+	OmitZero bool
 
 	// Inline is true if the field has the inline option in the json tag.
 	Inline bool
