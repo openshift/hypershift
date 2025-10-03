@@ -329,7 +329,6 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			}
 		}
 	}
-
 	return nil
 }
 
