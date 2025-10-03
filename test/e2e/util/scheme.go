@@ -6,6 +6,7 @@ import (
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
@@ -22,6 +23,12 @@ var (
 	// the client used by a running HyperShift instance.
 	scheme = hyperapi.Scheme
 )
+
+// Scheme returns the scheme used by e2e test clients
+// Exported for use by framework package
+func Scheme() *runtime.Scheme {
+	return scheme
+}
 
 func init() {
 	_ = operatorsv1.AddToScheme(scheme)
