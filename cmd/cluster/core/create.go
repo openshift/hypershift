@@ -821,7 +821,7 @@ type PlatformCompleter interface {
 // resources to the list that needs to be applied to the cluster for a functional guest cluster.
 type Platform interface {
 	// ApplyPlatformSpecifics decorates the HostedCluster prototype created from common options with platform-
-	// specific values and cAonfigurations.
+	// specific values and configurations.
 	ApplyPlatformSpecifics(*hyperv1.HostedCluster) error
 
 	// GenerateNodePools generates the NodePools that need to exist for this guest cluster to be functional.
