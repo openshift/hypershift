@@ -39,6 +39,9 @@
                     },
                     {
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
+                    },
+                    {
+                        "name": "GCPHCPEnablement"
                     }
                 ],
                 "version": ""
