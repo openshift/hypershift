@@ -46,11 +46,15 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
 	}
 
-	// If the HO oidc s3 credentials are set, use them, otherwise use the creds of the hosted cluster
 	iamClient, s3Client := oidcProviderClients(opts)
 
+	s3Region := opts.HOInstallationOptions.AWSOidcS3Region
+	if s3Region == "" {
+		s3Region = opts.ConfigurableClusterOptions.Region
+	}
+
 	providerID := SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
-	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", opts.ConfigurableClusterOptions.AWSOidcS3BucketName, opts.ConfigurableClusterOptions.Region, providerID)
+	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", opts.ConfigurableClusterOptions.AWSOidcS3BucketName, s3Region, providerID)
 
 	key, err := certs.PrivateKey()
 	if err != nil {
