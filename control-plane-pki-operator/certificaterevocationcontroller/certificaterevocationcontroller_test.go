@@ -1047,6 +1047,9 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 					}
 					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
 				},
+				listPods: func(namespace string, labelSelector string) ([]*corev1.Pod, error) {
+					return nil, nil
+				},
 				skipKASConnections: true,
 			}
 			a, requeue, err := c.processCertificateRevocationRequest(t.Context(), testCase.crrNamespace, testCase.crrName, testCase.now)
