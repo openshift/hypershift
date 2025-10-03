@@ -99,21 +99,21 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	// Check for shared load balancer health probe path annotation (only applies when mode is shared)
-	if path, ok := hcp.Annotations[hyperv1.AzureSharedLoadBalancerHealthProbePathAnnotation]; ok {
+	if path, ok := hcp.Annotations[hyperv1.SharedLoadBalancerHealthProbePathAnnotation]; ok {
 		if probeMode == loadBalancerHealthProbeModeShared {
 			probePath = path
 		}
 	}
 
 	// Check for shared load balancer health probe port annotation (only applies when mode is shared)
-	if portStr, ok := hcp.Annotations[hyperv1.AzureSharedLoadBalancerHealthProbePortAnnotation]; ok {
+	if portStr, ok := hcp.Annotations[hyperv1.SharedLoadBalancerHealthProbePortAnnotation]; ok {
 		if probeMode == loadBalancerHealthProbeModeShared {
 			portNum, err := strconv.Atoi(portStr)
 			if err != nil {
-				return AzureConfig{}, fmt.Errorf("invalid value for annotation %s: %s (must be a valid port number)", hyperv1.AzureSharedLoadBalancerHealthProbePortAnnotation, portStr)
+				return AzureConfig{}, fmt.Errorf("invalid value for annotation %s: %s (must be a valid port number)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portStr)
 			}
 			if portNum < 1 || portNum > 65535 {
-				return AzureConfig{}, fmt.Errorf("invalid value for annotation %s: %d (must be between 1 and 65535)", hyperv1.AzureSharedLoadBalancerHealthProbePortAnnotation, portNum)
+				return AzureConfig{}, fmt.Errorf("invalid value for annotation %s: %d (must be between 1 and 65535)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portNum)
 			}
 			probePort = int32(portNum)
 		}
