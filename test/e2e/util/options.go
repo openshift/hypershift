@@ -502,7 +502,7 @@ func (s *stringMapVar) String() string {
 }
 
 func (s *stringMapVar) Set(value string) error {
-	split := strings.Split(value, "=")
+	split := strings.SplitN(value, "=", 2)
 	if len(split) != 2 {
 		return fmt.Errorf("invalid argument: %s", value)
 	}
