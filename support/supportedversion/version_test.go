@@ -207,6 +207,54 @@ func TestGetMinSupportedVersion(t *testing.T) {
 	}
 	minVer := GetMinSupportedVersion(hc)
 	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("0.0.0").String()))
+
+	// Annotation should override platform-specific minimums as well
+	hcAnnotatedROKS := &hyperv1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "annotated-ROKS",
+			Annotations: map[string]string{
+				hyperv1.SkipReleaseImageValidation: "true",
+			},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.IBMCloudPlatform,
+			},
+		},
+	}
+	minVer = GetMinSupportedVersion(hcAnnotatedROKS)
+	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("0.0.0").String()))
+
+	// Verify minimum supported version for Red Hat OpenShift on IBM (ROKS)
+	hcROKS := &hyperv1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "ROKS",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.IBMCloudPlatform,
+			},
+		},
+	}
+	minVer = GetMinSupportedVersion(hcROKS)
+	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("4.14.0").String()))
+
+	// Verify minimum supported version for non-ROKS.
+	hcAWS := &hyperv1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "AWS",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+	minVer = GetMinSupportedVersion(hcAWS)
+	g.Expect(minVer.String()).To(BeEquivalentTo(semver.MustParse("4.14.0").String()))
 }
 
 func TestGetSupportedOCPVersions(t *testing.T) {
