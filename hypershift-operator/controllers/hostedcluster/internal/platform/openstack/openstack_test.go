@@ -272,6 +272,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 				Replicas: ptr.To[int32](1),
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
+						TerminationGracePeriodSeconds: ptr.To[int64](10),
 						Volumes: []corev1.Volume{
 							{
 								Name: "capi-webhooks-tls",
@@ -279,6 +280,15 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 									Secret: &corev1.SecretVolumeSource{
 										DefaultMode: ptr.To[int32](0640),
 										SecretName:  "capi-webhooks-tls",
+									},
+								},
+							},
+							{
+								Name: "svc-kubeconfig",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										DefaultMode: ptr.To[int32](0640),
+										SecretName:  "service-network-admin-kubeconfig",
 									},
 								},
 							},
@@ -328,6 +338,10 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 									ReadOnly:  true,
 									MountPath: "/tmp/k8s-webhook-server/serving-certs",
 								},
+								{
+									Name:      "svc-kubeconfig",
+									MountPath: "/etc/kubernetes",
+								},
 							},
 							Env: []corev1.EnvVar{
 								{
@@ -366,6 +380,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 				Replicas: ptr.To[int32](1),
 				Template: corev1.PodTemplateSpec{
 					Spec: corev1.PodSpec{
+						TerminationGracePeriodSeconds: ptr.To[int64](10),
 						Volumes: []corev1.Volume{
 							{
 								Name: "capi-webhooks-tls",
@@ -373,6 +388,15 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 									Secret: &corev1.SecretVolumeSource{
 										DefaultMode: ptr.To[int32](0640),
 										SecretName:  "capi-webhooks-tls",
+									},
+								},
+							},
+							{
+								Name: "svc-kubeconfig",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										DefaultMode: ptr.To[int32](0640),
+										SecretName:  "service-network-admin-kubeconfig",
 									},
 								},
 							},
@@ -422,6 +446,10 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 										Name:      "capi-webhooks-tls",
 										ReadOnly:  true,
 										MountPath: "/tmp/k8s-webhook-server/serving-certs",
+									},
+									{
+										Name:      "svc-kubeconfig",
+										MountPath: "/etc/kubernetes",
 									},
 								},
 								Env: []corev1.EnvVar{
