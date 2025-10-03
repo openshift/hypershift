@@ -39,6 +39,9 @@
                     },
                     {
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
+                    },
+                    {
+                        "name": "GCPPlatform"
                     }
                 ],
                 "version": ""
