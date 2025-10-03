@@ -91,6 +91,7 @@ type AuthenticationSpec struct {
 	// +kubebuilder:validation:MaxItems=1
 	// +openshift:enable:FeatureGate=ExternalOIDC
 	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
+	// +optional
 	OIDCProviders []OIDCProvider `json:"oidcProviders,omitempty"`
 }
 
@@ -108,6 +109,7 @@ type AuthenticationStatus struct {
 	// If the config map or expected key is not found, no metadata is served.
 	// If the specified metadata is not valid, no metadata is served.
 	// The namespace for this config map is openshift-config-managed.
+	// +optional
 	IntegratedOAuthMetadata ConfigMapNameReference `json:"integratedOAuthMetadata"`
 
 	// oidcClients is where participating operators place the current OIDC client status
@@ -119,6 +121,7 @@ type AuthenticationStatus struct {
 	// +kubebuilder:validation:MaxItems=20
 	// +openshift:enable:FeatureGate=ExternalOIDC
 	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
+	// +optional
 	OIDCClients []OIDCClientStatus `json:"oidcClients"`
 }
 
@@ -207,7 +210,7 @@ type OIDCProvider struct {
 	Name string `json:"name"`
 
 	// issuer is a required field that configures how the platform interacts
-	// with the identity provider and how tokens issued from the identity provider 
+	// with the identity provider and how tokens issued from the identity provider
 	// are evaluated by the Kubernetes API server.
 	//
 	// +required
@@ -224,11 +227,11 @@ type OIDCProvider struct {
 	// +optional
 	OIDCClients []OIDCClientConfig `json:"oidcClients"`
 
-	// claimMappings is an optional field that configures the rules to be used by
+	// claimMappings is a required field that configures the rules to be used by
 	// the Kubernetes API server for translating claims in a JWT token, issued
 	// by the identity provider, to a cluster identity.
 	//
-	// +optional
+	// +required
 	ClaimMappings TokenClaimMappings `json:"claimMappings"`
 
 	// claimValidationRules is an optional field that configures the rules to
@@ -251,9 +254,16 @@ type TokenIssuer struct {
 	// The Kubernetes API server determines how authentication tokens should be handled
 	// by matching the 'iss' claim in the JWT to the issuerURL of configured identity providers.
 	//
-	// issuerURL must use the 'https' scheme.
+	// Must be at least 1 character and must not exceed 512 characters in length.
+	// Must be a valid URL that uses the 'https' scheme and does not contain a query, fragment or user.
 	//
-	// +kubebuilder:validation:Pattern=`^https:\/\/[^\s]`
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="must be a valid URL"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getScheme() == 'https'",message="must use the 'https' scheme"
+	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getQuery() == {}",message="must not have a query"
+	// +kubebuilder:validation:XValidation:rule="self.find('#(.+)$') == ''",message="must not have a fragment"
+	// +kubebuilder:validation:XValidation:rule="self.find('@') == ''",message="must not have user info"
+	// +kubebuilder:validation:MaxLength=512
+	// +kubebuilder:validation:MinLength=1
 	// +required
 	URL string `json:"issuerURL"`
 
@@ -284,11 +294,11 @@ type TokenIssuer struct {
 }
 
 type TokenClaimMappings struct {
-	// username is an optional field that configures how the username of a cluster identity
+	// username is a required field that configures how the username of a cluster identity
 	// should be constructed from the claims in a JWT token issued by the identity provider.
 	//
-	// +optional
-	Username UsernameClaimMapping `json:"username,omitempty"`
+	// +required
+	Username UsernameClaimMapping `json:"username"`
 
 	// groups is an optional field that configures how the groups of a cluster identity
 	// should be constructed from the claims in a JWT token issued
@@ -318,10 +328,10 @@ type TokenClaimMappings struct {
 	// used to construct the extra attribute for the cluster identity.
 	// When omitted, no extra attributes will be present on the cluster identity.
 	// key values for extra mappings must be unique.
-	// A maximum of 64 extra attribute mappings may be provided.
+	// A maximum of 32 extra attribute mappings may be provided.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:MaxItems=32
 	// +listType=map
 	// +listMapKey=key
 	// +openshift:enable:FeatureGate=ExternalOIDCWithUIDAndExtraClaimMappings
@@ -373,10 +383,10 @@ type TokenClaimOrExpressionMapping struct {
 	// Precisely one of claim or expression must be set.
 	// expression must not be specified when claim is set.
 	// When specified, expression must be at least 1 character in length
-	// and must not exceed 4096 characters in length.
+	// and must not exceed 1024 characters in length.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxLength=4096
+	// +kubebuilder:validation:MaxLength=1024
 	// +kubebuilder:validation:MinLength=1
 	Expression string `json:"expression,omitempty"`
 }
@@ -435,12 +445,12 @@ type ExtraMapping struct {
 	// For example, the 'sub' claim value can be accessed as 'claims.sub'.
 	// Nested claims can be accessed using dot notation ('claims.foo.bar').
 	//
-	// valueExpression must not exceed 4096 characters in length.
+	// valueExpression must not exceed 1024 characters in length.
 	// valueExpression must not be empty.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=4096
+	// +kubebuilder:validation:MaxLength=1024
 	ValueExpression string `json:"valueExpression"`
 }
 
@@ -607,7 +617,16 @@ type OIDCClientReference struct {
 // +kubebuilder:validation:XValidation:rule="has(self.prefixPolicy) && self.prefixPolicy == 'Prefix' ? (has(self.prefix) && size(self.prefix.prefixString) > 0) : !has(self.prefix)",message="prefix must be set if prefixPolicy is 'Prefix', but must remain unset otherwise"
 // +union
 type UsernameClaimMapping struct {
-	TokenClaimMapping `json:",inline"`
+	// claim is a required field that configures the JWT token
+	// claim whose value is assigned to the cluster identity
+	// field associated with this mapping.
+	//
+	// claim must not be an empty string ("") and must not exceed 256 characters.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength:=1
+	// +kubebuilder:validation:MaxLength:=256
+	Claim string `json:"claim"`
 
 	// prefixPolicy is an optional field that configures how a prefix should be
 	// applied to the value of the JWT claim specified in the 'claim' field.
@@ -728,7 +747,7 @@ type TokenClaimValidationRule struct {
 	// JWT is valid for this identity provider.
 	//
 	// +optional
-	RequiredClaim *TokenRequiredClaim `json:"requiredClaim"`
+	RequiredClaim *TokenRequiredClaim `json:"requiredClaim,omitempty"`
 }
 
 type TokenRequiredClaim struct {

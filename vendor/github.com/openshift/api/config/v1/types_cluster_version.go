@@ -83,8 +83,8 @@ type ClusterVersionSpec struct {
 	//
 	// +optional
 	Upstream URL `json:"upstream,omitempty"`
-	// channel is an identifier for explicitly requesting that a non-default
-	// set of updates be applied to this cluster. The default channel will be
+	// channel is an identifier for explicitly requesting a non-default set
+	// of updates to be applied to this cluster. The default channel will
 	// contain stable updates that are appropriate for production clusters.
 	//
 	// +optional
@@ -163,6 +163,7 @@ type ClusterVersionStatus struct {
 	VersionHash string `json:"versionHash"`
 
 	// capabilities describes the state of optional, core cluster components.
+	// +optional
 	Capabilities ClusterVersionCapabilitiesStatus `json:"capabilities"`
 
 	// conditions provides information about the cluster version. The condition
@@ -256,7 +257,7 @@ type UpdateHistory struct {
 
 	// acceptedRisks records risks which were accepted to initiate the update.
 	// For example, it may menition an Upgradeable=False or missing signature
-	// that was overriden via desiredUpdate.force, or an update that was
+	// that was overridden via desiredUpdate.force, or an update that was
 	// initiated despite not being in the availableUpdates set of recommended
 	// update targets.
 	// +optional
