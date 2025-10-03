@@ -1989,6 +1989,28 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		e2eutil.EnsureAllReqServingPodsLandOnReqServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureOnlyRequestServingPodsOnRequestServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureNoHCPPodsLandOnDefaultNode(t, ctx, guestClient, hostedCluster)
+
+		// Test certificate revocation with HA control plane
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "request-serving-isolation", globalOpts.ServiceAccountSigningKey)
 }
 
