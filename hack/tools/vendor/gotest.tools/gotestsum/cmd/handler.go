@@ -26,7 +26,7 @@ type writeSyncer interface {
 	Sync() error
 }
 
-// nolint:errcheck
+//nolint:errcheck
 func (h *eventHandler) Err(text string) error {
 	h.err.WriteString(text)
 	h.err.WriteRune('\n')
@@ -153,6 +153,7 @@ func writeJUnitFile(opts *options, execution *testjson.Execution) error {
 		FormatTestSuiteName:     opts.junitTestSuiteNameFormat.Value(),
 		FormatTestCaseClassname: opts.junitTestCaseClassnameFormat.Value(),
 		HideEmptyPackages:       opts.junitHideEmptyPackages,
+		HideSkippedTests:        opts.junitHideSkippedTests,
 	})
 }
 
