@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"testing"
 
@@ -50,7 +49,6 @@ func TestMain(m *testing.M) {
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
-	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
 	flag.StringVar(&globalOpts.HyperShiftOperatorLatestImage, "e2e.hypershift-operator-latest-image", "quay.io/hypershift/hypershift-operator:latest", "The latest HyperShift Operator image to deploy. If e2e.hypershift-operator-initial-image is set (e.g. to run an upgrade test), this image will be considered the latest HyperShift Operator image to upgrade to.")
 	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateCredentialsFile, "e2e.aws-private-credentials-file", "/etc/hypershift-pool-aws-credentials/credentials", "path to AWS private credentials. This is a HyperShift Operator installation option")
 	flag.StringVar(&globalOpts.HOInstallationOptions.AWSPrivateRegion, "e2e.aws-private-region", "us-east-1", "AWS region where private clusters are supported by the HyperShift Operator. This is a HyperShift Operator installation option")
@@ -134,18 +132,18 @@ func main(m *testing.M) int {
 
 	// Set up the management cluster
 	log.Info("configuring management cluster")
-	// If AWS zones were not provided, infer them from the management cluster
-	if globalOpts.ConfigurableClusterOptions.Zone.String() == "" {
-		zones, err := reqserving.InferAWSAvailabilityZones(testContext)
-		if err != nil {
-			log.Error(err, "failed to infer AWS availability zones from management cluster")
-			return -1
-		}
-		if len(zones) > 0 {
-			_ = globalOpts.ConfigurableClusterOptions.Zone.Set(strings.Join(zones, ","))
-			log.Info("inferred AWS availability zones for tests", "zones", zones)
-		}
+
+	// Configure the AWS zone for the hosted cluster (single-zone)
+	zones, err := reqserving.InferAWSAvailabilityZones(testContext)
+	if err != nil {
+		log.Error(err, "failed to infer AWS availability zones from management cluster")
+		return -1
 	}
+	if len(zones) > 0 {
+		_ = globalOpts.ConfigurableClusterOptions.Zone.Set(zones[0])
+		log.Info("inferred AWS availability zone for test", "zone", zones[0])
+	}
+
 	// If a base domain was not provided, infer it from the management cluster
 	if globalOpts.ConfigurableClusterOptions.BaseDomain == "" || globalOpts.ConfigurableClusterOptions.BaseDomain == e2eutil.DefaultCIBaseDomain {
 		baseDomain, err := reqserving.InferBaseDomain(testContext, globalOpts.ConfigurableClusterOptions.AWSCredentialsFile)

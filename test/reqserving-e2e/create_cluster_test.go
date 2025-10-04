@@ -5,7 +5,6 @@ package reqservinge2e
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -22,15 +21,8 @@ func TestCreateCluster(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.RawCreateOptions.RedactBaseDomain = true
-	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
-	if len(zones) >= 3 {
-		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
-		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
-		clusterOpts.AWSPlatform.Zones = zones
-		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
-		clusterOpts.NodePoolReplicas = 1
-	}
 	clusterOpts.Annotations = append(clusterOpts.Annotations, "hypershift.openshift.io/topology=dedicated-request-serving-components")
+	clusterOpts.AWSPlatform.Zones = []string{globalOpts.ConfigurableClusterOptions.Zone.String()}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 

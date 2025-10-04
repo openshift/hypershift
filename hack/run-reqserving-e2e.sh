@@ -61,7 +61,6 @@ Environment Variables:
   E2E_AWS_OIDC_S3_REGION                AWS S3 region for OIDC provider (default: us-east-1)
   E2E_AWS_OIDC_S3_BUCKET_NAME           AWS S3 bucket name for OIDC provider
   E2E_AWS_REGION                        AWS region for clusters (default: us-east-1)
-  E2E_AWS_ZONES                         AWS zones for clusters (default: us-east-1a,us-east-1b,us-east-1c)
   
   External DNS:
   E2E_EXTERNAL_DNS_PROVIDER             External DNS provider (default: aws)
@@ -157,8 +156,6 @@ TEST_CMD="$TEST_CMD -e2e.aws-oidc-s3-credentials=$E2E_AWS_OIDC_S3_CREDENTIALS"
 TEST_CMD="$TEST_CMD -e2e.aws-oidc-s3-region=$E2E_AWS_OIDC_S3_REGION"
 [[ -n "$E2E_AWS_OIDC_S3_BUCKET_NAME" ]] && TEST_CMD="$TEST_CMD -e2e.aws-oidc-s3-bucket-name=$E2E_AWS_OIDC_S3_BUCKET_NAME"
 TEST_CMD="$TEST_CMD -e2e.aws-region=$E2E_AWS_REGION"
-E2E_AWS_ZONES="${E2E_AWS_ZONES:-}"
-[[ -n "$E2E_AWS_ZONES" ]] && TEST_CMD="$TEST_CMD -e2e.availability-zones=$E2E_AWS_ZONES"
 
 # External DNS flags
 TEST_CMD="$TEST_CMD -e2e.external-dns-provider=$E2E_EXTERNAL_DNS_PROVIDER"
