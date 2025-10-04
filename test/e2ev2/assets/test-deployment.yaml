@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-deployment
+  labels:
+    app: e2e-test-deployment
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: e2e-test-app
+  template:
+    metadata:
+      labels:
+        app: e2e-test-app
+    spec:
+      containers:
+      - name: test-app
+        image: registry.redhat.io/ubi8/ubi-minimal:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Starting test application"
+          echo "Replica: $HOSTNAME"
+          echo "Started at: $(date)"
+          while true; do
+            echo "$(date): Application running on $HOSTNAME"
+            sleep 60
+          done
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - echo "alive"
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - echo "ready"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      restartPolicy: Always
