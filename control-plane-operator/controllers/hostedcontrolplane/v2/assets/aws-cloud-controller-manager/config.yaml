@@ -6,7 +6,9 @@ data:
     VPC = %s
     KubernetesClusterID = %s
     SubnetID = %s
-    ClusterServiceLoadBalancerHealthProbeMode = Shared
+    ClusterServiceLoadBalancerHealthProbeMode = %s
+    ClusterServiceSharedLoadBalancerHealthProbePath = %s
+    ClusterServiceSharedLoadBalancerHealthProbePort = %s
 kind: ConfigMap
 metadata:
   name: aws-cloud-config

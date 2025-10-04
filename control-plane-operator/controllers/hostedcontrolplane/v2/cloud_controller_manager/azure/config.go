@@ -15,7 +15,11 @@ import (
 )
 
 const (
-	ConfigKey = "cloud.conf"
+	ConfigKey                                  = "cloud.conf"
+	loadBalancerHealthProbeModeShared          = "shared"
+	loadBalancerHealthProbeModeServiceNodePort = "servicenodeport"
+	defaultKubeProxyHealthCheckPort            = 10256
+	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -79,6 +83,22 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		return AzureConfig{}, fmt.Errorf("failed to determine vnet name from VnetID: %w", err)
 	}
 
+	probeMode := loadBalancerHealthProbeModeShared
+	if azureplatform.ClusterServiceLoadBalancerHealthProbeMode != "" {
+		if azureplatform.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeShared && azureplatform.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeServiceNodePort {
+			return AzureConfig{}, fmt.Errorf("invalid value for clusterServiceLoadBalancerHealthProbeMode: %s", azureplatform.ClusterServiceLoadBalancerHealthProbeMode)
+		}
+		probeMode = azureplatform.ClusterServiceLoadBalancerHealthProbeMode
+	}
+	probePath := defaultKubeProxyHealthCheckPath
+	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath != "" {
+		probePath = azureplatform.ClusterServiceSharedLoadBalancerHealthProbePath
+	}
+	probePort := int32(defaultKubeProxyHealthCheckPort)
+	if azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort != 0 {
+		probePort = int32(azureplatform.ClusterServiceSharedLoadBalancerHealthProbePort)
+	}
+
 	azureConfig := AzureConfig{
 		Cloud:                        azureplatform.Cloud,
 		TenantID:                     azureplatform.TenantID,
@@ -95,8 +115,10 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		CloudProviderBackoffDuration: 6,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
-		ClusterServiceLoadBalancerHealthProbeMode: "shared",
-		UseInstanceMetadata:                       true,
+		ClusterServiceLoadBalancerHealthProbeMode:       probeMode,
+		ClusterServiceSharedLoadBalancerHealthProbePath: probePath,
+		ClusterServiceSharedLoadBalancerHealthProbePort: probePort,
+		UseInstanceMetadata:                             true,
 	}
 
 	// Configure authentication method based on platform type
@@ -132,23 +154,25 @@ type AzureConfig struct {
 	SubscriptionID                        string `json:"subscriptionId"`
 	AADClientID                           string `json:"aadClientId"`
 	// TODO HOSTEDCP-1542 - Bryan - drop client secret once we have WorkloadIdentity working
-	AADClientSecret                           string `json:"aadClientSecret"`
-	AADClientCertPath                         string `json:"aadClientCertPath"`
-	AADFederatedTokenFile                     string `json:"aadFederatedTokenFile"`
-	AADMSIDataPlaneIdentityPath               string `json:"aadMSIDataPlaneIdentityPath"`
-	ResourceGroup                             string `json:"resourceGroup"`
-	Location                                  string `json:"location"`
-	VnetName                                  string `json:"vnetName"`
-	VnetResourceGroup                         string `json:"vnetResourceGroup"`
-	SubnetName                                string `json:"subnetName"`
-	SecurityGroupName                         string `json:"securityGroupName"`
-	SecurityGroupResourceGroup                string `json:"securityGroupResourceGroup"`
-	RouteTableName                            string `json:"routeTableName"`
-	CloudProviderBackoff                      bool   `json:"cloudProviderBackoff"`
-	CloudProviderBackoffDuration              int    `json:"cloudProviderBackoffDuration"`
-	UseInstanceMetadata                       bool   `json:"useInstanceMetadata"`
-	LoadBalancerSku                           string `json:"loadBalancerSku"`
-	DisableOutboundSNAT                       bool   `json:"disableOutboundSNAT"`
-	LoadBalancerName                          string `json:"loadBalancerName"`
-	ClusterServiceLoadBalancerHealthProbeMode string `json:"clusterServiceLoadBalancerHealthProbeMode"`
+	AADClientSecret                                 string `json:"aadClientSecret"`
+	AADClientCertPath                               string `json:"aadClientCertPath"`
+	AADFederatedTokenFile                           string `json:"aadFederatedTokenFile"`
+	AADMSIDataPlaneIdentityPath                     string `json:"aadMSIDataPlaneIdentityPath"`
+	ResourceGroup                                   string `json:"resourceGroup"`
+	Location                                        string `json:"location"`
+	VnetName                                        string `json:"vnetName"`
+	VnetResourceGroup                               string `json:"vnetResourceGroup"`
+	SubnetName                                      string `json:"subnetName"`
+	SecurityGroupName                               string `json:"securityGroupName"`
+	SecurityGroupResourceGroup                      string `json:"securityGroupResourceGroup"`
+	RouteTableName                                  string `json:"routeTableName"`
+	CloudProviderBackoff                            bool   `json:"cloudProviderBackoff"`
+	CloudProviderBackoffDuration                    int    `json:"cloudProviderBackoffDuration"`
+	UseInstanceMetadata                             bool   `json:"useInstanceMetadata"`
+	LoadBalancerSku                                 string `json:"loadBalancerSku"`
+	DisableOutboundSNAT                             bool   `json:"disableOutboundSNAT"`
+	LoadBalancerName                                string `json:"loadBalancerName"`
+	ClusterServiceLoadBalancerHealthProbeMode       string `json:"clusterServiceLoadBalancerHealthProbeMode"`
+	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath"`
+	ClusterServiceSharedLoadBalancerHealthProbePort int32  `json:"clusterServiceSharedLoadBalancerHealthProbePort"`
 }

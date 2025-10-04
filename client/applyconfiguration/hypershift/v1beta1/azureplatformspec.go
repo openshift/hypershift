@@ -20,15 +20,18 @@ package v1beta1
 // AzurePlatformSpecApplyConfiguration represents a declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
-	Cloud                     *string                                             `json:"cloud,omitempty"`
-	Location                  *string                                             `json:"location,omitempty"`
-	ResourceGroupName         *string                                             `json:"resourceGroup,omitempty"`
-	VnetID                    *string                                             `json:"vnetID,omitempty"`
-	SubnetID                  *string                                             `json:"subnetID,omitempty"`
-	SubscriptionID            *string                                             `json:"subscriptionID,omitempty"`
-	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
-	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
-	TenantID                  *string                                             `json:"tenantID,omitempty"`
+	Cloud                                           *string                                             `json:"cloud,omitempty"`
+	Location                                        *string                                             `json:"location,omitempty"`
+	ResourceGroupName                               *string                                             `json:"resourceGroup,omitempty"`
+	VnetID                                          *string                                             `json:"vnetID,omitempty"`
+	SubnetID                                        *string                                             `json:"subnetID,omitempty"`
+	SubscriptionID                                  *string                                             `json:"subscriptionID,omitempty"`
+	SecurityGroupID                                 *string                                             `json:"securityGroupID,omitempty"`
+	AzureAuthenticationConfig                       *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
+	TenantID                                        *string                                             `json:"tenantID,omitempty"`
+	ClusterServiceLoadBalancerHealthProbeMode       *string                                             `json:"clusterServiceLoadBalancerHealthProbeMode,omitempty"`
+	ClusterServiceSharedLoadBalancerHealthProbePort *int32                                              `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
+	ClusterServiceSharedLoadBalancerHealthProbePath *string                                             `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -106,5 +109,29 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithClusterServiceLoadBalancerHealthProbeMode sets the ClusterServiceLoadBalancerHealthProbeMode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceLoadBalancerHealthProbeMode field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithClusterServiceLoadBalancerHealthProbeMode(value string) *AzurePlatformSpecApplyConfiguration {
+	b.ClusterServiceLoadBalancerHealthProbeMode = &value
+	return b
+}
+
+// WithClusterServiceSharedLoadBalancerHealthProbePort sets the ClusterServiceSharedLoadBalancerHealthProbePort field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceSharedLoadBalancerHealthProbePort field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithClusterServiceSharedLoadBalancerHealthProbePort(value int32) *AzurePlatformSpecApplyConfiguration {
+	b.ClusterServiceSharedLoadBalancerHealthProbePort = &value
+	return b
+}
+
+// WithClusterServiceSharedLoadBalancerHealthProbePath sets the ClusterServiceSharedLoadBalancerHealthProbePath field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceSharedLoadBalancerHealthProbePath field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithClusterServiceSharedLoadBalancerHealthProbePath(value string) *AzurePlatformSpecApplyConfiguration {
+	b.ClusterServiceSharedLoadBalancerHealthProbePath = &value
 	return b
 }
