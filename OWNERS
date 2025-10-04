@@ -10,12 +10,18 @@ filters:
   "^\\.tekton/.*":
     approvers:
     - konflux-approvers
-  # KubeVirt specific OWNERS
+  # KubeVirt-specific OWNERS
   "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*kubevirt.*/.*":
     approvers:
     - kubevirt-approvers
     reviewers:
     - kubevirt-reviewers
+  # OpenStack-specific OWNERS
+  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*openstack.*/.*":
+    approvers:
+    - openstack-approvers
+    reviewers:
+    - openstack-reviewers
   "^test/integration/.*":
     approvers:
     - tech-leads
