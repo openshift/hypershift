@@ -1,20 +1,12 @@
-# github.com/aws/aws-sdk-go-v2 v1.38.0
+# github.com/aws/aws-sdk-go-v2 v1.39.2
 ## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3
+# github.com/aws/aws-sdk-go-v2/service/ec2 v1.254.1
 ## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3
+# github.com/aws/aws-sdk-go-v2/service/eks v1.74.2
 ## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0
+# github.com/aws/aws-sdk-go-v2/service/sqs v1.42.8
 ## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/eks v1.64.0
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.3
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8
-## explicit; go 1.22
-# github.com/aws/aws-sdk-go-v2/service/ssm v1.59.1
+# github.com/aws/aws-sdk-go-v2/service/ssm v1.65.1
 ## explicit; go 1.22
 # github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 ## explicit; go 1.23.6
