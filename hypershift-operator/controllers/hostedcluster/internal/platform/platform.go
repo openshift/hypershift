@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/agent"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/azure"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
@@ -35,6 +36,7 @@ const (
 
 var _ Platform = aws.AWS{}
 var _ Platform = azure.Azure{}
+var _ Platform = gcp.GCP{}
 var _ Platform = ibmcloud.IBMCloud{}
 var _ Platform = none.None{}
 var _ Platform = agent.Agent{}
@@ -152,6 +154,9 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			}
 		}
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
+	case hyperv1.GCPPlatform:
+		// GCP uses non-automated machine management (no CAPI provider support yet)
+		platform = &gcp.GCP{}
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
