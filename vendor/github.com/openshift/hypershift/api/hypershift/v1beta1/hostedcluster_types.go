@@ -1159,6 +1159,9 @@ const (
 
 	// OpenStackPlatform represents OpenStack infrastructure.
 	OpenStackPlatform PlatformType = "OpenStack"
+
+	// GCPPlatform represents Google Cloud Platform infrastructure.
+	GCPPlatform PlatformType = "GCP"
 )
 
 // List all PlatformType instances
@@ -1172,6 +1175,7 @@ func PlatformTypes() []PlatformType {
 		AzurePlatform,
 		PowerVSPlatform,
 		OpenStackPlatform,
+		GCPPlatform,
 	}
 }
 
@@ -1184,7 +1188,7 @@ type PlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
 	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None
-	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack
+	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack;GCPPlatform,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack;GCP
 	// +required
 	Type PlatformType `json:"type"`
 
@@ -1225,6 +1229,12 @@ type PlatformSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=OpenStack
 	OpenStack *OpenStackPlatformSpec `json:"openstack,omitempty"`
+
+	// gcp specifies configuration for clusters running on Google Cloud Platform.
+	// +optional
+	// +immutable
+	// +openshift:enable:FeatureGate=GCPPlatform
+	GCP *GCPPlatformSpec `json:"gcp,omitempty"`
 }
 
 // IBMCloudPlatformSpec defines IBMCloud specific settings for components

@@ -4872,6 +4872,32 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                  gcp:
+                    description: gcp specifies configuration for clusters running
+                      on Google Cloud Platform.
+                    properties:
+                      project:
+                        description: project is the GCP project ID.
+                        maxLength: 63
+                        type: string
+                      region:
+                        description: region is the GCP region in which the cluster
+                          resides.
+                        maxLength: 255
+                        type: string
+                      resourceTags:
+                        description: |-
+                          resourceTags are additional tags to apply to GCP resources created for the cluster.
+                          GCP supports a maximum of 50 tags per resource.
+                        items:
+                          maxLength: 255
+                          type: string
+                        maxItems: 50
+                        type: array
+                    required:
+                    - project
+                    - region
+                    type: object
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -5817,6 +5843,7 @@ spec:
                     - PowerVS
                     - None
                     - OpenStack
+                    - GCP
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:

@@ -5626,6 +5626,59 @@ which contain any of the given tags will be excluded from the result.</p>
 </tr>
 </tbody>
 </table>
+###GCPPlatformSpec { #hypershift.openshift.io/v1beta1.GCPPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>GCPPlatformSpec specifies configuration for clusters running on Google Cloud Platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>project</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>project is the GCP project ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the GCP region in which the cluster resides.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceTags</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceTags are additional tags to apply to GCP resources created for the cluster.
+GCP supports a maximum of 50 tags per resource.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
 (<em>Appears on:</em>
@@ -10651,6 +10704,20 @@ OpenStackPlatformSpec
 <p>openstack specifies configuration for clusters running on OpenStack.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>gcp</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">
+GCPPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gcp specifies configuration for clusters running on Google Cloud Platform.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
@@ -10711,6 +10778,9 @@ AWSPlatformStatus
 </td>
 </tr><tr><td><p>&#34;Azure&#34;</p></td>
 <td><p>AzurePlatform represents Azure infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;GCP&#34;</p></td>
+<td><p>GCPPlatform represents Google Cloud Platform infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
