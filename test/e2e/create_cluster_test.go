@@ -17,6 +17,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -2227,4 +2228,173 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 		}
 	}
 
+}
+
+// TestCreateClusterKubeVirtStorageDriver creates a KubeVirt cluster with storage class mappings
+// and validates that the driver-config ConfigMap has consistent ordering.
+// This test validates the fix for OCPBUGS-61245 where the ConfigMap was flapping due to
+// random map iteration order.
+func TestCreateClusterKubeVirtStorageDriver(t *testing.T) {
+	t.Parallel()
+
+	if globalOpts.Platform != hyperv1.KubevirtPlatform {
+		t.Skip("test only supported on platform KubeVirt")
+	}
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+	// Configure the cluster with storage class mappings equivalent to:
+	// --infra-storage-class-mapping=gp3-csi/gp3-csi
+	// --infra-storage-class-mapping=a-gp3-csi/a-gp3-csi
+	// --infra-volumesnapshot-class-mapping=csi-aws-vsc/csi-aws-vsc
+	// --infra-volumesnapshot-class-mapping=a-csi-aws-vsc/a-csi-aws-vsc
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		if hc, ok := o.(*hyperv1.HostedCluster); ok {
+			if hc.Spec.Platform.Kubevirt == nil {
+				hc.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{}
+			}
+			if hc.Spec.Platform.Kubevirt.StorageDriver == nil {
+				hc.Spec.Platform.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{}
+			}
+			hc.Spec.Platform.Kubevirt.StorageDriver.Type = hyperv1.ManualKubevirtStorageDriverConfigType
+			hc.Spec.Platform.Kubevirt.StorageDriver.Manual = &hyperv1.KubevirtManualStorageDriverConfig{
+				StorageClassMapping: []hyperv1.KubevirtStorageClassMapping{
+					{
+						InfraStorageClassName: "gp3-csi",
+						GuestStorageClassName: "gp3-csi",
+					},
+					{
+						InfraStorageClassName: "a-gp3-csi",
+						GuestStorageClassName: "a-gp3-csi",
+					},
+				},
+				VolumeSnapshotClassMapping: []hyperv1.KubevirtVolumeSnapshotClassMapping{
+					{
+						InfraVolumeSnapshotClassName: "csi-aws-vsc",
+						GuestVolumeSnapshotClassName: "csi-aws-vsc",
+					},
+					{
+						InfraVolumeSnapshotClassName: "a-csi-aws-vsc",
+						GuestVolumeSnapshotClassName: "a-csi-aws-vsc",
+					},
+				},
+			}
+		}
+	}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Import the verification logic from kubevirt_storage_driver_test.go
+		verifyDriverConfigOrdering(t, ctx, g, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "kubevirt-storage-driver-config", globalOpts.ServiceAccountSigningKey)
+}
+
+// verifyDriverConfigOrdering validates that the driver-config ConfigMap has consistent ordering
+func verifyDriverConfigOrdering(t *testing.T, ctx context.Context, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	// Get the hosted control plane namespace
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+	// Get the driver-config ConfigMap name
+	driverConfigName := "driver-config"
+
+	t.Logf("Waiting for driver-config ConfigMap to exist in namespace %s", hcpNamespace)
+	e2eutil.EventuallyObject(
+		t, ctx, fmt.Sprintf("driver-config ConfigMap to exist in %s", hcpNamespace),
+		func(ctx context.Context) (*corev1.ConfigMap, error) {
+			cm := &corev1.ConfigMap{}
+			err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: driverConfigName}, cm)
+			return cm, err
+		},
+		[]e2eutil.Predicate[*corev1.ConfigMap]{
+			func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+				if cm.Data == nil || cm.Data["infraStorageClassEnforcement"] == "" {
+					return false, "ConfigMap data not populated yet", nil
+				}
+				return true, "", nil
+			},
+		},
+	)
+
+	// Capture the initial ConfigMap content
+	initialCM := &corev1.ConfigMap{}
+	err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: driverConfigName}, initialCM)
+	g.Expect(err).ShouldNot(HaveOccurred())
+	initialContent := initialCM.Data["infraStorageClassEnforcement"]
+
+	t.Logf("Initial driver-config content:\n%s", initialContent)
+
+	// Verify the content has proper alphabetical ordering
+	verifyContentOrderingCreateCluster(t, g, initialContent)
+
+	// Wait and check multiple times to ensure the content doesn't flap
+	// We'll check 5 times over 30 seconds to ensure consistency
+	t.Log("Verifying ConfigMap content remains consistent across multiple reconciliations")
+	for i := 0; i < 5; i++ {
+		time.Sleep(6 * time.Second)
+
+		currentCM := &corev1.ConfigMap{}
+		err := mgtClient.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: driverConfigName}, currentCM)
+		g.Expect(err).ShouldNot(HaveOccurred())
+
+		currentContent := currentCM.Data["infraStorageClassEnforcement"]
+
+		// The content should be exactly the same as the initial content
+		if currentContent != initialContent {
+			t.Errorf("ConfigMap content changed on check %d.\nInitial:\n%s\n\nCurrent:\n%s",
+				i+1, initialContent, currentContent)
+		}
+
+		t.Logf("Check %d: ConfigMap content is consistent", i+1)
+	}
+
+	t.Log("Successfully verified driver-config ConfigMap has consistent ordering")
+}
+
+// verifyContentOrderingCreateCluster checks that the ConfigMap content has alphabetically sorted elements
+func verifyContentOrderingCreateCluster(t *testing.T, g Gomega, content string) {
+	// Check that the content contains sorted elements
+	// The allowList should be alphabetically sorted
+	if strings.Contains(content, "allowList:") {
+		t.Log("Verifying allowList is alphabetically sorted")
+		// Extract the allowList line
+		lines := strings.Split(content, "\n")
+		for _, line := range lines {
+			if strings.HasPrefix(line, "allowList:") {
+				// The format is "allowList: [item1, item2, item3]"
+				listPart := strings.TrimPrefix(line, "allowList:")
+				listPart = strings.Trim(listPart, " []")
+				if listPart != "" {
+					items := strings.Split(listPart, ", ")
+					// Verify items are sorted
+					for i := 1; i < len(items); i++ {
+						if items[i-1] > items[i] {
+							t.Errorf("allowList is not sorted: %s comes after %s", items[i-1], items[i])
+						}
+					}
+					t.Logf("allowList is properly sorted: [%s]", listPart)
+				}
+				break
+			}
+		}
+	}
+
+	// Check that storage snapshot mappings are present and properly formatted
+	if strings.Contains(content, "storageSnapshotMapping:") {
+		t.Log("Found storageSnapshotMapping in ConfigMap")
+
+		// Verify that storageClasses and volumeSnapshotClasses keys are lowercase
+		// (as enforced by the byte replacement in the code)
+		g.Expect(content).Should(ContainSubstring("storageClasses:"),
+			"storageClasses key should be lowercase")
+		g.Expect(content).Should(ContainSubstring("volumeSnapshotClasses:"),
+			"volumeSnapshotClasses key should be lowercase")
+
+		// Should not contain uppercase versions
+		g.Expect(content).ShouldNot(ContainSubstring("StorageClasses:"),
+			"StorageClasses should not be uppercase")
+		g.Expect(content).ShouldNot(ContainSubstring("VolumeSnapshotClasses:"),
+			"VolumeSnapshotClasses should not be uppercase")
+	}
 }
