@@ -24,6 +24,8 @@ spec:
     value: '{{source_url}}'
   - name: revision
     value: '{{revision}}'
+  - name: target-branch
+    value: '{{target_branch}}'
   - name: output-image
     value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-main:{{revision}}
   - name: build-platforms
@@ -124,6 +126,10 @@ spec:
         set of values is determined by the configuration of the multi-platform-controller.
       name: build-platforms
       type: array
+    - default: ""
+      description: Target branch reference from git
+      name: target-branch
+      type: string
     results:
     - description: ""
       name: IMAGE_URL
@@ -559,14 +565,51 @@ spec:
         operator: in
         values:
         - "false"
+    - name: extract-tag
+      params:
+      - name: ociStorage
+        value: $(params.output-image).script
+      - name: ociArtifactExpiresAfter
+        value: $(params.image-expires-after)
+      - name: SCRIPT_RUNNER_IMAGE
+        value: 'registry.access.redhat.com/ubi10/ubi:10.0-1753787353'
+      - name: HERMETIC
+        value: $(params.hermetic)
+      - name: SOURCE_ARTIFACT
+        value: $(tasks.prefetch-dependencies.results.SOURCE_ARTIFACT)
+      - name: SCRIPT
+        value: |
+            #!/bin/bash
+            set -euo pipefail
+            TARGET_BRANCH="$(params.target-branch)"
+            TAG_NAME="${TARGET_BRANCH##*/}"
+            echo "Input target branch: ${TARGET_BRANCH}"
+            echo "Extracted tag name: ${TAG_NAME}"
+            [ -n "${TAG_NAME}" ] || { echo "ERROR: empty tag name"; exit 1; }
+            echo -n "${TAG_NAME}" | tee "${SCRIPT_OUTPUT}"
+      runAfter:
+      - prefetch-dependencies
+      taskRef:
+        params:
+        - name: name
+          value: run-script-oci-ta
+        - name: bundle
+          value: quay.io/konflux-ci/tekton-catalog/task-run-script-oci-ta:0.1@sha256:834a934f1e631a79aea7f2d001162cf90086e664e648c8ca15b69ad9798571ee
+        - name: kind
+          value: task
+        resolver: bundles
     - name: apply-tags
       params:
       - name: IMAGE_URL
         value: $(tasks.build-image-index.results.IMAGE_URL)
       - name: IMAGE_DIGEST
         value: $(tasks.build-image-index.results.IMAGE_DIGEST)
+      - name: ADDITIONAL_TAGS
+        value:
+        - $(tasks.extract-tag.results.SCRIPT_OUTPUT)
       runAfter:
       - build-image-index
+      - extract-tag
       taskRef:
         params:
         - name: name
