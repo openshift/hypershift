@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -3701,6 +3702,25 @@ func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, 
 	return false
 }
 
+// hasAzureCSIDriverUIDSupport checks if the hosted cluster supports Azure CSI driver UID security context.
+// CSI driver UID support was added in 4.21.
+func hasAzureCSIDriverUIDSupport(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) bool {
+	pullSecret, err := hyperutil.GetPullSecretBytes(ctx, client, hostedCluster)
+	if err != nil {
+		t.Logf("Warning: Failed to get pull secret for Azure CSI driver version check: %v. Assuming no UID support.", err)
+		return false
+	}
+
+	releaseProvider := releaseinfo.RegistryClientProvider{}
+	version, err := hyperutil.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
+	if err != nil {
+		t.Logf("Warning: Failed to get payload version for Azure CSI driver UID support check: %v. Assuming no UID support.", err)
+		return false
+	}
+
+	return version.GTE(Version421)
+}
+
 // EnsureSecurityContextUID validates that all pods in the control plane namespace have the expected SecurityContext UID.
 // TestCreateClusterDefaultSecurityContextUID ensures uniqueness across namespaces.
 func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -3718,6 +3738,8 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 		expectedUID, err := strconv.ParseInt(uid, 10, 64)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't parse SCC UID", controlPlaneNamespace.Name, uid)
 
+		skipAzureCSI := !hasAzureCSIDriverUIDSupport(t, ctx, client, hostedCluster)
+
 		var podList corev1.PodList
 		err = client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespaceName})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", controlPlaneNamespace)
@@ -3727,10 +3749,10 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 			// Skip pods that are known exceptions for SecurityContext UID validation
 			name := pod.Name
 			switch {
-			case strings.HasPrefix(name, "azure-disk-csi-driver-controller"),
-				strings.HasPrefix(name, "azure-file-csi-driver-controller"),
-				strings.HasPrefix(name, "azure-disk-csi-driver-operator"),
-				strings.HasPrefix(name, "azure-file-csi-driver-operator"),
+			case strings.HasPrefix(name, "azure-disk-csi-driver-controller") && skipAzureCSI,
+				strings.HasPrefix(name, "azure-file-csi-driver-controller") && skipAzureCSI,
+				strings.HasPrefix(name, "azure-disk-csi-driver-operator") && skipAzureCSI,
+				strings.HasPrefix(name, "azure-file-csi-driver-operator") && skipAzureCSI,
 				strings.HasPrefix(name, "network-node-identity"),
 				strings.HasPrefix(name, "ovnkube-control-plane"):
 				continue
