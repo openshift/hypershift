@@ -22,6 +22,33 @@ generate_junit() {
 }
 trap generate_junit EXIT
 
+if [[ "${PLATFORM:-}" != "aws" && "${PLATFORM:-}" != "AWS" ]]; then
+  echo "Not running on AWS platform, skipping AWS-specific resources."
+else
+  oc apply -f - <<EOF
+---
+allowVolumeExpansion: true
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: a-gp3-csi
+parameters:
+  encrypted: "true"
+  type: gp3
+provisioner: ebs.csi.aws.com
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: snapshot.storage.k8s.io/v1
+deletionPolicy: Delete
+driver: ebs.csi.aws.com
+kind: VolumeSnapshotClass
+metadata:
+  name: a-csi-aws-vsc
+EOF
+fi
+
+
 bin/test-e2e "$@"| tee /tmp/test_out &
 
 wait $!
