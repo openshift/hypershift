@@ -227,7 +227,7 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 			},
 		},
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
-		Tags:                     openshiftEC2NodeClass.Spec.Tags,
+		Tags:                     mergeEC2NodeClassTags(openshiftEC2NodeClass, hcp),
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
@@ -441,4 +441,24 @@ func (r *EC2NodeClassReconciler) mapToOpenShiftEC2NodeClasses(ctx context.Contex
 	}
 
 	return requests
+}
+
+// mergeEC2NodeClassTags merges platform tags from HostedControlPlane with OpenshiftEC2NodeClass tags
+// Platform tags take precedence over nodeclass tags in case of conflicts
+func mergeEC2NodeClassTags(openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane) map[string]string {
+	tags := make(map[string]string)
+
+	// First add nodeclass tags
+	for k, v := range openshiftEC2NodeClass.Spec.Tags {
+		tags[k] = v
+	}
+
+	// Then add platform tags (these will override any conflicts)
+	if hcp.Spec.Platform.AWS != nil {
+		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+			tags[tag.Key] = tag.Value
+		}
+	}
+
+	return tags
 }

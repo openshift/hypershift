@@ -42,11 +42,13 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 	testCases := []struct {
 		name         string
 		spec         hyperkarpenterv1.OpenshiftEC2NodeClassSpec
+		hcp          *hyperv1.HostedControlPlane
 		expectedSpec awskarpenterv1.EC2NodeClassSpec
 	}{
 		{
 			name: "When OpenshiftEC2NodeClassSpec.spec is empty it should reconcile the EC2NodeClass with default values",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			hcp:  hcp,
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
@@ -62,6 +64,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						},
 					},
 				},
+				Tags: map[string]string{},
 			},
 		},
 		{
@@ -99,6 +102,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				InstanceStorePolicy: ptr.To(hyperkarpenterv1.InstanceStorePolicyRAID0),
 				DetailedMonitoring:  ptr.To(true),
 			},
+			hcp: hcp,
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
@@ -133,6 +137,94 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				DetailedMonitoring:  ptr.To(true),
 			},
 		},
+		{
+			name: "when platform tags exist in HostedControlPlane, they should be merged with nodeclass tags with platform tags taking precedence",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Tags: map[string]string{
+					"nodeclass-tag":   "nodeclass-value",
+					"conflicting-tag": "nodeclass-value", // This should be overridden by platform tag
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-managed", Value: "true"},
+								{Key: "red-hat-clustertype", Value: "rosa"},
+								{Key: "conflicting-tag", Value: "platform-value"},
+							},
+						},
+					},
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": "test-infra",
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": "test-infra",
+						},
+					},
+				},
+				Tags: map[string]string{
+					"nodeclass-tag":       "nodeclass-value",
+					"conflicting-tag":     "platform-value", // Platform tag wins
+					"red-hat-managed":     "true",
+					"red-hat-clustertype": "rosa",
+				},
+			},
+		},
+		{
+			name: "when nodeclass has conflicting red-hat-clustertype tag, platform tag should take precedence",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Tags: map[string]string{
+					"red-hat-clustertype": "some-other-value", // This should be overridden by platform tag
+					"nodeclass-only-tag":  "nodeclass-value",
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "rosa"}, // This should override nodeclass tag
+								{Key: "red-hat-managed", Value: "true"},
+							},
+						},
+					},
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": "test-infra",
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": "test-infra",
+						},
+					},
+				},
+				Tags: map[string]string{
+					"red-hat-clustertype": "rosa",            // Platform tag won over nodeclass tag
+					"red-hat-managed":     "true",            // Platform tag added
+					"nodeclass-only-tag":  "nodeclass-value", // Nodeclass tag preserved
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -143,7 +235,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: tc.spec,
 			}
 			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
-			err := reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
+			err := reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, tc.hcp, userDataSecret)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Verify basic fields, those fields should be the same regardless of OpenshiftEC2NodeClass spec.
