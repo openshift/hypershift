@@ -86,6 +86,7 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
+// +kubebuilder:validation:XValidation:rule="!has(self.autoScaling) || self.autoScaling.min > 0 || has(self.platform.aws)", message="Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
@@ -431,9 +432,11 @@ type NodePoolManagement struct {
 // NodePoolAutoScaling specifies auto-scaling behavior for a NodePool.
 // +kubebuilder:validation:XValidation:rule="self.max >= self.min", message="max must be equal or greater than min"
 type NodePoolAutoScaling struct {
-	// min is the minimum number of nodes to maintain in the pool. Must be >= 1 and <= .Max.
+	// min is the minimum number of nodes to maintain in the pool.
+	// Can be set to 0 for scale-from-zero.
+	// Must be >= 0 and <= .Max.
 	//
-	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Minimum=0
 	// +required
 	Min int32 `json:"min"`
 
