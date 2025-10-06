@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -67,6 +68,8 @@ func TestAutoscaling(t *testing.T) {
 		t.Run("TestAutoscaling", testAutoscaling(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas, clusterOpts.NodePoolReplicas+2))
 
 		t.Run("TestAutoscalingBalancing", testAutoscalingBalancing(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas*2, additionalNP))
+
+		t.Run("TestScaleFromZero", testScaleFromZero(ctx, mgtClient, hostedCluster))
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
 
 }
@@ -366,4 +369,104 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 		}
 	}
 	return job
+}
+
+func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Create a new NodePool with Min=0 autoscaling
+		scaleFromZeroNP := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "scale-from-zero",
+				Namespace: hostedCluster.Namespace,
+			},
+		}
+
+		// Get an existing nodepool to copy its spec
+		nodepools := &hyperv1.NodePoolList{}
+		if err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace)); err != nil {
+			t.Fatalf("failed to list nodepools in namespace %s: %v", hostedCluster.Namespace, err)
+		}
+		if len(nodepools.Items) == 0 {
+			t.Fatalf("expected at least one nodepool, got %d", len(nodepools.Items))
+		}
+
+		// Copy spec from existing nodepool but set autoscaling with Min=0
+		nodepools.Items[0].Spec.DeepCopyInto(&scaleFromZeroNP.Spec)
+		scaleFromZeroNP.Spec.Replicas = nil
+		scaleFromZeroNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+			Min: 0, // Test scale-from-zero capability
+			Max: 2,
+		}
+
+		// Create the scale-from-zero NodePool
+		err := mgtClient.Create(ctx, scaleFromZeroNP)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero nodepool")
+		t.Logf("Created scale-from-zero NodePool with Min=0, Max=2")
+
+		defer func() {
+			// Clean up the nodepool
+			if err := mgtClient.Delete(ctx, scaleFromZeroNP); err != nil {
+				t.Logf("failed to delete scale-from-zero nodepool: %v", err)
+			}
+		}()
+
+		// Wait for NodePool to be ready (with 0 nodes initially)
+		g.Eventually(func(g Gomega) {
+			np := &hyperv1.NodePool{}
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), np)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(np.Status.Replicas).To(Equal(int32(0)), "NodePool should start with 0 replicas")
+		}, 2*time.Minute, 15*time.Second).Should(Succeed())
+
+		t.Logf("Verified NodePool starts with 0 replicas")
+
+		// Get guest client to create workload
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		// Create a workload that requires scheduling
+		workload := newWorkLoad(1, resource.MustParse("100Mi"), "", globalOpts.LatestReleaseImage)
+		workload.Name = "scale-from-zero-workload"
+		err = guestClient.Create(ctx, workload)
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("Created workload to trigger scale-from-zero")
+
+		defer func() {
+			// Clean up workload
+			cascadeDeletePolicy := metav1.DeletePropagationForeground
+			if err := guestClient.Delete(ctx, workload, &crclient.DeleteOptions{PropagationPolicy: &cascadeDeletePolicy}); err != nil {
+				t.Logf("failed to delete scale-from-zero workload: %v", err)
+			}
+		}()
+
+		// Wait for autoscaler to scale up from 0 to at least 1 node
+		g.Eventually(func(g Gomega) {
+			np := &hyperv1.NodePool{}
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), np)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(np.Status.Replicas).To(BeNumerically(">", 0), "Autoscaler should scale up from 0")
+			g.Expect(np.Status.Replicas).To(BeNumerically("<=", 2), "Should not exceed max replicas")
+		}, 10*time.Minute, 30*time.Second).Should(Succeed())
+
+		t.Logf("Successfully verified scale-from-zero: NodePool scaled up from 0 nodes")
+
+		// Wait for the workload to complete to allow scale-down
+		cascadeDeletePolicy := metav1.DeletePropagationForeground
+		err = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{PropagationPolicy: &cascadeDeletePolicy})
+		g.Expect(err).NotTo(HaveOccurred())
+		t.Logf("Deleted workload to allow scale-down")
+
+		// Wait for autoscaler to scale back down to 0 (this may take longer)
+		g.Eventually(func(g Gomega) {
+			np := &hyperv1.NodePool{}
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), np)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(np.Status.Replicas).To(Equal(int32(0)), "Autoscaler should scale back down to 0")
+		}, 15*time.Minute, 1*time.Minute).Should(Succeed())
+
+		t.Logf("Successfully verified scale-to-zero: NodePool scaled back down to 0 nodes")
+	}
 }

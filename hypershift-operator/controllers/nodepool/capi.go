@@ -707,10 +707,10 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// The MachineDeployment replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
 		// so the autoscaler can take control of the replicas field.
 		//
-		// 1. if it’s a new MachineDeployment, or the replicas field of the old MachineDeployment is < min size, use min size
+		// 1. if it's a new MachineDeployment, or the replicas field of the old MachineDeployment is <= min size, use min size
 		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
 		mdReplicas := ptr.Deref(machineDeployment.Spec.Replicas, 0)
-		if mdReplicas < nodePool.Spec.AutoScaling.Min {
+		if mdReplicas <= nodePool.Spec.AutoScaling.Min {
 			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		} else if mdReplicas > nodePool.Spec.AutoScaling.Max {
 			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
@@ -995,10 +995,10 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// The MachineSet replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
 		// so the autoscaler can take control of the replicas field.
 		//
-		// 1. if it’s a new MachineSet, or the replicas field of the old MachineSet is < min size, use min size
+		// 1. if it's a new MachineSet, or the replicas field of the old MachineSet is <= min size, use min size
 		// 2. if the replicas field of the old MachineSet is > max size, use max size
 		msReplicas := ptr.Deref(machineSet.Spec.Replicas, 0)
-		if msReplicas < nodePool.Spec.AutoScaling.Min {
+		if msReplicas <= nodePool.Spec.AutoScaling.Min {
 			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
 		} else if msReplicas > nodePool.Spec.AutoScaling.Max {
 			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
