@@ -908,7 +908,7 @@ func (r *DedicatedServingComponentSchedulerAndSizer) ensurePlaceholderDeployment
 				Containers: []corev1.Container{
 					{
 						Name:  "placeholder",
-						Image: "quay.io/openshift/origin-hello-openshift:latest",
+						Image: defaultPlaceholderImage,
 					},
 				},
 			},
