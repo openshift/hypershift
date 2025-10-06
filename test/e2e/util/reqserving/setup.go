@@ -134,8 +134,8 @@ func InferAWSAvailabilityZones(ctx context.Context) ([]string, error) {
 		zonesSet[awsProviderSpec.Placement.AvailabilityZone] = struct{}{}
 	}
 
-	if len(zonesSet) != 3 {
-		return nil, fmt.Errorf("expected 3 AWS availability zones, found %d", len(zonesSet))
+	if len(zonesSet) < 3 {
+		return nil, fmt.Errorf("expected at least 3 AWS availability zones, found %d", len(zonesSet))
 	}
 
 	zones := make([]string, 0, len(zonesSet))
@@ -258,12 +258,21 @@ func ConfigureControlPlaneMachineSets(ctx context.Context, client crclient.Clien
 			workerMSByZone[awsProviderSpec.Placement.AvailabilityZone] = &machineSetList.Items[i]
 		}
 	}
-	if actual := len(workerMSByZone); actual != 3 {
-		return fmt.Errorf("failed to find default worker machinesets, actual: %d, expected: 3", actual)
+	if actual := len(workerMSByZone); actual < 3 {
+		return fmt.Errorf("failed to find default worker machinesets, actual: %d, expected at least 3", actual)
 	}
 
+	// Pick the first 3 zones for non-request serving machinesets, sorted for consistency
+	commonZones := make([]string, 0, len(workerMSByZone))
+	for zone := range workerMSByZone {
+		commonZones = append(commonZones, zone)
+	}
+	slices.Sort(commonZones)
+	commonZones = commonZones[:3]
+
 	// Common control plane machinesets
-	for zone, workerMS := range workerMSByZone {
+	for _, zone := range commonZones {
+		workerMS := workerMSByZone[zone]
 		ms := &machinev1beta1.MachineSet{}
 		ms.Name = fmt.Sprintf("%s-common-%s", infraID, zone)
 		ms.Namespace = workerMS.Namespace
