@@ -1802,6 +1802,18 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			t.Skip("AWS platform not supported on version 4.20 or less")
 		}
 
+		if !util.IsPublicHC(entryHostedCluster) {
+			t.Skip("test only supported on public clusters")
+		}
+
+		// Skip this test if the parent test is TestAutoscaling to avoid parallelism issues.
+		// During autoscaling tests, nodes are dynamically created/destroyed which prevents
+		// the global-pull-secret-syncer DaemonSet from reaching a stable state across all nodes.
+		// This causes timeouts and failures in GlobalPullSecret synchronization.
+		if strings.Contains(t.Name(), "TestAutoscaling") {
+			t.Skip("EnsureGlobalPullSecret is skipped when parent test is TestAutoscaling to avoid node scaling conflicts")
+		}
+
 		var (
 			dummyImageTagMultiarch = "quay.io/hypershift/sleep:multiarch"
 			dummyImageTag12        = "quay.io/hypershift/sleep:1.2.0"
