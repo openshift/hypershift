@@ -49,9 +49,21 @@ TBD
 ### Creating an epic
 Summary: An agile epic is a body of work that can be broken down into specific items (called user stories) based on the needs/requests of customers or end-users. Epics are an important practice for agile and DevOps teams. When adopting agile and DevOps, an epic serves to manage work.
 
-In an epic, the epic name field is required. Make it the same as the summary field.
+In an epic, the epic name field (customfield_12311141) is **required**. Make it the same as the summary field.
 
-The parent link field is where the feature ID would be specified to which the epic belongs.
+When creating an epic in CNTRLPLANE, you must include:
+- `summary`: Brief title of the epic
+- `issue_type`: "Epic"
+- `description`: Detailed description with use cases and acceptance criteria
+- `components`: Component name (e.g., "HyperShift", "HyperShift / ARO", "HyperShift / ROSA")
+- `additional_fields`: Must include `{"customfield_12311141": "<epic name - same as summary>", "labels": ["ai-generated-jira"]}`
+
+**Linking to a Parent Issue (Feature/OCPSTRAT):**
+If the Epic is created to address a parent issue (e.g., an OCPSTRAT ticket or Feature), set the parent after creation using `jira_update_issue`:
+```
+jira_update_issue(issue_key="CNTRLPLANE-XXXX", fields={"parent": {"key": "OCPSTRAT-YYYY"}})
+```
+Do NOT try to set the parent during Epic creation in `additional_fields` - create the Epic first, then set the parent separately.
 
 Epics should:
  - be a more narrow strategic objective than a market problem
@@ -80,9 +92,26 @@ The description should include:
 
 As a<User/Who>, I want to <Action/What>, so that <Purpose/Why>.
 
-<User/Who> is the description of the person, device, or system that will benefit from or use the output of the story. 
+<User/Who> is the description of the person, device, or system that will benefit from or use the output of the story.
 <Action/What> is what they can do with the system
 <Purpose/Why> is why they want to do the activity.
+
+When creating a story in CNTRLPLANE, you must include:
+- `summary`: Brief title of the story
+- `issue_type`: "Story"
+- `description`: Use the user story template (As a <User/Who>, I want to <Action/What>, so that <Purpose/Why>)
+- `components`: Component name (e.g., "HyperShift", "HyperShift / ARO", "HyperShift / ROSA")
+- `additional_fields`: Must include `{"labels": ["ai-generated-jira"]}`
+
+**Linking to an Epic:**
+After creating a story, link it to an epic using the `jira_update_issue` tool to set the `customfield_12311140` field to the epic key.
+
+The `jira_link_to_epic` tool may report success but does NOT actually set the Epic Link field reliably. Instead, use:
+```
+jira_update_issue(issue_key="STORY-KEY", fields={"customfield_12311140": "EPIC-KEY"})
+```
+
+Do NOT try to set the epic link during story creation via `customfield_12311140` or `parent` in `additional_fields` - this does not work. Always create the story first, then link it separately using `jira_update_issue`.
 
 The description should also include acceptance criteria:
 - Expresses the conditions that need to be satisfied for the customer
