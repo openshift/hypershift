@@ -10,7 +10,7 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
     
     When setting up workload identities and OIDC issuer for the first time, create them in a **persistent resource group** that will not be deleted when individual clusters are destroyed. This allows you to reuse the same workload identities and OIDC issuer across multiple HostedClusters, reducing setup time and avoiding unnecessary resource recreation.
     
-    - Use a persistant resource group like `os4-common`.
+    - Use a persistent resource group like `os4-common`.
     - This resource group should be separate from the cluster-specific resource groups that get created and deleted with each HostedCluster.
     - The OIDC issuer storage account should also be created in this persistent resource group.
 
