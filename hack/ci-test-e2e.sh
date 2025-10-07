@@ -22,6 +22,36 @@ generate_junit() {
 }
 trap generate_junit EXIT
 
+# Check if running on AWS platform and create required StorageClass for driver-config tests
+# Parse the platform from the command line arguments
+PLATFORM=""
+for arg in "$@"; do
+  if [[ "$arg" == "--e2e.platform=aws" ]] || [[ "$arg" == "--e2e.platform=AWS" ]]; then
+    PLATFORM="aws"
+    break
+  fi
+done
+
+if [[ "$PLATFORM" == "aws" ]]; then
+  echo "Detected AWS platform, creating a-gp3-csi StorageClass for driver-config tests..."
+
+  # Create the StorageClass using kubectl
+  cat <<EOF | kubectl apply -f -
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: a-gp3-csi
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  encrypted: "true"
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
+
+  echo "StorageClass a-gp3-csi created successfully"
+fi
+
 bin/test-e2e "$@"| tee /tmp/test_out &
 
 wait $!
