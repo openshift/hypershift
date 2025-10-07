@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -41,14 +42,42 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		}
 
 		storageSnapshotMapping := []StorageSnapshotMapping{}
-		for group, storageClasses := range storageMap {
+
+		// Sort storage map keys to ensure consistent ordering
+		storageGroups := make([]string, 0, len(storageMap))
+		for group := range storageMap {
+			storageGroups = append(storageGroups, group)
+		}
+		sort.Strings(storageGroups)
+
+		for _, group := range storageGroups {
+			storageClasses := storageMap[group]
+			// Sort storage classes within each group for consistency
+			sort.Strings(storageClasses)
+
 			mapping := StorageSnapshotMapping{}
 			mapping.StorageClasses = storageClasses
 			mapping.VolumeSnapshotClasses = snapshotMap[group]
+			// Sort volume snapshot classes within each group for consistency
+			if mapping.VolumeSnapshotClasses != nil {
+				sort.Strings(mapping.VolumeSnapshotClasses)
+			}
 			delete(snapshotMap, group)
 			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
 		}
-		for _, snapshotClasses := range snapshotMap {
+
+		// Sort remaining snapshot map keys to ensure consistent ordering
+		snapshotGroups := make([]string, 0, len(snapshotMap))
+		for group := range snapshotMap {
+			snapshotGroups = append(snapshotGroups, group)
+		}
+		sort.Strings(snapshotGroups)
+
+		for _, group := range snapshotGroups {
+			snapshotClasses := snapshotMap[group]
+			// Sort snapshot classes for consistency
+			sort.Strings(snapshotClasses)
+
 			mapping := StorageSnapshotMapping{}
 			mapping.VolumeSnapshotClasses = snapshotClasses
 			storageSnapshotMapping = append(storageSnapshotMapping, mapping)
@@ -60,6 +89,9 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		// For some reason yaml.Marhsal is generating upper case keys, so we need to convert them to lower case
 		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("VolumeSnapshotClasses"), []byte("volumeSnapshotClasses"))
 		mappingBytes = bytes.ReplaceAll(mappingBytes, []byte("StorageClasses"), []byte("storageClasses"))
+
+		// Sort allowedSC to ensure consistent ordering in allowList
+		sort.Strings(allowedSC)
 		storageClassEnforcement = fmt.Sprintf("allowAll: false\nallowList: [%s]\nstorageSnapshotMapping: \n%s", strings.Join(allowedSC, ", "), string(mappingBytes))
 	case hyperv1.NoneKubevirtStorageDriverConfigType:
 		storageClassEnforcement = "allowDefault: false\nallowAll: false\n"
