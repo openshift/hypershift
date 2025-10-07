@@ -86,6 +86,10 @@ func TestNodePool(t *testing.T) {
 						test: NewKubeVirtCacheTest(ctx, mgtClient, hostedCluster),
 					},
 					{
+						name: "KubeVirtDriverConfigTest",
+						test: NewKubeVirtDriverConfigTest(ctx, mgtClient, hostedCluster),
+					},
+					{
 						name: "TestRollingUpgrade",
 						test: NewRollingUpgradeTest(ctx, mgtClient, hostedCluster),
 					},
@@ -186,7 +190,7 @@ func TestNodePoolMultiArch(t *testing.T) {
 }
 
 func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []HostedClusterNodePoolTestCases) {
-	for i, _ := range nodePoolTestCasesPerHostedCluster {
+	for i := range nodePoolTestCasesPerHostedCluster {
 		t.Run(fmt.Sprintf("HostedCluster%d", i), func(t *testing.T) {
 			nodePoolTestCases := nodePoolTestCasesPerHostedCluster[i]
 			if nodePoolTestCases.setup != nil {
