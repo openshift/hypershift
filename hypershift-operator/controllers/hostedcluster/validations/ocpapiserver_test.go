@@ -148,7 +148,7 @@ func TestValidateOCPAPIServerSANs(t *testing.T) {
 				},
 			},
 			expectedErrors: field.ErrorList{
-				field.Invalid(field.NewPath("custom serving cert"), []string{"test-conflicting-kas-san.example.com"}, "conflicting DNS names found in KAS SANs. Configuration is invalid"),
+				field.Invalid(field.NewPath("custom serving cert"), []string{"test-conflicting-kas-san.example.com"}, "conflicting DNS names found in KAS SANs. kasEntries: [localhost kubernetes kubernetes.default kubernetes.default.svc kubernetes.default.svc.cluster.local kube-apiserver openshift openshift.default openshift.default.svc openshift.default.svc.cluster.local kube-apiserver.clusters.svc kube-apiserver.clusters.svc.cluster.local  api.test.hypershift.local kube-apiserver.clusters-jparrill-hosted.svc kube-apiserver.clusters-jparrill-hosted.svc.cluster.local test-conflicting-kas-san.example.com], customEntry: test-conflicting-kas-san.example.com. The configuration is invalid because the custom DNS names is conflicting with the KAS SANs"),
 			},
 		},
 		{
@@ -288,6 +288,127 @@ func TestAppendEntriesIfNotExists(t *testing.T) {
 	}
 }
 
+func TestIsDNSNameMatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		dnsName  string
+		pattern  string
+		expected bool
+	}{
+		// Exact matches
+		{
+			name:     "exact match - simple domain",
+			dnsName:  "example.com",
+			pattern:  "example.com",
+			expected: true,
+		},
+		{
+			name:     "exact match - subdomain",
+			dnsName:  "sub.example.com",
+			pattern:  "sub.example.com",
+			expected: true,
+		},
+		{
+			name:     "exact match - multiple subdomains",
+			dnsName:  "a.b.c.example.com",
+			pattern:  "a.b.c.example.com",
+			expected: true,
+		},
+		{
+			name:     "no match - different domains",
+			dnsName:  "example.com",
+			pattern:  "other.com",
+			expected: false,
+		},
+		{
+			name:     "no match - different subdomains",
+			dnsName:  "sub.example.com",
+			pattern:  "other.example.com",
+			expected: false,
+		},
+		// Wildcard matches
+		{
+			name:     "wildcard match - single level",
+			dnsName:  "sub.example.com",
+			pattern:  "*.example.com",
+			expected: true,
+		},
+		{
+			name:     "wildcard match - multiple levels",
+			dnsName:  "baz.foo.bar.com",
+			pattern:  "*.foo.bar.com",
+			expected: true,
+		},
+		{
+			name:     "wildcard no match - too many levels",
+			dnsName:  "sub.sub.example.com",
+			pattern:  "*.example.com",
+			expected: false,
+		},
+		{
+			name:     "wildcard no match - too few levels",
+			dnsName:  "example.com",
+			pattern:  "*.example.com",
+			expected: false,
+		},
+		{
+			name:     "wildcard no match - different domain",
+			dnsName:  "sub.example.com",
+			pattern:  "*.other.com",
+			expected: false,
+		},
+		{
+			name:     "wildcard no match - partial domain match",
+			dnsName:  "sub.example.com",
+			pattern:  "*.example.org",
+			expected: false,
+		},
+		// Edge cases
+		{
+			name:     "wildcard pattern not at start",
+			dnsName:  "example.com",
+			pattern:  "example.*.com",
+			expected: false,
+		},
+		{
+			name:     "wildcard pattern at end",
+			dnsName:  "example.com",
+			pattern:  "*.com",
+			expected: true,
+		},
+		{
+			name:     "empty strings",
+			dnsName:  "",
+			pattern:  "",
+			expected: true,
+		},
+		{
+			name:     "empty dnsName",
+			dnsName:  "",
+			pattern:  "*.example.com",
+			expected: false,
+		},
+		{
+			name:     "empty pattern",
+			dnsName:  "example.com",
+			pattern:  "",
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := isDNSNameMatch(tt.dnsName, tt.pattern)
+			g.Expect(result).To(Equal(tt.expected),
+				"DNS name '%s' should %s match pattern '%s'",
+				tt.dnsName,
+				map[bool]string{true: "", false: "not"}[tt.expected],
+				tt.pattern)
+		})
+	}
+}
+
 func TestCheckConflictingSANs(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -316,6 +437,62 @@ func TestCheckConflictingSANs(t *testing.T) {
 			kasSANEntries: []string{},
 			entryType:     "DNS names",
 			expectError:   false,
+		},
+		{
+			name:          "wildcard conflicts - custom entry matches KAS wildcard",
+			customEntries: []string{"sub.example.com"},
+			kasSANEntries: []string{"*.example.com"},
+			entryType:     "DNS names",
+			expectError:   true,
+		},
+		{
+			name:          "wildcard conflicts - custom wildcard matches KAS entry",
+			customEntries: []string{"*.example.com"},
+			kasSANEntries: []string{"sub.example.com"},
+			entryType:     "DNS names",
+			expectError:   true,
+		},
+		{
+			name:          "wildcard conflicts - both wildcards with same domain",
+			customEntries: []string{"*.example.com"},
+			kasSANEntries: []string{"*.example.com"},
+			entryType:     "DNS names",
+			expectError:   true,
+		},
+		{
+			name:          "wildcard conflicts - custom entry matches KAS wildcard with subdomain",
+			customEntries: []string{"baz.foo.bar.com"},
+			kasSANEntries: []string{"*.foo.bar.com"},
+			entryType:     "DNS names",
+			expectError:   true,
+		},
+		{
+			name:          "no wildcard conflicts - custom entry doesn't match KAS wildcard",
+			customEntries: []string{"sub.sub.example.com"},
+			kasSANEntries: []string{"*.example.com"},
+			entryType:     "DNS names",
+			expectError:   false,
+		},
+		{
+			name:          "no wildcard conflicts - different domains",
+			customEntries: []string{"sub.example.com"},
+			kasSANEntries: []string{"*.other.com"},
+			entryType:     "DNS names",
+			expectError:   false,
+		},
+		{
+			name:          "no wildcard conflicts - custom wildcard doesn't match KAS entry",
+			customEntries: []string{"*.example.com"},
+			kasSANEntries: []string{"other.com"},
+			entryType:     "DNS names",
+			expectError:   false,
+		},
+		{
+			name:          "mixed conflicts - exact match and wildcard match",
+			customEntries: []string{"exact.example.com", "sub.example.com"},
+			kasSANEntries: []string{"exact.example.com", "*.example.com"},
+			entryType:     "DNS names",
+			expectError:   true,
 		},
 	}
 
@@ -405,6 +582,12 @@ func sampleHostedCluster() *hyperv1.HostedCluster {
 			Namespace: "clusters",
 		},
 		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSPlatformSpec{
+					EndpointAccess: hyperv1.Public,
+				},
+			},
 			Configuration: &hyperv1.ClusterConfiguration{
 				APIServer: &configv1.APIServerSpec{
 					ServingCerts: configv1.APIServerServingCerts{
