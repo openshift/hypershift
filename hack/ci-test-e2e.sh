@@ -27,7 +27,7 @@ trap generate_junit EXIT
 PLATFORM=$(oc get infrastructure cluster -o jsonpath='{.status.platform}' | tr '[:upper:]' '[:lower:]')
 
 if [[ "${PLATFORM}" == "aws" ]]; then
-  echo "Detected AWS platform, creating a-gp3-csi StorageClass for driver-config tests..."
+  echo "Detected AWS platform, creating storage resources for driver-config tests..."
 
   # Create the StorageClass using kubectl
   cat <<EOF | kubectl apply -f -
@@ -44,6 +44,18 @@ allowVolumeExpansion: true
 EOF
 
   echo "StorageClass a-gp3-csi created successfully"
+
+  # Create the VolumeSnapshotClass using kubectl
+  cat <<EOF | kubectl apply -f -
+apiVersion: snapshot.storage.k8s.io/v1
+kind: VolumeSnapshotClass
+metadata:
+  name: a-csi-aws-vsc
+driver: ebs.csi.aws.com
+deletionPolicy: Delete
+EOF
+
+  echo "VolumeSnapshotClass a-csi-aws-vsc created successfully"
 fi
 
 bin/test-e2e "$@"| tee /tmp/test_out &
