@@ -179,22 +179,21 @@ func TestNodePool(t *testing.T) {
 							Manual: &hyperv1.KubevirtManualStorageDriverConfig{
 								StorageClassMapping: []hyperv1.KubevirtStorageClassMapping{
 									{
-										Group:                 "gold",
-										InfraStorageClassName: "gp3",
+										InfraStorageClassName: "gp3-csi",
+										GuestStorageClassName: "gp3-csi",
 									},
 									{
-										Group:                 "platinum",
-										InfraStorageClassName: "gp2",
+										InfraStorageClassName: "a-gp3-csi",
+										GuestStorageClassName: "a-gp3-csi",
 									},
 								},
 								VolumeSnapshotClassMapping: []hyperv1.KubevirtVolumeSnapshotClassMapping{
 									{
-										Group:                        "gold",
-										InfraVolumeSnapshotClassName: "gp3-csi",
+										InfraVolumeSnapshotClassName: "csi-aws-vsc",
+										GuestVolumeSnapshotClassName: "csi-aws-vsc",
 									},
-									{
-										Group:                        "platinum",
-										InfraVolumeSnapshotClassName: "gp2-csi",
+										InfraVolumeSnapshotClassName: "a-csi-aws-vsc",
+										GuestVolumeSnapshotClassName: "a-csi-aws-vsc",
 									},
 								},
 							},
