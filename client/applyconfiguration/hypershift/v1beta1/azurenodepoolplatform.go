@@ -27,6 +27,7 @@ type AzureNodePoolPlatformApplyConfiguration struct {
 	EncryptionAtHost *string                                `json:"encryptionAtHost,omitempty"`
 	SubnetID         *string                                `json:"subnetID,omitempty"`
 	Diagnostics      *DiagnosticsApplyConfiguration         `json:"diagnostics,omitempty"`
+	ResourceTags     []AzureResourceTagApplyConfiguration   `json:"resourceTags,omitempty"`
 }
 
 // AzureNodePoolPlatformApplyConfiguration constructs a declarative configuration of the AzureNodePoolPlatform type for use with
@@ -88,5 +89,18 @@ func (b *AzureNodePoolPlatformApplyConfiguration) WithSubnetID(value string) *Az
 // If called multiple times, the Diagnostics field is set to the value of the last call.
 func (b *AzureNodePoolPlatformApplyConfiguration) WithDiagnostics(value *DiagnosticsApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
 	b.Diagnostics = value
+	return b
+}
+
+// WithResourceTags adds the given value to the ResourceTags field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the ResourceTags field.
+func (b *AzureNodePoolPlatformApplyConfiguration) WithResourceTags(values ...*AzureResourceTagApplyConfiguration) *AzureNodePoolPlatformApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithResourceTags")
+		}
+		b.ResourceTags = append(b.ResourceTags, *values[i])
+	}
 	return b
 }
