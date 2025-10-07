@@ -112,3 +112,55 @@ hcp create cluster kubevirt \
 
 By following these guidelines, you can ensure successful deployment of guest clusters, avoid network CIDR collisions,
 and prevent DNS-related issues between hosting and guest clusters.
+
+
+## Avoiding Join Subnet Collisions When Using UDNs in Guest Clusters
+
+By default, guest clusters use the join subnet 100.65.0.0/16 for pod networking to avoid collisions with the
+infrastructure cluster join subnet 100.64.0.0/16. However, ovn-kubernetes Layer2 and Layer3 primary UDNs also use 100.65.0.0/16 by default,
+which creates a collision with the default pod network.
+
+To resolve this issue, users who want to use Layer2 or Layer3 primary UDNs must override the `joinSubnets` field in the
+`UserDefinedNetwork` or `ClusterUserDefinedNetwork` to specify a subnet different from 100.65.0.0/16.
+
+
+This is a primary UDN layer3 example:
+```yaml
+ apiVersion: k8s.ovn.org/v1
+  kind: UserDefinedNetwork
+  metadata:
+    name: my-layer3-net
+    namespace: default
+  spec:
+    topology: Layer3
+    layer3:
+      role: Primary
+      subnets:
+      - cidr: 192.168.100.0/16
+        hostSubnet: 24
+      joinSubnets:
+      - "100.66.0.0/16"
+      mtu: 1500
+```
+
+And a layer2:
+```yaml
+apiVersion: k8s.ovn.org/v1
+  kind: UserDefinedNetwork
+  metadata:
+    name: my-layer2-net
+    namespace: default
+  spec:
+    topology: Layer2
+    layer2:
+      role: Primary
+      subnets:
+      - "192.168.100.0/16"
+      joinSubnets:
+      - "100.66.0.0/24"
+      mtu: 1500
+      ipam:
+        lifecycle: Persistent
+```
+
+
