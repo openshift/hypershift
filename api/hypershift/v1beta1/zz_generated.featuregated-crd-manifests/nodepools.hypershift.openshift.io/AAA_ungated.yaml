@@ -826,10 +826,9 @@ spec:
                             otherwise
                           rule: 'has(self.type) && self.type == ''ImageID'' ?  has(self.imageID)
                             : !has(self.imageID)'
-                        - message: azureMarketplace is required when type is RequiredMember,
-                            and forbidden otherwise
-                          rule: 'has(self.type) && self.type == ''AzureMarketplace''
-                            ?  has(self.azureMarketplace) : !has(self.azureMarketplace)'
+                        - message: azureMarketplace is forbidden when type is ImageID
+                          rule: 'self.type == ''ImageID'' ?  !has(self.azureMarketplace)
+                            : true'
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.

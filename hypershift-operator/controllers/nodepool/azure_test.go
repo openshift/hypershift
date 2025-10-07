@@ -476,7 +476,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 				},
 			},
 			expectedErr:    true,
-			expectedErrMsg: "either ImageID or AzureMarketplace needs to be provided for the Azure machine",
+			expectedErrMsg: "no Azure VM image configured: either provide marketplace flags (--marketplace-publisher, etc.) or ensure the release image contains marketplace metadata (available in OCP 4.20+)",
 		},
 		{
 			name: "error case since a bad subnetID was provided",

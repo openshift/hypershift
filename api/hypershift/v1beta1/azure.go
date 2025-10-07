@@ -113,7 +113,7 @@ type AzureNodePoolPlatform struct {
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'ImageID' ?  has(self.imageID) : !has(self.imageID)",message="imageID is required when type is ImageID, and forbidden otherwise"
-// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'AzureMarketplace' ?  has(self.azureMarketplace) : !has(self.azureMarketplace)",message="azureMarketplace is required when type is RequiredMember, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'ImageID' ?  !has(self.azureMarketplace) : true",message="azureMarketplace is forbidden when type is ImageID"
 // +union
 type AzureVMImage struct {
 	// type is the type of image data that will be provided to the Azure VM.

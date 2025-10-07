@@ -158,9 +158,11 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
 	}
 
-	// This should never happen by design with the CEL validation on nodePool.Spec.Platform.Azure.Image
+	// Validate that either ImageID or AzureMarketplace is set after defaulting
+	// For OCP >= 4.20, defaultAzureNodePoolImage should have populated marketplace image from release payload
+	// For earlier versions or when marketplace metadata is unavailable, users must explicitly provide marketplace flags or upload a boot image
 	if nodePool.Spec.Platform.Azure.Image.ImageID == nil && nodePool.Spec.Platform.Azure.Image.AzureMarketplace == nil {
-		return nil, fmt.Errorf("either ImageID or AzureMarketplace needs to be provided for the Azure machine")
+		return nil, fmt.Errorf("no Azure VM image configured: either provide marketplace flags (--marketplace-publisher, etc.) or ensure the release image contains marketplace metadata (available in OCP 4.20+)")
 	}
 
 	azureMachineTemplate := &capiazure.AzureMachineTemplateSpec{Template: capiazure.AzureMachineTemplateResource{Spec: capiazure.AzureMachineSpec{
