@@ -28,8 +28,8 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work,tmp-dir
-        component.hypershift.openshift.io/config-hash: 022a8a3acb8019bf
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: 022a8a3a87ecf31a87ecf31acb8019bf
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
@@ -81,6 +81,8 @@ spec:
       - args:
         - --config=/etc/kubernetes/config/config.json
         - --cert-dir=/var/run/kubernetes
+        - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
+        - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
         - --secure-port=10259
         - --authentication-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/kubeconfig/kubeconfig
@@ -200,6 +202,10 @@ spec:
           successThreshold: 1
           timeoutSeconds: 5
         name: kube-scheduler
+        ports:
+        - containerPort: 10259
+          name: client
+          protocol: TCP
         resources:
           requests:
             cpu: 25m
@@ -208,12 +214,14 @@ spec:
           readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
-        - mountPath: /var/run/kubernetes
-          name: cert-work
         - mountPath: /etc/kubernetes/kubeconfig
           name: kubeconfig
         - mountPath: /etc/kubernetes/config
           name: scheduler-config
+        - mountPath: /etc/kubernetes/certs/root-ca
+          name: root-ca
+        - mountPath: /etc/kubernetes/certs/server
+          name: server-crt
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -238,12 +246,26 @@ spec:
         operator: Equal
         value: hcp-namespace
       volumes:
+      - name: cluster-signer
+        secret:
+          defaultMode: 416
+          secretName: cluster-signer-ca
+      - configMap:
+          defaultMode: 420
+          name: root-ca
+        name: root-ca
+      - name: service-signer
+        secret:
+          defaultMode: 416
+          secretName: sa-signing-key
+      - name: server-crt
+        secret:
+          defaultMode: 416
+          secretName: kube-scheduler-server
       - configMap:
           defaultMode: 420
           name: kube-scheduler
         name: scheduler-config
-      - emptyDir: {}
-        name: cert-work
       - name: kubeconfig
         secret:
           defaultMode: 416
