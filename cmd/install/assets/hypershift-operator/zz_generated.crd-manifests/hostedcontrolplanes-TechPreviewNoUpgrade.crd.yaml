@@ -4872,6 +4872,43 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                  gcp:
+                    description: gcp specifies configuration for clusters running
+                      on Google Cloud Platform.
+                    properties:
+                      project:
+                        description: |-
+                          project is the GCP project ID.
+                          A valid project ID must satisfy the following rules:
+                            length: Must be between 6 and 30 characters, inclusive
+                            characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
+                            start and end: Must begin with a lowercase letter and must not end with a hyphen
+                            valid examples: "my-project", "my-project-1", "my-project-123".
+                        maxLength: 30
+                        pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Project is immutable
+                          rule: self == oldSelf
+                      region:
+                        description: |-
+                          region is the GCP region in which the cluster resides.
+                          A valid region must satisfy the following rules:
+                            format: Must be in the form `<letters>-<lettersOrDigits><digit>`
+                            characters: Only lowercase letters (`a-z`), digits (`0-9`), and a single hyphen (`-`) separator
+                            valid examples: "us-central1", "europe-west2"
+                            region must not include zone suffixes (e.g., "-a").
+                          For a full list of valid regions, see: https://cloud.google.com/compute/docs/regions-zones.
+                        maxLength: 63
+                        pattern: ^[a-z]+-[a-z0-9]+[0-9]$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Region is immutable
+                          rule: self == oldSelf
+                    required:
+                    - project
+                    - region
+                    type: object
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -5817,6 +5854,7 @@ spec:
                     - PowerVS
                     - None
                     - OpenStack
+                    - GCP
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:
