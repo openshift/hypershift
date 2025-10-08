@@ -147,6 +147,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.FilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("FilterByNeutronTags"):
 		return &hypershiftv1beta1.FilterByNeutronTagsApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPPlatformSpec"):
+		return &hypershiftv1beta1.GCPPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedCluster"):
 		return &hypershiftv1beta1.HostedClusterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("HostedClusterSpec"):
