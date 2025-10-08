@@ -63,7 +63,7 @@ func TestHAEtcdChaos(t *testing.T) {
 			testEtcdMemberMissing(ctx, mgtClient, hostedCluster)
 		})
 
-	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "ha-etcd-chaos", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ha-etcd-chaos", globalOpts.ServiceAccountSigningKey)
 }
 
 // testKillRandomMembers ensures that data is preserved following a period where
