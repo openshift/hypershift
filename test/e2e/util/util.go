@@ -58,6 +58,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -74,6 +75,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -3853,5 +3855,93 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 			},
 			WithTimeout(3*time.Minute),
 		)
+	})
+}
+
+// EnsureNoMetricsTargetsAreDown ensures that all Prometheus targets for ServiceMonitors
+// in the hosted control plane namespace are up and healthy.
+func EnsureNoMetricsTargetsAreDown(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNoMetricsTargetsAreDown", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Get the hosted control plane namespace
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		// List all ServiceMonitors in the HCP namespace
+		var serviceMonitors monitoringv1.ServiceMonitorList
+		err := client.List(ctx, &serviceMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list ServiceMonitors in namespace %s", hcpNamespace)
+
+		// List all PodMonitors in the HCP namespace
+		var podMonitors monitoringv1.PodMonitorList
+		err = client.List(ctx, &podMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list PodMonitors in namespace %s", hcpNamespace)
+
+		// If there are no ServiceMonitors or PodMonitors, log and skip the test
+		if len(serviceMonitors.Items) == 0 && len(podMonitors.Items) == 0 {
+			t.Logf("No ServiceMonitors or PodMonitors found in namespace %s", hcpNamespace)
+			return
+		}
+
+		// Combine ServiceMonitors and PodMonitors into a single list of job names
+		// ServiceMonitor job names are just their names
+		// PodMonitor job names are in the format "namespace/name"
+		jobs := []string{}
+		for _, sm := range serviceMonitors.Items {
+			jobs = append(jobs, sm.Name)
+		}
+		for _, pm := range podMonitors.Items {
+			jobs = append(jobs, fmt.Sprintf("%s/%s", pm.Namespace, pm.Name))
+		}
+
+		// Create Prometheus client
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create Prometheus client")
+
+		// Track down targets
+		var downTargets []string
+
+		// Query Prometheus for all targets in the namespace
+		// The 'up' metric is a special Prometheus metric that indicates target health
+		// up == 1 means the target is healthy, up == 0 means it's down
+		query := fmt.Sprintf(`up{namespace="%s"}`, hcpNamespace)
+
+		result, warnings, err := prometheusClient.Query(ctx, query, time.Now())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to query Prometheus for namespace %s", hcpNamespace)
+
+		if len(warnings) > 0 {
+			t.Logf("Prometheus query warnings: %v", warnings)
+		}
+
+		// Parse the results
+		if result.Type() == model.ValVector {
+			vector := result.(model.Vector)
+			if len(vector) == 0 {
+				t.Logf("No targets found in namespace %s (this may be expected if scraping hasn't started yet)", hcpNamespace)
+			}
+
+			// Create a set of monitor names for quick lookup
+			monitorSet := sets.New(jobs...)
+
+			// Check each target in the results
+			for _, sample := range vector {
+				// Get the job label (which corresponds to the Monitor name)
+				jobLabel := string(sample.Metric["job"])
+
+				// Only check targets for our monitors
+				if monitorSet.Has(jobLabel) {
+					// Check if the target is down (up == 0)
+					if sample.Value == 0 {
+						targetInfo := fmt.Sprintf("Monitor: %s, Target: %s", jobLabel, sample.Metric.String())
+						downTargets = append(downTargets, targetInfo)
+					}
+				}
+			}
+		}
+
+		// Report all down targets as a single failure
+		if len(downTargets) > 0 {
+			t.Errorf("Found %d down metrics target(s):\n%s", len(downTargets), strings.Join(downTargets, "\n"))
+		}
 	})
 }
