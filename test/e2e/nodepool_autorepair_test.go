@@ -39,8 +39,8 @@ func NewNodePoolAutoRepairTest(ctx context.Context, hostedCluster *hyperv1.Hoste
 }
 
 func (ar *NodePoolAutoRepairTest) Setup(t *testing.T) {
-	if globalOpts.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platforms AWS and Azure")
 	}
 }
 
