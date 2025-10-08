@@ -16,31 +16,21 @@ limitations under the License.
 package statussubresource
 
 import (
-	"golang.org/x/tools/go/analysis"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/initializer"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/registry"
 )
+
+func init() {
+	registry.DefaultRegistry().RegisterLinter(Initializer())
+}
 
 // Initializer returns the AnalyzerInitializer for this
 // Analyzer so that it can be added to the registry.
-func Initializer() initializer {
-	return initializer{}
-}
-
-// intializer implements the AnalyzerInitializer interface.
-type initializer struct{}
-
-// Name returns the name of the Analyzer.
-func (initializer) Name() string {
-	return name
-}
-
-// Init returns the intialized Analyzer.
-func (initializer) Init(cfg config.LintersConfig) (*analysis.Analyzer, error) {
-	return newAnalyzer(), nil
-}
-
-// Default determines whether this Analyzer is on by default, or not.
-func (initializer) Default() bool {
-	// This check only applies to CRDs so should not be on by default.
-	return false
+func Initializer() initializer.AnalyzerInitializer {
+	return initializer.NewInitializer(
+		name,
+		Analyzer,
+		// This check only applies to CRDs so should not be on by default.
+		false,
+	)
 }

@@ -16,18 +16,23 @@ limitations under the License.
 package inspector
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 
 	astinspector "golang.org/x/tools/go/ast/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 )
 
 // Inspector is an interface that allows for the inspection of fields in structs.
 type Inspector interface {
 	// InspectFields is a function that iterates over fields in structs.
 	InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers))
+
+	// InspectTypeSpec is a function that inspects the type spec and calls the provided inspectTypeSpec function.
+	InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers))
 }
 
 // inspector implements the Inspector interface.
@@ -77,10 +82,15 @@ func (i *inspector) InspectFields(inspectField func(field *ast.Field, stack []as
 			return false
 		}
 
-		_, ok = stack[len(stack)-3].(*ast.StructType)
+		structType, ok := stack[len(stack)-3].(*ast.StructType)
 		if !ok {
 			// A field within a struct has a FieldList parent and then a StructType parent.
 			// If we don't have a StructType parent, then we're not in a struct.
+			return false
+		}
+
+		if isItemsType(structType) {
+			// The field belongs to an items type, we don't need to report lint errors for this.
 			return false
 		}
 
@@ -95,8 +105,70 @@ func (i *inspector) InspectFields(inspectField func(field *ast.Field, stack []as
 			return false
 		}
 
+		defer func() {
+			if r := recover(); r != nil {
+				// If the inspectField function panics, we recover and log information that will help identify the issue.
+				debug := printDebugInfo(field)
+				panic(fmt.Sprintf("%s %v", debug, r)) // Re-panic to propagate the error.
+			}
+		}()
+
 		inspectField(field, stack, tagInfo, i.markers)
 
 		return true
 	})
+}
+
+// InspectTypeSpec inspects the type spec and calls the provided inspectTypeSpec function.
+func (i *inspector) InspectTypeSpec(inspectTypeSpec func(typeSpec *ast.TypeSpec, markersAccess markers.Markers)) {
+	nodeFilter := []ast.Node{
+		(*ast.TypeSpec)(nil),
+	}
+
+	i.inspector.Preorder(nodeFilter, func(n ast.Node) {
+		typeSpec, ok := n.(*ast.TypeSpec)
+		if !ok {
+			return
+		}
+
+		inspectTypeSpec(typeSpec, i.markers)
+	})
+}
+
+func isItemsType(structType *ast.StructType) bool {
+	// An items type is a struct with TypeMeta, ListMeta and Items fields.
+	if len(structType.Fields.List) != 3 {
+		return false
+	}
+
+	// Check if the first field is TypeMeta.
+	// This should be a selector (e.g. metav1.TypeMeta)
+	// Check the TypeMeta part as the package name may vary.
+	if typeMeta, ok := structType.Fields.List[0].Type.(*ast.SelectorExpr); !ok || typeMeta.Sel.Name != "TypeMeta" {
+		return false
+	}
+
+	// Check if the second field is ListMeta.
+	if listMeta, ok := structType.Fields.List[1].Type.(*ast.SelectorExpr); !ok || listMeta.Sel.Name != "ListMeta" {
+		return false
+	}
+
+	// Check if the third field is Items.
+	// It should be an array, and be called Items.
+	itemsField := structType.Fields.List[2]
+	if _, ok := itemsField.Type.(*ast.ArrayType); !ok || len(itemsField.Names) == 0 || itemsField.Names[0].Name != "Items" {
+		return false
+	}
+
+	return true
+}
+
+// printDebugInfo prints debug information about the field that caused a panic during inspection.
+// This function is designed to allow us to help identify which fields are causing issues during inspection.
+func printDebugInfo(field *ast.Field) string {
+	var debug string
+
+	debug += fmt.Sprintf("Panic observed while inspecting field: %v (type: %v)\n", utils.FieldName(field), field.Type)
+
+	return debug
 }

@@ -54,12 +54,6 @@ func QueriesFor(cloud, architecture, topology, networkStack, testPattern string)
 					ColumnField:   "variants",
 					Not:           false,
 					OperatorValue: "contains",
-					Value:         "FeatureSet:techpreview",
-				},
-				{
-					ColumnField:   "variants",
-					Not:           false,
-					OperatorValue: "contains",
 					Value:         fmt.Sprintf("Platform:%s", cloud),
 				},
 				{

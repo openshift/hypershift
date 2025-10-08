@@ -55,7 +55,6 @@ type analyzer struct {
 	constraintsPkgReplacements map[string]stdReplacement[*ast.SelectorExpr]
 
 	skipGoVersionDetection bool
-	goVersion              int
 }
 
 // NewAnalyzer create a new Analyzer.
@@ -126,7 +125,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 
-	a.goVersion = getGoVersion(pass)
+	goVersion := getGoVersion(pass)
 
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),
@@ -166,7 +165,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 
 			switch ident.Name {
 			case pkgMaps:
-				diagnostic, usage := a.detectPackageUsage(pass, a.mapsPkgReplacements, selExpr, ident, node, pkgExpMaps)
+				diagnostic, usage := a.detectPackageUsage(pass, a.mapsPkgReplacements, selExpr, ident, node, pkgExpMaps, goVersion)
 				if usage {
 					pass.Report(diagnostic)
 				}
@@ -174,7 +173,7 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 				shouldKeepExpMaps = shouldKeepExpMaps || !usage
 
 			case pkgSlices:
-				diagnostic, usage := a.detectPackageUsage(pass, a.slicesPkgReplacements, selExpr, ident, node, pkgExpSlices)
+				diagnostic, usage := a.detectPackageUsage(pass, a.slicesPkgReplacements, selExpr, ident, node, pkgExpSlices, goVersion)
 				if usage {
 					resultExpSlices.Diagnostics = append(resultExpSlices.Diagnostics, diagnostic)
 				}
@@ -185,14 +184,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		case *ast.FuncDecl:
 			if node.Type.TypeParams != nil {
 				for _, field := range node.Type.TypeParams.List {
-					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints)
+					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints, goVersion)
 				}
 			}
 
 		case *ast.TypeSpec:
 			if node.TypeParams != nil {
 				for _, field := range node.TypeParams.List {
-					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints)
+					a.detectConstraintsUsage(pass, field.Type, resultExpConstraints, goVersion)
 				}
 			}
 
@@ -204,11 +203,11 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 			for _, method := range interfaceType.Methods.List {
 				switch exp := method.Type.(type) {
 				case *ast.BinaryExpr:
-					a.detectConstraintsUsage(pass, exp.X, resultExpConstraints)
-					a.detectConstraintsUsage(pass, exp.Y, resultExpConstraints)
+					a.detectConstraintsUsage(pass, exp.X, resultExpConstraints, goVersion)
+					a.detectConstraintsUsage(pass, exp.Y, resultExpConstraints, goVersion)
 
 				case *ast.SelectorExpr:
-					a.detectConstraintsUsage(pass, exp, resultExpConstraints)
+					a.detectConstraintsUsage(pass, exp, resultExpConstraints, goVersion)
 				}
 			}
 		}
@@ -235,14 +234,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 func (a *analyzer) detectPackageUsage(pass *analysis.Pass,
 	replacements map[string]stdReplacement[*ast.CallExpr],
 	selExpr *ast.SelectorExpr, ident *ast.Ident, callExpr *ast.CallExpr,
-	importPath string,
+	importPath string, goVersion int,
 ) (analysis.Diagnostic, bool) {
 	rp, ok := replacements[selExpr.Sel.Name]
 	if !ok {
 		return analysis.Diagnostic{}, false
 	}
 
-	if !a.skipGoVersionDetection && rp.MinGo > a.goVersion {
+	if !a.skipGoVersionDetection && rp.MinGo > goVersion {
 		return analysis.Diagnostic{}, false
 	}
 
@@ -267,7 +266,7 @@ func (a *analyzer) detectPackageUsage(pass *analysis.Pass,
 	return diagnostic, true
 }
 
-func (a *analyzer) detectConstraintsUsage(pass *analysis.Pass, expr ast.Expr, result *Result) {
+func (a *analyzer) detectConstraintsUsage(pass *analysis.Pass, expr ast.Expr, result *Result, goVersion int) {
 	selExpr, ok := expr.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -288,7 +287,7 @@ func (a *analyzer) detectConstraintsUsage(pass *analysis.Pass, expr ast.Expr, re
 		return
 	}
 
-	if !a.skipGoVersionDetection && rp.MinGo > a.goVersion {
+	if !a.skipGoVersionDetection && rp.MinGo > goVersion {
 		result.shouldKeepImport = true
 		return
 	}

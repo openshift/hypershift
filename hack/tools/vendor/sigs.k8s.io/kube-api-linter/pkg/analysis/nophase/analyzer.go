@@ -24,6 +24,7 @@ import (
 	"golang.org/x/tools/go/ast/inspector"
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 )
 
 const name = "nophase"
@@ -38,7 +39,7 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspect.Analyzer, extractjsontags.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -68,7 +69,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		fieldName := field.Names[0].Name
+		fieldName := utils.FieldName(field)
 
 		// First check if the struct field name contains 'phase'
 		if strings.Contains(strings.ToLower(fieldName), "phase") {

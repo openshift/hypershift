@@ -19,3 +19,6 @@ testbin/*
 *.swo
 *~
 .vscode/
+
+# Do not check in vendor if it's set up locally
+vendor/

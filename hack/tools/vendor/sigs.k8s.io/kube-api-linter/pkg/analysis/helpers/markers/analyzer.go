@@ -19,6 +19,7 @@ import (
 	"go/ast"
 	"go/token"
 	"reflect"
+	"regexp"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -113,7 +114,7 @@ var Analyzer = &analysis.Analyzer{
 	ResultType: reflect.TypeOf(newMarkers()),
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
@@ -229,24 +230,24 @@ func extractKnownMarkerIDAndExpressions(id string, marker string) (string, map[s
 	return id, extractExpressions(strings.TrimPrefix(marker, id))
 }
 
-func extractExpressions(expressions string) map[string]string {
+var expressionRegex = regexp.MustCompile("\\w*=(?:'[^']*'|\"(\\\\\"|[^\"])*\"|[\\w;\\-\"]+|`[^`]*`)")
+
+func extractExpressions(expressionStr string) map[string]string {
 	expressionsMap := map[string]string{}
 
 	// Do some normalization work to ensure we can parse expressions in
 	// a standard way. Trim any lingering colons (:) and replace all ':='s with '='
-	expressions = strings.TrimPrefix(expressions, ":")
-	expressions = strings.ReplaceAll(expressions, ":=", "=")
+	expressionStr = strings.TrimPrefix(expressionStr, ":")
+	expressionStr = strings.ReplaceAll(expressionStr, ":=", "=")
 
-	// split expression string on commas (,) to handle multiple expressions
-	// in a single marker
-	chainedExpressions := strings.Split(expressions, ",")
-	for _, chainedExpression := range chainedExpressions {
-		exps := strings.SplitN(chainedExpression, "=", 2)
-		if len(exps) < 2 {
+	expressions := expressionRegex.FindAllString(expressionStr, -1)
+	for _, expression := range expressions {
+		key, value, ok := strings.Cut(expression, "=")
+		if !ok {
 			continue
 		}
 
-		expressionsMap[exps[0]] = exps[1]
+		expressionsMap[key] = value
 	}
 
 	return expressionsMap
@@ -383,6 +384,13 @@ func (ms MarkerSet) HasWithExpressions(identifier string, expressions map[string
 	}
 
 	return false
+}
+
+// Get returns the markers associated with the given identifier.
+// If no markers are found, an empty slice is returned.
+// The returned slice may contain multiple markers with the same identifier.
+func (ms MarkerSet) Get(identifier string) []Marker {
+	return ms[identifier]
 }
 
 // UnsortedList returns a list of the markers, in no particular order.

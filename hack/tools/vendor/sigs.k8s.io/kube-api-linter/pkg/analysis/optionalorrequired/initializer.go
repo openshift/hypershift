@@ -16,30 +16,53 @@ limitations under the License.
 package optionalorrequired
 
 import (
+	"fmt"
+
 	"golang.org/x/tools/go/analysis"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/initializer"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/registry"
+	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
+
+func init() {
+	registry.DefaultRegistry().RegisterLinter(Initializer())
+}
 
 // Initializer returns the AnalyzerInitializer for this
 // Analyzer so that it can be added to the registry.
-func Initializer() initializer {
-	return initializer{}
+func Initializer() initializer.AnalyzerInitializer {
+	return initializer.NewConfigurableInitializer(
+		name,
+		initAnalyzer,
+		true,
+		validateConfig,
+	)
 }
 
-// intializer implements the AnalyzerInitializer interface.
-type initializer struct{}
-
-// Name returns the name of the Analyzer.
-func (initializer) Name() string {
-	return name
+func initAnalyzer(oorc *OptionalOrRequiredConfig) (*analysis.Analyzer, error) {
+	return newAnalyzer(oorc), nil
 }
 
-// Init returns the intialized Analyzer.
-func (initializer) Init(cfg config.LintersConfig) (*analysis.Analyzer, error) {
-	return newAnalyzer(cfg.OptionalOrRequired), nil
-}
+// validateConfig is used to validate the configuration in the config.OptionalOrRequiredConfig struct.
+func validateConfig(oorc *OptionalOrRequiredConfig, fldPath *field.Path) field.ErrorList {
+	if oorc == nil {
+		return field.ErrorList{}
+	}
 
-// Default determines whether this Analyzer is on by default, or not.
-func (initializer) Default() bool {
-	return true
+	fieldErrors := field.ErrorList{}
+
+	switch oorc.PreferredOptionalMarker {
+	case "", markers.OptionalMarker, markers.KubebuilderOptionalMarker:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("preferredOptionalMarker"), oorc.PreferredOptionalMarker, fmt.Sprintf("invalid value, must be one of %q, %q or omitted", markers.OptionalMarker, markers.KubebuilderOptionalMarker)))
+	}
+
+	switch oorc.PreferredRequiredMarker {
+	case "", markers.RequiredMarker, markers.KubebuilderRequiredMarker:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("preferredRequiredMarker"), oorc.PreferredRequiredMarker, fmt.Sprintf("invalid value, must be one of %q, %q or omitted", markers.RequiredMarker, markers.KubebuilderRequiredMarker)))
+	}
+
+	return fieldErrors
 }

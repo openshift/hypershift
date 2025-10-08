@@ -54,6 +54,21 @@ func newPerfSprint() *perfSprint {
 	}
 }
 
+const (
+	// checkerErrorFormat checks for error formatting.
+	checkerErrorFormat = "error-format"
+	// checkerIntegerFormat checks for integer formatting.
+	checkerIntegerFormat = "integer-format"
+	// checkerStringFormat checks for string formatting.
+	checkerStringFormat = "string-format"
+	// checkerBoolFormat checks for bool formatting.
+	checkerBoolFormat = "bool-format"
+	// checkerHexFormat checks for hexadecimal formatting.
+	checkerHexFormat = "hex-format"
+	// checkerFixImports fix needed imports from other fixes.
+	checkerFixImports = "fiximports"
+)
+
 func New() *analysis.Analyzer {
 	n := newPerfSprint()
 	r := &analysis.Analyzer{
@@ -63,17 +78,19 @@ func New() *analysis.Analyzer {
 		Run:      n.run,
 		Requires: []*analysis.Analyzer{inspect.Analyzer},
 	}
-	r.Flags.BoolVar(&n.intFormat.enabled, "integer-format", n.intFormat.enabled, "enable/disable optimization of integer formatting")
+
+	r.Flags.BoolVar(&n.intFormat.enabled, checkerIntegerFormat, n.intFormat.enabled, "enable/disable optimization of integer formatting")
 	r.Flags.BoolVar(&n.intFormat.intConv, "int-conversion", n.intFormat.intConv, "optimizes even if it requires an int or uint type cast")
-	r.Flags.BoolVar(&n.errFormat.enabled, "error-format", n.errFormat.enabled, "enable/disable optimization of error formatting")
+	r.Flags.BoolVar(&n.errFormat.enabled, checkerErrorFormat, n.errFormat.enabled, "enable/disable optimization of error formatting")
 	r.Flags.BoolVar(&n.errFormat.errError, "err-error", n.errFormat.errError, "optimizes into err.Error() even if it is only equivalent for non-nil errors")
 	r.Flags.BoolVar(&n.errFormat.errorf, "errorf", n.errFormat.errorf, "optimizes fmt.Errorf")
-	r.Flags.BoolVar(&n.boolFormat, "bool-format", n.boolFormat, "enable/disable optimization of bool formatting")
-	r.Flags.BoolVar(&n.hexFormat, "hex-format", n.hexFormat, "enable/disable optimization of hex formatting")
-	r.Flags.BoolVar(&n.strFormat.enabled, "string-format", n.strFormat.enabled, "enable/disable optimization of string formatting")
+
+	r.Flags.BoolVar(&n.boolFormat, checkerBoolFormat, n.boolFormat, "enable/disable optimization of bool formatting")
+	r.Flags.BoolVar(&n.hexFormat, checkerHexFormat, n.hexFormat, "enable/disable optimization of hex formatting")
+	r.Flags.BoolVar(&n.strFormat.enabled, checkerStringFormat, n.strFormat.enabled, "enable/disable optimization of string formatting")
 	r.Flags.BoolVar(&n.strFormat.sprintf1, "sprintf1", n.strFormat.sprintf1, "optimizes fmt.Sprintf with only one argument")
 	r.Flags.BoolVar(&n.strFormat.strconcat, "strconcat", n.strFormat.strconcat, "optimizes into strings concatenation")
-	r.Flags.BoolVar(&n.fiximports, "fiximports", n.fiximports, "fix needed imports from other fixes")
+	r.Flags.BoolVar(&n.fiximports, checkerFixImports, n.fiximports, "fix needed imports from other fixes")
 
 	return r
 }
@@ -198,7 +215,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			if fn == "fmt.Errorf" && n.errFormat.enabled {
 				neededPackages[fname]["errors"] = struct{}{}
 				d = newAnalysisDiagnostic(
-					"", // TODO: precise checker
+					checkerErrorFormat,
 					call,
 					fn+" can be replaced with errors.New",
 					[]analysis.SuggestedFix{
@@ -214,7 +231,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 				)
 			} else if fn != "fmt.Errorf" && n.strFormat.enabled {
 				d = newAnalysisDiagnostic(
-					"", // TODO: precise checker
+					checkerStringFormat,
 					call,
 					fn+" can be replaced with just using the string",
 					[]analysis.SuggestedFix{
@@ -236,7 +253,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			fname := pass.Fset.File(call.Pos()).Name()
 			removedFmtUsages[fname]++
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerErrorFormat,
 				call,
 				fn+" can be replaced with "+errMethodCall,
 				[]analysis.SuggestedFix{
@@ -259,7 +276,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerBoolFormat,
 				call,
 				fn+" can be replaced with faster strconv.FormatBool",
 				[]analysis.SuggestedFix{
@@ -287,7 +304,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["encoding/hex"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerHexFormat,
 				call,
 				fn+" can be replaced with faster hex.EncodeToString",
 				[]analysis.SuggestedFix{
@@ -316,7 +333,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["encoding/hex"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerHexFormat,
 				call,
 				fn+" can be replaced with faster hex.EncodeToString",
 				[]analysis.SuggestedFix{
@@ -339,7 +356,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerIntegerFormat,
 				call,
 				fn+" can be replaced with faster strconv.Itoa",
 				[]analysis.SuggestedFix{
@@ -368,7 +385,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerIntegerFormat,
 				call,
 				fn+" can be replaced with faster strconv.Itoa",
 				[]analysis.SuggestedFix{
@@ -390,7 +407,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerIntegerFormat,
 				call,
 				fn+" can be replaced with faster strconv.FormatInt",
 				[]analysis.SuggestedFix{
@@ -424,7 +441,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerIntegerFormat,
 				call,
 				fn+" can be replaced with faster strconv.FormatUint",
 				[]analysis.SuggestedFix{
@@ -457,7 +474,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 			}
 			neededPackages[fname]["strconv"] = struct{}{}
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerIntegerFormat,
 				call,
 				fn+" can be replaced with faster strconv.FormatUint",
 				[]analysis.SuggestedFix{
@@ -481,18 +498,18 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 		case isBasicType(valueType, types.String) && fn == "fmt.Sprintf" && isConcatable(verb) && n.strFormat.enabled:
 			var fix string
 			if strings.HasSuffix(verb, "%s") {
-				fix = strconv.Quote(verb[:len(verb)-2]) + "+" + formatNode(pass.Fset, value)
+				fix = strings.ReplaceAll(strconv.Quote(verb[:len(verb)-2]), "%%", "%") + "+" + formatNode(pass.Fset, value)
 			} else if strings.HasSuffix(verb, "%[1]s") {
-				fix = strconv.Quote(verb[:len(verb)-5]) + "+" + formatNode(pass.Fset, value)
+				fix = strings.ReplaceAll(strconv.Quote(verb[:len(verb)-5]), "%%", "%") + "+" + formatNode(pass.Fset, value)
 			} else if strings.HasPrefix(verb, "%s") {
-				fix = formatNode(pass.Fset, value) + "+" + strconv.Quote(verb[2:])
+				fix = formatNode(pass.Fset, value) + "+" + strings.ReplaceAll(strconv.Quote(verb[2:]), "%%", "%")
 			} else {
-				fix = formatNode(pass.Fset, value) + "+" + strconv.Quote(verb[5:])
+				fix = formatNode(pass.Fset, value) + "+" + strings.ReplaceAll(strconv.Quote(verb[5:]), "%%", "%")
 			}
 			fname := pass.Fset.File(call.Pos()).Name()
 			removedFmtUsages[fname]++
 			d = newAnalysisDiagnostic(
-				"", // TODO: precise checker
+				checkerStringFormat,
 				call,
 				fn+" can be replaced with string concatenation",
 				[]analysis.SuggestedFix{
@@ -571,7 +588,7 @@ func (n *perfSprint) run(pass *analysis.Pass) (interface{}, error) {
 					fix = fix + "\n\t\"" + k + `"`
 				}
 				pass.Report(*newAnalysisDiagnostic(
-					"", // TODO: precise checker
+					checkerFixImports,
 					gd,
 					"Fix imports",
 					[]analysis.SuggestedFix{
