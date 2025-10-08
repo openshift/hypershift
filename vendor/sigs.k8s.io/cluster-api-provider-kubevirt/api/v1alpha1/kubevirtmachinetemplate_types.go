@@ -23,6 +23,12 @@ import (
 // KubevirtMachineTemplateSpec defines the desired state of KubevirtMachineTemplate.
 type KubevirtMachineTemplateSpec struct {
 	Template KubevirtMachineTemplateResource `json:"template"`
+
+	// VirtualMachinePool defines a pool of pre-configured virtual machines with specific names and cloud-init configs.
+	// When specified, the controller will use VMs from this pool for scaling operations instead of generating new ones.
+	// +optional
+	// +kubebuilder:validation:MaxItems=100
+	VirtualMachinePool []VirtualMachinePoolEntry `json:"virtualMachinePool,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -48,6 +54,22 @@ type KubevirtMachineTemplateList struct {
 
 func init() {
 	SchemeBuilder.Register(&KubevirtMachineTemplate{}, &KubevirtMachineTemplateList{})
+}
+
+// VirtualMachinePoolEntry defines a single virtual machine entry in the pool with a specific name and cloud-init configuration.
+type VirtualMachinePoolEntry struct {
+	// Name specifies the desired name for this virtual machine.
+	// This name will be used as the VM name when creating the virtual machine.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+
+	// CloudInitNetworkData contains the cloud-init network data configuration for this specific VM.
+	// This data will be used to customize the network configuration of the VM during boot.
+	// +optional
+	CloudInitNetworkData *string `json:"cloudInitNetworkData,omitempty"`
 }
 
 // KubevirtMachineTemplateResource describes the data needed to create a KubevirtMachine from a template.
