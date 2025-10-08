@@ -52,6 +52,10 @@ Analyze a JIRA issue and create a pull request to solve it.
    - Add or update tests as needed
    - Update documentation if needed within the docs/ folder
    - If the problem is too complex consider delegating to one of the SME agents.
+   - Ensure godoc comments are generated for any newly created public functions
+      - Use your best judgement if godoc comments are needed for private functions
+      - For example, a comment should not be generated for a simple function like func add(int a, b) int { return a + b}
+   - Create unit tests for any newly created functions
    - After making code changes, always run `make lint-fix` to ensure imports are properly sorted and linting issues are fixed
    - Always ensure code builds and passes existing tests:
    - Run `make pre-commit`, or `make verify`, `make build` and `make test` if you need to be more specific
