@@ -33,6 +33,7 @@ type ClusterAutoscalingApplyConfiguration struct {
 	MaxFreeDifferenceRatioPercent *int32                             `json:"maxFreeDifferenceRatioPercent,omitempty"`
 	PodPriorityThreshold          *int32                             `json:"podPriorityThreshold,omitempty"`
 	Expanders                     []hypershiftv1beta1.ExpanderString `json:"expanders,omitempty"`
+	ExtraArgs                     *string                            `json:"extraArgs,omitempty"`
 }
 
 // ClusterAutoscalingApplyConfiguration constructs a declarative configuration of the ClusterAutoscaling type for use with
@@ -114,5 +115,13 @@ func (b *ClusterAutoscalingApplyConfiguration) WithExpanders(values ...hypershif
 	for i := range values {
 		b.Expanders = append(b.Expanders, values[i])
 	}
+	return b
+}
+
+// WithExtraArgs sets the ExtraArgs field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ExtraArgs field is set to the value of the last call.
+func (b *ClusterAutoscalingApplyConfiguration) WithExtraArgs(value string) *ClusterAutoscalingApplyConfiguration {
+	b.ExtraArgs = &value
 	return b
 }
