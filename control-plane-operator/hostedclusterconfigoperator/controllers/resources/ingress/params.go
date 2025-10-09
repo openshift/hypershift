@@ -9,14 +9,15 @@ import (
 )
 
 type IngressParams struct {
-	IngressSubdomain  string
-	Replicas          int32
-	PlatformType      hyperv1.PlatformType
-	IsPrivate         bool
-	IBMCloudUPI       bool
-	AWSNLB            bool
-	LoadBalancerScope v1.LoadBalancerScope
-	LoadBalancerIP    string
+	IngressSubdomain           string
+	Replicas                   int32
+	PlatformType               hyperv1.PlatformType
+	IsPrivate                  bool
+	IBMCloudUPI                bool
+	AWSNLB                     bool
+	LoadBalancerScope          v1.LoadBalancerScope
+	LoadBalancerIP             string
+	EndpointPublishingStrategy *v1.EndpointPublishingStrategy
 }
 
 func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
@@ -26,6 +27,8 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 	nlb := false
 	var loadBalancerIP string
 	loadBalancerScope := v1.ExternalLoadBalancer
+	var endpointPublishingStrategy *v1.EndpointPublishingStrategy
+
 	if hcp.Spec.Platform.IBMCloud != nil && hcp.Spec.Platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 		ibmCloudUPI = true
 	}
@@ -48,14 +51,20 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 		loadBalancerIP = hcp.Spec.Platform.OpenStack.IngressFloatingIP
 	}
 
+	// Extract endpointPublishingStrategy from OperatorConfiguration if configured
+	if hcp.Spec.OperatorConfiguration != nil && hcp.Spec.OperatorConfiguration.IngressOperator != nil {
+		endpointPublishingStrategy = hcp.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy
+	}
+
 	return &IngressParams{
-		IngressSubdomain:  globalconfig.IngressDomain(hcp),
-		Replicas:          replicas,
-		PlatformType:      hcp.Spec.Platform.Type,
-		IsPrivate:         isPrivate,
-		IBMCloudUPI:       ibmCloudUPI,
-		AWSNLB:            nlb,
-		LoadBalancerScope: loadBalancerScope,
-		LoadBalancerIP:    loadBalancerIP,
+		IngressSubdomain:           globalconfig.IngressDomain(hcp),
+		Replicas:                   replicas,
+		PlatformType:               hcp.Spec.Platform.Type,
+		IsPrivate:                  isPrivate,
+		IBMCloudUPI:                ibmCloudUPI,
+		AWSNLB:                     nlb,
+		LoadBalancerScope:          loadBalancerScope,
+		LoadBalancerIP:             loadBalancerIP,
+		EndpointPublishingStrategy: endpointPublishingStrategy,
 	}
 }
