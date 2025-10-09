@@ -32,10 +32,9 @@ const kubevirtDefaultVXLANPort = uint32(9879)
 // 9880 is a currently unassigned IANA port in the user port range.
 const kubevirtDefaultGenevePort = uint32(9880)
 
-// The default OVN gateway router LRP CIDR is 100.64.0.0/16. We need to avoid
-// that for kubernetes which runs nested.
-// 100.65.0.0/16 is not used internally at OVN kubernetes.
-const kubevirtDefaultV4InternalSubnet = "100.65.0.0/16"
+// The default OVN gateway router LRP CIDR is 100.64.0.0/16 and the default UDNs
+// is 100.65.0.0/16. We need to avoid that for kubernetes which runs nested.
+const kubevirtDefaultV4InternalSubnet = "100.66.0.0/16"
 
 func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.NetworkType, platformType hyperv1.PlatformType, disableMultiNetwork bool, ovnConfig *hyperv1.OVNKubernetesConfig) {
 	switch platformType {
