@@ -113,6 +113,7 @@ nav:
       - how-to/azure/create-azure-cluster-with-options.md
       - how-to/azure/scheduler.md
     - 'Self-managed Azure':
+      - how-to/azure/self-managed-azure-index.md
       - how-to/azure/azure-workload-identity-setup.md
       - how-to/azure/setup-management-cluster.md
       - how-to/azure/create-self-managed-azure-cluster.md
