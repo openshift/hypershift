@@ -33,7 +33,7 @@ GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
 GO_GCFLAGS ?= -gcflags=all='-N -l'
-GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
+GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor CGO_LDFLAGS="-Wl,-w" go
 GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vendor go
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
