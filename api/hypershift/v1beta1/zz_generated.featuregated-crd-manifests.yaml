@@ -99,9 +99,11 @@ hostedclusters.hypershift.openshift.io:
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
+  - IngressControllerLBSubnetsAWS
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
+  - SetEIPForNLBIngressController
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -155,9 +157,11 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ImageStreamImportMode
+  - IngressControllerLBSubnetsAWS
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
+  - SetEIPForNLBIngressController
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
