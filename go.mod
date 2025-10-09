@@ -102,7 +102,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.20.4
-	sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
+	sigs.k8s.io/karpenter v1.2.2
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0
 	sigs.k8s.io/yaml v1.4.0
@@ -275,7 +275,7 @@ replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 
 // Use our openshift version of karpenter instead of upstream
-replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250619213534-b37141b051bd
 
 // replace (
 // 	k8s.io/api => k8s.io/api v0.32.3
