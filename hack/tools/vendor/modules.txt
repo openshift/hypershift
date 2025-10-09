@@ -1161,7 +1161,7 @@ github.com/tdakkota/asciicheck
 # github.com/tetafro/godot v1.5.0
 ## explicit; go 1.20
 github.com/tetafro/godot
-# github.com/timakin/bodyclose v0.0.0-20241017074812-ed6a65f985e3
+# github.com/timakin/bodyclose v0.0.0-20241222091800-1db5c5ca4d67
 ## explicit; go 1.12
 github.com/timakin/bodyclose/passes/bodyclose
 # github.com/timonwong/loggercheck v0.10.1
