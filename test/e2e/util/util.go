@@ -81,28 +81,53 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-var expectedKasManagementComponents = []string{
-	"cluster-network-operator",
-	"ignition-server",
-	"cluster-storage-operator",
-	"csi-snapshot-controller-operator",
-	"machine-approver",
-	"cluster-autoscaler",
-	"cluster-node-tuning-operator",
-	"capi-provider-controller-manager",
-	"capi-provider",
-	"cluster-api",
-	"etcd",
-	"control-plane-operator",
-	"control-plane-pki-operator",
-	"hosted-cluster-config-operator",
-	"cloud-controller-manager",
-	"olm-collect-profiles",
-	"aws-ebs-csi-driver-operator",
-	"karpenter",
-	"karpenter-operator",
-	"featuregate-generator",
-}
+var (
+	expectedKasManagementComponents = []string{
+		"cluster-network-operator",
+		"ignition-server",
+		"cluster-storage-operator",
+		"csi-snapshot-controller-operator",
+		"machine-approver",
+		"cluster-autoscaler",
+		"cluster-node-tuning-operator",
+		"capi-provider-controller-manager",
+		"capi-provider",
+		"cluster-api",
+		"etcd",
+		"control-plane-operator",
+		"control-plane-pki-operator",
+		"hosted-cluster-config-operator",
+		"cloud-controller-manager",
+		"olm-collect-profiles",
+		"aws-ebs-csi-driver-operator",
+		"karpenter",
+		"karpenter-operator",
+		"featuregate-generator",
+	}
+
+	// podCrashTolerations defines the tolerated amount of restarts a pod is allowed to suffer until it is considered to be crashing.
+	// Pods whose component matches the key are evaluated with the associated toleration.
+	// If a pod is not listed, the default toleration is used.
+	podCrashTolerations = map[string]int32{
+		// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+		"ingress-operator": 20,
+		// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
+		"cloud-credential-operator": 20,
+		// Restart built into OLM by design by
+		// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
+		"olm-operator":                20,
+		"catalog-operator":            20,
+		"certified-operators-catalog": 20,
+		"community-operators-catalog": 20,
+		"redhat-operators-catalog":    20,
+		"redhat-marketplace-catalog":  20,
+		// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+		"openstack-manila-csi-controllerplugin": 20,
+		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+		"kubevirt-csi":                  20,
+		"aws-ebs-csi-driver-controller": 1,
+	}
+)
 
 type GuestClients struct {
 	CfgClient  *configv1client.Clientset
@@ -332,7 +357,6 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 			}, nil, WithTimeout(10*time.Minute),
 		)
-
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
@@ -664,7 +688,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
 		g := NewWithT(t)
 
-		var crashToleration int32
+		var defaultCrashToleration int32
 
 		switch hostedCluster.Spec.Platform.Type {
 		case hyperv1.KubevirtPlatform:
@@ -680,7 +704,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			// This toleration is not used for the default local HCP KubeVirt,
 			// only external infra
 			if kvPlatform != nil && kvPlatform.Credentials != nil {
-				crashToleration = 1
+				defaultCrashToleration = 1
 			}
 
 			// In Azure infra, CAPK pod might crash on startup due to not being able to
@@ -689,11 +713,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if kvPlatform != nil && hostedCluster.Annotations != nil {
 				mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
 				if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
-					crashToleration = 1
+					defaultCrashToleration = 1
 				}
 			}
 		default:
-			crashToleration = 0
+			defaultCrashToleration = 0
 		}
 
 		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
@@ -708,36 +732,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-			if strings.HasPrefix(pod.Name, "ingress-operator-") {
-				continue
-			}
-			// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
-			if strings.HasPrefix(pod.Name, "cloud-credential-operator-") {
-				continue
-			}
-			// Restart built into OLM by design by
-			// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
-			if strings.HasPrefix(pod.Name, "olm-operator-") {
-				continue
+			crashToleration := defaultCrashToleration
+			if toleration, ok := podCrashTolerations[getComponentName(&pod)]; ok {
+				crashToleration = toleration
 			}
 
-			if strings.HasPrefix(pod.Name, "catalog-operator-") {
-				continue
-			}
-			if strings.Contains(pod.Name, "-catalog") {
-				continue
-			}
-
-			// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
-			if strings.HasPrefix(pod.Name, "openstack-manila-csi-controllerplugin-") {
-				continue
-			}
-
-			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
-			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
-				continue
-			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
 					// For kube-controller-manager, check if restart was triggered by certificate rotation
@@ -752,7 +751,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
 						continue
 					}
-					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
+					t.Errorf("Container %s in pod %s has a restartCount > %d (%d)", containerStatus.Name, pod.Name, crashToleration, containerStatus.RestartCount)
 				}
 			}
 		}
