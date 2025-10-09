@@ -20,9 +20,12 @@ package v1beta1
 // AWSCloudProviderConfigApplyConfiguration represents a declarative configuration of the AWSCloudProviderConfig type for use
 // with apply.
 type AWSCloudProviderConfigApplyConfiguration struct {
-	Subnet *AWSResourceReferenceApplyConfiguration `json:"subnet,omitempty"`
-	Zone   *string                                 `json:"zone,omitempty"`
-	VPC    *string                                 `json:"vpc,omitempty"`
+	Subnet                                          *AWSResourceReferenceApplyConfiguration `json:"subnet,omitempty"`
+	Zone                                            *string                                 `json:"zone,omitempty"`
+	VPC                                             *string                                 `json:"vpc,omitempty"`
+	ClusterServiceLoadBalancerHealthProbeMode       *string                                 `json:"clusterServiceLoadBalancerHealthProbeMode,omitempty"`
+	ClusterServiceSharedLoadBalancerHealthProbePort *int32                                  `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
+	ClusterServiceSharedLoadBalancerHealthProbePath *string                                 `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
 }
 
 // AWSCloudProviderConfigApplyConfiguration constructs a declarative configuration of the AWSCloudProviderConfig type for use with
@@ -52,5 +55,29 @@ func (b *AWSCloudProviderConfigApplyConfiguration) WithZone(value string) *AWSCl
 // If called multiple times, the VPC field is set to the value of the last call.
 func (b *AWSCloudProviderConfigApplyConfiguration) WithVPC(value string) *AWSCloudProviderConfigApplyConfiguration {
 	b.VPC = &value
+	return b
+}
+
+// WithClusterServiceLoadBalancerHealthProbeMode sets the ClusterServiceLoadBalancerHealthProbeMode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceLoadBalancerHealthProbeMode field is set to the value of the last call.
+func (b *AWSCloudProviderConfigApplyConfiguration) WithClusterServiceLoadBalancerHealthProbeMode(value string) *AWSCloudProviderConfigApplyConfiguration {
+	b.ClusterServiceLoadBalancerHealthProbeMode = &value
+	return b
+}
+
+// WithClusterServiceSharedLoadBalancerHealthProbePort sets the ClusterServiceSharedLoadBalancerHealthProbePort field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceSharedLoadBalancerHealthProbePort field is set to the value of the last call.
+func (b *AWSCloudProviderConfigApplyConfiguration) WithClusterServiceSharedLoadBalancerHealthProbePort(value int32) *AWSCloudProviderConfigApplyConfiguration {
+	b.ClusterServiceSharedLoadBalancerHealthProbePort = &value
+	return b
+}
+
+// WithClusterServiceSharedLoadBalancerHealthProbePath sets the ClusterServiceSharedLoadBalancerHealthProbePath field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ClusterServiceSharedLoadBalancerHealthProbePath field is set to the value of the last call.
+func (b *AWSCloudProviderConfigApplyConfiguration) WithClusterServiceSharedLoadBalancerHealthProbePath(value string) *AWSCloudProviderConfigApplyConfiguration {
+	b.ClusterServiceSharedLoadBalancerHealthProbePath = &value
 	return b
 }

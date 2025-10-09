@@ -2,6 +2,7 @@ package aws
 
 import (
 	"fmt"
+	"strconv"
 
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
@@ -9,12 +10,19 @@ import (
 )
 
 const (
-	configKey = "aws.conf"
+	configKey                                  = "aws.conf"
+	loadBalancerHealthProbeModeShared          = "Shared"
+	loadBalancerHealthProbeModeServiceNodePort = "ServiceNodePort"
+	defaultKubeProxyHealthCheckPort            = 10256
+	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	clusterID := cpContext.HCP.Spec.InfraID
 	config := cpContext.HCP.Spec.Platform.AWS.CloudProviderConfig
+	probeMode := loadBalancerHealthProbeModeShared
+	probePath := defaultKubeProxyHealthCheckPath
+	probePort := strconv.Itoa(int(defaultKubeProxyHealthCheckPort))
 	var zone, vpc, subnetID string
 	if config != nil {
 		zone = config.Zone
@@ -22,9 +30,21 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		if id := config.Subnet.ID; id != nil {
 			subnetID = *id
 		}
+		if config.ClusterServiceLoadBalancerHealthProbeMode != "" {
+			if config.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeShared && config.ClusterServiceLoadBalancerHealthProbeMode != loadBalancerHealthProbeModeServiceNodePort {
+				return fmt.Errorf("invalid value for clusterServiceLoadBalancerHealthProbeMode: %s", config.ClusterServiceLoadBalancerHealthProbeMode)
+			}
+			probeMode = config.ClusterServiceLoadBalancerHealthProbeMode
+		}
+		if config.ClusterServiceSharedLoadBalancerHealthProbePath != "" {
+			probePath = config.ClusterServiceSharedLoadBalancerHealthProbePath
+		}
+		if config.ClusterServiceSharedLoadBalancerHealthProbePort != 0 {
+			probePort = strconv.Itoa(int(config.ClusterServiceSharedLoadBalancerHealthProbePort))
+		}
 	}
 
 	configTemplate := cm.Data[configKey]
-	cm.Data[configKey] = fmt.Sprintf(configTemplate, zone, vpc, clusterID, subnetID)
+	cm.Data[configKey] = fmt.Sprintf(configTemplate, zone, vpc, clusterID, subnetID, probeMode, probePath, probePort)
 	return nil
 }
