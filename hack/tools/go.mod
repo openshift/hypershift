@@ -1,6 +1,8 @@
 module github.com/openshift-hive/hypershift/hack/tools
 
-go 1.20
+go 1.24.0
+
+toolchain go1.24.6
 
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
@@ -147,7 +149,7 @@ require (
 	go.uber.org/goleak v1.2.1 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20230307190834-24139beb5833 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
+	golang.org/x/exp/typeparams v0.0.0-20251009144603-d2f985daa21b // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/oauth2 v0.8.0 // indirect
