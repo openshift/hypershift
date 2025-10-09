@@ -1,5 +1,9 @@
 package v1beta1
 
+import (
+	operatorv1 "github.com/openshift/api/operator/v1"
+)
+
 // +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
 type LogLevel string
 
@@ -102,4 +106,21 @@ type OVNIPv4Config struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{1,3}\\\\..*') && int(self.split('/')[0].split('.')[0]) > 0", message="first IP address octet must not be 0"
 	// +optional
 	InternalJoinSubnet string `json:"internalJoinSubnet,omitempty"`
+}
+
+// IngressOperatorSpec is the specification of the desired behavior of the Ingress Operator.
+type IngressOperatorSpec struct {
+	// endpointPublishingStrategy is used to publish the default ingress controller endpoints.
+	// If not set, the default behavior is determined by the platform type:
+	// - AWS, Azure, GCP, IBMCloud: LoadBalancerService with External scope
+	// - None, KubeVirt: HostNetwork or NodePort depending on platform
+	// - Other platforms use LoadBalancerService with External scope
+	//
+	// This field allows overriding the platform defaults.
+	// See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
+	// https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
 }
