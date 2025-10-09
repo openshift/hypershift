@@ -1005,49 +1005,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "only route is allowed when type is Route, and forbidden otherwise",
 					},
-					{
-						name: "when platform is Azure and not all services are route with hostname it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.AzurePlatform
-							hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
-								{
-									Service: hyperv1.APIServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{
-											Hostname: "api.example.com",
-										},
-									},
-								},
-								{
-									Service: hyperv1.Ignition,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.NodePort,
-										Route: &hyperv1.RoutePublishingStrategy{
-											Hostname: "ignition.example.com",
-										},
-									},
-								},
-								{
-									Service: hyperv1.Konnectivity,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type: hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{
-											Hostname: "konnectivity.example.com",
-										},
-									},
-								},
-								{
-									Service: hyperv1.OAuthServer,
-									ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-										Type:  hyperv1.Route,
-										Route: &hyperv1.RoutePublishingStrategy{},
-									},
-								},
-							}
-						},
-						expectedErrorSubstring: "Azure platform requires Ignition Route service with a hostname to be defined",
-					},
 				},
 			},
 			{

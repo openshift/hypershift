@@ -5290,26 +5290,20 @@ spec:
                 and disruptive behavior.
               rule: 'self.platform.type != "IBMCloud" ? self.services == oldSelf.services
                 : true'
-            - message: Azure platform requires APIServer Route service with a hostname
-                to be defined
+            - message: Azure platform requires OAuthServer to use Route service publishing
+                strategy
               rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
-                == "APIServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname
-                != "") : true'
-            - message: Azure platform requires OAuthServer Route service with a hostname
-                to be defined
+                == "OAuthServer" && s.servicePublishingStrategy.type == "Route") :
+                true'
+            - message: Azure platform requires Konnectivity to use Route service publishing
+                strategy
               rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
-                == "OAuthServer" && s.servicePublishingStrategy.type == "Route" &&
-                s.servicePublishingStrategy.route.hostname != "") : true'
-            - message: Azure platform requires Konnectivity Route service with a hostname
-                to be defined
+                == "Konnectivity" && s.servicePublishingStrategy.type == "Route")
+                : true'
+            - message: Azure platform requires Ignition to use Route service publishing
+                strategy
               rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
-                == "Konnectivity" && s.servicePublishingStrategy.type == "Route" &&
-                s.servicePublishingStrategy.route.hostname != "") : true'
-            - message: Azure platform requires Ignition Route service with a hostname
-                to be defined
-              rule: 'self.platform.type == "Azure" ? self.services.exists(s, s.service
-                == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname
-                != "") : true'
+                == "Ignition" && s.servicePublishingStrategy.type == "Route") : true'
             - message: If serviceAccountSigningKey is set, issuerURL must be set
               rule: has(self.issuerURL) || !has(self.serviceAccountSigningKey)
             - message: APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]
