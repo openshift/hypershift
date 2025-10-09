@@ -106,8 +106,8 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit; go 1.12
 github.com/spf13/pflag
-# golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a
-## explicit; go 1.18
+# golang.org/x/exp/typeparams v0.0.0-20251009144603-d2f985daa21b
+## explicit; go 1.24.0
 golang.org/x/exp/typeparams
 # golang.org/x/mod v0.14.0
 ## explicit; go 1.18
