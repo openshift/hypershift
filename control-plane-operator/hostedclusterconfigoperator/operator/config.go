@@ -24,6 +24,7 @@ import (
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	"github.com/go-logr/logr"
@@ -82,13 +84,23 @@ type HostedClusterConfigOperatorConfig struct {
 }
 
 func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpName string) ctrl.Manager {
+	l := log.FromContext(ctx)
 	ct, err := client.New(cpConfig, client.Options{Scheme: hyperapi.Scheme})
 	if err != nil {
 		panic(fmt.Sprintf("failed to create client: %v", err))
 	}
 	hcp := resourcemanifests.HostedControlPlane(namespace, hcpName)
-	if err = ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
-		panic(fmt.Sprintf("unable to get HCP: %v", err))
+
+	// Retry getting HCP to handle transient connectivity issues
+	err = wait.PollUntilContextTimeout(ctx, 2*time.Second, 30*time.Second, true, func(ctx context.Context) (bool, error) {
+		if err := ct.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+			l.Error(err, "failed to get HCP, retrying", "namespace", namespace, "hcpName", hcpName)
+			return false, nil // Retry
+		}
+		return true, nil // Success
+	})
+	if err != nil {
+		panic(fmt.Sprintf("unable to get HCP after retries: %v", err))
 	}
 
 	cfg.UserAgent = config.HCCOUserAgent
