@@ -149,6 +149,7 @@ type AzureVMImage struct {
 	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
 	//
 	// +optional
+	// +kubebuilder:default=Gen2
 	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 }
 
