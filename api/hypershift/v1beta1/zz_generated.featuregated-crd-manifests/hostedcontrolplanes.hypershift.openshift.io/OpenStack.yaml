@@ -5079,6 +5079,7 @@ spec:
                     - PowerVS
                     - None
                     - OpenStack
+                    - GCP
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:
