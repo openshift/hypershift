@@ -36,7 +36,7 @@ type azureMarketplaceImageInfo struct {
 
 // defaultAzureNodePoolImage applies Azure Marketplace image defaults for OCP >= 4.20
 // when no explicit image is configured and marketplace metadata is available in the release payload.
-func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
+func defaultAzureNodePoolImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
 	// Skip if ImageID is explicitly set
 	if nodePool.Spec.Platform.Azure.Image.ImageID != nil {
 		return nil
@@ -246,9 +246,9 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 	return azureMachineTemplate, nil
 }
 
-func (c *CAPI) azureMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
+func (c *CAPI) azureMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
 	// Apply Azure Marketplace image defaults before generating machine template spec
-	if err := defaultAzureNodePoolImage(context.Background(), c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage); err != nil {
+	if err := defaultAzureNodePoolImage(c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage); err != nil {
 		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)
 	}
 
