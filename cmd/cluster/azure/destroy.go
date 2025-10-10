@@ -30,6 +30,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
+	cmd.Flags().BoolVar(&opts.AzurePlatform.PreserveResourceGroup, "preserve-resource-group", opts.AzurePlatform.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 
@@ -102,11 +103,12 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 
 func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error {
 	destroyInfraOptions := &azureinfra.DestroyInfraOptions{
-		Name:              o.Name,
-		Location:          o.AzurePlatform.Location,
-		InfraID:           o.InfraID,
-		CredentialsFile:   o.AzurePlatform.CredentialsFile,
-		ResourceGroupName: o.AzurePlatform.ResourceGroupName,
+		Name:                  o.Name,
+		Location:              o.AzurePlatform.Location,
+		InfraID:               o.InfraID,
+		CredentialsFile:       o.AzurePlatform.CredentialsFile,
+		ResourceGroupName:     o.AzurePlatform.ResourceGroupName,
+		PreserveResourceGroup: o.AzurePlatform.PreserveResourceGroup,
 	}
 	return destroyInfraOptions.Run(ctx, o.Log)
 }
