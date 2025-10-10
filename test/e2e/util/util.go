@@ -1656,20 +1656,22 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false.
 		// if a labelSelector is given with an empty map, allow all containers to be false
 		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
-			{label: "app", value: "azure-disk-csi-driver-controller"}:     {},
-			{label: "app", value: "azure-disk-csi-driver-operator"}:       {},
-			{label: "app", value: "azure-file-csi-driver-controller"}:     {},
-			{label: "app", value: "azure-file-csi-driver-operator"}:       {},
-			{label: "app", value: "aws-ebs-csi-driver-controller"}:        {},
-			{label: "app", value: "aws-ebs-csi-driver-operator"}:          {},
-			{label: "app", value: "openstack-cinder-csi-driver-operator"}: {},
-			{label: "app", value: "manila-csi-driver-operator"}:           {},
-			{label: "app", value: "multus-admission-controller"}:          {},
-			{label: "app", value: "network-node-identity"}:                {},
-			{label: "app", value: "ovnkube-control-plane"}:                {},
-			{label: "app", value: "cloud-network-config-controller"}:      {},
-			{label: "app", value: "vmi-console-debug"}:                    {},
-			{label: "kubevirt.io", value: "virt-launcher"}:                {}, // virt-launcher pods have no app label
+			{label: "app", value: "azure-disk-csi-driver-controller"}:       {},
+			{label: "app", value: "azure-disk-csi-driver-operator"}:         {},
+			{label: "app", value: "azure-file-csi-driver-controller"}:       {},
+			{label: "app", value: "azure-file-csi-driver-operator"}:         {},
+			{label: "app", value: "aws-ebs-csi-driver-controller"}:          {},
+			{label: "app", value: "aws-ebs-csi-driver-operator"}:            {},
+			{label: "app", value: "openstack-cinder-csi-driver-operator"}:   {},
+			{label: "app", value: "openstack-cinder-csi-driver-controller"}: {},
+			{label: "app", value: "manila-csi-driver-operator"}:             {},
+			{label: "app", value: "openstack-manila-csi"}:                   {},
+			{label: "app", value: "multus-admission-controller"}:            {},
+			{label: "app", value: "network-node-identity"}:                  {},
+			{label: "app", value: "ovnkube-control-plane"}:                  {},
+			{label: "app", value: "cloud-network-config-controller"}:        {},
+			{label: "app", value: "vmi-console-debug"}:                      {},
+			{label: "kubevirt.io", value: "virt-launcher"}:                  {}, // virt-launcher pods have no app label
 		}
 
 		for _, pod := range hcpPods.Items {
@@ -1721,7 +1723,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			{label: "app", value: "aws-ebs-csi-driver-controller"}:          {},
 			{label: "app", value: "aws-ebs-csi-driver-operator"}:            {},
 			{label: "app", value: "openstack-cinder-csi-driver-controller"}: {},
-			{label: "app", value: "openstack-manila-csi-controllerplugin"}:  {},
+			{label: "app", value: "openstack-manila-csi"}:                   {},
 			{label: "app", value: "multus-admission-controller"}:            {},
 			{label: "app", value: "network-node-identity"}:                  {},
 			{label: "app", value: "ovnkube-control-plane"}:                  {},
