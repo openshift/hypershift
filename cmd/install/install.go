@@ -128,6 +128,7 @@ type Options struct {
 	RegistryOverrides                         string
 	RenderNamespace                           bool
 	PlatformsToInstall                        []string
+	ImagePullPolicy                           string
 }
 
 func (o *Options) Validate() error {
@@ -146,6 +147,7 @@ func (o *Options) Validate() error {
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --oidc-storage-provider-s3-secret or --oidc-storage-provider-s3-credentials is supported"))
 	}
+
 	if (len(o.OIDCStorageProviderS3CredentialsSecret) > 0 || len(o.OIDCStorageProviderS3Credentials) > 0) &&
 		(len(o.OIDCStorageProviderS3BucketName) == 0 || len(o.OIDCStorageProviderS3Region) == 0 || len(o.OIDCStorageProviderS3CredentialsSecretKey) == 0) {
 		errs = append(errs, fmt.Errorf("all required oidc information is not set"))
@@ -191,6 +193,16 @@ func (o *Options) Validate() error {
 			errs = append(errs, fmt.Errorf("not a valid platform type: %s", platform))
 		}
 	}
+
+	if len(o.ImagePullPolicy) > 0 {
+		normalized := strings.ToLower(o.ImagePullPolicy)
+		switch normalized {
+		case "always", "never", "ifnotpresent":
+		default:
+			errs = append(errs, fmt.Errorf("invalid --image-pull-policy: %s (want Always|Never|IfNotPresent)", o.ImagePullPolicy))
+		}
+	}
+
 	return errors.NewAggregate(errs)
 }
 
@@ -217,6 +229,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "The namespace in which to install HyperShift")
 	cmd.PersistentFlags().StringVar(&opts.HyperShiftImage, "hypershift-image", opts.HyperShiftImage, "The HyperShift image to deploy")
+	cmd.PersistentFlags().StringVar(&opts.ImagePullPolicy, "image-pull-policy", opts.ImagePullPolicy, "The image pull policy to use for HyperShift operator containers (Always, Never, IfNotPresent). Defaults to IfNotPresent")
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", opts.Development, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
@@ -333,6 +346,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.Namespace = "hypershift"
 	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
+	opts.ImagePullPolicy = "IfNotPresent"
 
 	return opts
 }
@@ -801,6 +815,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
+		ImagePullPolicy:                         opts.ImagePullPolicy,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,

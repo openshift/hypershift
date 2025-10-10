@@ -401,6 +401,7 @@ type HyperShiftOperatorDeployment struct {
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
 	PlatformsInstalled                      string
+	ImagePullPolicy                         string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -684,7 +685,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 						{
 							Name:            "init-environment",
 							Image:           image,
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: corev1.PullPolicy(o.ImagePullPolicy),
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
@@ -715,7 +716,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								Privileged:             &privileged,
 							},
 							Image:           image,
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: corev1.PullPolicy(o.ImagePullPolicy),
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            args,
