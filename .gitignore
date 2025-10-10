@@ -44,3 +44,13 @@ tools/bin
 
 # dev
 dev/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+*.egg
