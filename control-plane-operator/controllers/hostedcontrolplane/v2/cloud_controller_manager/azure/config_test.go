@@ -16,7 +16,10 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	hcp := newTestHCP(nil)
+	hcp := newTestHCP(map[string]string{
+		hyperv1.SharedLoadBalancerHealthProbePathAnnotation: "/healthz",
+		hyperv1.SharedLoadBalancerHealthProbePortAnnotation: "10256",
+	})
 	hcp.Namespace = "HCP_NAMESPACE"
 
 	cm := &corev1.ConfigMap{}

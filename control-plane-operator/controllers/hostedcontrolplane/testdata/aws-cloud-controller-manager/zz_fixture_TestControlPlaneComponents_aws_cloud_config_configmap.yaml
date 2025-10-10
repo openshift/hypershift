@@ -1,8 +1,7 @@
 apiVersion: v1
 data:
   aws.conf: "[Global]\nZone = \nVPC = \nKubernetesClusterID = \nSubnetID = \nClusterServiceLoadBalancerHealthProbeMode
-    = Shared\nClusterServiceSharedLoadBalancerHealthProbePath = /healthz\nClusterServiceSharedLoadBalancerHealthProbePort
-    = 10256"
+    = Shared"
 kind: ConfigMap
 metadata:
   creationTimestamp: null

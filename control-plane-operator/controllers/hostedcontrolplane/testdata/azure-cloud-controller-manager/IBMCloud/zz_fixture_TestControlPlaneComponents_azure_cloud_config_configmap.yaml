@@ -26,9 +26,7 @@ data:
       "loadBalancerSku": "standard",
       "disableOutboundSNAT": true,
       "loadBalancerName": "",
-      "clusterServiceLoadBalancerHealthProbeMode": "shared",
-      "clusterServiceSharedLoadBalancerHealthProbePath": "/healthz",
-      "clusterServiceSharedLoadBalancerHealthProbePort": 10256
+      "clusterServiceLoadBalancerHealthProbeMode": "shared"
     }
 kind: ConfigMap
 metadata:

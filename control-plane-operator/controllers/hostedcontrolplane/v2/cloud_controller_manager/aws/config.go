@@ -14,16 +14,12 @@ const (
 	configKey                                  = "aws.conf"
 	loadBalancerHealthProbeModeShared          = "Shared"
 	loadBalancerHealthProbeModeServiceNodePort = "ServiceNodePort"
-	defaultKubeProxyHealthCheckPort            = 10256
-	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
 	clusterID := cpContext.HCP.Spec.InfraID
 	config := cpContext.HCP.Spec.Platform.AWS.CloudProviderConfig
 	probeMode := loadBalancerHealthProbeModeShared
-	probePath := defaultKubeProxyHealthCheckPath
-	probePort := strconv.Itoa(int(defaultKubeProxyHealthCheckPort))
 	var zone, vpc, subnetID string
 	if config != nil {
 		zone = config.Zone
@@ -42,28 +38,27 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 		}
 	}
 
-	// Check for shared load balancer health probe path annotation (only applies when mode is Shared)
-	if path, ok := cpContext.HCP.Annotations[hyperv1.SharedLoadBalancerHealthProbePathAnnotation]; ok {
-		if probeMode == loadBalancerHealthProbeModeShared {
-			probePath = path
-		}
-	}
-
-	// Check for shared load balancer health probe port annotation (only applies when mode is Shared)
-	if portStr, ok := cpContext.HCP.Annotations[hyperv1.SharedLoadBalancerHealthProbePortAnnotation]; ok {
-		if probeMode == loadBalancerHealthProbeModeShared {
-			portNum, err := strconv.Atoi(portStr)
-			if err != nil {
-				return fmt.Errorf("invalid value for annotation %s: %s (must be a valid port number)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portStr)
-			}
-			if portNum < 1 || portNum > 65535 {
-				return fmt.Errorf("invalid value for annotation %s: %d (must be between 1 and 65535)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portNum)
-			}
-			probePort = portStr
-		}
-	}
-
+	// Start with base config from template (only zone, vpc, clusterID, subnetID, probeMode)
 	configTemplate := cm.Data[configKey]
-	cm.Data[configKey] = fmt.Sprintf(configTemplate, zone, vpc, clusterID, subnetID, probeMode, probePath, probePort)
+	baseConfig := fmt.Sprintf(configTemplate, zone, vpc, clusterID, subnetID, probeMode)
+
+	// Only add probe path if annotation is present
+	if path, ok := cpContext.HCP.Annotations[hyperv1.SharedLoadBalancerHealthProbePathAnnotation]; ok && probeMode == loadBalancerHealthProbeModeShared {
+		baseConfig += fmt.Sprintf("\nClusterServiceSharedLoadBalancerHealthProbePath = %s", path)
+	}
+
+	// Only add probe port if annotation is present
+	if portStr, ok := cpContext.HCP.Annotations[hyperv1.SharedLoadBalancerHealthProbePortAnnotation]; ok && probeMode == loadBalancerHealthProbeModeShared {
+		portNum, err := strconv.Atoi(portStr)
+		if err != nil {
+			return fmt.Errorf("invalid value for annotation %s: %s (must be a valid port number)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portStr)
+		}
+		if portNum < 1 || portNum > 65535 {
+			return fmt.Errorf("invalid value for annotation %s: %d (must be between 1 and 65535)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portNum)
+		}
+		baseConfig += fmt.Sprintf("\nClusterServiceSharedLoadBalancerHealthProbePort = %s", portStr)
+	}
+
+	cm.Data[configKey] = baseConfig
 	return nil
 }

@@ -20,8 +20,6 @@ const (
 	ConfigKey                                  = "cloud.conf"
 	loadBalancerHealthProbeModeShared          = "shared"
 	loadBalancerHealthProbeModeServiceNodePort = "servicenodeport"
-	defaultKubeProxyHealthCheckPort            = 10256
-	defaultKubeProxyHealthCheckPath            = "/healthz"
 )
 
 func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -86,8 +84,10 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 	}
 
 	probeMode := loadBalancerHealthProbeModeShared
-	probePath := defaultKubeProxyHealthCheckPath
-	probePort := int32(defaultKubeProxyHealthCheckPort)
+	var (
+		probePath string
+		probePort int32
+	)
 
 	// Check for annotation overrides
 	if mode, ok := hcp.Annotations[hyperv1.AzureLoadBalancerHealthProbeModeAnnotation]; ok {
@@ -135,10 +135,14 @@ func azureConfig(cpContext component.WorkloadContext, withCredentials bool) (Azu
 		CloudProviderBackoffDuration: 6,
 		LoadBalancerSku:              "standard",
 		DisableOutboundSNAT:          true,
-		ClusterServiceLoadBalancerHealthProbeMode:       probeMode,
-		ClusterServiceSharedLoadBalancerHealthProbePath: probePath,
-		ClusterServiceSharedLoadBalancerHealthProbePort: probePort,
-		UseInstanceMetadata:                             true,
+		ClusterServiceLoadBalancerHealthProbeMode: probeMode,
+		UseInstanceMetadata:                       true,
+	}
+	if probePath != "" {
+		azureConfig.ClusterServiceSharedLoadBalancerHealthProbePath = probePath
+	}
+	if probePort != 0 {
+		azureConfig.ClusterServiceSharedLoadBalancerHealthProbePort = probePort
 	}
 
 	// Configure authentication method based on platform type
@@ -193,6 +197,6 @@ type AzureConfig struct {
 	DisableOutboundSNAT                             bool   `json:"disableOutboundSNAT"`
 	LoadBalancerName                                string `json:"loadBalancerName"`
 	ClusterServiceLoadBalancerHealthProbeMode       string `json:"clusterServiceLoadBalancerHealthProbeMode"`
-	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath"`
-	ClusterServiceSharedLoadBalancerHealthProbePort int32  `json:"clusterServiceSharedLoadBalancerHealthProbePort"`
+	ClusterServiceSharedLoadBalancerHealthProbePath string `json:"clusterServiceSharedLoadBalancerHealthProbePath,omitempty"`
+	ClusterServiceSharedLoadBalancerHealthProbePort int32  `json:"clusterServiceSharedLoadBalancerHealthProbePort,omitempty"`
 }
