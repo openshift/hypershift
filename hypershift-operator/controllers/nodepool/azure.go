@@ -37,10 +37,20 @@ type azureMarketplaceImageInfo struct {
 // defaultAzureNodePoolImage applies Azure Marketplace image defaults for OCP >= 4.20
 // when no explicit image is configured and marketplace metadata is available in the release payload.
 func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) error {
-	// Skip if image is already explicitly set
-	if nodePool.Spec.Platform.Azure.Image.ImageID != nil ||
-		nodePool.Spec.Platform.Azure.Image.AzureMarketplace != nil {
+	// Skip if ImageID is explicitly set
+	if nodePool.Spec.Platform.Azure.Image.ImageID != nil {
 		return nil
+	}
+
+	// Skip if AzureMarketplace is explicitly set with populated fields
+	// An empty struct (all fields are empty strings) means the CLI created it but expects defaulting
+	if nodePool.Spec.Platform.Azure.Image.AzureMarketplace != nil {
+		marketplace := nodePool.Spec.Platform.Azure.Image.AzureMarketplace
+		if marketplace.Publisher != "" && marketplace.Offer != "" &&
+			marketplace.SKU != "" && marketplace.Version != "" {
+			// User explicitly provided marketplace data, don't override
+			return nil
+		}
 	}
 
 	// Check if OCP version >= 4.20 for marketplace defaulting
@@ -63,9 +73,10 @@ func defaultAzureNodePoolImage(ctx context.Context, nodePool *hyperv1.NodePool, 
 
 	// Map hypershift architecture to RHCOS stream architecture
 	streamArch := arch
-	if arch == hyperv1.ArchitectureARM64 {
+	switch arch {
+	case hyperv1.ArchitectureARM64:
 		streamArch = "aarch64"
-	} else if arch == hyperv1.ArchitectureAMD64 {
+	case hyperv1.ArchitectureAMD64:
 		streamArch = "x86_64"
 	}
 
