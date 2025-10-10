@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package api
 
 import (
@@ -123,7 +126,7 @@ func (n *Nodes) UpdateDrain(nodeID string, spec *DrainSpec, markEligible bool, q
 	return resp, err
 }
 
-// UpdateDrainWithMeta is used to update the drain strategy for a given node. If
+// UpdateDrainOpts is used to update the drain strategy for a given node. If
 // markEligible is true and the drain is being removed, the node will be marked
 // as having its scheduling being eligible
 func (n *Nodes) UpdateDrainOpts(nodeID string, opts *DrainOptions, q *WriteOptions) (*NodeDrainUpdateResponse,
@@ -475,7 +478,7 @@ func (n *Nodes) GC(nodeID string, q *QueryOptions) error {
 	return err
 }
 
-// TODO Add tests
+// GcAlloc - TODO Add tests
 func (n *Nodes) GcAlloc(allocID string, q *QueryOptions) error {
 	path := fmt.Sprintf("/v1/client/allocation/%s/gc", allocID)
 	_, err := n.client.query(path, nil, q)
@@ -514,6 +517,8 @@ type DriverInfo struct {
 type HostVolumeInfo struct {
 	Path     string
 	ReadOnly bool
+	// ID is set for dynamic host volumes only.
+	ID string
 }
 
 // HostNetworkInfo is used to return metadata about a given HostNetwork
@@ -550,6 +555,7 @@ type Node struct {
 	Links                 map[string]string
 	Meta                  map[string]string
 	NodeClass             string
+	NodePool              string
 	CgroupParent          string
 	Drain                 bool
 	DrainStrategy         *DrainStrategy
@@ -560,12 +566,14 @@ type Node struct {
 	Events                []*NodeEvent
 	Drivers               map[string]*DriverInfo
 	HostVolumes           map[string]*HostVolumeInfo
+	GCVolumesOnNodeGC     bool
 	HostNetworks          map[string]*HostNetworkInfo
 	CSIControllerPlugins  map[string]*CSIInfo
 	CSINodePlugins        map[string]*CSIInfo
 	LastDrain             *DrainMetadata
 	CreateIndex           uint64
 	ModifyIndex           uint64
+	NodeMaxAllocs         int
 }
 
 type NodeResources struct {
@@ -779,6 +787,7 @@ type HostStats struct {
 	Memory           *HostMemoryStats
 	CPU              []*HostCPUStats
 	DiskStats        []*HostDiskStats
+	AllocDirStats    *HostDiskStats
 	DeviceStats      []*DeviceGroupStats
 	Uptime           uint64
 	CPUTicksConsumed float64
@@ -911,6 +920,7 @@ type NodeListStub struct {
 	Datacenter            string
 	Name                  string
 	NodeClass             string
+	NodePool              string
 	Version               string
 	Drain                 bool
 	SchedulingEligibility string
