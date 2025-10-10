@@ -11,10 +11,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
-	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -325,12 +322,8 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 // GenerateNodePools generates the initial nodepool(s) for the Azure HostedCluster create cluster command
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
 	var vmImage hyperv1.AzureVMImage
-	if o.MarketplacePublisher == "" {
-		vmImage = hyperv1.AzureVMImage{
-			Type:    hyperv1.ImageID,
-			ImageID: ptr.To(o.infra.BootImageID),
-		}
-	} else {
+	if o.MarketplacePublisher != "" {
+		// Use marketplace image when marketplace flags are provided
 		vmImage = hyperv1.AzureVMImage{
 			Type: hyperv1.AzureMarketplace,
 			AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -339,6 +332,19 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 				SKU:       o.MarketplaceSKU,
 				Version:   o.MarketplaceVersion,
 			},
+		}
+	} else if o.infra.BootImageID != "" {
+		// Use boot image ID only when it's been explicitly set during infra creation
+		vmImage = hyperv1.AzureVMImage{
+			Type:    hyperv1.ImageID,
+			ImageID: ptr.To(o.infra.BootImageID),
+		}
+	} else {
+		// Set Type to AzureMarketplace with nil AzureMarketplace field
+		// This signals to the nodepool controller to populate marketplace details from the release payload
+		vmImage = hyperv1.AzureVMImage{
+			Type:             hyperv1.AzureMarketplace,
+			AzureMarketplace: nil,
 		}
 	}
 
@@ -467,22 +473,12 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 
 // CreateInfraOptions creates the Azure infrastructure options for the HostedCluster create cluster command
 func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, opts *core.CreateOptions) (azureinfra.CreateInfraOptions, error) {
-	rhcosImage := azureOpts.RHCOSImage
-	if rhcosImage == "" && azureOpts.MarketplacePublisher == "" {
-		var err error
-		rhcosImage, err = lookupRHCOSImage(ctx, opts.Arch, opts.ReleaseImage, opts.ReleaseStream, opts.PullSecretFile)
-		if err != nil {
-			return azureinfra.CreateInfraOptions{}, fmt.Errorf("failed to retrieve RHCOS image: %w", err)
-		}
-	}
-
 	return azureinfra.CreateInfraOptions{
 		Name:                        opts.Name,
 		Location:                    azureOpts.Location,
 		InfraID:                     opts.InfraID,
 		CredentialsFile:             azureOpts.CredentialsFile,
 		BaseDomain:                  opts.BaseDomain,
-		RHCOSImage:                  rhcosImage,
 		VnetID:                      azureOpts.VnetID,
 		ResourceGroupName:           azureOpts.ResourceGroupName,
 		NetworkSecurityGroupID:      azureOpts.NetworkSecurityGroupID,
@@ -496,45 +492,4 @@ func CreateInfraOptions(ctx context.Context, azureOpts *ValidatedCreateOptions, 
 		AssignCustomHCPRoles:        azureOpts.AssignCustomHCPRoles,
 		DisableClusterCapabilities:  opts.DisableClusterCapabilities,
 	}, nil
-}
-
-// lookupRHCOSImage looks up a release image and extracts the RHCOS VHD image based on the nodepool arch
-func lookupRHCOSImage(ctx context.Context, arch, image, releaseStream, pullSecretFile string) (string, error) {
-	if len(image) == 0 && len(releaseStream) != 0 {
-		client, err := util.GetClient()
-		if err != nil {
-			return "", fmt.Errorf("failed to get client: %w", err)
-		}
-		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, releaseStream, client)
-		if err != nil {
-			return "", fmt.Errorf("failed to lookup OCP release image for release stream, %s: %w", releaseStream, err)
-		}
-		image = defaultVersion.PullSpec
-	}
-
-	rhcosImage := ""
-	releaseProvider := &releaseinfo.RegistryClientProvider{}
-
-	pullSecret, err := os.ReadFile(pullSecretFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read pull secret file: %w", err)
-	}
-
-	releaseImage, err := releaseProvider.Lookup(ctx, image, pullSecret)
-	if err != nil {
-		return "", fmt.Errorf("failed to lookup release image: %w", err)
-	}
-
-	// We need to translate amd64 to x86_64 and arm64 to aarch64 since that is what is in the release image stream
-	if _, ok := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]]; !ok {
-		return "", fmt.Errorf("arch does not exist in release image, arch: %s", arch)
-	}
-
-	rhcosImage = releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[arch]].RHCOS.AzureDisk.URL
-
-	if rhcosImage == "" {
-		return "", fmt.Errorf("RHCOS VHD image is empty: %w", err)
-	}
-
-	return rhcosImage, nil
 }

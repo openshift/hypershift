@@ -17,6 +17,17 @@ const (
 	AzureMarketplace AzureVMImageType = "AzureMarketplace"
 )
 
+// AzureVMImageGeneration represents the Hyper-V generation of an Azure VM image.
+// +kubebuilder:validation:Enum=Gen1;Gen2
+type AzureVMImageGeneration string
+
+const (
+	// Gen1 represents Hyper-V Generation 1 VMs
+	Gen1 AzureVMImageGeneration = "Gen1"
+	// Gen2 represents Hyper-V Generation 2 VMs
+	Gen2 AzureVMImageGeneration = "Gen2"
+)
+
 // AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.
 type AzureNodePoolPlatform struct {
 	// vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
@@ -102,7 +113,7 @@ type AzureNodePoolPlatform struct {
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'ImageID' ?  has(self.imageID) : !has(self.imageID)",message="imageID is required when type is ImageID, and forbidden otherwise"
-// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'AzureMarketplace' ?  has(self.azureMarketplace) : !has(self.azureMarketplace)",message="azureMarketplace is required when type is RequiredMember, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="self.type == 'ImageID' ?  !has(self.azureMarketplace) : true",message="azureMarketplace is forbidden when type is ImageID"
 // +union
 type AzureVMImage struct {
 	// type is the type of image data that will be provided to the Azure VM.
@@ -128,6 +139,18 @@ type AzureVMImage struct {
 	// +optional
 	// +unionMember
 	AzureMarketplace *AzureMarketplaceImage `json:"azureMarketplace,omitempty"`
+
+	// imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+	// This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+	// from the release payload metadata when azureMarketplace is not explicitly provided.
+	// It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+	// encoded into the SKU field that CAPZ uses.
+	// This field has no effect when explicit imageID or azureMarketplace is set.
+	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
+	//
+	// +optional
+	// +kubebuilder:default=Gen2
+	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 }
 
 // AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.

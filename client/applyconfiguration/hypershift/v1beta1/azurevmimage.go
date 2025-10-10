@@ -24,9 +24,10 @@ import (
 // AzureVMImageApplyConfiguration represents a declarative configuration of the AzureVMImage type for use
 // with apply.
 type AzureVMImageApplyConfiguration struct {
-	Type             *hypershiftv1beta1.AzureVMImageType      `json:"type,omitempty"`
-	ImageID          *string                                  `json:"imageID,omitempty"`
-	AzureMarketplace *AzureMarketplaceImageApplyConfiguration `json:"azureMarketplace,omitempty"`
+	Type             *hypershiftv1beta1.AzureVMImageType       `json:"type,omitempty"`
+	ImageID          *string                                   `json:"imageID,omitempty"`
+	AzureMarketplace *AzureMarketplaceImageApplyConfiguration  `json:"azureMarketplace,omitempty"`
+	ImageGeneration  *hypershiftv1beta1.AzureVMImageGeneration `json:"imageGeneration,omitempty"`
 }
 
 // AzureVMImageApplyConfiguration constructs a declarative configuration of the AzureVMImage type for use with
@@ -56,5 +57,13 @@ func (b *AzureVMImageApplyConfiguration) WithImageID(value string) *AzureVMImage
 // If called multiple times, the AzureMarketplace field is set to the value of the last call.
 func (b *AzureVMImageApplyConfiguration) WithAzureMarketplace(value *AzureMarketplaceImageApplyConfiguration) *AzureVMImageApplyConfiguration {
 	b.AzureMarketplace = value
+	return b
+}
+
+// WithImageGeneration sets the ImageGeneration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageGeneration field is set to the value of the last call.
+func (b *AzureVMImageApplyConfiguration) WithImageGeneration(value hypershiftv1beta1.AzureVMImageGeneration) *AzureVMImageApplyConfiguration {
+	b.ImageGeneration = &value
 	return b
 }

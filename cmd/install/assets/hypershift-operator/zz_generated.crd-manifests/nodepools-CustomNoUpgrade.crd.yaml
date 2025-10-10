@@ -795,6 +795,20 @@ spec:
                             - sku
                             - version
                             type: object
+                          imageGeneration:
+                            default: Gen2
+                            description: |-
+                              imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+                              This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+                              from the release payload metadata when azureMarketplace is not explicitly provided.
+                              It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+                              encoded into the SKU field that CAPZ uses.
+                              This field has no effect when explicit imageID or azureMarketplace is set.
+                              Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
+                            enum:
+                            - Gen1
+                            - Gen2
+                            type: string
                           imageID:
                             description: imageID is the Azure resource ID of a VHD
                               image to use to boot the Azure VMs from.
@@ -819,10 +833,9 @@ spec:
                             otherwise
                           rule: 'has(self.type) && self.type == ''ImageID'' ?  has(self.imageID)
                             : !has(self.imageID)'
-                        - message: azureMarketplace is required when type is RequiredMember,
-                            and forbidden otherwise
-                          rule: 'has(self.type) && self.type == ''AzureMarketplace''
-                            ?  has(self.azureMarketplace) : !has(self.azureMarketplace)'
+                        - message: azureMarketplace is forbidden when type is ImageID
+                          rule: 'self.type == ''ImageID'' ?  !has(self.azureMarketplace)
+                            : true'
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.
