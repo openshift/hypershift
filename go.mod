@@ -39,7 +39,7 @@ require (
 	github.com/openshift/cloud-credential-operator v0.0.0-20240504012628-26d4761a9f4e
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20220614214129-2c76314fb3cc
-	github.com/openshift/library-go v0.0.0-20231214171439-128164517bf7
+	github.com/openshift/library-go 6c2d3d0d6f05
 	github.com/operator-framework/api v0.10.7
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20230306072409-bc42a581099f
