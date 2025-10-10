@@ -2068,6 +2068,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+
+		// ensure Ingress Operator configuration changes are properly handled
+		e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
