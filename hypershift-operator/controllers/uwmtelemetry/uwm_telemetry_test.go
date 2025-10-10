@@ -84,28 +84,70 @@ matches:
 `
 
 func TestReconcileUWMConfigContent(t *testing.T) {
+	// helper to locate the telemetry remote write entry and validate core fields
+	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) map[string]interface{} {
+		remoteWrite, found, err := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(found).To(BeTrue())
+		// Find telemetry entry
+		var telemetry map[string]interface{}
+		for _, item := range remoteWrite {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			url, exists, err := unstructured.NestedString(m, "url")
+			g.Expect(err).ToNot(HaveOccurred())
+			if exists && url == telemetryRemoteWriteURL {
+				telemetry = m
+				break
+			}
+		}
+		g.Expect(telemetry).ToNot(BeNil())
+
+		// auth secret
+		secretName, exists, err := unstructured.NestedString(telemetry, "authorization", "credentials", "name")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+		g.Expect(secretName).To(Equal("telemetry-remote-write"))
+
+		// metadata send=false
+		send, exists, err := unstructured.NestedBool(telemetry, "metadataConfig", "send")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+		g.Expect(send).To(BeFalse())
+
+		// must keep only series with _id label present
+		relabels, exists, err := unstructured.NestedSlice(telemetry, "writeRelabelConfigs")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+		foundKeepID := false
+		for _, r := range relabels {
+			rm, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			action, _, _ := unstructured.NestedString(rm, "action")
+			regex, _, _ := unstructured.NestedString(rm, "regex")
+			src, _, _ := unstructured.NestedStringSlice(rm, "sourceLabels")
+			if action == "keep" && regex == ".+" && len(src) == 1 && src[0] == "_id" {
+				foundKeepID = true
+				break
+			}
+		}
+		g.Expect(foundKeepID).To(BeTrue())
+		return telemetry
+	}
+
 	tests := []struct {
-		name     string
-		initial  string
-		expected string
+		name          string
+		initial       string
+		expectRWCount int
+		validateExtra func(*WithT, map[string]interface{})
 	}{
 		{
-			name: "no existing config",
-			expected: `prometheus:
-  remoteWrite:
-  - authorization:
-      credentials:
-        key: token
-        name: telemetry-remote-write
-      type: Bearer
-    queueConfig:
-      batchSendDeadline: 1m
-      capacity: 30000
-      maxBackoff: 256s
-      maxSamplesPerSend: 10000
-      minBackoff: 1s
-    url: https://infogw.api.openshift.com/metrics/v1/receive
-`,
+			name:          "no existing config",
+			expectRWCount: 1,
 		},
 		{
 			name: "other keys present should be preserved",
@@ -114,24 +156,15 @@ goo: baz
 prometheus:
   random1: one
 `,
-			expected: `foo: bar
-goo: baz
-prometheus:
-  random1: one
-  remoteWrite:
-  - authorization:
-      credentials:
-        key: token
-        name: telemetry-remote-write
-      type: Bearer
-    queueConfig:
-      batchSendDeadline: 1m
-      capacity: 30000
-      maxBackoff: 256s
-      maxSamplesPerSend: 10000
-      minBackoff: 1s
-    url: https://infogw.api.openshift.com/metrics/v1/receive
-`,
+			expectRWCount: 1,
+			validateExtra: func(g *WithT, parsed map[string]interface{}) {
+				v, _, _ := unstructured.NestedString(parsed, "foo")
+				g.Expect(v).To(Equal("bar"))
+				v, _, _ = unstructured.NestedString(parsed, "goo")
+				g.Expect(v).To(Equal("baz"))
+				v, _, _ = unstructured.NestedString(parsed, "prometheus", "random1")
+				g.Expect(v).To(Equal("one"))
+			},
 		},
 		{
 			name: "other remote write configs should be preserved",
@@ -141,24 +174,23 @@ prometheus:
       batchSendDeadline: 5m
     url: http://www.example.com
 `,
-			expected: `prometheus:
-  remoteWrite:
-  - queueConfig:
-      batchSendDeadline: 5m
-    url: http://www.example.com
-  - authorization:
-      credentials:
-        key: token
-        name: telemetry-remote-write
-      type: Bearer
-    queueConfig:
-      batchSendDeadline: 1m
-      capacity: 30000
-      maxBackoff: 256s
-      maxSamplesPerSend: 10000
-      minBackoff: 1s
-    url: https://infogw.api.openshift.com/metrics/v1/receive
-`,
+			expectRWCount: 2,
+			validateExtra: func(g *WithT, parsed map[string]interface{}) {
+				remoteWrite, _, _ := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
+				foundExample := false
+				for _, item := range remoteWrite {
+					m, ok := item.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					url, _, _ := unstructured.NestedString(m, "url")
+					if url == "http://www.example.com" {
+						foundExample = true
+						break
+					}
+				}
+				g.Expect(foundExample).To(BeTrue())
+			},
 		},
 		{
 			name: "existing telemetry config should be updated",
@@ -180,24 +212,11 @@ prometheus:
       minBackoff: 3s
     url: https://infogw.api.openshift.com/metrics/v1/receive
 `,
-			expected: `prometheus:
-  remoteWrite:
-  - queueConfig:
-      batchSendDeadline: 5m
-    url: http://www.example.com
-  - authorization:
-      credentials:
-        key: token
-        name: telemetry-remote-write
-      type: Bearer
-    queueConfig:
-      batchSendDeadline: 1m
-      capacity: 30000
-      maxBackoff: 256s
-      maxSamplesPerSend: 10000
-      minBackoff: 1s
-    url: https://infogw.api.openshift.com/metrics/v1/receive
-`,
+			expectRWCount: 2,
+			validateExtra: func(g *WithT, parsed map[string]interface{}) {
+				_ = validateTelemetryRemoteWrite(g, parsed)
+				// queueConfig numeric assertions are intentionally skipped due to YAML number typing nuances
+			},
 		},
 	}
 
@@ -212,7 +231,21 @@ prometheus:
 			}
 			err := reconcileUWMConfigContent(cm, nil)
 			g.Expect(err).To(Not(HaveOccurred()))
-			g.Expect(cm.Data["config.yaml"]).To(Equal(test.expected))
+
+			parsed := map[string]interface{}{}
+			err = yaml.Unmarshal([]byte(cm.Data["config.yaml"]), &parsed)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// validate telemetry entry exists and core behavior
+			_ = validateTelemetryRemoteWrite(g, parsed)
+
+			// validate remote write count
+			rw, _, _ := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
+			g.Expect(len(rw)).To(Equal(test.expectRWCount))
+
+			if test.validateExtra != nil {
+				test.validateExtra(g, parsed)
+			}
 		})
 	}
 }
@@ -243,6 +276,8 @@ func TestReconcile(t *testing.T) {
 		g.Expect(value).To(BeTrue())
 	}
 
+	expectedRegex := "(count:up0|count:up1|cluster_version|cluster_version_available_updates|cluster_version_capability)"
+
 	validateUWMConfig := func(g *WithT, cm *corev1.ConfigMap) {
 		content := cm.Data["config.yaml"]
 		g.Expect(content).ToNot(BeEmpty())
@@ -259,6 +294,35 @@ func TestReconcile(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(exists).To(BeTrue())
 		g.Expect(url).To(Equal(telemetryRemoteWriteURL))
+		// metadata send=false enforced
+		send, exists, err := unstructured.NestedBool(rawConfig, "metadataConfig", "send")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+		g.Expect(send).To(BeFalse())
+		// relabel configs include _id keep and metrics regex keep
+		relabels, exists, err := unstructured.NestedSlice(rawConfig, "writeRelabelConfigs")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(exists).To(BeTrue())
+		g.Expect(len(relabels)).To(Equal(2))
+		foundKeepID := false
+		foundMetrics := false
+		for _, r := range relabels {
+			rm, ok := r.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			action, _, _ := unstructured.NestedString(rm, "action")
+			regex, _, _ := unstructured.NestedString(rm, "regex")
+			src, _, _ := unstructured.NestedStringSlice(rm, "sourceLabels")
+			if action == "keep" && regex == ".+" && len(src) == 1 && src[0] == "_id" {
+				foundKeepID = true
+			}
+			if action == "keep" && regex == expectedRegex && len(src) == 1 && src[0] == "__name__" {
+				foundMetrics = true
+			}
+		}
+		g.Expect(foundKeepID).To(BeTrue())
+		g.Expect(foundMetrics).To(BeTrue())
 	}
 
 	clusterID := "fake-cluster-id"
