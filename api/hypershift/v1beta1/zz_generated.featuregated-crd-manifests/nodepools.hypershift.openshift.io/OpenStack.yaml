@@ -105,10 +105,12 @@ spec:
                     minimum: 1
                     type: integer
                   min:
-                    description: min is the minimum number of nodes to maintain in
-                      the pool. Must be >= 1 and <= .Max.
+                    description: |-
+                      min is the minimum number of nodes to maintain in the pool.
+                      Can be set to 0 for scale-from-zero.
+                      Must be >= 0 and <= .Max.
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                 required:
                 - max

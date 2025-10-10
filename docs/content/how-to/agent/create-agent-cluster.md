@@ -661,13 +661,29 @@ clusteroperator.config.openshift.io/storage                                    4
 
 Auto-scaling can be enabled, if we choose to enable auto-scaling, when more capacity is require in our Hosted Cluster a new Agent will be installed (providing that we have spare agents). In order to enable auto-scaling we can run the following command:
 
-> **INFO:** In this case the minimum nodes will be 2 and the maximum 5.
+> **INFO:** In this case the minimum nodes will be 2 and the maximum 5. The minimum can also be set to 0 for scale-from-zero scenarios.
 
 ~~~sh
 oc -n ${CLUSTERS_NAMESPACE} patch nodepool ${HOSTED_CLUSTER_NAME} --type=json -p '[{"op": "remove", "path": "/spec/replicas"},{"op":"add", "path": "/spec/autoScaling", "value": { "max": 5, "min": 2 }}]'
 ~~~
 
 If 10 minutes passes without requiring the additional capacity the agent will be decommissioned and placed in the spare queue again.
+
+### Scale-from-Zero Auto-Scaling
+
+To enable scale-from-zero autoscaling:
+
+~~~sh
+oc -n ${CLUSTERS_NAMESPACE} patch nodepool ${HOSTED_CLUSTER_NAME} --type=json -p '[{"op": "remove", "path": "/spec/replicas"},{"op":"add", "path": "/spec/autoScaling", "value": { "max": 3, "min": 0 }}]'
+~~~
+
+> **INFO:** With `min: 0`, the cluster will scale down to zero worker nodes when no workloads require scheduling, and automatically scale up when new workloads are created.
+
+**Important considerations for scale-from-zero:**
+
+- **Cold start delay**: When scaling from 0 to 1, there will be a delay as new agents are provisioned and join the cluster
+- **Template validation**: Ensure your NodePool configuration is valid since template issues will only be discovered during the first scale-up
+- **Monitoring**: Clusters with 0 nodes are normal in scale-from-zero scenarios, not indicative of a problem
 
 1. Let's create a workload that requires a new node.
 
