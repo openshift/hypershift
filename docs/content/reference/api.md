@@ -4581,6 +4581,12 @@ The grace period is determined by the hypershift.openshift.io/destroy-grace-peri
 an initial deployment or upgrade.
 When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterRestoredFromBackup&#34;</p></td>
+<td><p>HostedClusterRestoredFromBackup indicates that the HostedCluster was restored from backup.
+This condition is set to true when the HostedCluster is restored from backup and the recovery process is complete.
+This condition is used to track the status of the recovery process and to determine if the HostedCluster
+is ready to be used after restoration.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
