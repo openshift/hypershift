@@ -2995,6 +2995,13 @@ spec:
                 x-kubernetes-validations:
                 - message: ControllerAvailabilityPolicy is immutable
                   rule: self == oldSelf
+              customIngressControllerName:
+                default: default
+                description: |-
+                  customIngressControllerName allow for changing the ingresscontroller name that the kubevirt network policy in the hosting cluster allows traffic for.
+                  Useful if your hosting cluster uses sharding for ingress.
+                  If omitted, the `default` router will be used
+                type: string
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.

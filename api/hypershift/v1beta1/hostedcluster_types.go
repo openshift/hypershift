@@ -754,6 +754,13 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default={}
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Capabilities is immutable. Changes might result in unpredictable and disruptive behavior."
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
+
+	// customIngressControllerName allow for changing the ingresscontroller name that the kubevirt network policy in the hosting cluster allows traffic for.
+	// Useful if your hosting cluster uses sharding for ingress.
+	// If omitted, the `default` router will be used
+	// +kubebuilder:default=default
+	// +optional
+	CustomIngressControllerName string `json:"customIngressControllerName,omitempty"`
 }
 
 // OLMCatalogPlacement is an enum specifying the placement of OLM catalog components.
