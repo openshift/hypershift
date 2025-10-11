@@ -760,8 +760,7 @@ type HostedClusterSpec struct {
 	// If omitted, the `default` router will be used
 	// +kubebuilder:default=default
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=27
-	// +kubebuilder:validation:Pattern=^a-z0-9?
+	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')`, message="customIngressControllerName has to be a valid kubernetes label value."
 	// +optional
 	CustomIngressControllerName string `json:"customIngressControllerName,omitempty"`
