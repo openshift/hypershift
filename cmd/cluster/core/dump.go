@@ -63,6 +63,7 @@ import (
 	"github.com/go-logr/logr"
 	orcv1alpha1 "github.com/k-orc/openstack-resource-controller/api/v1alpha1"
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
+	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/spf13/cobra"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -106,6 +107,11 @@ var (
 		&karpenterv1.NodePool{},
 		&awskarpenterv1.EC2NodeClass{},
 		&hyperkarpenterv1.OpenshiftEC2NodeClass{},
+	}
+
+	monitoringResources = []client.Object{
+		&prometheusoperatorv1.ServiceMonitor{},
+		&prometheusoperatorv1.PodMonitor{},
 	}
 )
 
@@ -391,6 +397,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	kubeDiscoveryClient := kubeClient.Discovery()
 	optionalResources := append(featureGatedResources, ocpResources...)
+	optionalResources = append(optionalResources, monitoringResources...)
 	for _, resource := range optionalResources {
 		gvk, err := c.GroupVersionKindFor(resource)
 		if err != nil {
