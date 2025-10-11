@@ -2365,7 +2365,7 @@ spec:
                 x-kubernetes-validations:
                 - message: customIngressControllerName has to be a valid kubernetes
                     label value.
-                  rule: self.matches(^[a-z]([-a-z0-9]*[a-z0-9])?$)
+                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
