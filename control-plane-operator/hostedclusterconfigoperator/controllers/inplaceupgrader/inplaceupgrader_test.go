@@ -583,3 +583,51 @@ func TestCreateUpgradePod(t *testing.T) {
 		})
 	}
 }
+
+func TestIsKubeletConfigValidationFailure(t *testing.T) {
+	g := NewWithT(t)
+
+	testCases := []struct {
+		name     string
+		message  string
+		expected bool
+	}{
+		{
+			name:     "kubelet config validation failure",
+			message:  "Node node-pool-vbk6p-test-inplaceupgrade-7zg5v in nodepool degraded: disk validation failed: content mismatch for file \"/var/lib/kubelet/config.json\"",
+			expected: true,
+		},
+		{
+			name:     "other disk validation failure",
+			message:  "Node node-pool-vbk6p-test-inplaceupgrade-7zg5v in nodepool degraded: disk validation failed: content mismatch for file \"/etc/some-other-file\"",
+			expected: false,
+		},
+		{
+			name:     "non-disk validation failure",
+			message:  "Node node-pool-vbk6p-test-inplaceupgrade-7zg5v in nodepool degraded: network error",
+			expected: false,
+		},
+		{
+			name:     "empty message",
+			message:  "",
+			expected: false,
+		},
+		{
+			name:     "only kubelet config mentioned",
+			message:  "/var/lib/kubelet/config.json",
+			expected: false,
+		},
+		{
+			name:     "only disk validation mentioned",
+			message:  "disk validation failed",
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isKubeletConfigValidationFailure(tc.message)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}

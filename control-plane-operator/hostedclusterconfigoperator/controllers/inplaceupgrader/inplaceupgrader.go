@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -201,19 +202,39 @@ func (r *Reconciler) reconcileInPlaceUpgrade(ctx context.Context, nodePoolUpgrad
 	nodeNeedUpgradeCount := 0
 	for _, node := range nodes {
 		if node.Annotations[MachineConfigDaemonStateAnnotationKey] == MachineConfigDaemonStateDegraded {
-			// Signal in-place upgrade degraded.
-			result, err := r.CreateOrUpdate(ctx, r.client, machineSet, func() error {
-				delete(machineSet.Annotations, nodePoolAnnotationUpgradeInProgressTrue)
-				machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse] = fmt.Sprintf("Node %s in nodepool degraded: %v", node.Name, node.Annotations[MachineConfigDaemonMessageAnnotationKey])
-				return nil
-			})
-			if err != nil {
-				return fmt.Errorf("failed to reconcile MachineSet: %w", err)
+			degradedMessage := node.Annotations[MachineConfigDaemonMessageAnnotationKey]
+			if isKubeletConfigValidationFailure(degradedMessage) {
+				// Treat kubelet config validation failure as success - this occurs when Global Pull Secret
+				// modifies /var/lib/kubelet/config.json which is expected behavior.
+				// There is not a way to specify files to be excluded of the hash calculation in the MCO,
+				result, err := r.CreateOrUpdate(ctx, r.client, machineSet, func() error {
+					machineSet.Annotations[nodePoolAnnotationCurrentConfigVersion] = targetConfigVersionHash
+					delete(machineSet.Annotations, nodePoolAnnotationUpgradeInProgressTrue)
+					delete(machineSet.Annotations, nodePoolAnnotationUpgradeInProgressFalse)
+					return nil
+				})
+				if err != nil {
+					return fmt.Errorf("failed to reconcile MachineSet: %w", err)
+				}
+				log.Info("Global Pull Secret kubelet config detected - proceeding with upgrade completion", "node", node.Name, "result", result)
+				// Update the current config version hash to avoid conflicts with hash mismatches or false positives with the Global Pull Secret + hash calculation.
+				currentConfigVersionHash = targetConfigVersionHash
+				continue // Continue processing as successful
 			} else {
-				log.Info("Reconciled MachineSet", "result", result)
-			}
+				// Signal in-place upgrade degraded for actual failures.
+				result, err := r.CreateOrUpdate(ctx, r.client, machineSet, func() error {
+					delete(machineSet.Annotations, nodePoolAnnotationUpgradeInProgressTrue)
+					machineSet.Annotations[nodePoolAnnotationUpgradeInProgressFalse] = fmt.Sprintf("Node %s in nodepool degraded: %v", node.Name, degradedMessage)
+					return nil
+				})
+				if err != nil {
+					return fmt.Errorf("failed to reconcile MachineSet: %w", err)
+				} else {
+					log.Info("Reconciled MachineSet", "result", result)
+				}
 
-			return fmt.Errorf("degraded node found, cannot progress in-place upgrade. Degraded reason: %v", node.Annotations[MachineConfigDaemonMessageAnnotationKey])
+				return fmt.Errorf("degraded node found, cannot progress in-place upgrade. Degraded reason: %v", degradedMessage)
+			}
 		}
 
 		if nodeNeedsUpgrade(node, currentConfigVersionHash, targetConfigVersionHash) {
@@ -731,4 +752,12 @@ func inPlaceUpgradeConfigMap(poolName string, namespace string) *corev1.ConfigMa
 			Name:      fmt.Sprintf("%s-upgrade", poolName),
 		},
 	}
+}
+
+// isKubeletConfigValidationFailure checks if the error message indicates a failure
+// related to kubelet config.json file changes, which should be considered as successful
+// since the Global Pull Secret feature legitimately modifies this file.
+func isKubeletConfigValidationFailure(errorMessage string) bool {
+	return strings.Contains(errorMessage, "disk validation failed") &&
+		strings.Contains(errorMessage, "content mismatch for file \"/var/lib/kubelet/config.json\"")
 }
