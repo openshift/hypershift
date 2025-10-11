@@ -2439,9 +2439,8 @@ spec:
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
-                - message: customIngressControllerName has to be a valid kubernetes
-                    label value.
-                  rule: self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')
+                - message: customIngressControllerName must be a valid DNS-1123 label.
+                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
