@@ -139,6 +139,9 @@ spec:
 
           set -euo pipefail
 
+          # Ensure the directory is empty, prevent restart from failing
+          chmod -R 0777 /run/ca-trust-generated/* || true
+          rm -rf /run/ca-trust-generated/* || true
           cp -f -r /etc/pki/ca-trust/extracted/pem/* /run/ca-trust-generated/
 
           if ! [[ -f /run/service-ca-signer/service-ca.crt ]]; then
