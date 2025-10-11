@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -28,8 +29,6 @@ const (
 	// Example: "RoutingPreference=Internet" or "FirstPartyUsage=SomeValue,RoutingPreference=Internet".
 	// Both keys and values must be non-empty.
 	AzurePipIpTagsEnvVar = "SHARED_INGRESS_AZURE_PIP_IP_TAGS"
-
-	Image = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"
 )
 
 func hcpRouterLabels() map[string]string {
@@ -127,7 +126,7 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 		}
 
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
-		c.Image = Image
+		c.Image = images.GetSharedIngressHAProxyImage()
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
 			"-db",
