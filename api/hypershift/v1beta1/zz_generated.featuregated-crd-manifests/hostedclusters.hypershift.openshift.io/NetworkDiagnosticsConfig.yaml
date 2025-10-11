@@ -2435,7 +2435,7 @@ spec:
                   customIngressControllerName allows for changing the ingresscontroller name that the kubevirt network policy in the hosting cluster allows traffic for.
                   Useful if your hosting cluster uses sharding for ingress.
                   If omitted, the `default` router will be used
-                maxLength: 27
+                maxLength: 63
                 minLength: 1
                 type: string
                 x-kubernetes-validations:
