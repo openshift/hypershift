@@ -761,7 +761,8 @@ type HostedClusterSpec struct {
 	// +kubebuilder:default=default
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=27
-	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')`, message="customIngressControllerName has to be a valid kubernetes label value."
+	// +kubebuilder:validation:Pattern=^a-z0-9?
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')`, message="customIngressControllerName has to be a valid kubernetes label value."
 	// +optional
 	CustomIngressControllerName string `json:"customIngressControllerName,omitempty"`
 }

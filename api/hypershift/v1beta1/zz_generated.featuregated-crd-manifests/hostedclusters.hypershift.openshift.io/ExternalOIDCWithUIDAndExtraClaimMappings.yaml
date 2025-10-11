@@ -2775,11 +2775,12 @@ spec:
                   If omitted, the `default` router will be used
                 maxLength: 27
                 minLength: 1
+                pattern: ^a-z0-9?
                 type: string
                 x-kubernetes-validations:
                 - message: customIngressControllerName has to be a valid kubernetes
                     label value.
-                  rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?$')
+                  rule: self.matches('^(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])?$')
               dns:
                 description: dns specifies the DNS configuration for the hosted cluster
                   ingress.
