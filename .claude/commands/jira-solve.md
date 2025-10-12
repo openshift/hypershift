@@ -47,19 +47,22 @@ Analyze a JIRA issue and create a pull request to solve it.
       - Test files that need updates
 
 3. **Solution Implementation**:
-   - Make necessary code changes using Edit/MultiEdit tools
-   - Follow existing code patterns and conventions
-   - Add or update tests as needed
-   - Update documentation if needed within the docs/ folder
-   - If the problem is too complex consider delegating to one of the SME agents.
-   - Ensure godoc comments are generated for any newly created public functions
+   - Think hard and create a detailed, step-by-step plan to implement this feature. Save it to spec-$1.md within the contrib/ folder, for example contrib/spec-OCPBUGS-12345.md 
+   - Always ask the user to review the plan and give them the choice to modify it before start the implementation
+   - Implement the plan:
+    - Make necessary code changes using Edit/MultiEdit tools
+    - Follow existing code patterns and conventions
+    - Add or update tests as needed
+    - Update documentation if needed within the docs/ folder
+    - If the problem is too complex consider delegating to one of the SME agents.
+    - Ensure godoc comments are generated for any newly created public functions
       - Use your best judgement if godoc comments are needed for private functions
       - For example, a comment should not be generated for a simple function like func add(int a, b) int { return a + b}
-   - Create unit tests for any newly created functions
-   - After making code changes, always run `make lint-fix` to ensure imports are properly sorted and linting issues are fixed
-   - Always ensure code builds and passes existing tests:
+    - Create unit tests for any newly created functions
+  - After making code changes, always run `make lint-fix` to ensure imports are properly sorted and linting issues are fixed
+  - Always ensure code builds and passes existing tests:
    - Run `make pre-commit`, or `make verify`, `make build` and `make test` if you need to be more specific
-   - Do not go to the "Commit Creation" step until `make pre-commit` passes
+   - You absolutely must run `make pre-commit` and get it passing before going to the "Commit Creation"
 
 4. **Commit Creation**: 
    - Create feature branch using the jira-key $1 as the branch name. For example: "git checkout -b fix-{jira-key}"
