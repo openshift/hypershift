@@ -53,7 +53,7 @@ type ActionMetadata struct {
 type ResourceMetadata struct {
 	ResourceType schema.GroupVersionResource `json:"resourceType"`
 	Namespace    string                      `json:"namespace,omitempty"`
-	Name         string                      `json:"mame"`
+	Name         string                      `json:"name"`
 	GenerateName string                      `json:"generateName"`
 }
 
