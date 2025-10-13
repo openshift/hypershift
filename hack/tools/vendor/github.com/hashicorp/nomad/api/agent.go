@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package api
 
 import (
@@ -30,6 +33,12 @@ type KeyringResponse struct {
 // KeyringRequest is request objects for serf key operations.
 type KeyringRequest struct {
 	Key string
+}
+
+// ForceLeaveOpts are used to configure the ForceLeave method.
+type ForceLeaveOpts struct {
+	// Prune indicates whether to remove a node from the list of members
+	Prune bool
 }
 
 // Agent returns a new agent which can be used to query
@@ -147,7 +156,7 @@ func (a *Agent) Members() (*ServerMembers, error) {
 	return resp, nil
 }
 
-// Members is used to query all of the known server members
+// MembersOpts is used to query all of the known server members
 // with the ability to set QueryOptions
 func (a *Agent) MembersOpts(opts *QueryOptions) (*ServerMembers, error) {
 	var resp *ServerMembers
@@ -160,7 +169,21 @@ func (a *Agent) MembersOpts(opts *QueryOptions) (*ServerMembers, error) {
 
 // ForceLeave is used to eject an existing node from the cluster.
 func (a *Agent) ForceLeave(node string) error {
-	_, err := a.client.put("/v1/agent/force-leave?node="+node, nil, nil, nil)
+	v := url.Values{}
+	v.Add("node", node)
+	_, err := a.client.put("/v1/agent/force-leave?"+v.Encode(), nil, nil, nil)
+	return err
+}
+
+// ForceLeaveWithOptions is used to eject an existing node from the cluster
+// with additional options such as prune.
+func (a *Agent) ForceLeaveWithOptions(node string, opts ForceLeaveOpts) error {
+	v := url.Values{}
+	v.Add("node", node)
+	if opts.Prune {
+		v.Add("prune", "1")
+	}
+	_, err := a.client.put("/v1/agent/force-leave?"+v.Encode(), nil, nil, nil)
 	return err
 }
 
@@ -279,15 +302,27 @@ func (a *Agent) Host(serverID, nodeID string, q *QueryOptions) (*HostDataRespons
 // Monitor returns a channel which will receive streaming logs from the agent
 // Providing a non-nil stopCh can be used to close the connection and stop log streaming
 func (a *Agent) Monitor(stopCh <-chan struct{}, q *QueryOptions) (<-chan *StreamFrame, <-chan error) {
+	frames, errCh := a.monitorHelper(stopCh, q, "/v1/agent/monitor")
+	return frames, errCh
+}
+
+// MonitorExport returns a channel which will receive streaming logs from the agent
+// Providing a non-nil stopCh can be used to close the connection and stop log streaming
+func (a *Agent) MonitorExport(stopCh <-chan struct{}, q *QueryOptions) (<-chan *StreamFrame, <-chan error) {
+	frames, errCh := a.monitorHelper(stopCh, q, "/v1/agent/monitor/export")
+	return frames, errCh
+}
+
+func (a *Agent) monitorHelper(stopCh <-chan struct{}, q *QueryOptions, path string) (chan *StreamFrame, chan error) {
 	errCh := make(chan error, 1)
-	r, err := a.client.newRequest("GET", "/v1/agent/monitor")
+	r, err := a.client.newRequest("GET", path)
 	if err != nil {
 		errCh <- err
 		return nil, errCh
 	}
 
 	r.setQueryOptions(q)
-	_, resp, err := requireOK(a.client.doRequest(r))
+	_, resp, err := requireOK(a.client.doRequest(r)) //nolint:bodyclose
 	if err != nil {
 		errCh <- err
 		return nil, errCh
