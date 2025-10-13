@@ -328,6 +328,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	guestConfig.QPS = -1
 	guestConfig.Burst = -1
 
+	connectTimeout := 10 * time.Minute
+	if timeoutOverride := os.Getenv("GUEST_CONNECT_TIMEOUT"); timeoutOverride != "" {
+		connectTimeout, err = time.ParseDuration(timeoutOverride)
+		if err != nil {
+			t.Fatalf("failed to parse GUEST_CONNECT_TIMEOUT: %v", err)
+		}
+	}
+
 	kubeClient, err := kubeclient.NewForConfig(guestConfig)
 	if err != nil {
 		t.Fatalf("failed to create kube client for guest cluster: %v", err)
@@ -335,7 +343,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	if IsLessThan(Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
-		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, connectTimeout, true, func(ctx context.Context) (done bool, err error) {
 			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 			if err != nil {
 				t.Logf("attempt to connect failed: %s", err)
@@ -350,7 +358,7 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(10*time.Minute),
+			}, nil, WithTimeout(connectTimeout),
 		)
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
@@ -2615,6 +2623,14 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 	return routerDefaultIP, nil
 }
 
+// redactAppsRecord creates a redacted version of the apps record name to avoid leaking baseDomain
+func redactAppsRecord(clusterName, baseDomain string) string {
+	if baseDomain == "" {
+		return "*.apps." + clusterName
+	}
+	return "*.apps." + clusterName + ".[REDACTED]"
+}
+
 func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	t.Helper()
 	g := NewWithT(t)
@@ -2638,11 +2654,15 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 	clusterName := hostedCluster.Name
 	baseDomain := hostedCluster.Spec.DNS.BaseDomain
 	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
-	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
+	if err != nil {
+		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
+	}
 
 	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, "A")
-	g.Expect(err).ToNot(HaveOccurred(), "failed to create Route53 record")
-	t.Logf("Created Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+	if err != nil {
+		t.Fatalf("failed to create Route53 record (details elided)")
+	}
+	t.Logf("Created Route53 record for HostedCluster %s", hostedCluster.Name)
 }
 
 func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
@@ -2665,17 +2685,24 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	clusterName := hostedCluster.Name
 	baseDomain := hostedCluster.Spec.DNS.BaseDomain
 	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
-	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
+	if err != nil {
+		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
+	}
 
 	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, "A")
-	g.Expect(err).ToNot(HaveOccurred(), "failed to find Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
+	if err != nil {
+		t.Fatalf("failed to find Route53 record (details elided)")
+	}
 
 	if record == nil || len(record.ResourceRecords) == 0 {
-		t.Logf("Route53 record for HostedCluster %s not found: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+		t.Logf("Route53 record for HostedCluster %s not found", hostedCluster.Name)
 	} else {
 		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to delete Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
-		t.Logf("Deleted Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
+		redactedRecord := redactAppsRecord(clusterName, baseDomain)
+		if err != nil {
+			t.Fatalf("failed to delete Route53 record %s (details elided)", redactedRecord)
+		}
+		t.Logf("Deleted Route53 record for HostedCluster %s: %s", hostedCluster.Name, redactedRecord)
 	}
 }
 

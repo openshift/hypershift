@@ -16,6 +16,7 @@ import (
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 
 	corev1 "k8s.io/api/core/v1"
@@ -99,27 +100,31 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		}
 	}()
 
-	// Create a bastion
-	createBastion := bastionaws.CreateBastionOpts{
-		Namespace:          hc.Namespace,
-		Name:               hc.Name,
-		AWSCredentialsFile: awsCreds,
-		Wait:               true,
-	}
-	_, bastionIP, err := createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
-	if err != nil {
-		return err
-	}
-	defer func() {
-		destroyBastion := bastionaws.DestroyBastionOpts{
+	var bastionIP string
+	// Only create a bastion if the cluster is not using public IPs
+	if hc.Annotations[hyperv1.AWSMachinePublicIPs] != "true" {
+		// Create a bastion
+		createBastion := bastionaws.CreateBastionOpts{
 			Namespace:          hc.Namespace,
 			Name:               hc.Name,
 			AWSCredentialsFile: awsCreds,
+			Wait:               true,
 		}
-		if err := destroyBastion.Run(ctx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
-			t.Logf("error destroying bastion: %v", err)
+		_, bastionIP, err = createBastion.Run(ctx, zapr.NewLoggerWithOptions(createLogger))
+		if err != nil {
+			return err
 		}
-	}()
+		defer func() {
+			destroyBastion := bastionaws.DestroyBastionOpts{
+				Namespace:          hc.Namespace,
+				Name:               hc.Name,
+				AWSCredentialsFile: awsCreds,
+			}
+			if err := destroyBastion.Run(ctx, zapr.NewLoggerWithOptions(destroyLogger)); err != nil {
+				t.Logf("error destroying bastion: %v", err)
+			}
+		}()
+	}
 
 	// Find worker machine IPs
 	awsSession := awsutil.NewSession("cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
@@ -139,6 +144,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 	var machineIPs []string
 	var machineInstances []*ec2.Instance
+	var sgID string
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			skip := false
@@ -153,10 +159,48 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 			}
 
 			if *instance.State.Name == "running" {
-				machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
+				if hc.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+					if aws.StringValue(instance.PublicIpAddress) != "" {
+						if sgID == "" && len(instance.SecurityGroups) > 0 {
+							sgID = aws.StringValue(instance.SecurityGroups[0].GroupId)
+						}
+						machineIPs = append(machineIPs, aws.StringValue(instance.PublicIpAddress))
+					}
+				} else {
+					machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
+				}
 				machineInstances = append(machineInstances, instance)
 			}
+		}
+	}
 
+	// Add an inbound rule to allow SSH access (idempotent, optionally scoped)
+	if sgID != "" {
+		sourceCIDR := os.Getenv("SSH_SOURCE_CIDR")
+		if sourceCIDR == "" {
+			sourceCIDR = "0.0.0.0/0"
+		}
+		permissions := []*ec2.IpPermission{
+			{
+				IpProtocol: aws.String("tcp"),
+				IpRanges: []*ec2.IpRange{
+					{
+						CidrIp: aws.String(sourceCIDR),
+					},
+				},
+				FromPort: aws.Int64(22),
+				ToPort:   aws.Int64(22),
+			},
+		}
+		_, err = ec2Client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+			GroupId:       aws.String(sgID),
+			IpPermissions: permissions,
+		})
+		if err != nil {
+			// Tolerate duplicate rules to make this idempotent
+			if aerr, ok := err.(awserr.Error); !ok || aerr.Code() != "InvalidPermission.Duplicate" {
+				return fmt.Errorf("failed to authorize security group: %w", err)
+			}
 		}
 	}
 
@@ -178,6 +222,9 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	env = append(env, fmt.Sprintf("BASTION_IP=%s", bastionIP))
 	env = append(env, fmt.Sprintf("INSTANCE_IPS=%s", strings.Join(machineIPs, " ")))
 	env = append(env, fmt.Sprintf("SSH_PRIVATE_KEY=%s", privateKeyFile))
+	if hc.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
+		env = append(env, "AWS_MACHINE_PUBLIC_IPS=true")
+	}
 	scriptCmd.Env = env
 	scriptCmd.Stdout = dumpJournalsLog
 	scriptCmd.Stderr = dumpJournalsLog
