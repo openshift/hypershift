@@ -1,0 +1,2 @@
+This package is used for making binaries that can be used for integration testing and for our actual commands.
+We probably don't need to move this to library-go because operators will not need to depend on it.
