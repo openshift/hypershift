@@ -18,7 +18,8 @@ COPY --from=builder /hypershift/bin/hypershift \
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
-LABEL name="multicluster-engine/hypershift-operator"
+LABEL name="multicluster-engine/hypershift-rhel9-operator"
+LABEL cpe="cpe:/a:redhat:multicluster_engine:2.9::el9"
 LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
 LABEL summary="HyperShift Operator"
 LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel9-operator/"
