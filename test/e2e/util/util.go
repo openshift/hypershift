@@ -69,6 +69,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -3920,5 +3921,131 @@ func ValidateConfigurationStatus(t *testing.T, ctx context.Context, mgmtClient c
 		}, 10*time.Minute, 10*time.Second).Should(Succeed(), "Configuration status should be consistent across HCP, HC, and guest cluster")
 
 		t.Logf("Successfully validated configuration authentication status consistency across HCP, HC, and guest cluster")
+	})
+}
+
+// EnsureNoMetricsTargetsAreDown ensures that all Prometheus targets for ServiceMonitors
+// in the hosted control plane namespace are up and healthy.
+func EnsureNoMetricsTargetsAreDown(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNoMetricsTargetsAreDown", func(t *testing.T) {
+		AtLeast(t, Version421)
+		g := NewWithT(t)
+
+		// Get the hosted control plane namespace
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		jobs := make(map[string]bool)
+
+		// List all ServiceMonitors in the HCP namespace
+		var serviceMonitors monitoringv1.ServiceMonitorList
+		err := client.List(ctx, &serviceMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list ServiceMonitors in namespace %s", hcpNamespace)
+
+		// For each ServiceMonitor
+		for _, sm := range serviceMonitors.Items {
+			if sm.Spec.JobLabel != "" {
+				// Find the job label in the ServiceMonitor selector
+				// and use it as the job name directly
+				if val, ok := sm.Spec.Selector.MatchLabels[sm.Spec.JobLabel]; ok {
+					jobs[val] = false
+				} else {
+					t.Fatalf("ServiceMonitor %s/%s has jobLabel %s but it was not found in the selector labels", sm.Namespace, sm.Name, sm.Spec.JobLabel)
+				}
+			} else {
+				// Find the corresponding Service by using the selector in the ServiceMonitor spec
+				var serviceList corev1.ServiceList
+				err := client.List(ctx, &serviceList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels(sm.Spec.Selector.MatchLabels))
+				g.Expect(err).NotTo(HaveOccurred(), "failed to list Services for ServiceMonitor %s/%s", sm.Namespace, sm.Name)
+
+				if len(serviceList.Items) == 0 {
+					t.Logf("No Services found for ServiceMonitor %s/%s, skipping", sm.Namespace, sm.Name)
+					continue
+				}
+
+				// Assume the first matching Service is the one we want
+				service := serviceList.Items[0]
+
+				// Add the ServiceMonitor name as a job, initially marked as down (false)
+				jobs[service.Name] = false
+			}
+		}
+
+		// List all PodMonitors in the HCP namespace
+		var podMonitors monitoringv1.PodMonitorList
+		err = client.List(ctx, &podMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list PodMonitors in namespace %s", hcpNamespace)
+
+		// For each PodMonitor
+		for _, pm := range podMonitors.Items {
+			// If this is the pod monitor for the cluster-autoscaler, see if there are any pods that match the pod monitor selector.
+			// If there are no matching pods, skip adding this pod monitor as a job to check.
+			if strings.HasPrefix(pm.Name, "cluster-autoscaler") {
+				var podList corev1.PodList
+				err := client.List(ctx, &podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabels(pm.Spec.Selector.MatchLabels))
+				g.Expect(err).NotTo(HaveOccurred(), "failed to list Pods for PodMonitor %s/%s", pm.Namespace, pm.Name)
+
+				if len(podList.Items) == 0 {
+					t.Logf("No Pods found for PodMonitor %s/%s, skipping", pm.Namespace, pm.Name)
+					continue
+				}
+			}
+
+			// Add the PodMonitor name as a job, initially marked as down (false)
+			jobName := fmt.Sprintf("%s/%s", pm.Namespace, pm.Name)
+			jobs[jobName] = false
+		}
+
+		// If there are no ServiceMonitors or PodMonitors, log and skip the test
+		if len(serviceMonitors.Items) == 0 && len(podMonitors.Items) == 0 {
+			t.Logf("No ServiceMonitors or PodMonitors found in namespace %s", hcpNamespace)
+			return
+		}
+
+		// Create Prometheus client
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create Prometheus client")
+
+		// Query Prometheus for all targets in the namespace
+		// The 'up' metric is a special Prometheus metric that indicates target health
+		// up == 1 means the target is healthy, up == 0 means it's down
+		query := fmt.Sprintf(`up{namespace="%s"}`, hcpNamespace)
+
+		result, warnings, err := prometheusClient.Query(ctx, query, time.Now())
+		g.Expect(err).NotTo(HaveOccurred(), "failed to query Prometheus for namespace %s", hcpNamespace)
+
+		if len(warnings) > 0 {
+			t.Logf("Prometheus query warnings: %v", warnings)
+		}
+
+		if result.Type() != model.ValVector {
+			t.Fatalf("expected Prometheus query result to be a vector, got %s", result.Type().String())
+		}
+
+		vector := result.(model.Vector)
+		if len(vector) == 0 {
+			t.Fatalf("no targets found in namespace %s", hcpNamespace)
+		}
+
+		for _, sample := range vector {
+			jobLabel := string(sample.Metric["job"])
+			if _, ok := jobs[jobLabel]; ok {
+				if sample.Value == 1 {
+					jobs[jobLabel] = true
+				}
+			}
+		}
+
+		// Collect any jobs that are still marked as down and report them as test failures.
+		// It's possible for a job to not appear in the Prometheus results at all
+		// if it has never been up, so we treat missing jobs as down.
+		var downJobs []string
+		for job, isUp := range jobs {
+			if !isUp {
+				downJobs = append(downJobs, job)
+			}
+		}
+		if len(downJobs) > 0 {
+			t.Errorf("The following Prometheus targets are down in namespace %s: %v", hcpNamespace, downJobs)
+		}
 	})
 }
