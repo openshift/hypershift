@@ -72,6 +72,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -4179,4 +4180,164 @@ func ExtractVersionFromReleaseImage(releaseImage string) string {
 
 	// No known architecture suffix found, return the tag as-is
 	return tag
+}
+
+// EnsureNoMetricsTargetsAreDown ensures that all Prometheus targets for ServiceMonitors
+// in the hosted control plane namespace are up and healthy.
+func EnsureNoMetricsTargetsAreDown(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNoMetricsTargetsAreDown", func(t *testing.T) {
+		AtLeast(t, Version421)
+		g := NewWithT(t)
+
+		// Get the hosted control plane namespace
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		jobs := make(map[string]bool)
+
+		// List all ServiceMonitors in the HCP namespace
+		var serviceMonitors monitoringv1.ServiceMonitorList
+		err := client.List(ctx, &serviceMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list ServiceMonitors in namespace %s", hcpNamespace)
+
+		// For each ServiceMonitor
+		for _, sm := range serviceMonitors.Items {
+			// Build selector from the ServiceMonitor spec
+			selector, err := metav1.LabelSelectorAsSelector(&sm.Spec.Selector)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to build selector for ServiceMonitor %s/%s", sm.Namespace, sm.Name)
+
+			// Find the corresponding Service by using the selector in the ServiceMonitor spec
+			var serviceList corev1.ServiceList
+			err = client.List(ctx, &serviceList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabelsSelector{Selector: selector})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to list Services for ServiceMonitor %s/%s", sm.Namespace, sm.Name)
+
+			if len(serviceList.Items) == 0 {
+				t.Fatalf("No Services found for ServiceMonitor %s/%s", sm.Namespace, sm.Name)
+			}
+
+			// Use the first matching Service
+			service := serviceList.Items[0]
+
+			// Determine the job name based on whether jobLabel is set
+			var jobName string
+			if sm.Spec.JobLabel != "" {
+				// The jobLabel specifies which label on the matched Service contains the job name
+				labelValue, ok := service.GetLabels()[sm.Spec.JobLabel]
+				g.Expect(ok).To(BeTrue(), "ServiceMonitor %s/%s expects label %s on Service %s", sm.Namespace, sm.Name, sm.Spec.JobLabel, service.Name)
+				jobName = labelValue
+			} else {
+				// If no jobLabel is specified, use the Service name as the job name
+				jobName = service.Name
+			}
+
+			// Add the job, initially marked as down (false)
+			jobs[jobName] = false
+		}
+
+		// List all PodMonitors in the HCP namespace
+		var podMonitors monitoringv1.PodMonitorList
+		err = client.List(ctx, &podMonitors, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list PodMonitors in namespace %s", hcpNamespace)
+
+		// For each PodMonitor
+		for _, pm := range podMonitors.Items {
+			// If this is the pod monitor for the cluster-autoscaler, see if there are any pods that match the pod monitor selector.
+			// If there are no matching pods, skip adding this pod monitor as a job to check.
+			if strings.HasPrefix(pm.Name, "cluster-autoscaler") {
+				// Build selector from the PodMonitor spec
+				selector, err := metav1.LabelSelectorAsSelector(&pm.Spec.Selector)
+				g.Expect(err).NotTo(HaveOccurred(), "failed to build selector for PodMonitor %s/%s", pm.Namespace, pm.Name)
+
+				var podList corev1.PodList
+				err = client.List(ctx, &podList, crclient.InNamespace(hcpNamespace), crclient.MatchingLabelsSelector{Selector: selector})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to list Pods for PodMonitor %s/%s", pm.Namespace, pm.Name)
+
+				if len(podList.Items) == 0 {
+					t.Logf("No Pods found for PodMonitor %s/%s, skipping", pm.Namespace, pm.Name)
+					continue
+				}
+			}
+
+			// Add the PodMonitor name as a job, initially marked as down (false)
+			jobName := fmt.Sprintf("%s/%s", pm.Namespace, pm.Name)
+			jobs[jobName] = false
+		}
+
+		// If there are no ServiceMonitors or PodMonitors, log and skip the test
+		if len(serviceMonitors.Items) == 0 && len(podMonitors.Items) == 0 {
+			t.Logf("No ServiceMonitors or PodMonitors found in namespace %s", hcpNamespace)
+			return
+		}
+
+		// Create Prometheus client
+		prometheusClient, err := NewPrometheusClient(ctx)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create Prometheus client")
+
+		// Query Prometheus for all targets in the namespace
+		// The 'up' metric is a special Prometheus metric that indicates target health
+		// up == 1 means the target is healthy, up == 0 means it's down
+		query := fmt.Sprintf(`up{namespace="%s"}`, hcpNamespace)
+
+		// Use Eventually to retry checking targets every 15 seconds for up to 10 minutes
+		g.Eventually(func(g Gomega) []string {
+			// Reset job status for this iteration
+			for job := range jobs {
+				jobs[job] = false
+			}
+
+			result, warnings, err := prometheusClient.Query(ctx, query, time.Now())
+			g.Expect(err).NotTo(HaveOccurred(), "failed to query Prometheus for namespace %s", hcpNamespace)
+
+			if len(warnings) > 0 {
+				t.Logf("Prometheus query warnings: %v", warnings)
+			}
+
+			g.Expect(result.Type()).To(Equal(model.ValVector), "expected Prometheus query result to be a vector")
+
+			vector := result.(model.Vector)
+			g.Expect(vector).NotTo(BeEmpty(), "no targets found in namespace %s", hcpNamespace)
+
+			// Track down targets per job to provide detailed failure information
+			downTargets := map[string][]string{}
+			for _, sample := range vector {
+				jobLabel := string(sample.Metric["job"])
+				if _, tracked := jobs[jobLabel]; !tracked {
+					continue
+				}
+
+				if sample.Value != 1 {
+					// Target is down, record the instance
+					instance := string(sample.Metric["instance"])
+					downTargets[jobLabel] = append(downTargets[jobLabel], instance)
+					jobs[jobLabel] = false
+					continue
+				}
+
+				// Target is up - only mark job as up if no failures have been recorded for this job
+				if _, hasFailures := downTargets[jobLabel]; hasFailures {
+					continue
+				}
+				jobs[jobLabel] = true
+			}
+
+			// Collect any jobs that are still marked as down
+			// It's possible for a job to not appear in the Prometheus results at all
+			// if it has never been up, so we treat missing jobs as down.
+			var downJobs []string
+			for job, isUp := range jobs {
+				if !isUp {
+					if instances, ok := downTargets[job]; ok && len(instances) > 0 {
+						downJobs = append(downJobs, fmt.Sprintf("%s [%s]", job, strings.Join(instances, ", ")))
+						continue
+					}
+					downJobs = append(downJobs, job)
+				}
+			}
+
+			if len(downJobs) > 0 {
+				t.Logf("Waiting for Prometheus targets to become healthy. Down targets: %v", downJobs)
+			}
+
+			return downJobs
+		}).WithContext(ctx).WithTimeout(10*time.Minute).WithPolling(15*time.Second).Should(BeEmpty(), "all Prometheus targets should be healthy in namespace %s", hcpNamespace)
+	})
 }
