@@ -1,9 +1,42 @@
 {
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "tekton": {
-        "branchConcurrentLimit": 10,
-        "extends": [
-            "github>konflux-ci/mintmaker-presets:update-fedora-to-stable"
-        ]
-    }
+      "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+      "baseBranches": [
+          "main",
+          "release-4.16",
+          "release-4.17",
+          "release-4.18",
+          "release-4.19",
+          "release-4.20"
+      ],
+      "tekton": {
+          "branchConcurrentLimit": 10,
+          "extends": [
+              "github>konflux-ci/mintmaker-presets:update-fedora-to-stable"
+          ]
+      },
+      "packageRules": [
+          {
+              "description": "Disable Go dependency updates on all branches by default",
+              "matchManagers": ["gomod"],
+              "enabled": false
+          },
+          {
+              "description": "Enable all Go dependency updates on main branch",
+              "matchManagers": ["gomod"],
+              "matchBaseBranches": ["main"],
+              "enabled": true
+          },
+          {
+              "description": "Enable security-only Go updates on release branches",
+              "matchManagers": ["gomod"],
+              "matchBaseBranches": [
+                  "release-4.16",
+                  "release-4.17",
+                  "release-4.18",
+                  "release-4.19",
+                  "release-4.20"
+              ],
+              "matchUpdateTypes": ["patch"]
+          }
+      ]
   }
