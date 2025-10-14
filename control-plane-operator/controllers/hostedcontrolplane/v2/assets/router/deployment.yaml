@@ -40,6 +40,9 @@ spec:
         - containerPort: 8443
           name: https
           protocol: TCP
+        - containerPort: 8405
+          name: metrics
+          protocol: TCP
         resources:
           requests:
             cpu: 50m
