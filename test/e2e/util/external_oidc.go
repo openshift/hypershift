@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 
 	configv1 "github.com/openshift/api/config/v1"
 	configv1typedclient "github.com/openshift/client-go/config/clientset/versioned/typed/config/v1"
@@ -86,7 +87,7 @@ func GetExtOIDCConfig(provider, cliClientID, consoleClientID, issuerURL, console
 }
 
 func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationSpec {
-	return &configv1.AuthenticationSpec{
+	authnSpec := &configv1.AuthenticationSpec{
 		Type: configv1.AuthenticationTypeOIDC,
 		OIDCProviders: []configv1.OIDCProvider{
 			{
@@ -128,23 +129,29 @@ func (config *ExtOIDCConfig) GetAuthenticationConfig() *configv1.AuthenticationS
 							PrefixString: config.UserPrefix,
 						},
 					},
-					UID: &configv1.TokenClaimOrExpressionMapping{
-						Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
-					},
-					Extra: []configv1.ExtraMapping{
-						{
-							Key:             ExternalOIDCExtraKeyBar,
-							ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
-						},
-						{
-							Key:             ExternalOIDCExtraKeyFoo,
-							ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
-						},
-					},
 				},
 			},
 		},
 	}
+
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+		authnSpec.OIDCProviders[0].ClaimMappings.UID = &configv1.TokenClaimOrExpressionMapping{
+			Expression: fmt.Sprintf(`"%s" + claims.sub + "%s"`, ExternalOIDCUIDExpressionPrefix, ExternalOIDCUIDExpressionSubfix),
+		}
+
+		authnSpec.OIDCProviders[0].ClaimMappings.Extra = append(authnSpec.OIDCProviders[0].ClaimMappings.Extra,
+			configv1.ExtraMapping{
+				Key:             ExternalOIDCExtraKeyBar,
+				ValueExpression: fmt.Sprintf(`"%s"`, ExternalOIDCExtraKeyBarValueExpression),
+			},
+			configv1.ExtraMapping{
+				Key:             ExternalOIDCExtraKeyFoo,
+				ValueExpression: ExternalOIDCExtraKeyFooValueExpression,
+			},
+		)
+	}
+
+	return authnSpec
 }
 
 // ValidateAuthenticationSpec validates the external OIDC configuration and the expected HostedCluster authentication configuration before running the test
@@ -167,8 +174,11 @@ func ValidateAuthenticationSpec(t *testing.T, ctx context.Context, client crclie
 	g.Expect(hostedCluster.Spec.Configuration.Authentication).NotTo(BeNil())
 	actualAuth := hostedCluster.Spec.Configuration.Authentication
 	g.Expect(actualAuth.OIDCProviders).NotTo(BeEmpty())
-	g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.Extra).NotTo(BeEmpty())
-	g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.UID).NotTo(BeNil())
+
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUIDAndExtraClaimMappings) {
+		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.Extra).NotTo(BeEmpty())
+		g.Expect(actualAuth.OIDCProviders[0].ClaimMappings.UID).NotTo(BeNil())
+	}
 
 	secret := &corev1.Secret{}
 	err = client.Get(ctx, crclient.ObjectKey{
