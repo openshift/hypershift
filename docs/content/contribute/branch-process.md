@@ -3,6 +3,7 @@ These are a set of tasks we need to perform on every OCP branching. We need to:
 
 1. Update the HyperShift Repository to add the latest supported OCP version - [Update Supported Version](#update-supported-version)
 1. Update the base images in our Dockerfiles (if they are available at branching) - [Update Dockerfiles](#update-dockerfiles)
+1. Update the Renovate configuration to include the new release branch - [Update Renovate](#update-renovate-configuration)
 1. Update the OpenShift Release repository to fix the step registry configuration files - [OpenShift/Release](#openshiftrelease-repository)
 1. Update TestGrid to include the new OCP version tests - [TestGrid](#update-testgrid)
 
@@ -27,6 +28,47 @@ We need to add the latest supported version in the `hypershift` repository. We n
 We also need to bump the base images in our Dockerfiles.
 
 [Example Base Image Bump PR](https://github.com/openshift/hypershift/pull/5195/files)
+
+#### Update Renovate Configuration
+We need to add the new release branch to the Renovate configuration so that security updates are automatically applied to the release branch.
+
+Update `renovate.json` to include the new release branch in two places:
+
+1. Add the new branch to the `baseBranches` array at the top of the file
+2. Add the new branch to the `matchBaseBranches` array in the security-only Go updates package rule
+
+!!! note
+    If any release branch has reached End of Life and is no longer supported, remove it from both locations in `renovate.json` to stop automated updates on that branch.
+
+Example change for release-4.21:
+```json
+{
+  "baseBranches": [
+    "main",
+    "release-4.16",
+    "release-4.17",
+    "release-4.18",
+    "release-4.19",
+    "release-4.20",
+    "release-4.21"
+  ],
+  "packageRules": [
+    {
+      "description": "Enable security-only Go updates on release branches",
+      "matchManagers": ["gomod"],
+      "matchBaseBranches": [
+        "release-4.16",
+        "release-4.17",
+        "release-4.18",
+        "release-4.19",
+        "release-4.20",
+        "release-4.21"
+      ],
+      "matchUpdateTypes": ["patch"]
+    }
+  ]
+}
+```
 
 ---
 
