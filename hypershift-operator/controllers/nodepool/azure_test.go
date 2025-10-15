@@ -792,3 +792,370 @@ func TestAzureMachineTemplate(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultAzureNodePoolImage(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		nodePool                 *hyperv1.NodePool
+		releaseImage             *releaseinfo.ReleaseImage
+		expectedImageType        hyperv1.AzureVMImageType
+		expectedMarketplaceImage *hyperv1.AzureMarketplaceImage
+		expectedError            bool
+		expectedErrorMsg         string
+	}{
+		{
+			name: "skip defaulting when image is already set - ImageID",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type:    hyperv1.ImageID,
+								ImageID: ptr.To("existing-image-id"),
+							},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        hyperv1.ImageID,
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when AzureMarketplace is already set",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									Publisher: "existing-publisher",
+									Offer:     "existing-offer",
+									SKU:       "existing-sku",
+									Version:   "existing-version",
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:      createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "existing-publisher",
+				Offer:     "existing-offer",
+				SKU:       "existing-sku",
+				Version:   "existing-version",
+			},
+		},
+		{
+			name: "skip defaulting for OCP < 4.20",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.19.5", true),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when no marketplace metadata for OCP >= 4.20 (current behavior)",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting with Gen1 imageGeneration when no marketplace metadata",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									ImageGeneration: ptr.To(hyperv1.Gen1),
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting with Gen2 imageGeneration when no marketplace metadata",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									ImageGeneration: ptr.To(hyperv1.Gen2),
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.20.0", true),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "skip defaulting when no marketplace metadata available",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage:             createMockReleaseImage("4.20.0", false),
+			expectedImageType:        "",
+			expectedMarketplaceImage: nil,
+		},
+		{
+			name: "error with unsupported imageGeneration when marketplace metadata is available",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									ImageGeneration: ptr.To(hyperv1.AzureVMImageGeneration("Gen3")),
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:     createMockReleaseImage("4.20.0", true),
+			expectedError:    true,
+			expectedErrorMsg: "unsupported image generation \"Gen3\", must be Gen1 or Gen2",
+		},
+		{
+			name: "apply marketplace defaults for Gen2 when metadata is available",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage:      createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "419-v2",
+				Version:   "419.6.20250523",
+			},
+		},
+		{
+			name: "apply marketplace defaults for Gen1 when specified and metadata is available",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									ImageGeneration: ptr.To(hyperv1.Gen1),
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:      createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "aro_419",
+				Version:   "419.6.20250523",
+			},
+		},
+		{
+			name: "apply marketplace defaults for ARM64 Gen2",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureARM64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{},
+						},
+					},
+				},
+			},
+			releaseImage:      createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "419-v2",
+				Version:   "419.6.20250523",
+			},
+		},
+		{
+			name: "apply marketplace defaults for ARM64 Gen1",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureARM64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							Image: hyperv1.AzureVMImage{
+								Type: hyperv1.AzureMarketplace,
+								AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+									ImageGeneration: ptr.To(hyperv1.Gen1),
+								},
+							},
+						},
+					},
+				},
+			},
+			releaseImage:      createMockReleaseImage("4.20.0", true),
+			expectedImageType: hyperv1.AzureMarketplace,
+			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
+				Publisher: "azureopenshift",
+				Offer:     "aro4",
+				SKU:       "aro_419",
+				Version:   "419.6.20250523",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			err := defaultAzureNodePoolImage(tc.nodePool, tc.releaseImage)
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorMsg))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if tc.expectedImageType != "" {
+					g.Expect(tc.nodePool.Spec.Platform.Azure.Image.Type).To(Equal(tc.expectedImageType))
+				}
+				if tc.expectedMarketplaceImage != nil {
+					g.Expect(tc.nodePool.Spec.Platform.Azure.Image.AzureMarketplace).To(Equal(tc.expectedMarketplaceImage))
+				}
+			}
+		})
+	}
+}
+
+// createMockReleaseImage creates a mock release image for testing
+func createMockReleaseImage(version string, hasMarketplaceMetadata bool) *releaseinfo.ReleaseImage {
+	architecture := releaseinfo.CoreOSArchitecture{
+		Artifacts: map[string]releaseinfo.CoreOSArtifact{},
+		Images:    releaseinfo.CoreOSImages{},
+		RHCOS: releaseinfo.CoreRHCOSImage{
+			AzureDisk: releaseinfo.CoreAzureDisk{
+				Release: "9.6.20250701-0",
+				URL:     "https://rhcos.blob.core.windows.net/imagebucket/rhcos-9.6.20250701-0-azure.x86_64.vhd",
+			},
+		},
+	}
+
+	if hasMarketplaceMetadata {
+		architecture.RHCOS.Marketplace = releaseinfo.CoreMarketplace{
+			Azure: releaseinfo.CoreAzureMarketplace{
+				NoPurchasePlan: releaseinfo.CoreAzureMarketplaceNoPurchasePlan{
+					HyperVGen1: &releaseinfo.CoreAzureMarketplaceImage{
+						Publisher: "azureopenshift",
+						Offer:     "aro4",
+						SKU:       "aro_419",
+						Version:   "419.6.20250523",
+					},
+					HyperVGen2: &releaseinfo.CoreAzureMarketplaceImage{
+						Publisher: "azureopenshift",
+						Offer:     "aro4",
+						SKU:       "419-v2",
+						Version:   "419.6.20250523",
+					},
+				},
+			},
+		}
+	}
+
+	architectures := map[string]releaseinfo.CoreOSArchitecture{
+		"x86_64":  architecture,
+		"aarch64": architecture, // ARM64 uses the same marketplace metadata
+	}
+
+	streamMetadata := &releaseinfo.CoreOSStreamMetadata{
+		Stream:        "test-stream",
+		Architectures: architectures,
+	}
+
+	// Create a simple ImageStream for the version
+	// The Version() method returns ImageStream.Name, so we set that to the version
+	imageStream := &imageapi.ImageStream{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: version,
+		},
+		Status: imageapi.ImageStreamStatus{
+			Tags: []imageapi.NamedTagEventList{
+				{
+					Tag: version,
+					Items: []imageapi.TagEvent{
+						{},
+					},
+				},
+			},
+		},
+	}
+
+	return &releaseinfo.ReleaseImage{
+		ImageStream:    imageStream,
+		StreamMetadata: streamMetadata,
+	}
+}

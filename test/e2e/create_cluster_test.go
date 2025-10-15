@@ -1803,6 +1803,102 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when Azure VM image configuration has invalid combinations it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when marketplace is fully populated with imageGeneration set it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher:       "azureopenshift",
+										Offer:           "aro4",
+										SKU:             "aro_417_rhel8_gen2",
+										Version:         "417.94.20240701",
+										ImageGeneration: ptr.To(hyperv1.Gen2),
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when marketplace is fully populated without imageGeneration it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+										SKU:       "aro_417_rhel8_gen2",
+										Version:   "417.94.20240701",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when type is AzureMarketplace with empty marketplace struct and imageGeneration is set it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										ImageGeneration: ptr.To(hyperv1.Gen2),
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when type is AzureMarketplace with empty marketplace struct it should pass (allows defaulting)",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									// AzureMarketplace can be nil or empty - will be defaulted by the controller
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
