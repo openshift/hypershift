@@ -33,17 +33,6 @@ spec:
               fieldPath: status.podIP
         image: hyperkube
         imagePullPolicy: IfNotPresent
-        lifecycle:
-          postStart:
-            exec:
-              command:
-              - /bin/bash
-              - -c
-              - |
-                until curl -k https://localhost:6443/readyz; do
-                  echo "Waiting for kube-apiserver to be ready..."
-                  sleep 5
-                done
         livenessProbe:
           failureThreshold: 6
           httpGet:
@@ -54,7 +43,7 @@ spec:
           periodSeconds: 180
           successThreshold: 1
           timeoutSeconds: 160
-        name: kube-apiserver              
+        name: kube-apiserver
         ports:
         - containerPort: 6443
           name: client
@@ -269,6 +258,38 @@ spec:
         image: cluster-config-api
         imagePullPolicy: IfNotPresent
         name: init-bootstrap-render
+        resources:
+          requests:
+            cpu: 30m
+            memory: 50Mi
+        volumeMounts:
+        - mountPath: /work
+          name: bootstrap-manifests
+        # The cluster-authentication-operator manifest renderer currently
+        # has no logic for handling feature gates and will not write any
+        # changes to the feature gates file. To prevent race conditions
+        # where this container may unnecessarily overwrite the feature gate
+        # file from the 'bootstrap-manifests' container we avoid doing
+        # anything with feature gates in this container.
+      - args:
+        - -c
+        - |
+          #!/bin/sh
+          cd /tmp
+          mkdir input output manifests
+
+          /usr/bin/authentication-operator render \
+            --asset-output-dir /tmp/output \
+            --rendered-manifest-dir=/tmp/manifests \
+            --cluster-profile=ibm-cloud-managed \
+            --payload-version=$(PAYLOAD_VERSION)
+
+          cp /tmp/output/* /work
+        command:
+        - /bin/bash
+        image: cluster-authentication-operator
+        imagePullPolicy: IfNotPresent
+        name: init-auth-bootstrap-render
         resources:
           requests:
             cpu: 30m

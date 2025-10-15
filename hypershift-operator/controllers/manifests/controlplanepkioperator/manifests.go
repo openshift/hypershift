@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// we require labelling these cluster-scoped resources so that the controller cleaning them up
+// we require labeling these cluster-scoped resources so that the controller cleaning them up
 // can find them efficiently, as we can't use namespace-based scoping for these objects
 const (
 	OwningHostedClusterNamespaceLabel = "hypershift.openshift.io/owner.namespace"

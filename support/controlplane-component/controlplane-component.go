@@ -51,6 +51,7 @@ type ControlPlaneContext struct {
 	InfraStatus infra.InfrastructureStatus
 	// SetDefaultSecurityContext is used to configure Security Context for containers.
 	SetDefaultSecurityContext bool
+	DefaultSecurityContextUID int64
 	// EnableCIDebugOutput enable extra debug logs.
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
@@ -65,6 +66,9 @@ type ControlPlaneContext struct {
 	SkipCertificateSigning bool
 }
 
+// WorkloadContext is what we pass to the components(adapt, predicate functions, etc..).
+// It is mostly like ControlPlaneContext, but WorkloadContext hides some fields that the component should not know about
+// and has only a Reader client so components can't create resources outside of the framework.
 type WorkloadContext struct {
 	context.Context
 
@@ -77,6 +81,7 @@ type WorkloadContext struct {
 
 	InfraStatus               infra.InfrastructureStatus
 	SetDefaultSecurityContext bool
+	DefaultSecurityContextUID int64
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
 
@@ -93,6 +98,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		UserReleaseImageProvider:  cp.UserReleaseImageProvider,
 		InfraStatus:               cp.InfraStatus,
 		SetDefaultSecurityContext: cp.SetDefaultSecurityContext,
+		DefaultSecurityContextUID: cp.DefaultSecurityContextUID,
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
@@ -135,6 +141,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	// serviceAccountKubeConfigOpts will cause the generation of a secret with a kubeconfig using certificates for the given named service account
 	// and the volume mounts for that secret within the given mountPath.
 	serviceAccountKubeConfigOpts *ServiceAccountKubeConfigOpts
+
+	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
+	monitorOperandsRolloutStatus bool
 }
 
 // Name implements ControlPlaneComponent.

@@ -3,6 +3,7 @@ package nodepool
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -86,6 +87,27 @@ func ibmPowerVSMachineTemplateSpec(hcluster *hyperv1.HostedCluster, nodePool *hy
 	}, nil
 }
 
+func (c *CAPI) ibmPowerVSMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capipowervs.IBMPowerVSMachineTemplate, error) {
+	spec, err := ibmPowerVSMachineTemplateSpec(c.hostedCluster, c.nodePool, c.releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate PowerVSMachineTemplateSpec: %w", err)
+	}
+
+	templateName, err := templateNameGenerator(spec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
+	}
+
+	template := &capipowervs.IBMPowerVSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *spec,
+	}
+
+	return template, nil
+}
+
 func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*releaseinfo.CoreOSPowerVSImage, string, error) {
 	arch, foundArch := releaseImage.StreamMetadata.Architectures["ppc64le"]
 	if !foundArch {
@@ -98,6 +120,9 @@ func getPowerVSImage(region string, releaseImage *releaseinfo.ReleaseImage) (*re
 	if !hasRegionData {
 		return nil, "", fmt.Errorf("couldn't find PowerVS image for region %q", COSRegion)
 	}
+	// PowerVS now enforces stricter validation rules on image names, disallowing dots.
+	// To ensure compatibility, transform the release name by replacing dots with hyphens.
+	regionData.Release = strings.ReplaceAll(regionData.Release, ".", "-")
 	return &regionData, COSRegion, nil
 }
 

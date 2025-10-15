@@ -28,6 +28,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -65,7 +66,6 @@ spec:
       automountServiceAccountToken: true
       containers:
       - args:
-        - --expander=priority,least-waste
         - --cloud-provider=clusterapi
         - --node-group-auto-discovery=clusterapi:namespace=$(MY_NAMESPACE)
         - --kubeconfig=/mnt/kubeconfig/target-kubeconfig
@@ -77,11 +77,15 @@ spec:
         - --leader-elect-renew-deadline=107s
         - --balance-similar-node-groups=true
         - --v=4
+        - --expander=priority,least-waste
         - --balancing-ignore-label=hypershift.openshift.io/nodePool
         - --balancing-ignore-label=topology.ebs.csi.aws.com/zone
         - --balancing-ignore-label=topology.disk.csi.azure.com/zone
         - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
         - --balancing-ignore-label=vpc-block-csi-driver-labels
+        - --balancing-ignore-label=lifecycle
+        - --balancing-ignore-label=k8s.amazonaws.com/eniConfig
+        - --balancing-ignore-label=topology.k8s.aws/zone-id
         command:
         - /usr/bin/cluster-autoscaler
         env:
@@ -120,10 +124,14 @@ spec:
           requests:
             cpu: 10m
             memory: 60Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /mnt/kubeconfig
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -159,4 +167,6 @@ spec:
           - key: value
             path: target-kubeconfig
           secretName: -kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

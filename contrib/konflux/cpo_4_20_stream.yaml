@@ -1,0 +1,11 @@
+apiVersion: projctl.konflux.dev/v1beta1
+kind: ProjectDevelopmentStream
+metadata:
+  name: control-plane-operator-v4-20
+spec:
+  project: crt-redhat-acm-tenant
+  template:
+    name: hypershift-cpo-template
+    values:
+    - name: version
+      value: "4.20"

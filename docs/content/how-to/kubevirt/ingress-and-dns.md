@@ -175,7 +175,7 @@ example         4.14.0    example-admin-kubeconfig         Completed   True     
 ## Optional MetalLB Configuration Steps
 
 LoadBalancer type services are required. If MetalLB is in use, here are some example steps
-outlining how to configure MetalLB after [installing MetalLB](https://docs.openshift.com/container-platform/4.12/networking/metallb/metallb-operator-install.html).
+outlining how to configure MetalLB after [installing MetalLB using CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/networking_operators/metallb-operator#nw-metallb-installing-operator-cli_metallb-operator-install).
 
 1. Create a MetalLB instance:
 

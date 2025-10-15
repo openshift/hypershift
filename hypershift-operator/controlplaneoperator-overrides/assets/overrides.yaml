@@ -1,199 +1,230 @@
-overrides:
-  # Beginning of OCPBUGS-48519 overrides 4.15 section
-  # Using ocp-release:4.15.45-multi
-  - version: 4.15.0
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.1
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.2
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.3
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.4
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.5
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.6
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.7
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.8
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.9
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.10
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.11
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.12
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.13
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.14
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.15
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.16
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.17
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.18
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.19
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.20
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.21
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.22
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.23
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.24
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.25
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.26
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.27
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.28
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.29
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.30
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.31
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.32
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.33
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.34
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.35
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.36
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.37
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.38
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.39
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.40
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.41
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.42
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.43
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  - version: 4.15.44
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
-  # End of OCPBUGS-48519 overrides 4.15 section
-  # Beginning of OCPBUGS-48519 overrides 4.16 section
-  # Using ocp-release:4.16.34-multi
-  - version: 4.16.0
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.1
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.2
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.3
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.4
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.5
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.6
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.7
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.8
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.9
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.10
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.11
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.12
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.13
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.14
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.15
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.16
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.17
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.18
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.19
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.20
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.21
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.22
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.23
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.24
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.25
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.26
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.27
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.28
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.29
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.30
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.31
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.32
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  - version: 4.16.33
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
-  # End of OCPBUGS-48519 overrides 4.16 section
-  # Beginning of OCPBUGS-48519 overrides 4.17 section
-  # Using ocp-release:4.17.15-multi
-  - version: 4.17.0
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.1
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.2
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.3
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.4
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.5
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.6
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.7
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.8
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.9
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.10
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.11
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.12
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.13
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  - version: 4.17.14
-    cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
-  # End of OCPBUGS-48519 overrides 4.17 section
-  # End of OCPBUGS-48519 overrides
+platforms:
+  azure:
+    overrides:
+      - version: 4.19.7
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:186af820bf5af3ecb03dec657cfc6a778dac6d49b32dae420e20cd8ef1dc786b
+      - version: 4.19.8
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:186af820bf5af3ecb03dec657cfc6a778dac6d49b32dae420e20cd8ef1dc786b
+      - version: 4.19.9
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:186af820bf5af3ecb03dec657cfc6a778dac6d49b32dae420e20cd8ef1dc786b
+      - version: 4.19.10
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:186af820bf5af3ecb03dec657cfc6a778dac6d49b32dae420e20cd8ef1dc786b
+  aws:
+    overrides:
+    # Beginning of OCPBUGS-48519 overrides 4.15 section
+    # Using ocp-release:4.15.45-multi
+    - version: 4.15.0
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.1
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.2
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.3
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.4
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.5
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.6
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.7
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.8
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.9
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.10
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.11
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.12
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.13
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.14
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.15
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.16
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.17
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.18
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.19
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.20
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.21
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.22
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.23
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.24
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.25
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.26
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.27
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.28
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.29
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.30
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.31
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.32
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.33
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.34
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.35
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.36
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.37
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.38
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.39
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.40
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.41
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.42
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.43
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    - version: 4.15.44
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:10562af6cc5f0f9c61b9831792b9e371af6e660de4e3c56a5e4e8ef849219fc9
+    # End of OCPBUGS-48519 overrides 4.15 section
+    # Beginning of OCPBUGS-48519 overrides 4.16 section
+    # Using ocp-release:4.16.34-multi
+    - version: 4.16.0
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.1
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.2
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.3
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.4
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.5
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.6
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.7
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.8
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.9
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.10
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.11
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.12
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.13
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.14
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.15
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.16
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.17
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.18
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.19
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.20
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.21
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.22
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.23
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.24
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.25
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.26
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.27
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.28
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.29
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.30
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.31
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.32
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    - version: 4.16.33
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9c417743007bbefa3909e95284113b1e9a43be9124464f6bbb62676009546da5
+    # End of OCPBUGS-48519 overrides 4.16 section
+    # Beginning of OCPBUGS-48519 overrides 4.17 section
+    # Using ocp-release:4.17.15-multi
+    - version: 4.17.0
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.1
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.2
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.3
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.4
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.5
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.6
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.7
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.8
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.9
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.10
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.11
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.12
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.13
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    - version: 4.17.14
+      cpoImage: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:1ac8880940e256abb01cf8d8276beeb53db37572ab7369a752de5af244bc24e4
+    # End of OCPBUGS-48519 overrides 4.17 section
+    # End of OCPBUGS-48519 overrides
+    # Beginning of OCPBUGS-58837 overrides
+    # Beginning of OCPBUGS-58837 overrides 4.15 section
+    - version: 4.15.53
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/openshift-cert-hotfix-415-multi:ab45f5df65f19c9e4db4977b0d756c8d87baff0a 
+    - version: 4.15.54
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/openshift-cert-hotfix-415-multi:ab45f5df65f19c9e4db4977b0d756c8d87baff0a 
+    # End of OCPBUGS-58837 overrides 4.15 section
+    # Beginning of OCPBUGS-58837 overrides 4.15 section
+    - version: 4.16.43
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-cert-hotfix-416-multi:2d2e6071841bb12ff1f41c457889bb44b6fb1cf7
+    # End of OCPBUGS-58837 overrides 4.15 section
+    # End of OCPBUGS-58837 overrides
+    testing:
+    # Update the image refs below to indicate which images should be used for CPO override
+    # testing. Currently, we only test one latest/previous combination. In the future, we 
+    # may be able to test multiple combinations at a time. To test more than one, update
+    # the referenced images before each e2e test run.
+      latest: quay.io/openshift-release-dev/ocp-release:4.15.53-x86_64
+      previous: quay.io/openshift-release-dev/ocp-release:4.15.52-x86_64

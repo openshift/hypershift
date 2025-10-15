@@ -1,20 +1,13 @@
 package sharedingress
 
 import (
-	"bytes"
 	_ "embed"
-	"fmt"
-	"sort"
-	"text/template"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
-	routev1 "github.com/openshift/api/route/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -26,10 +19,17 @@ import (
 )
 
 const (
-	routerConfigKey     = "haproxy.cfg"
-	routerConfigHashKey = "hypershift.openshift.io/config-hash"
-	KASSVCLBPort        = 6443
-	ExternalDNSLBPort   = 443
+	KASSVCLBPort      = 6443
+	ExternalDNSLBPort = 443
+
+	// AzurePipIpTagsEnvVar is the environment variable that contains the IP tags for the Azure Public IP.
+	// It is used to tag the Azure Public IP associated with the Shared Ingress.
+	// Expected format: comma separated key=value pairs with allowed keys: "FirstPartyUsage" or "RoutingPreference".
+	// Example: "RoutingPreference=Internet" or "FirstPartyUsage=SomeValue,RoutingPreference=Internet".
+	// Both keys and values must be non-empty.
+	AzurePipIpTagsEnvVar = "SHARED_INGRESS_AZURE_PIP_IP_TAGS"
+
+	Image = "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress-main@sha256:1af59b7a29432314bde54e8977fa45fa92dc48885efbf0df601418ec0912f472"
 )
 
 func hcpRouterLabels() map[string]string {
@@ -40,114 +40,7 @@ func hcpRouterLabels() map[string]string {
 
 const PrivateRouterImage = "haproxy-router"
 
-//go:embed router_config.template
-var routerConfigTemplateStr string
-var routerConfigTemplate *template.Template
-
-func init() {
-	var err error
-	routerConfigTemplate, err = template.New("router-config").Parse(routerConfigTemplateStr)
-	if err != nil {
-		panic(err.Error())
-	}
-}
-
-type svcByNamespace []corev1.Service
-
-func (s svcByNamespace) Len() int           { return len(s) }
-func (s svcByNamespace) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s svcByNamespace) Less(i, j int) bool { return s[i].Namespace < s[j].Namespace }
-
-type routeByNamespaceName []routev1.Route
-
-func (r routeByNamespaceName) Len() int      { return len(r) }
-func (r routeByNamespaceName) Swap(i, j int) { r[i], r[j] = r[j], r[i] }
-func (r routeByNamespaceName) Less(i, j int) bool {
-	return r[i].Namespace+r[i].Name < r[j].Namespace+r[j].Name
-}
-
-func generateRouterConfig(svcList *corev1.ServiceList, svcsNamespaceToClusterID map[string]string, routes []routev1.Route, svcsNameToIP map[string]string) (string, error) {
-	type backendDesc struct {
-		Name      string
-		SVCIP     string
-		SVCPort   int32
-		ClusterID string
-	}
-	type ExternalDNSBackendDesc struct {
-		Name                 string
-		HostName             string
-		DestinationServiceIP string
-		DestinationPort      int32
-	}
-	type templateParams struct {
-		Backends            []backendDesc
-		ExternalDNSBackends []ExternalDNSBackendDesc
-	}
-	p := templateParams{}
-	sort.Sort(svcByNamespace(svcList.Items))
-	p.Backends = make([]backendDesc, 0, len(svcList.Items))
-	for _, svc := range svcList.Items {
-		p.Backends = append(p.Backends, backendDesc{
-			Name:      svc.Namespace + "-" + svc.Name,
-			SVCIP:     svc.Spec.ClusterIP,
-			SVCPort:   svc.Spec.Ports[0].Port,
-			ClusterID: svcsNamespaceToClusterID[svc.Namespace],
-		})
-	}
-
-	sort.Sort(routeByNamespaceName(routes))
-	p.ExternalDNSBackends = make([]ExternalDNSBackendDesc, 0, len(routes))
-	for _, route := range routes {
-		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; !hasHCPLabel {
-			// If the hypershift.openshift.io/hosted-control-plane label is not present,
-			// then it means the route should be fulfilled by the management cluster's router.
-			continue
-		}
-		switch route.Name {
-		case manifests.KubeAPIServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-apiserver",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      config.KASSVCPort})
-		case ignitionserver.Route("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-ignition",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      443})
-		case manifests.KonnectivityServerRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-konnectivity",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      8091})
-		case manifests.OauthServerExternalPublicRoute("").Name:
-			p.ExternalDNSBackends = append(p.ExternalDNSBackends, ExternalDNSBackendDesc{
-				Name:                 route.Namespace + "-oauth",
-				HostName:             route.Spec.Host,
-				DestinationServiceIP: svcsNameToIP[route.Namespace+route.Spec.To.Name],
-				DestinationPort:      6443})
-		}
-	}
-
-	out := &bytes.Buffer{}
-	if err := routerConfigTemplate.Execute(out, p); err != nil {
-		return "", fmt.Errorf("failed to generate router config: %w", err)
-	}
-	return out.String(), nil
-}
-
-func ReconcileRouterConfiguration(cm *corev1.ConfigMap, config string) error {
-	if cm.Data == nil {
-		cm.Data = map[string]string{}
-	}
-
-	cm.Data[routerConfigKey] = config
-	return nil
-}
-
-func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.ConfigMap) error {
+func ReconcileRouterDeployment(deployment *appsv1.Deployment, hypershiftOperatorImage string) error {
 	deployment.Spec = appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](2),
 		Selector: &metav1.LabelSelector{
@@ -156,36 +49,59 @@ func ReconcileRouterDeployment(deployment *appsv1.Deployment, configMap *corev1.
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: hcpRouterLabels(),
-				Annotations: map[string]string{
-					routerConfigHashKey: util.ComputeHash(configMap.Data[routerConfigKey]),
-				},
 			},
 			Spec: corev1.PodSpec{
 				Containers: []corev1.Container{
+					util.BuildContainer(ConfigGeneratorContainer(), buildConfigGeneratorContainer(hypershiftOperatorImage)),
 					util.BuildContainer(hcpRouterContainerMain(), buildHCPRouterContainerMain()),
 				},
 				Volumes: []corev1.Volume{
 					{
 						Name: "config",
 						VolumeSource: corev1.VolumeSource{
-							ConfigMap: &corev1.ConfigMapVolumeSource{
-								LocalObjectReference: corev1.LocalObjectReference{Name: manifests.RouterConfigurationConfigMap("").Name},
-							},
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
+					},
+					{
+						Name: "runtime-socket",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
 						},
 					},
 				},
-				ServiceAccountName:           "",
-				AutomountServiceAccountToken: ptr.To(false),
+				ServiceAccountName:           RouterServiceAccount().Name,
+				AutomountServiceAccountToken: ptr.To(true),
+				Tolerations: []corev1.Toleration{
+					{
+						Key:      "infra",
+						Value:    "true",
+						Effect:   corev1.TaintEffectNoSchedule,
+						Operator: corev1.TolerationOpEqual,
+					},
+				},
 				Affinity: &corev1.Affinity{
-					PodAntiAffinity: &corev1.PodAntiAffinity{
-						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+					NodeAffinity: &corev1.NodeAffinity{
+						PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 							{
 								Weight: 100,
-								PodAffinityTerm: corev1.PodAffinityTerm{
-									TopologyKey: corev1.LabelTopologyZone,
-									LabelSelector: &metav1.LabelSelector{
-										MatchLabels: hcpRouterLabels(),
+								Preference: corev1.NodeSelectorTerm{
+									MatchExpressions: []corev1.NodeSelectorRequirement{
+										{
+											Key:      "aro-hcp.azure.com/role",
+											Operator: corev1.NodeSelectorOpIn,
+											Values:   []string{"infra"},
+										},
 									},
+								},
+							},
+						},
+					},
+					PodAntiAffinity: &corev1.PodAntiAffinity{
+						RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+							{
+								TopologyKey: corev1.LabelTopologyZone,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: hcpRouterLabels(),
 								},
 							},
 						},
@@ -211,10 +127,12 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 		}
 
 		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
-		// TODO: get the image from the payload once available https://issues.redhat.com/browse/HOSTEDCP-1819
-		c.Image = "quay.io/rh_ee_brcox/hypershift:haproxy2.9.9-multi"
+		c.Image = Image
 		c.Args = []string{
 			"-f", "/usr/local/etc/haproxy",
+			"-db",
+			"-W",
+			"-S", "/var/run/haproxy/admin.sock", // run in master-worker mode and bind to the admin socket to enable hot reloads.
 		}
 		c.LivenessProbe = &corev1.Probe{
 			InitialDelaySeconds: 50,
@@ -244,22 +162,67 @@ func buildHCPRouterContainerMain() func(*corev1.Container) {
 				},
 			},
 		}
-		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
-			Name:      "config",
-			MountPath: "/usr/local/etc/haproxy/haproxy.cfg",
-			SubPath:   "haproxy.cfg",
-		})
+		c.VolumeMounts = append(c.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "config",
+				MountPath: "/usr/local/etc/haproxy",
+				ReadOnly:  true,
+			}, corev1.VolumeMount{
+				Name:      "runtime-socket",
+				MountPath: "/var/run/haproxy",
+			},
+		)
 	}
 }
 
-func ReconcileRouterService(svc *corev1.Service) error {
+func ConfigGeneratorContainer() *corev1.Container {
+	return &corev1.Container{
+		Name: "config-generator",
+	}
+}
+
+func buildConfigGeneratorContainer(hypershiftOperatorImage string) func(*corev1.Container) {
+	return func(c *corev1.Container) {
+		c.Command = []string{
+			"/usr/bin/hypershift-operator",
+		}
+		c.Args = []string{
+			"sharedingress-config-generator",
+			"--config-path", "/usr/local/etc/haproxy/haproxy.cfg",
+			"--haproxy-socket-path", "/var/run/haproxy/admin.sock",
+		}
+		c.Image = hypershiftOperatorImage
+
+		c.VolumeMounts = append(c.VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "config",
+				MountPath: "/usr/local/etc/haproxy",
+			}, corev1.VolumeMount{
+				Name:      "runtime-socket",
+				MountPath: "/var/run/haproxy",
+			},
+		)
+	}
+}
+
+func ReconcileRouterService(svc *corev1.Service, azurePipIpTags string) error {
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
 	}
 	for k, v := range hcpRouterLabels() {
 		svc.Labels[k] = v
 	}
+
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	if azurePipIpTags != "" {
+		svc.Annotations["service.beta.kubernetes.io/azure-pip-ip-tags"] = azurePipIpTags
+	}
+
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
+	// ServiceExternalTrafficPolicyLocal preserves the client source IP. see: https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+	svc.Spec.ExternalTrafficPolicy = corev1.ServiceExternalTrafficPolicyLocal
 	svc.Spec.Selector = hcpRouterLabels()
 	foundExternaDNS := false
 	foundKASSVC := false
@@ -310,6 +273,7 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, owner
 func ReconcileRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
+	kasServiceFrontendPort := intstr.FromInt(6443)
 	protocol := corev1.ProtocolTCP
 
 	policy.Spec.PodSelector = metav1.LabelSelector{
@@ -326,6 +290,10 @@ func ReconcileRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, isOpenShif
 				},
 				{
 					Port:     &httpsPort,
+					Protocol: &protocol,
+				},
+				{
+					Port:     &kasServiceFrontendPort,
 					Protocol: &protocol,
 				},
 			},

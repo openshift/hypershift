@@ -29,7 +29,7 @@ import (
 	dumpcmd "github.com/openshift/hypershift/cmd/dump"
 	installcmd "github.com/openshift/hypershift/cmd/install"
 	cliversion "github.com/openshift/hypershift/cmd/version"
-	"github.com/openshift/hypershift/pkg/version"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -54,7 +54,7 @@ func main() {
 		},
 	}
 
-	cmd.Version = version.String()
+	cmd.Version = supportedversion.String()
 
 	ctx, cancel := context.WithCancel(context.Background())
 

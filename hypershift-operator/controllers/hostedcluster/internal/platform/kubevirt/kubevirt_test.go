@@ -69,7 +69,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 				return "", tc.expectedErr
 			}
 			result, err := kubevirt.ReconcileCAPIInfraCR(
-				context.Background(),
+				t.Context(),
 				fakeClient,
 				createOrUpdateFN,
 				hcluster,
@@ -103,7 +103,7 @@ func TestReconcileCredentials(t *testing.T) {
 		return "", nil
 	}
 	hcluster := &hyperv1.HostedCluster{}
-	err := kubevirt.ReconcileCredentials(context.Background(), fakeClient, createOrUpdateFN, hcluster, "controlPlanNamespace")
+	err := kubevirt.ReconcileCredentials(t.Context(), fakeClient, createOrUpdateFN, hcluster, "controlPlanNamespace")
 	if err != nil {
 		t.Fatalf("ReconcileCredentials failed: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestReconcileSecretEncryption(t *testing.T) {
 		return "", nil
 	}
 	hcluster := &hyperv1.HostedCluster{}
-	err := kubevirt.ReconcileSecretEncryption(context.Background(), fakeClient, createOrUpdateFN, hcluster, "controlPlanNamespace")
+	err := kubevirt.ReconcileSecretEncryption(t.Context(), fakeClient, createOrUpdateFN, hcluster, "controlPlanNamespace")
 	if err != nil {
 		t.Fatalf("ReconcileSecretEncryption failed: %v", err)
 	}

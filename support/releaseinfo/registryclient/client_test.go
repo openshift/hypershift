@@ -240,7 +240,7 @@ func TestFindMatchingManifest(t *testing.T) {
 		t.Run(tc.testName, func(t *testing.T) {
 			g := NewWithT(t)
 
-			imageRef, err := findMatchingManifest(context.TODO(), tc.releaseImage, tc.deserializedManifestList, tc.osToFind, tc.archToFind)
+			imageRef, err := findMatchingManifest(t.Context(), tc.releaseImage, tc.deserializedManifestList, tc.osToFind, tc.archToFind)
 			g.Expect(err).To(BeNil())
 			g.Expect(imageRef).To(Equal(tc.expectedImageRef))
 		})
@@ -360,7 +360,7 @@ func TestIsMultiArchManifestList(t *testing.T) {
 					},
 				}, nil
 			}
-			ctx := context.WithValue(context.Background(), DeserializeFuncName, deserializeFunc)
+			ctx := context.WithValue(t.Context(), DeserializeFuncName, deserializeFunc)
 			imageMetadataProvider := &fakeRegistryClientImageMetadataProvider{
 				mediaType: tc.mediaType,
 			}

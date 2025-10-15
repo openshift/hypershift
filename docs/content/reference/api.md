@@ -815,14 +815,17 @@ Release
 </em>
 </td>
 <td>
-<p>release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines which includes the kubelet version, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).
-It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
-Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Changing this field will trigger a NodePool rollout.</p>
+<p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
+<p>Version-skew rules and effects:
+- The minor-version skew relative to the control-plane release must be &lt;= N-2.
+This is not currently enforced, but exceeding this limit is unsupported and
+may lead to unpredictable behavior.
+- If the specified release is higher than the HostedCluster&rsquo;s release, the
+NodePool will be degraded and the ValidReleaseImage condition will be false.
+- If the specified release is lower than the NodePool&rsquo;s current y-stream,
+the NodePool will be degraded and the ValidReleaseImage condition will be false.</p>
+<p>Changing this field triggers a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -1149,9 +1152,11 @@ This value is immutable.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+<p>allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer.
 If not specified, traffic is allowed from all addresses.
-This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges</p>
+This field is enforced for ARO (Azure Red Hat OpenShift) via the shared-ingress HAProxy.
+For platforms other than ARO, the enforcement depends on whether the underlying cloud provider supports the Service LoadBalancerSourceRanges field.
+If the platform does not support LoadBalancerSourceRanges, this field may have no effect.</p>
 </td>
 </tr>
 </tbody>
@@ -1514,9 +1519,10 @@ Volume
 <td>
 <em>(Optional)</em>
 <p>resourceTags is an optional list of additional tags to apply to AWS node
-instances.</p>
-<p>These will be merged with HostedCluster scoped tags, and HostedCluster tags
-take precedence in case of conflicts.</p>
+instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
+Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.</p>
+<p>These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.</p>
 <p>See <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
 information on tagging AWS resources. AWS supports a maximum of 50 tags per
 resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
@@ -1632,7 +1638,11 @@ for the cluster. See
 <a href="https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html">https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html</a> for
 information on tagging AWS resources. AWS supports a maximum of 50 tags per
 resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
-for the user.</p>
+for the user.
+Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
+These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
+Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.</p>
 </td>
 </tr>
 <tr>
@@ -2716,6 +2726,110 @@ toleration of full disruption of the component.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureAuthenticationConfiguration { #hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>azureAuthenticationConfiguration is a discriminated union type that contains the Azure authentication configuration
+for a Hosted Cluster. This configuration is used to determine how the Hosted Cluster authenticates with Azure&rsquo;s API,
+either with managed identities or workload identities.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>azureAuthenticationConfigType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationType">
+AzureAuthenticationType
+</a>
+</em>
+</td>
+<td>
+<p>azureAuthenticationConfigType is the type of identity configuration used in the Hosted Cluster. This field is
+used to determine which identity configuration is being used. Valid values are &ldquo;ManagedIdentities&rdquo; and
+&ldquo;WorkloadIdentities&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>managedIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
+AzureResourceManagedIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
+authenticate with Azure&rsquo;s API.</p>
+<p>These are required for managed Azure, also known as ARO HCP.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentities</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">
+AzureWorkloadIdentities
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>workloadIdentities is a struct of client IDs for each component that needs to authenticate with Azure&rsquo;s API in
+self-managed Azure. These client IDs are used to authenticate with Azure cloud on both the control plane and data
+plane.</p>
+<p>This is required for self-managed Azure.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureAuthenticationType { #hypershift.openshift.io/v1beta1.AzureAuthenticationType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
+</p>
+<p>
+<p>AzureAuthenticationType is a discriminated union type that contains the Azure authentication configuration for an
+Azure Hosted Cluster. This type is used to determine which authentication configuration is being used. Valid values
+are &ldquo;ManagedIdentities&rdquo; and &ldquo;WorkloadIdentities&rdquo;.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ManagedIdentities&#34;</p></td>
+<td><p>&ldquo;ManagedIdentities&rdquo; means that the Hosted Cluster is using managed identities to authenticate with Azure&rsquo;s API.
+This is only valid for managed Azure, also known as ARO HCP.</p>
+</td>
+</tr><tr><td><p>&#34;WorkloadIdentities&#34;</p></td>
+<td><p>&ldquo;WorkloadIdentities&rdquo; means that the Hosted Cluster is using workload identities to authenticate with Azure&rsquo;s API.
+This is only valid for self-managed Azure.</p>
+</td>
+</tr></tbody>
+</table>
+###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>, 
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
+</p>
+<p>
+<p>AzureClientID is a string that represents the client ID of a managed identity.</p>
+</p>
 ###AzureDiagnosticsStorageAccountType { #hypershift.openshift.io/v1beta1.AzureDiagnosticsStorageAccountType }
 <p>
 (<em>Appears on:</em>
@@ -3324,16 +3438,16 @@ expected to exist under the same subscription as SubscriptionID.</p>
 </tr>
 <tr>
 <td>
-<code>managedIdentities</code></br>
+<code>azureAuthenticationConfig</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities">
-AzureResourceManagedIdentities
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">
+AzureAuthenticationConfiguration
 </a>
 </em>
 </td>
 <td>
-<p>managedIdentities contains the managed identities needed for HCP control plane and data plane components that
-authenticate with Azure&rsquo;s API.</p>
+<p>azureAuthenticationConfig is the type of Azure authentication configuration to use to authenticate with Azure&rsquo;s
+Cloud API.</p>
 </td>
 </tr>
 <tr>
@@ -3352,7 +3466,7 @@ string
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
 </p>
 <p>
 <p>AzureResourceManagedIdentities contains the managed identities needed for HCP control plane and data plane components
@@ -3482,6 +3596,123 @@ Valid values are ImageID and AzureMarketplace.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureAuthenticationConfiguration">AzureAuthenticationConfiguration</a>)
+</p>
+<p>
+<p>AzureWorkloadIdentities is a struct that contains the client IDs of all the managed identities in self-managed Azure
+needing to authenticate with Azure&rsquo;s API.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>imageRegistry is the client ID of a federated managed identity, associated with cluster-image-registry-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingress</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>ingress is the client ID of a federated managed identity, associated with cluster-ingress-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>file</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>file is the client ID of a federated managed identity, associated with cluster-storage-operator-file,
+used in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>disk</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>disk is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
+used in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodePoolManagement</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>nodePoolManagement is the client ID of a federated managed identity, associated with cluster-api-provider-azure, used
+in workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudProvider</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>cloudProvider is the client ID of a federated managed identity, associated with azure-cloud-provider, used in
+workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<p>network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
+workload identity authentication.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
 <p>
 (<em>Appears on:</em>
@@ -3496,7 +3727,9 @@ Valid values are ImageID and AzureMarketplace.</p>
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>capabilities allows disabling optional components at install time.
+<p>capabilities allows enabling or disabling optional components at install time.
+When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+OpenShift version, minus the baremetal capability.
 Once set, it cannot be changed.</p>
 </p>
 <table>
@@ -3509,6 +3742,21 @@ Once set, it cannot be changed.</p>
 <tbody>
 <tr>
 <td>
+<code>enabled</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
+[]OptionalCapability
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>disabled</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OptionalCapability">
@@ -3518,12 +3766,9 @@ Once set, it cannot be changed.</p>
 </td>
 <td>
 <em>(Optional)</em>
-<p>disabled when specified, sets the cluster version baselineCapabilitySet to None
-and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-This effectively disables that capability on the hosted cluster.</p>
-<p>When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-OpenShift version.</p>
-<p>Once set, this field cannot be changed.</p>
+<p>disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+Once set, this field cannot be changed.</p>
+<p>Note: Disabling &lsquo;openshift-samples&rsquo;,&lsquo;Insights&rsquo;, &lsquo;Console&rsquo;, &lsquo;NodeTuning&rsquo;, &lsquo;Ingress&rsquo; are only supported in OpenShift versions 4.20 and above.</p>
 </td>
 </tr>
 </tbody>
@@ -3552,8 +3797,13 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>id specifies the target Capacity Reservation into which the EC2 instances should be launched.
-Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0</p>
+Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
+When empty, no specific Capacity Reservation is targeted.</p>
+<p>When specified, preference cannot be set to &lsquo;None&rsquo; or &lsquo;Open&rsquo; as these
+are mutually exclusive with targeting a specific reservation. Use preference &lsquo;CapacityReservationsOnly&rsquo;
+or omit preference field when targeting a specific reservation.</p>
 </td>
 </tr>
 <tr>
@@ -3568,13 +3818,61 @@ MarketType
 <td>
 <em>(Optional)</em>
 <p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
-&ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-&ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+- &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
 When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default value is CapacityBlocks.</p>
+<p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preference</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationPreference">
+CapacityReservationPreference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+- &ldquo;&rdquo;: No preference (platform default)
+- &ldquo;Open&rdquo;: The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+- &ldquo;None&rdquo;: The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+- &ldquo;CapacityReservationsOnly&rdquo;: The instance will only run if matched or targeted to a Capacity Reservation</p>
+<p>Cannot be set to &lsquo;None&rsquo; or &lsquo;Open&rsquo; when a specific Capacity Reservation ID is provided,
+as targeting a specific reservation is mutually exclusive with these general preference settings.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###CapacityReservationPreference { #hypershift.openshift.io/v1beta1.CapacityReservationPreference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+</p>
+<p>
+<p>CapacityReservationPreference describes the preferred use of capacity reservations
+of an instance</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;None&#34;</p></td>
+<td><p>CapacityReservationPreferenceNone the instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads</p>
+</td>
+</tr><tr><td><p>&#34;CapacityReservationsOnly&#34;</p></td>
+<td><p>CapacityReservationPreferenceOnly the instance will only run if matched or targeted to a Capacity Reservation</p>
+</td>
+</tr><tr><td><p>&#34;Open&#34;</p></td>
+<td><p>CapacityReservationPreferenceOpen the instance may make use of open Capacity Reservations that match its AZ and InstanceType.</p>
+</td>
+</tr></tbody>
 </table>
 ###CertificateSigningRequestApprovalSpec { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApprovalSpec }
 <p>
@@ -3610,6 +3908,64 @@ NodePools associated with a control plane.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td>
+<code>scaling</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScalingType">
+ScalingType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaling defines the scaling behavior for the cluster autoscaler.
+ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+When set to ScaleUpAndScaleDown, the scaleDown field can be used to configure scale down behavior.</p>
+<p>Note: This field is only supported in OpenShift versions 4.19 and above.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scaleDown</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ScaleDownConfig">
+ScaleDownConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
+This field is only valid when scaling is set to ScaleUpAndScaleDown.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>balancingIgnoredLabels</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>balancingIgnoredLabels sets &ldquo;&ndash;balancing-ignore-label <label name>&rdquo; flag on cluster-autoscaler for each listed label.
+This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+For example, if you have nodes with &ldquo;topology.ebs.csi.aws.com/zone&rdquo; label, you can add name of this label here
+to prevent cluster autoscaler from splitting nodes into different node groups based on its value.</p>
+<p>HyperShift automatically appends platform-specific balancing ignore labels:
+- AWS: &ldquo;lifecycle&rdquo;, &ldquo;k8s.amazonaws.com/eniConfig&rdquo;, &ldquo;topology.k8s.aws/zone-id&rdquo;
+- Azure: &ldquo;agentpool&rdquo;, &ldquo;kubernetes.azure.com/agentpool&rdquo;
+- Common:
+- &ldquo;hypershift.openshift.io/nodePool&rdquo;
+- &ldquo;topology.ebs.csi.aws.com/zone&rdquo;
+- &ldquo;topology.disk.csi.azure.com/zone&rdquo;
+- &ldquo;ibm-cloud.kubernetes.io/worker-id&rdquo;
+- &ldquo;vpc-block-csi-driver-labels&rdquo;
+These labels are added by default and do not need to be manually specified.</p>
+</td>
+</tr>
 <tr>
 <td>
 <code>maxNodesTotal</code></br>
@@ -3654,6 +4010,24 @@ duration string. The default is 15 minutes.</p>
 </tr>
 <tr>
 <td>
+<code>maxFreeDifferenceRatioPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+The value represents a percentage from 0 to 100.
+When set to 0, this means node groups must have exactly the same free resources to be considered similar (no difference allowed).
+When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
+A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
+When omitted, the autoscaler defaults to 10%.
+This affects the &ldquo;&ndash;max-free-difference-ratio&rdquo; flag on cluster-autoscaler.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>podPriorityThreshold</code></br>
 <em>
 int32
@@ -3666,6 +4040,27 @@ shouldn&rsquo;t trigger autoscaler actions, but only run when there are spare
 resources available. The default is -10.</p>
 <p>See the following for more details:
 <a href="https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption">https://github.com/kubernetes/autoscaler/blob/master/cluster-autoscaler/FAQ.md#how-does-cluster-autoscaler-work-with-pod-priority-and-preemption</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>expanders</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ExpanderString">
+[]ExpanderString
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>expanders guide the autoscaler in choosing node groups during scale-out.
+Sets the order of expanders for scaling out node groups.
+Options include:
+* LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+* Priority - selects the group with the highest user-defined priority.
+* Random - selects a group randomly.
+If not specified, <code>[Priority, LeastWaste]</code> is the default.
+Maximum of 3 expanders can be specified.</p>
 </td>
 </tr>
 </tbody>
@@ -3896,6 +4291,56 @@ int32
 <p>hostPrefix is the prefix size to allocate to each node from the CIDR.
 For example, 24 would allocate 2^(32-24)=2^8=256 addresses to each node. If this
 field is not used by the plugin, it can be left unset.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ClusterNetworkOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>disableMultiNetwork</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>disableMultiNetwork when set to true disables the Multus CNI plugin and related components
+in the hosted cluster. This prevents the installation of multus daemon sets in the
+guest cluster and the multus-admission-controller in the management cluster.
+Default is false (Multus is enabled).
+This field is immutable.
+This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
+with any other NetworkType will result in a validation error during cluster creation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ovnKubernetesConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">
+OVNKubernetesConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ovnKubernetesConfig holds OVN-Kubernetes specific configuration.
+This is only consumed when NetworkType is OVNKubernetes.</p>
 </td>
 </tr>
 </tbody>
@@ -4425,6 +4870,41 @@ and reports missing images if any.</p>
 </td>
 </tr></tbody>
 </table>
+###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>ConfigurationStatus contains the status of HostedCluster configuration</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>authentication</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.AuthenticationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>authentication contains the observed authentication configuration status from the hosted cluster.
+This field reflects the current state of the cluster authentication including OAuth metadata,
+OIDC client status, and other authentication-related configurations.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ControlPlaneComponent { #hypershift.openshift.io/v1beta1.ControlPlaneComponent }
 <p>
 <p>ControlPlaneComponent specifies the state of a ControlPlane Component</p>
@@ -4640,6 +5120,7 @@ ManagedIdentity
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>imageRegistry is a pre-existing managed identity associated with the cluster-image-registry-operator.</p>
 </td>
 </tr>
@@ -4998,6 +5479,31 @@ etcd-client.key: Client certificate key value
 </td>
 </tr>
 </tbody>
+</table>
+###ExpanderString { #hypershift.openshift.io/v1beta1.ExpanderString }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ExpanderString contains the name of an expander to be used by the cluster autoscaler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;LeastWaste&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Priority&#34;</p></td>
+<td><p>Selects the node group with the least idle resources.</p>
+</td>
+</tr><tr><td><p>&#34;Random&#34;</p></td>
+<td><p>Selects the node group with the highest priority.</p>
+</td>
+</tr></tbody>
 </table>
 ###Filter { #hypershift.openshift.io/v1beta1.Filter }
 <p>
@@ -5848,6 +6354,20 @@ PlatformStatus
 <p>platform contains platform-specific status of the HostedCluster</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>configuration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigurationStatus">
+ConfigurationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>configuration contains the cluster configuration status of the HostedCluster</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###HostedControlPlaneSpec { #hypershift.openshift.io/v1beta1.HostedControlPlaneSpec }
@@ -6587,6 +7107,20 @@ int
 <td>
 <em>(Optional)</em>
 <p>nodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>configuration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ConfigurationStatus">
+ConfigurationStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>configuration contains the cluster configuration status of the HostedCluster</p>
 </td>
 </tr>
 </tbody>
@@ -8345,28 +8879,15 @@ used, by an HCP component, to authenticate with the Azure API.</p>
 <td>
 <code>clientID</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
 <p>clientID is the client ID of a managed identity associated with CredentialsSecretName. This field is optional and
 mainly used for CI purposes.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>certificateName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>certificateName is the name of the certificate backing the managed identity. This certificate is expected to
-reside in an Azure Key Vault on the management cluster.
-Deprecated: This field was previously required as part of the MIWI phase 2 work; however, this field will be
-removed as part of the MIWI phase 3 work, <a href="https://issues.redhat.com/browse/OCPSTRAT-1856">https://issues.redhat.com/browse/OCPSTRAT-1856</a>.</p>
 </td>
 </tr>
 <tr>
@@ -8379,7 +8900,13 @@ ObjectEncodingFormat
 </em>
 </td>
 <td>
-<p>objectEncoding is the encoding format for the object.</p>
+<p>objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
+the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
+Azure Key Vault. If objectEncoding doesn&rsquo;t match the encoding format of the certificate, the certificate will
+unsuccessfully be read by the Secrets CSI driver and an error will occur. This error will only be visible on the
+SecretProviderClass custom resource related to the managed identity.</p>
+<p>The default value is utf-8.</p>
+<p>See this for more info - <a href="https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md">https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md</a></p>
 </td>
 </tr>
 <tr>
@@ -8390,15 +8917,12 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
 format of a UserAssignedIdentityCredentials struct. At a minimum, the secret needs to contain the ClientId,
 ClientSecret, AuthenticationEndpoint, NotBefore, and NotAfter, and TenantId.</p>
 <p>More info on this struct can be found here - <a href="https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156">https://github.com/Azure/msi-dataplane/blob/63fb37d3a1aaac130120624674df795d2e088083/pkg/dataplane/internal/generated_client.go#L156</a>.</p>
 <p>credentialsSecretName must be between 1 and 127 characters and use only alphanumeric characters and hyphens.
 credentialsSecretName must also be unique within the Azure Key Vault. See more details here - <a href="https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/">https://azure.github.io/PSRule.Rules.Azure/en/rules/Azure.KeyVault.SecretName/</a>.</p>
-<p>TODO set the validation:MinLength=1
-TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 </td>
 </tr>
 </tbody>
@@ -8409,7 +8933,7 @@ TODO set validation:Pattern=<code>^[a-zA-Z0-9-]+$</code></p>
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservationo for an Instance.</p>
+<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
 </p>
 <table>
 <thead>
@@ -9034,14 +9558,17 @@ Release
 </em>
 </td>
 <td>
-<p>release specifies the OCP release used for the NodePool. This informs the
-ignition configuration for machines which includes the kubelet version, as well as other platform specific
-machine properties (e.g. an AMI on the AWS platform).
-It&rsquo;s not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there&rsquo;s no enforcement that prevents this from happening.
-Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-Changing this field will trigger a NodePool rollout.</p>
+<p>release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).</p>
+<p>Version-skew rules and effects:
+- The minor-version skew relative to the control-plane release must be &lt;= N-2.
+This is not currently enforced, but exceeding this limit is unsupported and
+may lead to unpredictable behavior.
+- If the specified release is higher than the HostedCluster&rsquo;s release, the
+NodePool will be degraded and the ValidReleaseImage condition will be false.
+- If the specified release is lower than the NodePool&rsquo;s current y-stream,
+the NodePool will be degraded and the ValidReleaseImage condition will be false.</p>
+<p>Changing this field triggers a NodePool rollout.</p>
 </td>
 </tr>
 <tr>
@@ -9383,6 +9910,99 @@ the management cluster.</p>
 </td>
 </tr></tbody>
 </table>
+###OVNIPv4Config { #hypershift.openshift.io/v1beta1.OVNIPv4Config }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OVNKubernetesConfig">OVNKubernetesConfig</a>)
+</p>
+<p>
+<p>OVNIPv4Config contains IPv4-specific configuration options for OVN-Kubernetes.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L473-L503">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L473-L503</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>internalTransitSwitchSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalTransitSwitchSubnet is a v4 subnet in IPV4 CIDR format used internally
+by OVN-Kubernetes for the distributed transit switch in the OVN Interconnect
+architecture that connects the cluster routers on each node together to enable
+east west traffic. The subnet chosen should not overlap with other networks
+specified for OVN-Kubernetes as well as other networks used on the host.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default which is subject to change over time.
+The current default subnet is 100.88.0.0/16
+The subnet must be large enough to accommodate one IP per node in your cluster
+The value must be in proper IPV4 CIDR format</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalJoinSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalJoinSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes.
+The current default value is 100.64.0.0/16
+The subnet must be large enough to accommodate one IP per node in your cluster
+The value must be in proper IPV4 CIDR format</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OVNKubernetesConfig { #hypershift.openshift.io/v1beta1.OVNKubernetesConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec">ClusterNetworkOperatorSpec</a>)
+</p>
+<p>
+<p>OVNKubernetesConfig contains OVN-Kubernetes specific configuration options.
+<a href="https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L400-L471">https://github.com/openshift/api/blob/6d3c4e25a8d3aeb57ad61649d80c38cbd27d1cc8/operator/v1/types_network.go#L400-L471</a></p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ipv4</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OVNIPv4Config">
+OVNIPv4Config
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
+this means no opinions and the default configuration is used. Check individual
+fields within ipv4 for details of default values.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
 <p>
 (<em>Appears on:</em>
@@ -9719,6 +10339,20 @@ ClusterVersionOperatorSpec
 <p>clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>clusterNetworkOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworkOperatorSpec">
+ClusterNetworkOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>clusterNetworkOperator specifies the configuration for the Cluster Network Operator in the hosted cluster.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###OptionalCapability { #hypershift.openshift.io/v1beta1.OptionalCapability }
@@ -9735,7 +10369,17 @@ ClusterVersionOperatorSpec
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<tbody><tr><td><p>&#34;baremetal&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Console&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;ImageRegistry&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Ingress&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Insights&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;NodeTuning&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;openshift-samples&#34;</p></td>
 <td></td>
@@ -9850,9 +10494,11 @@ string
 <em>(Optional)</em>
 <p>tenancy indicates if instance should run on shared or single-tenant hardware.</p>
 <p>Possible values:
-default: NodePool instances run on shared hardware.
-dedicated: Each NodePool instance runs on single-tenant hardware.
-host: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts.</p>
+- &ldquo;default&rdquo;: NodePool instances run on shared hardware.
+- &ldquo;dedicated&rdquo;: Each NodePool instance runs on single-tenant hardware (Dedicated Instances).
+- &ldquo;host&rdquo;: NodePool instances run on user&rsquo;s pre-allocated dedicated hosts (Dedicated Hosts).</p>
+<p>When tenancy is set to &ldquo;host&rdquo;, capacityReservation cannot be specified
+as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </td>
 </tr>
 <tr>
@@ -9867,6 +10513,8 @@ CapacityReservationOptions
 <td>
 <em>(Optional)</em>
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
+<p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
+do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
 </td>
 </tr>
 </tbody>
@@ -11123,6 +11771,123 @@ RouterFilter
 </tr>
 </tbody>
 </table>
+###ScaleDownConfig { #hypershift.openshift.io/v1beta1.ScaleDownConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>Configures when and how to scale down cluster nodes.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>delayAfterAddSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+When omitted, the autoscaler defaults to 600s (10 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterDeleteSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+When omitted, the autoscaler defaults to 0s.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>delayAfterFailureSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes.
+It must be between 0 and 86400 (24 hours).
+When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+When omitted, the autoscaler defaults to 180s (3 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unneededDurationSeconds</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds.
+It must be between 0 and 86400 (24 hours).
+When omitted, the autoscaler defaults to 600s (10 minutes).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>utilizationThresholdPercent</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down.
+The value represents a percentage from 0 to 100.
+When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+When omitted, the autoscaler defaults to 50%.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ScalingType { #hypershift.openshift.io/v1beta1.ScalingType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterAutoscaling">ClusterAutoscaling</a>)
+</p>
+<p>
+<p>ScalingType defines the scaling behavior for the cluster autoscaler.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;ScaleUpAndScaleDown&#34;</p></td>
+<td><p>ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.</p>
+</td>
+</tr><tr><td><p>&#34;ScaleUpOnly&#34;</p></td>
+<td><p>ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.</p>
+</td>
+</tr></tbody>
+</table>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
@@ -11854,6 +12619,38 @@ string
 <td>
 <em>(Optional)</em>
 <p>encryptionKey is the KMS key to use for volume encryption.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###WorkloadIdentity { #hypershift.openshift.io/v1beta1.WorkloadIdentity }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureWorkloadIdentities">AzureWorkloadIdentities</a>)
+</p>
+<p>
+<p>WorkloadIdentity is a struct that contains the client ID of a federated managed identity used in workload identity
+authentication.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>clientID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureClientID">
+AzureClientID
+</a>
+</em>
+</td>
+<td>
+<p>clientID is client ID of a federated managed identity used in workload identity authentication</p>
 </td>
 </tr>
 </tbody>

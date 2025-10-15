@@ -21,7 +21,7 @@ const (
 
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
-	defaultGoAwayChance                = 0
+	defaultGoAwayChance                = 0.001
 )
 
 type KubeAPIServerConfigParams struct {
@@ -114,6 +114,10 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 
 	kasConfig.GoAwayChance = fmt.Sprint(defaultGoAwayChance)
+	if hcp.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+		// There is no point in rebalancing connections if there is only one KAS
+		kasConfig.GoAwayChance = "0"
+	}
 	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
 	}

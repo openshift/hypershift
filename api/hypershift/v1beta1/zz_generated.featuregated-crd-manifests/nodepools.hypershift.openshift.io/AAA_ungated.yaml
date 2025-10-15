@@ -423,15 +423,22 @@ spec:
                           the EC2 instances.
                         properties:
                           capacityReservation:
-                            description: capacityReservation specifies Capacity Reservation
-                              options for the NodePool instances.
+                            description: |-
+                              capacityReservation specifies Capacity Reservation options for the NodePool instances.
+
+                              Cannot be specified when tenancy is set to "host" as Dedicated Hosts
+                              do not support Capacity Reservations. Compatible with "default" and "dedicated" tenancy.
                             properties:
                               id:
                                 description: |-
                                   id specifies the target Capacity Reservation into which the EC2 instances should be launched.
                                   Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
+                                  When empty, no specific Capacity Reservation is targeted.
+
+                                  When specified, preference cannot be set to 'None' or 'Open' as these
+                                  are mutually exclusive with targeting a specific reservation. Use preference 'CapacityReservationsOnly'
+                                  or omit preference field when targeting a specific reservation.
                                 maxLength: 20
-                                minLength: 20
                                 type: string
                                 x-kubernetes-validations:
                                 - message: AWS Capacity Reservation ID must start
@@ -441,38 +448,73 @@ spec:
                               marketType:
                                 description: |-
                                   marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
-                                  "OnDemand": EC2 instances run as standard On-Demand instances.
-                                  "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+                                  - "OnDemand": EC2 instances run as standard On-Demand instances.
+                                  - "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
                                   When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
                                   The current default value is CapacityBlocks.
+
+                                  When set to 'CapacityBlocks', a specific Capacity Reservation ID must be provided.
                                 enum:
                                 - OnDemand
                                 - CapacityBlocks
                                 type: string
-                            required:
-                            - id
+                              preference:
+                                description: |-
+                                  preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+                                  - "": No preference (platform default)
+                                  - "Open": The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+                                  - "None": The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+                                  - "CapacityReservationsOnly": The instance will only run if matched or targeted to a Capacity Reservation
+
+                                  Cannot be set to 'None' or 'Open' when a specific Capacity Reservation ID is provided,
+                                  as targeting a specific reservation is mutually exclusive with these general preference settings.
+                                enum:
+                                - ""
+                                - None
+                                - CapacityReservationsOnly
+                                - Open
+                                type: string
                             type: object
+                            x-kubernetes-validations:
+                            - message: AWS Capacity Reservation preference 'None'
+                                or 'Open' is incompatible with specifying a Capacity
+                                Reservation ID
+                              rule: 'has(self.id) ? (!has(self.preference) || !(self.preference
+                                in [''Open'',''None''])) : true'
+                            - message: AWS Capacity Reservation market type 'CapacityBlocks'
+                                requires a Capacity Reservation ID
+                              rule: 'has(self.marketType) && self.marketType == ''CapacityBlocks''
+                                ? has(self.id) : true'
                           tenancy:
                             description: |-
                               tenancy indicates if instance should run on shared or single-tenant hardware.
 
                               Possible values:
-                              default: NodePool instances run on shared hardware.
-                              dedicated: Each NodePool instance runs on single-tenant hardware.
-                              host: NodePool instances run on user's pre-allocated dedicated hosts.
+                              - "default": NodePool instances run on shared hardware.
+                              - "dedicated": Each NodePool instance runs on single-tenant hardware (Dedicated Instances).
+                              - "host": NodePool instances run on user's pre-allocated dedicated hosts (Dedicated Hosts).
+
+                              When tenancy is set to "host", capacityReservation cannot be specified
+                              as AWS does not support Capacity Reservations with Dedicated Hosts.
                             enum:
                             - default
                             - dedicated
                             - host
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: AWS Capacity Reservations cannot be used with Dedicated
+                            Hosts (tenancy 'host')
+                          rule: 'has(self.tenancy) && self.tenancy == ''host'' ? !has(self.capacityReservation)
+                            : true'
                       resourceTags:
                         description: |-
                           resourceTags is an optional list of additional tags to apply to AWS node
-                          instances.
+                          instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
+                          Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
 
-                          These will be merged with HostedCluster scoped tags, and HostedCluster tags
-                          take precedence in case of conflicts.
+                          These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+                          These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 
                           See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
                           information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -1254,14 +1296,19 @@ spec:
                 type: object
               release:
                 description: |-
-                  release specifies the OCP release used for the NodePool. This informs the
-                  ignition configuration for machines which includes the kubelet version, as well as other platform specific
-                  machine properties (e.g. an AMI on the AWS platform).
-                  It's not supported to use a release in a NodePool which minor version skew against the Control Plane release is bigger than N-2. Although there's no enforcement that prevents this from happening.
-                  Attempting to use a release with a bigger skew might result in unpredictable behaviour.
-                  Attempting to use a release higher than the HosterCluster one will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-                  Attempting to use a release lower than the current NodePool y-stream will result in the NodePool being degraded and the ValidReleaseImage condition being false.
-                  Changing this field will trigger a NodePool rollout.
+                  release specifies the OCP release used for this NodePool. It drives the machine ignition configuration (including
+                  the kubelet version) and other platform-specific properties (e.g. an AMI on AWS).
+
+                  Version-skew rules and effects:
+                    - The minor-version skew relative to the control-plane release must be <= N-2.
+                      This is not currently enforced, but exceeding this limit is unsupported and
+                      may lead to unpredictable behavior.
+                    - If the specified release is higher than the HostedCluster's release, the
+                      NodePool will be degraded and the ValidReleaseImage condition will be false.
+                    - If the specified release is lower than the NodePool's current y-stream,
+                      the NodePool will be degraded and the ValidReleaseImage condition will be false.
+
+                  Changing this field triggers a NodePool rollout.
                 properties:
                   image:
                     description: |-

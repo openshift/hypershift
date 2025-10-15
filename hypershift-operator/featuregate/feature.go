@@ -21,6 +21,13 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	OpenStack featuregate.Feature = "OpenStack"
+
+	// GCPPlatform enables experimental support for provisioning and managing OpenShift hosted control planes on Google Cloud Platform infrastructure.
+	// This feature gate controls GCP-HCP specific cluster provisioning logic, resource management, and integration with GCP services for HyperShift-managed clusters.
+	// owner: hcm-gcp-hcp@redhat.com
+	// alpha: v0.1.49
+	// beta: x.y.z
+	GCPPlatform featuregate.Feature = "GCPPlatform"
 )
 
 // Initialize new features here
@@ -29,12 +36,14 @@ var (
 
 	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
 	// Add featuregates here
 	allFeatures.AddFeature(aroHCPManagedIdentitiesFeature)
 	allFeatures.AddFeature(openStackFeature)
+	allFeatures.AddFeature(gcpHCPFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

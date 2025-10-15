@@ -89,6 +89,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AWSSharedVPCApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AWSSharedVPCRolesRef"):
 		return &hypershiftv1beta1.AWSSharedVPCRolesRefApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureAuthenticationConfiguration"):
+		return &hypershiftv1beta1.AzureAuthenticationConfigurationApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSKey"):
 		return &hypershiftv1beta1.AzureKMSKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureKMSSpec"):
@@ -105,6 +107,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
 		return &hypershiftv1beta1.AzureVMImageApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzureWorkloadIdentities"):
+		return &hypershiftv1beta1.AzureWorkloadIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Capabilities"):
 		return &hypershiftv1beta1.CapabilitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("CapacityReservationOptions"):
@@ -119,10 +123,14 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.ClusterNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworking"):
 		return &hypershiftv1beta1.ClusterNetworkingApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ClusterNetworkOperatorSpec"):
+		return &hypershiftv1beta1.ClusterNetworkOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionOperatorSpec"):
 		return &hypershiftv1beta1.ClusterVersionOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ClusterVersionStatus"):
 		return &hypershiftv1beta1.ClusterVersionStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ConfigurationStatus"):
+		return &hypershiftv1beta1.ConfigurationStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ControlPlaneManagedIdentities"):
 		return &hypershiftv1beta1.ControlPlaneManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("DataPlaneManagedIdentities"):
@@ -247,6 +255,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.OpenStackPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OperatorConfiguration"):
 		return &hypershiftv1beta1.OperatorConfigurationApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OVNIPv4Config"):
+		return &hypershiftv1beta1.OVNIPv4ConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OVNKubernetesConfig"):
+		return &hypershiftv1beta1.OVNKubernetesConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PersistentVolumeEtcdStorageSpec"):
 		return &hypershiftv1beta1.PersistentVolumeEtcdStorageSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("PlacementOptions"):
@@ -279,6 +291,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.RouterFilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("RouterParam"):
 		return &hypershiftv1beta1.RouterParamApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ScaleDownConfig"):
+		return &hypershiftv1beta1.ScaleDownConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("SecretEncryptionSpec"):
 		return &hypershiftv1beta1.SecretEncryptionSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ServiceNetworkEntry"):
@@ -301,6 +315,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.UserManagedDiagnosticsApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Volume"):
 		return &hypershiftv1beta1.VolumeApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("WorkloadIdentity"):
+		return &hypershiftv1beta1.WorkloadIdentityApplyConfiguration{}
 
 		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("BlockDevice"):

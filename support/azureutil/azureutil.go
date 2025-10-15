@@ -3,11 +3,15 @@ package azureutil
 import (
 	"context"
 	"fmt"
+	"maps"
+	"net/url"
 	"os"
 	"strings"
+	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/upsert"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -16,7 +20,17 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+// AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
+// This information comes from the encryption key ID, which is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+type AzureEncryptionKey struct {
+	KeyVaultName string
+	KeyName      string
+	KeyVersion   string
+}
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID
 // Example subnet ID: /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>/providers/Microsoft.Network/virtualNetworks/<vnetName>/subnets/<subnetName>
@@ -186,6 +200,16 @@ func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
 }
 
+// IsSelfManagedAzure returns true when the platform is Azure and the managed service is not ARO-HCP
+func IsSelfManagedAzure(platform hyperv1.PlatformType) bool {
+	return platform == hyperv1.AzurePlatform && !IsAroHCP()
+}
+
+// SetAsAroHCPTest sets the proper environment variable for the test, designating this is an ARO-HCP environment
+func SetAsAroHCPTest(t *testing.T) {
+	t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+}
+
 func GetKeyVaultAuthorizedUser() string {
 	return os.Getenv(config.AROHCPKeyVaultManagedIdentityClientID)
 }
@@ -293,4 +317,100 @@ func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown cloud type %q", cloud)
 	}
+}
+
+// GetAzureEncryptionKeyInfo extracts the key vault name, key name, and key version from an encryption key ID
+// The encryption key ID is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
+func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, error) {
+	parsed, err := url.Parse(encryptionKeyID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: %w", encryptionKeyID, err)
+	}
+
+	// Ensure the host is present
+	host := parsed.Hostname()
+	if host == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: missing host", encryptionKeyID)
+
+	}
+
+	// Ensure the path starts with /keys/
+	if !strings.HasPrefix(parsed.Path, "/keys/") {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: expected path to start with /keys/", encryptionKeyID)
+	}
+
+	// Ensure the path has exactly two parts
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, "/keys/"), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: expected /keys/<keyName>/<keyVersion>", encryptionKeyID)
+	}
+
+	// Ensure the vault name is present
+	vaultName := strings.Split(host, ".")[0]
+	if vaultName == "" {
+		return nil, fmt.Errorf("invalid encryption key identifier %q: could not derive vault name from host %q", encryptionKeyID, host)
+	}
+
+	return &AzureEncryptionKey{
+		KeyVaultName: vaultName,
+		KeyName:      parts[0],
+		KeyVersion:   parts[1],
+	}, nil
+}
+
+// AzureCredentialConfig defines the configuration for creating an Azure credential secret
+type AzureCredentialConfig struct {
+	Name              string
+	ManifestFunc      func() *corev1.Secret
+	ClientID          string
+	CapabilityChecker func(*hyperv1.Capabilities) bool
+	ErrorContext      string
+}
+
+// ReconcileAzureCredentials creates or updates Azure credential secrets based on the provided configurations
+func ReconcileAzureCredentials(
+	ctx context.Context,
+	client client.Client,
+	createOrUpdate upsert.CreateOrUpdateFN,
+	baseSecretData map[string][]byte,
+	configs []AzureCredentialConfig,
+	capabilities *hyperv1.Capabilities,
+) []error {
+	var errors []error
+
+	for _, config := range configs {
+		// Skip credentials that don't meet capability requirements
+		if config.CapabilityChecker != nil && !config.CapabilityChecker(capabilities) {
+			continue
+		}
+
+		// Get the secret manifest
+		secret := config.ManifestFunc()
+		if secret == nil {
+			errors = append(errors, fmt.Errorf("failed to get secret manifest for %s", config.Name))
+			continue
+		}
+
+		// Create or update the secret
+		if _, err := createOrUpdate(ctx, client, secret, func() error {
+			// Clone base secret data to avoid mutation
+			secretData := maps.Clone(baseSecretData)
+
+			// Add the client ID if provided
+			if config.ClientID != "" {
+				secretData["azure_client_id"] = []byte(config.ClientID)
+			}
+
+			secret.Data = secretData
+			return nil
+		}); err != nil {
+			errorMsg := fmt.Sprintf("failed to reconcile %s", config.ErrorContext)
+			if config.ErrorContext == "" {
+				errorMsg = fmt.Sprintf("failed to reconcile %s credentials", config.Name)
+			}
+			errors = append(errors, fmt.Errorf("%s: %w", errorMsg, err))
+		}
+	}
+
+	return errors
 }

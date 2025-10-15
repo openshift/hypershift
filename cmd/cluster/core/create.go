@@ -15,12 +15,12 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -54,6 +54,8 @@ func DefaultOptions() *RawCreateOptions {
 		OLMCatalogPlacement:            hyperv1.ManagementOLMCatalogPlacement,
 		NetworkType:                    string(hyperv1.OVNKubernetes),
 		FeatureSet:                     string(configv1.Default),
+		EnableClusterCapabilities:      []string{},
+		DisableClusterCapabilities:     []string{},
 	}
 }
 
@@ -106,8 +108,11 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.PausedUntil, "pausedUntil", opts.PausedUntil, "If a date is provided in RFC3339 format, HostedCluster creation is paused until that date. If the boolean true is provided, HostedCluster creation is paused until the field is removed.")
 	flags.StringVar(&opts.ReleaseStream, "release-stream", opts.ReleaseStream, "The OCP release stream for the cluster (e.g. 4-stable-multi), this flag is ignored if release-image is set")
 	flags.StringVar(&opts.FeatureSet, "feature-set", opts.FeatureSet, "The predefined feature set to use for the cluster (TechPreviewNoUpgrade or DevPreviewNoUpgrade)")
-	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disabled. The only currently supported values are ImageRegistry,openshift-samples.")
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", nil, "Optional cluster capabilities to disable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
+	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
+	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
+	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -167,8 +172,11 @@ type RawCreateOptions struct {
 	OLMCatalogPlacement              hyperv1.OLMCatalogPlacement
 	OLMDisableDefaultSources         bool
 	FeatureSet                       string
+	EnableClusterCapabilities        []string
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
+	DisableMultiNetwork              bool
+	VersionCheck                     bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -221,11 +229,15 @@ func (r *resources) asObjects() []crclient.Object {
 	return objects
 }
 
-func prototypeResources(opts *CreateOptions) (*resources, error) {
+func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, error) {
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion(opts.ReleaseStream)
+		client, err := util.GetClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(ctx, opts.ReleaseStream, client)
 		if err != nil {
 			return nil, fmt.Errorf("release image is required when unable to lookup default OCP version: %w", err)
 		}
@@ -329,7 +341,16 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 			ControllerAvailabilityPolicy:     hyperv1.AvailabilityPolicy(opts.ControlPlaneAvailabilityPolicy),
 			InfrastructureAvailabilityPolicy: hyperv1.AvailabilityPolicy(opts.InfrastructureAvailabilityPolicy),
 			Configuration:                    &hyperv1.ClusterConfiguration{},
+			Capabilities:                     &hyperv1.Capabilities{},
 		},
+	}
+
+	if len(opts.EnableClusterCapabilities) > 0 {
+		caps := make([]hyperv1.OptionalCapability, len(opts.EnableClusterCapabilities))
+		for i, c := range opts.EnableClusterCapabilities {
+			caps[i] = hyperv1.OptionalCapability(c)
+		}
+		prototype.Cluster.Spec.Capabilities.Enabled = caps
 	}
 
 	if len(opts.DisableClusterCapabilities) > 0 {
@@ -337,9 +358,7 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		for i, c := range opts.DisableClusterCapabilities {
 			caps[i] = hyperv1.OptionalCapability(c)
 		}
-		prototype.Cluster.Spec.Capabilities = &hyperv1.Capabilities{
-			Disabled: caps,
-		}
+		prototype.Cluster.Spec.Capabilities.Disabled = caps
 	}
 
 	if opts.EtcdStorageClass != "" {
@@ -441,6 +460,16 @@ func prototypeResources(opts *CreateOptions) (*resources, error) {
 		machineNetworkEntries = append(machineNetworkEntries, hyperv1.MachineNetworkEntry{CIDR: *parsedCIDR})
 	}
 	prototype.Cluster.Spec.Networking.MachineNetwork = machineNetworkEntries
+
+	if opts.DisableMultiNetwork {
+		if prototype.Cluster.Spec.OperatorConfiguration == nil {
+			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+		}
+		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+	}
 
 	if opts.NodeSelector != nil {
 		prototype.Cluster.Spec.NodeSelector = opts.NodeSelector
@@ -633,6 +662,17 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, errors.New("--pull-secret is required")
 	}
 
+	if opts.VersionCheck {
+		versionCLI := supportedversion.GetRevision()
+		client, err := util.GetClient()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client: %w", err)
+		}
+		if err := validateVersion(ctx, versionCLI, client); err != nil {
+			return nil, fmt.Errorf("version validation failed: %w", err)
+		}
+	}
+
 	if opts.Wait && opts.NodePoolReplicas < 1 {
 		return nil, errors.New("--wait requires --node-pool-replicas > 0")
 	}
@@ -692,19 +732,43 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, fmt.Errorf("specified feature set %q is not supported", opts.FeatureSet)
 	}
 
+	acceptedValues := sets.NewString(
+		string(hyperv1.ImageRegistryCapability),
+		string(hyperv1.OpenShiftSamplesCapability),
+		string(hyperv1.InsightsCapability),
+		string(hyperv1.BaremetalCapability),
+		string(hyperv1.ConsoleCapability),
+		string(hyperv1.NodeTuningCapability),
+		string(hyperv1.IngressCapability),
+	)
 	if len(opts.DisableClusterCapabilities) > 0 {
-		acceptedValues := sets.NewString("ImageRegistry", "openshift-samples")
-		for _, cap := range opts.DisableClusterCapabilities {
-			if !acceptedValues.Has(cap) {
-				return nil, fmt.Errorf("unknown capability: %s, accepted values are: %v", cap, acceptedValues.List())
+		for _, capability := range opts.DisableClusterCapabilities {
+			if !acceptedValues.Has(capability) {
+				return nil, fmt.Errorf("unknown disabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
 			}
 		}
+	}
+	if len(opts.EnableClusterCapabilities) > 0 {
+		for _, capability := range opts.EnableClusterCapabilities {
+			if !acceptedValues.Has(capability) {
+				return nil, fmt.Errorf("unknown enabled capability: %s, accepted values are: %v", capability, acceptedValues.List())
+			}
+		}
+	}
+
+	disabledCaps := sets.NewString(opts.DisableClusterCapabilities...)
+	if disabledCaps.Has(string(hyperv1.IngressCapability)) && !disabledCaps.Has(string(hyperv1.ConsoleCapability)) {
+		return nil, fmt.Errorf("ingress capability can only be disabled if Console capability is also disabled")
 	}
 
 	if len(opts.KubeAPIServerDNSName) > 0 {
 		if err := validation.IsDNS1123Subdomain(opts.KubeAPIServerDNSName); len(err) > 0 {
 			return nil, fmt.Errorf("KubeAPIServerDNSName failed DNS validation: %s", strings.Join(err[:], " "))
 		}
+	}
+
+	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
+		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
 
 	return &ValidatedCreateOptions{
@@ -788,7 +852,7 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 		return fmt.Errorf("could not complete platform specific options: %w", err)
 	}
 
-	resources, err := prototypeResources(opts)
+	resources, err := prototypeResources(ctx, opts)
 	if err != nil {
 		return err
 	}
@@ -1079,5 +1143,18 @@ func validateMgmtClusterAndNodePoolCPUArchitectures(ctx context.Context, opts *R
 		}
 	}
 
+	return nil
+}
+
+// validateVersion is a version check when creating a Hypershift cluster that checks if the CLI and Hypershift
+// operator are both running the same version of Hypershift by comparing their commit SHAs.
+func validateVersion(ctx context.Context, versionCLI string, client crclient.Client) error {
+	_, operatorVersion, err := supportedversion.GetSupportedOCPVersions(ctx, "hypershift", client, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get supported OCP versions: %v", err)
+	}
+	if operatorVersion != versionCLI {
+		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)
+	}
 	return nil
 }

@@ -3,7 +3,6 @@ package nodepool
 import (
 	"bytes"
 	"compress/gzip"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -306,7 +305,7 @@ spec:
 				client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeObjects...).Build()
 			}
 
-			cg, err := NewConfigGenerator(context.Background(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "")
+			cg, err := NewConfigGenerator(t.Context(), client, tc.hostedCluster, tc.nodePool, tc.releaseImage, "")
 			if tc.error != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(Equal(tc.error.Error()))
@@ -1436,7 +1435,7 @@ status:
 				cg.haproxyRawConfig = haproxyIgnititionConfig
 			}
 
-			got, err := cg.generateMCORawConfig(context.Background())
+			got, err := cg.generateMCORawConfig(t.Context(), hc.Spec.Capabilities)
 			if tc.error {
 				g.Expect(err).To(HaveOccurred())
 				if tc.missingCoreConfig {
@@ -1538,7 +1537,7 @@ func TestGetCoreConfigs(t *testing.T) {
 				},
 			}
 
-			configs, err := cg.getCoreConfigs(context.Background())
+			configs, err := cg.getCoreConfigs(t.Context())
 			if tc.expectedError != nil {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(configs).To(HaveLen(tc.expectedConfigMapCount))
@@ -1654,7 +1653,7 @@ func TestGetUserConfigs(t *testing.T) {
 				nodePool: tc.nodePool,
 			}
 
-			configs, err := cg.getUserConfigs(context.Background())
+			configs, err := cg.getUserConfigs(t.Context())
 			if tc.expectedError {
 				g.Expect(err).To(HaveOccurred(), "Expected an error, but got none")
 				return
@@ -1754,15 +1753,15 @@ func TestGlobalConfigString(t *testing.T) {
 		globalConfig   *hyperv1.ClusterConfiguration
 		expectedOutput string
 	}{
-		// Expected behaviour for backward compatibility for empty values is:
+		// Expected behavior for backward compatibility for empty values is:
 		// return serialized string with empty values for AdditionalTrustedCA and RegistrySources and drop everything else even if it doesn't have a omitempty tag in the API.
 		{
-			name:           "When Empty GlobalConfig it should return serialized string honouring backward compatibility expectation (see code comment)",
+			name:           "When Empty GlobalConfig it should return serialized string honoring backward compatibility expectation (see code comment)",
 			globalConfig:   &hyperv1.ClusterConfiguration{},
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
-			name: "When GlobalConfig is set with empty structs it should return serialized string honouring backward compatibility expectation (see code comment)",
+			name: "When GlobalConfig is set with empty structs it should return serialized string honoring backward compatibility expectation (see code comment)",
 			globalConfig: &hyperv1.ClusterConfiguration{
 				APIServer:      &configv1.APIServerSpec{},
 				Authentication: &configv1.AuthenticationSpec{},
@@ -1773,7 +1772,7 @@ func TestGlobalConfigString(t *testing.T) {
 			expectedOutput: expectedGlobalConfigStringWhenEmpty,
 		},
 		{
-			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honour backward compatibility expectation (see code comment)",
+			name: "When GlobalConfig is set with some values GlobalConfig it should keep them and it should honor backward compatibility expectation (see code comment)",
 			globalConfig: &hyperv1.ClusterConfiguration{
 				APIServer:      &configv1.APIServerSpec{},
 				Authentication: &configv1.AuthenticationSpec{},

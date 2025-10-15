@@ -1,28 +1,26 @@
 package nodepool
 
 import (
-	"context"
-	"fmt"
+	"encoding/json"
 	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
-
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/google/go-cmp/cmp"
@@ -37,7 +35,7 @@ var volume = hyperv1.Volume{
 	IOPS: 5000,
 }
 
-func TestAWSMachineTemplate(t *testing.T) {
+func TestAWSMachineTemplateSpec(t *testing.T) {
 	infraName := "test"
 	defaultSG := []hyperv1.AWSResourceReference{
 		{
@@ -257,29 +255,222 @@ func defaultAWSMachineTemplate(modify ...func(*capiaws.AWSMachineTemplate)) *cap
 	return template
 }
 
-type fakeEC2Client struct {
-	ec2iface.EC2API
+func TestAWSMachineTemplate(t *testing.T) {
+	// A simple name generator for predictable test outcomes.
+	mockTemplateNameGenerator := func(spec any) (string, error) {
+		specJSON, err := json.Marshal(spec)
+		if err != nil {
+			return "", err
+		}
+		return getName("test-prefix", supportutil.HashSimple(specJSON),
+			validation.DNS1123SubdomainMaxLength), nil
+	}
 
-	capacityReservation    *ec2.CapacityReservation
-	SubnetAvailabilityZone string
-}
+	namespace := "test-ns"
 
-func (fake *fakeEC2Client) DescribeCapacityReservationsWithContext(aws.Context, *ec2.DescribeCapacityReservationsInput, ...request.Option) (*ec2.DescribeCapacityReservationsOutput, error) {
-	return &ec2.DescribeCapacityReservationsOutput{
-		CapacityReservations: []*ec2.CapacityReservation{
-			fake.capacityReservation,
-		},
-	}, nil
-}
-
-func (fake *fakeEC2Client) DescribeSubnetsWithContext(aws.Context, *ec2.DescribeSubnetsInput, ...request.Option) (*ec2.DescribeSubnetsOutput, error) {
-	return &ec2.DescribeSubnetsOutput{
-		Subnets: []*ec2.Subnet{
-			{
-				AvailabilityZone: ptr.To(fake.SubnetAvailabilityZone),
+	testCases := []struct {
+		name             string
+		nodePool         *hyperv1.NodePool
+		existingTemplate *capiaws.AWSMachineTemplate
+		expectedName     string
+		expectedTags     capiaws.Tags
+	}{
+		{
+			name: "Migration: should avoid rollout on existing nodepools by reusing existing template name when nothing changes",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "stable-nodepool"},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI:          amiName,
+						InstanceType: "t3.large",
+						ResourceTags: []hyperv1.AWSResourceTag{{Key: "version", Value: "stable"}},
+					}},
+				},
 			},
+			existingTemplate: defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+				template.Name = "stable-name"
+				template.Spec.Template.Spec.InstanceType = "t3.large"
+				template.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"version": "stable"}
+			}),
+			expectedName: "stable-name",
+			expectedTags: capiaws.Tags{"version": "stable"},
 		},
-	}, nil
+		{
+			name: "should reuse existing template name when only tags change",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool"},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI:          amiName,
+						InstanceType: "t3.large",
+						ResourceTags: []hyperv1.AWSResourceTag{{Key: "version", Value: "new"}}, // New tags
+					}},
+				},
+			},
+			existingTemplate: defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+				template.Name = "old-name-from-spec-with-old-tags"
+				template.Spec.Template.Spec.InstanceType = "t3.large"
+				template.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"version": "old"} // Old tags
+			}),
+			expectedName: "old-name-from-spec-with-old-tags", // Crucial: Expect the old name to be reused.
+			expectedTags: capiaws.Tags{"version": "new"},
+		},
+		{
+			name: "should create a new template name when instanceType changes",
+			nodePool: &hyperv1.NodePool{ // Desired state has a new instance type.
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool-structural"},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI:          amiName,
+						InstanceType: "m5.xlarge", // Structural change
+						ResourceTags: []hyperv1.AWSResourceTag{{Key: "version", Value: "new"}},
+					}},
+				},
+			},
+			existingTemplate: defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+				template.Name = "name-with-t3-large"
+				template.Spec.Template.Spec.InstanceType = "t3.large"
+			}),
+			expectedName: func() string {
+				// The new name is based on a spec with the new instance type and no tags.
+				template := defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+					template.Spec.Template.Spec.InstanceType = "m5.xlarge"
+					template.Spec.Template.Spec.AdditionalTags = nil
+				})
+				name, _ := mockTemplateNameGenerator(template.Spec)
+				return name
+			}(),
+			expectedTags: capiaws.Tags{"version": "new"},
+		},
+		{
+			name: "should create new template when none exists",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "new-nodepool"},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI:          amiName,
+						InstanceType: "t3.medium",
+						ResourceTags: []hyperv1.AWSResourceTag{{Key: "app", Value: "new"}},
+					}},
+				},
+			},
+			existingTemplate: nil, // No existing resources
+			expectedName: func() string {
+				template := defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+					template.Spec.Template.Spec.InstanceType = "t3.medium"
+					template.Spec.Template.Spec.AdditionalTags = nil
+				})
+				name, _ := mockTemplateNameGenerator(template.Spec)
+
+				return name
+			}(),
+			expectedTags: capiaws.Tags{"app": "new"},
+		},
+
+		{
+			name: "should find template via MachineSet when UpgradeType is InPlace",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "inplace-nodepool"},
+				Spec: hyperv1.NodePoolSpec{
+					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeInPlace}, // Different UpgradeType
+					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+						AMI:          amiName,
+						InstanceType: "t3.large",
+						ResourceTags: []hyperv1.AWSResourceTag{{Key: "version", Value: "new"}},
+					}},
+				},
+			},
+
+			existingTemplate: defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
+				template.Name = "inplace-template-name"
+				template.Spec.Template.Spec.InstanceType = "t3.large"
+				template.Spec.Template.Spec.AdditionalTags = capiaws.Tags{"version": "old"}
+			}),
+			expectedName: "inplace-template-name", // Expect reuse
+			expectedTags: capiaws.Tags{"version": "new"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Setup the fake client for this specific test case
+			var existingObjs []client.Object
+			if tc.existingTemplate != nil {
+				tc.existingTemplate.Namespace = namespace
+				existingObjs = append(existingObjs, tc.existingTemplate)
+
+				// Automatically create the corresponding MachineDeployment or MachineSet.
+				if tc.nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+					md := &capiv1.MachineDeployment{
+						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
+						Spec: capiv1.MachineDeploymentSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+						}}},
+					}
+					existingObjs = append(existingObjs, md)
+				} else { // Handle InPlace (MachineSet)
+					ms := &capiv1.MachineSet{
+						ObjectMeta: metav1.ObjectMeta{Name: tc.nodePool.GetName(), Namespace: namespace},
+						Spec: capiv1.MachineSetSpec{Template: capiv1.MachineTemplateSpec{Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{Name: tc.existingTemplate.Name},
+						}}},
+					}
+					existingObjs = append(existingObjs, ms)
+				}
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(existingObjs...).Build()
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Namespace: namespace},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						AWS: &hyperv1.AWSPlatformSpec{},
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{Platform: &hyperv1.PlatformStatus{AWS: &hyperv1.AWSPlatformStatus{DefaultWorkerSecurityGroupID: "default"}}},
+			}
+
+			c := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                fakeClient,
+						nodePool:              tc.nodePool,
+						controlplaneNamespace: namespace,
+						hostedCluster:         hc,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: &releaseinfo.ReleaseImage{},
+						},
+					},
+					cpoCapabilities: &CPOCapabilities{
+						CreateDefaultAWSSecurityGroup: true,
+					},
+				},
+				capiClusterName: infraName,
+			}
+
+			// Execute the function under test
+			result, err := c.awsMachineTemplate(t.Context(), mockTemplateNameGenerator)
+
+			// Assertions
+			if err != nil {
+				t.Fatalf("Function returned an unexpected error: %v", err)
+			}
+			if result.Name != tc.expectedName {
+				t.Errorf("Wrong template name: \n- got:  %s\n- want: %s", result.Name, tc.expectedName)
+			}
+
+			// always add the cluster tag
+			tc.expectedTags[awsClusterCloudProviderTagKey(infraName)] = infraLifecycleOwned
+
+			if diff := cmp.Diff(tc.expectedTags, result.Spec.Template.Spec.AdditionalTags); diff != "" {
+				t.Errorf("Final spec has incorrect tags (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func fakePullSecret(hc *hyperv1.HostedCluster) *corev1.Secret {
@@ -293,6 +484,7 @@ func fakePullSecret(hc *hyperv1.HostedCluster) *corev1.Secret {
 		},
 	}
 }
+
 func TestValidateAWSPlatformConfig(t *testing.T) {
 	hostedcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -308,112 +500,16 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 	pullSecret := fakePullSecret(hostedcluster)
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(pullSecret).Build()
 
-	type NodePoolOptions struct {
-		instanceType           string
-		replicas               *int32
-		autoScaling            *hyperv1.NodePoolAutoScaling
-		subnetAvailabilityZone string
-	}
-
 	testCases := []struct {
 		name                 string
 		hostedClusterVersion string
-		nodePoolOpts         NodePoolOptions
-		capacityReservation  *ec2.CapacityReservation
 		oldCondition         *hyperv1.NodePoolCondition
 		expectedError        string
 	}{
 		{
-			name: "If capacityReservation was already reported expired/cancelled, skip checks and return old condition message",
-			oldCondition: &hyperv1.NodePoolCondition{
-				Status:  corev1.ConditionFalse,
-				Message: fmt.Sprintf("capacityReservation %s is expired", capacityReservationID),
-			},
-			expectedError: fmt.Sprintf("capacityReservation %s is expired", capacityReservationID),
-		},
-		{
 			name:                 "If hostedCluster < 4.19 it should fail",
 			hostedClusterVersion: "4.18.0",
 			expectedError:        "capacityReservation is only supported on 4.19+ clusters",
-		},
-		{
-			name:                 "If capacityReservation is cancelled or expired it should fail",
-			hostedClusterVersion: "4.19.0",
-			capacityReservation: &ec2.CapacityReservation{
-				State: ptr.To("expired"),
-			},
-			expectedError: "expired",
-		},
-		{
-			name:                 "If nodePool autoScaling max replicas is greater than capacityReservation total instance count it should fail",
-			hostedClusterVersion: "4.19.0",
-			nodePoolOpts: NodePoolOptions{
-				autoScaling: &hyperv1.NodePoolAutoScaling{
-					Max: 4,
-				},
-			},
-			capacityReservation: &ec2.CapacityReservation{
-				State:              ptr.To("active"),
-				TotalInstanceCount: ptr.To[int64](2),
-			},
-			expectedError: "nodePool.Spec.AutoScaling.Max '4' is greater than the capacityReservation total instance count '2'",
-		},
-		{
-			name:                 "If nodePool replicas is greater than capacityReservation total instance count it should fail",
-			hostedClusterVersion: "4.19.0",
-			nodePoolOpts: NodePoolOptions{
-				replicas: ptr.To[int32](4),
-			},
-			capacityReservation: &ec2.CapacityReservation{
-				State:              ptr.To("active"),
-				TotalInstanceCount: ptr.To[int64](2),
-			},
-			expectedError: "nodePool.Spec.Replicas '4' is greater than the capacityReservation total instance count '2'",
-		},
-		{
-			name:                 "If nodePool instanceType doesn't match the capacityReservation instanceType it should fail",
-			hostedClusterVersion: "4.19.0",
-			nodePoolOpts: NodePoolOptions{
-				replicas:     ptr.To[int32](2),
-				instanceType: "m5.large",
-			},
-			capacityReservation: &ec2.CapacityReservation{
-				State:              ptr.To("active"),
-				TotalInstanceCount: ptr.To[int64](2),
-				InstanceType:       ptr.To("m1.medium"),
-			},
-			expectedError: "nodePool.Spec.Platform.AWS.InstanceType 'm5.large' doesn't match the capacityReservation instance type 'm1.medium'",
-		},
-		{
-			name:                 "If nodePool subnet availabilityZone doesn't match the capacityReservation availabilityZone it should fail",
-			hostedClusterVersion: "4.19.0",
-			nodePoolOpts: NodePoolOptions{
-				replicas:               ptr.To[int32](2),
-				instanceType:           "m5.large",
-				subnetAvailabilityZone: "eu-west-1a",
-			},
-			capacityReservation: &ec2.CapacityReservation{
-				State:              ptr.To("active"),
-				TotalInstanceCount: ptr.To[int64](2),
-				InstanceType:       ptr.To("m5.large"),
-				AvailabilityZone:   ptr.To("us-east-2a"),
-			},
-			expectedError: "nodePool availabilityZone 'eu-west-1a' doesn't match the capacityReservation availabilityZone 'us-east-2a'",
-		},
-		{
-			name:                 "If nodePool and capacityReservation options match it should successed",
-			hostedClusterVersion: "4.19.0",
-			nodePoolOpts: NodePoolOptions{
-				replicas:               ptr.To[int32](2),
-				instanceType:           "m5.large",
-				subnetAvailabilityZone: "us-east-2a",
-			},
-			capacityReservation: &ec2.CapacityReservation{
-				State:              ptr.To("active"),
-				TotalInstanceCount: ptr.To[int64](2),
-				InstanceType:       ptr.To("m5.large"),
-				AvailabilityZone:   ptr.To("us-east-2a"),
-			},
 		},
 	}
 
@@ -430,14 +526,11 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 
 			nodePool := &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
-					Replicas:    tc.nodePoolOpts.replicas,
-					AutoScaling: tc.nodePoolOpts.autoScaling,
 					Platform: hyperv1.NodePoolPlatform{
 						AWS: &hyperv1.AWSNodePoolPlatform{
-							InstanceType: tc.nodePoolOpts.instanceType,
 							Placement: &hyperv1.PlacementOptions{
 								CapacityReservation: &hyperv1.CapacityReservationOptions{
-									ID: capacityReservationID,
+									ID: &capacityReservationID,
 								},
 							},
 						},
@@ -445,16 +538,10 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 				},
 			}
 
-			fakeEC2Client := &fakeEC2Client{
-				capacityReservation:    tc.capacityReservation,
-				SubnetAvailabilityZone: tc.nodePoolOpts.subnetAvailabilityZone,
-			}
-
 			reconciler := &NodePoolReconciler{
-				Client:    fakeClient,
-				EC2Client: fakeEC2Client,
+				Client: fakeClient,
 			}
-			err := reconciler.validateAWSPlatformConfig(context.Background(), nodePool, hostedcluster, tc.oldCondition)
+			err := reconciler.validateAWSPlatformConfig(t.Context(), nodePool, hostedcluster, tc.oldCondition)
 			if tc.expectedError == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

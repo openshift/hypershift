@@ -1,0 +1,66 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.15.0
+  name: azureasomanagedclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    kind: AzureASOManagedClusterTemplate
+    listKind: AzureASOManagedClusterTemplateList
+    plural: azureasomanagedclustertemplates
+    singular: azureasomanagedclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: AzureASOManagedClusterTemplate is the Schema for the azureasomanagedclustertemplates
+          API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: AzureASOManagedClusterTemplateSpec defines the desired state
+              of AzureASOManagedClusterTemplate.
+            properties:
+              template:
+                description: AzureASOManagedClusterTemplateResource defines the templated
+                  resource.
+                properties:
+                  spec:
+                    description: AzureASOManagedClusterTemplateResourceSpec defines
+                      the desired state of the templated resource.
+                    properties:
+                      resources:
+                        description: Resources are embedded ASO resources to be managed
+                          by this resource.
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                        type: array
+                    type: object
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true

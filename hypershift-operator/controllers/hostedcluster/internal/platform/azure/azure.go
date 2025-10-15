@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
@@ -30,17 +33,19 @@ import (
 )
 
 type Azure struct {
+	utilitiesImage    string
 	capiProviderImage string
 	payloadVersion    *semver.Version
 }
 
-func New(capiProviderImage string, payloadVersion *semver.Version) *Azure {
+func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *Azure {
 	if payloadVersion != nil {
 		payloadVersion.Pre = nil
 		payloadVersion.Build = nil
 	}
 
 	return &Azure{
+		utilitiesImage:    utilitiesImage,
 		capiProviderImage: capiProviderImage,
 		payloadVersion:    payloadVersion,
 	}
@@ -92,60 +97,51 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 		image = override
 	}
 	defaultMode := int32(0640)
-	managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
-	if !ok {
-		return nil, fmt.Errorf("environment variable %s is not set", config.AROHCPKeyVaultManagedIdentityClientID)
-	}
-	return &appsv1.DeploymentSpec{
+	deploymentSpec := &appsv1.DeploymentSpec{
+		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: ptr.To[int64](10),
-				Containers: []corev1.Container{{
-					Name:            "manager",
-					Image:           image,
-					ImagePullPolicy: corev1.PullIfNotPresent,
-					Args: []string{
-						"--namespace=$(MY_NAMESPACE)",
-						"--leader-elect=true",
-						"--feature-gates=MachinePool=false,ASOAPI=false",
-					},
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceCPU:    resource.MustParse("10m"),
-							corev1.ResourceMemory: resource.MustParse("10Mi"),
+				Containers: []corev1.Container{
+					{
+						Name:            "manager",
+						Image:           image,
+						ImagePullPolicy: corev1.PullIfNotPresent,
+						Args: []string{
+							"--namespace=$(MY_NAMESPACE)",
+							"--leader-elect=true",
+							"--feature-gates=MachinePool=false,ASOAPI=false",
+							"--disable-controllers-or-webhooks=DisableASOSecretController",
 						},
-					},
-					Env: []corev1.EnvVar{
-						{
-							Name: "MY_NAMESPACE",
-							ValueFrom: &corev1.EnvVarSource{
-								FieldRef: &corev1.ObjectFieldSelector{
-									FieldPath: "metadata.namespace",
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceCPU:    resource.MustParse("10m"),
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+						Env: []corev1.EnvVar{
+							{
+								Name: "MY_NAMESPACE",
+								ValueFrom: &corev1.EnvVarSource{
+									FieldRef: &corev1.ObjectFieldSelector{
+										FieldPath: "metadata.namespace",
+									},
 								},
 							},
 						},
-						{
-							Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-							Value: managedAzureKeyVaultManagedIdentityClientID,
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "capi-webhooks-tls",
+								MountPath: "/tmp/k8s-webhook-server/serving-certs",
+								ReadOnly:  true,
+							},
+							{
+								Name:      "svc-kubeconfig",
+								MountPath: "/etc/kubernetes",
+							},
 						},
 					},
-					VolumeMounts: []corev1.VolumeMount{
-						{
-							Name:      "capi-webhooks-tls",
-							MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							ReadOnly:  true,
-						},
-						{
-							Name:      "svc-kubeconfig",
-							MountPath: "/etc/kubernetes",
-						},
-						{
-							Name:      config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
-							MountPath: config.ManagedAzureCertificateMountPath,
-							ReadOnly:  true,
-						},
-					},
-				}},
+				},
 				Volumes: []corev1.Volume{
 					{
 						Name: "capi-webhooks-tls",
@@ -164,37 +160,192 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 							},
 						},
 					},
-					{
-						Name: config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
-						VolumeSource: corev1.VolumeSource{
-							CSI: &corev1.CSIVolumeSource{
-								Driver:   config.ManagedAzureSecretsStoreCSIDriver,
-								ReadOnly: ptr.To(true),
-								VolumeAttributes: map[string]string{
-									config.ManagedAzureSecretProviderClass: config.ManagedAzureNodePoolMgmtSecretProviderClassName,
-								},
-							},
+				},
+			},
+		},
+	}
+
+	if azureutil.IsAroHCP() {
+		managedAzureKeyVaultManagedIdentityClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+		if !ok {
+			return nil, fmt.Errorf("environment variable %s is not set", config.AROHCPKeyVaultManagedIdentityClientID)
+		}
+
+		deploymentSpec.Template.Spec.Containers[0].Env = append(deploymentSpec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+				Value: managedAzureKeyVaultManagedIdentityClientID,
+			},
+		)
+
+		deploymentSpec.Template.Spec.Containers[0].VolumeMounts = append(deploymentSpec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+				MountPath: config.ManagedAzureCertificateMountPath,
+				ReadOnly:  true,
+			},
+		)
+
+		deploymentSpec.Template.Spec.Volumes = append(deploymentSpec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: config.ManagedAzureNodePoolMgmtSecretStoreVolumeName,
+				VolumeSource: corev1.VolumeSource{
+					CSI: &corev1.CSIVolumeSource{
+						Driver:   config.ManagedAzureSecretsStoreCSIDriver,
+						ReadOnly: ptr.To(true),
+						VolumeAttributes: map[string]string{
+							config.ManagedAzureSecretProviderClass: config.ManagedAzureNodePoolMgmtSecretProviderClassName,
 						},
 					},
 				},
-			}}}, nil
+			},
+		)
+	}
+
+	// For self-managed Azure with workload identity, instruct Azure SDK to use the minted SA token
+	if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) &&
+		hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		deploymentSpec.Template.Spec.Containers[0].Env = append(
+			deploymentSpec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "AZURE_FEDERATED_TOKEN_FILE",
+				Value: "/var/run/secrets/openshift/serviceaccount/token",
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_CLIENT_ID",
+				Value: string(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.NodePoolManagement.ClientID),
+			},
+			corev1.EnvVar{
+				Name:  "AZURE_TENANT_ID",
+				Value: hcluster.Spec.Platform.Azure.TenantID,
+			},
+		)
+
+		// Inject cloud token-minter sidecar and mount token volume for self-managed Azure workload identity
+		tokenVolume := corev1.Volume{
+			Name: "cloud-token",
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory},
+			},
+		}
+		deploymentSpec.Template.Spec.Volumes = append(deploymentSpec.Template.Spec.Volumes, tokenVolume)
+
+		deploymentSpec.Template.Spec.Containers[0].VolumeMounts = append(deploymentSpec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      tokenVolume.Name,
+			MountPath: "/var/run/secrets/openshift/serviceaccount",
+		})
+
+		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
+			Name:    "cloud-token-minter",
+			Image:   a.utilitiesImage,
+			Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
+			Args: []string{
+				"--token-audience=openshift",
+				"--service-account-namespace=kube-system",
+				"--service-account-name=capi-provider",
+				"--token-file=/var/run/secrets/openshift/serviceaccount/token",
+				"--kubeconfig=/etc/kubernetes/kubeconfig",
+			},
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceCPU:    resource.MustParse("10m"),
+					corev1.ResourceMemory: resource.MustParse("30Mi"),
+				},
+			},
+			VolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      tokenVolume.Name,
+					MountPath: "/var/run/secrets/openshift/serviceaccount",
+				},
+				{
+					Name:      "svc-kubeconfig",
+					MountPath: "/etc/kubernetes",
+				},
+			},
+		})
+	}
+
+	return deploymentSpec, nil
 }
 
 func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	// Sync CNCC secret
-	cloudNetworkConfigCreds := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: controlPlaneNamespace, Name: "cloud-network-config-controller-creds"}}
-	secretData := map[string][]byte{
+	// Base secret data common to all Azure credentials
+	baseSecretData := map[string][]byte{
 		"azure_region":          []byte(hcluster.Spec.Platform.Azure.Location),
 		"azure_resource_prefix": []byte(hcluster.Name + "-" + hcluster.Spec.InfraID),
 		"azure_resourcegroup":   []byte(hcluster.Spec.Platform.Azure.ResourceGroupName),
 		"azure_subscription_id": []byte(hcluster.Spec.Platform.Azure.SubscriptionID),
 		"azure_tenant_id":       []byte(hcluster.Spec.Platform.Azure.TenantID),
 	}
+
+	// For self-managed Azure, use workload identity credentials; for managed Azure, use the existing approach
+	if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+		// Add federated token file for workload identity authentication
+		baseSecretData["azure_federated_token_file"] = []byte("/var/run/secrets/openshift/serviceaccount/token")
+
+		// Create credentials for each control plane operator using workload identity client IDs
+		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
+
+		// Define credential configurations for the utility function
+		credentialConfigs := []azureutil.AzureCredentialConfig{
+			// Ingress Operator credentials (only if capability enabled)
+			{
+				Name:              "ingress",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureIngressCredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.Ingress.ClientID),
+				CapabilityChecker: capabilities.IsIngressCapabilityEnabled,
+				ErrorContext:      "ingress credentials",
+			},
+			// Image Registry Operator credentials (only if capability enabled)
+			{
+				Name:              "image-registry",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureImageRegistryCredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.ImageRegistry.ClientID),
+				CapabilityChecker: capabilities.IsImageRegistryCapabilityEnabled,
+				ErrorContext:      "image registry credentials",
+			},
+			// Azure Disk CSI credentials
+			{
+				Name:              "disk-csi",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureDiskCSICredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.Disk.ClientID),
+				CapabilityChecker: nil, // Always enabled
+				ErrorContext:      "disk CSI credentials",
+			},
+			// Azure File CSI credentials
+			{
+				Name:              "file-csi",
+				ManifestFunc:      func() *corev1.Secret { return manifests.AzureFileCSICredentials(controlPlaneNamespace) },
+				ClientID:          string(workloadIdentities.File.ClientID),
+				CapabilityChecker: nil, // Always enabled
+				ErrorContext:      "file CSI credentials",
+			},
+		}
+
+		// Use the utility function to reconcile credentials
+		if errs := azureutil.ReconcileAzureCredentials(ctx, c, createOrUpdate, baseSecretData, credentialConfigs, hcluster.Spec.Capabilities); len(errs) > 0 {
+			// Combine all errors into a single error
+			var errorStrings []string
+			for _, err := range errs {
+				errorStrings = append(errorStrings, err.Error())
+			}
+			return fmt.Errorf("failed to reconcile Azure credentials: %s", strings.Join(errorStrings, "; "))
+		}
+	}
+
+	// Sync CNCC secret (common to both managed and self-managed Azure)
+	cloudNetworkConfigCreds := manifests.AzureCloudNetworkConfigCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, cloudNetworkConfigCreds, func() error {
+		secretData := maps.Clone(baseSecretData)
+		// For self-managed Azure with workload identities, add the network client ID
+		if azureutil.IsSelfManagedAzure(hcluster.Spec.Platform.Type) && hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+			secretData["azure_client_id"] = []byte(hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.Network.ClientID)
+		}
 		cloudNetworkConfigCreds.Data = secretData
 		return nil
 	}); err != nil {
-		return err
+		return fmt.Errorf("failed to reconcile cloud network config controller credentials: %w", err)
 	}
 
 	return nil
@@ -202,7 +353,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 
 func (a Azure) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	// Reconcile the Azure KMS Config Secret
-	azureKMSConfigSecret := manifests.AzureKMSWithCredentials(controlPlaneNamespace)
+	azureKMSConfigSecret := cpomanifests.AzureKMSWithCredentials(controlPlaneNamespace)
 	if _, err := createOrUpdate(ctx, c, azureKMSConfigSecret, func() error {
 		return reconcileKMSConfigSecret(azureKMSConfigSecret, hc)
 	}); err != nil {
@@ -253,10 +404,12 @@ func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyper
 }
 
 // reconcileAzureClusterIdentity creates a CAPZ AzureClusterIdentity custom resource using UserAssignedIdentityCredentials
-// as the Azure authentication method. More information on this custom resource type can be found here: https://capz.sigs.k8s.io/topics/identities
+// for managed Azure deployments, aka ARO HCP, as the Azure authentication method. More information on this custom
+// resource type can be found here: https://capz.sigs.k8s.io/topics/identities.
+//
+// For non-managed Azure deployments, the AzureClusterIdentity is created using WorkloadIdentity.
 func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string, payloadVersion *semver.Version) error {
-	if payloadVersion.GE(config.Version419) {
-		// Translate the HyperShift cloud value to a valid CAPZ cloud value
+	if azureutil.IsAroHCP() {
 		azureCloudType, err := parseCloudType(hc.Spec.Platform.Azure.Cloud)
 		if err != nil {
 			return err
@@ -266,7 +419,7 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
 			TenantID:                                 hc.Spec.Platform.Azure.TenantID,
 			UserAssignedIdentityCredentialsCloudType: azureCloudType,
-			UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
+			UserAssignedIdentityCredentialsPath:      config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement.CredentialsSecretName,
 			Type:                                     capiazure.UserAssignedIdentityCredential,
 			AllowedNamespaces: &capiazure.AllowedNamespaces{
 				NamespaceList: []string{
@@ -274,21 +427,23 @@ func reconcileAzureClusterIdentity(hc *hyperv1.HostedCluster, azureClusterIdenti
 				},
 			},
 		}
+		return nil
 	} else {
-		// TODO - MIv3 - this release version check can be removed once 4.18 and 4.19 both support MIv3
-		azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
-			ClientID: hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.ClientID,
-			TenantID: hc.Spec.Platform.Azure.TenantID,
-			CertPath: config.ManagedAzureCertificatePath + hc.Spec.Platform.Azure.ManagedIdentities.ControlPlane.NodePoolManagement.CertificateName,
-			Type:     capiazure.ServicePrincipalCertificate,
-			AllowedNamespaces: &capiazure.AllowedNamespaces{
-				NamespaceList: []string{
-					controlPlaneNamespace,
+		if hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil {
+			azureClusterIdentity.Spec = capiazure.AzureClusterIdentitySpec{
+				ClientID: string(hc.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.NodePoolManagement.ClientID),
+				TenantID: hc.Spec.Platform.Azure.TenantID,
+				Type:     capiazure.WorkloadIdentity,
+				AllowedNamespaces: &capiazure.AllowedNamespaces{
+					NamespaceList: []string{
+						controlPlaneNamespace,
+					},
 				},
-			},
+			}
+			return nil
 		}
+		return fmt.Errorf("WorkloadIdentities must be set in the Azure platform spec for non-managed Azure deployments")
 	}
-	return nil
 }
 
 // parseCloudType translates the HyperShift APIs valid cloud values to valid CAPZ cloud values

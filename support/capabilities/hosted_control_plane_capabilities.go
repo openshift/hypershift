@@ -11,6 +11,32 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
+// IsNodeTuningCapabilityEnabled returns true if the NodeTuning capability is enabled, or false if disabled.
+func IsNodeTuningCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.NodeTuningCapability {
+			return false
+		}
+	}
+	return true
+}
+
+// IsIngressCapabilityEnabled returns true if the Ingress capability is enabled, or false if disabled.
+func IsIngressCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
+	if capabilities == nil {
+		return true
+	}
+	for _, disabledCap := range capabilities.Disabled {
+		if disabledCap == hyperv1.IngressCapability {
+			return false
+		}
+	}
+	return true
+}
+
 // HasDisabledCapabilities returns true if any capabilities are disabled; otherwise, it returns false.
 func HasDisabledCapabilities(capabilities *hyperv1.Capabilities) bool {
 	if capabilities == nil {
@@ -36,22 +62,31 @@ func IsImageRegistryCapabilityEnabled(capabilities *hyperv1.Capabilities) bool {
 	return enabled
 }
 
-// CalculateEnabledCapabilities returns the difference between the default set
-// of enabled capabilities (vCurrent) and the given set of capabilities to
-// disable, in alphabetical order.
+// CalculateEnabledCapabilities returns the net enabled capabilities, by
+// using the default set of capabilities (minus baremetal capability) and the
+// explicitly enabled and disabled capabilities, in alphabetical order.
 func CalculateEnabledCapabilities(capabilities *hyperv1.Capabilities) []configv1.ClusterVersionCapability {
 	vCurrent := configv1.ClusterVersionCapabilitySets[configv1.ClusterVersionCapabilitySetCurrent]
-	enabledCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
+	netCaps := sets.New[configv1.ClusterVersionCapability](vCurrent...)
+	netCaps.Delete(configv1.ClusterVersionCapabilityBaremetal)
 
 	if capabilities != nil && len(capabilities.Disabled) > 0 {
 		disabledCaps := make([]configv1.ClusterVersionCapability, len(capabilities.Disabled))
 		for i, dc := range capabilities.Disabled {
 			disabledCaps[i] = configv1.ClusterVersionCapability(dc)
 		}
-		enabledCaps = enabledCaps.Delete(disabledCaps...)
+		netCaps = netCaps.Delete(disabledCaps...)
 	}
 
-	return sortedCapabilities(enabledCaps.UnsortedList())
+	if capabilities != nil && len(capabilities.Enabled) > 0 {
+		for _, ec := range capabilities.Enabled {
+			if !netCaps.Has(configv1.ClusterVersionCapability(ec)) {
+				netCaps.Insert(configv1.ClusterVersionCapability(ec))
+			}
+		}
+	}
+
+	return sortedCapabilities(netCaps.UnsortedList())
 }
 
 func sortedCapabilities(caps []configv1.ClusterVersionCapability) []configv1.ClusterVersionCapability {

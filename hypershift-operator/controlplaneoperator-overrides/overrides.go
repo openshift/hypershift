@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v2"
 )
@@ -13,8 +14,17 @@ const (
 )
 
 type CPOOverrides struct {
-	Overrides []CPOOverride           `yaml:"overrides,omitempty"`
-	Testing   CPOOverrideTestReleases `yaml:"testing"`
+	Platforms CPOPlatforms `yaml:"platforms,omitempty"`
+}
+
+type CPOPlatforms struct {
+	AWS   *CPOPlatformOverrides `yaml:"aws,omitempty"`
+	Azure *CPOPlatformOverrides `yaml:"azure,omitempty"`
+}
+
+type CPOPlatformOverrides struct {
+	Overrides []CPOOverride            `yaml:"overrides,omitempty"`
+	Testing   *CPOOverrideTestReleases `yaml:"testing,omitempty"`
 }
 
 type CPOOverride struct {
@@ -31,27 +41,50 @@ type CPOOverrideTestReleases struct {
 var overridesYAML []byte
 
 var (
-	overrides          = mustLoadOverrides()
-	overridesByVersion map[string]*CPOOverride
+	overrides                     = mustLoadOverrides()
+	overridesByPlatformAndVersion map[string]map[string]*CPOOverride
 )
 
 func init() {
-	initOverridesByVersion()
+	initOverridesByPlatformAndVersion()
 }
 
 func IsOverridesEnabled() bool {
 	return os.Getenv(CPOOverridesEnvVar) == "1"
 }
 
-func CPOImage(version string) string {
-	if override, exists := overridesByVersion[version]; exists {
+func CPOImage(rawPlatform, version string) string {
+	return getCPOImage(rawPlatform, version, overridesByPlatformAndVersion)
+}
+
+func getCPOImage(rawPlatform string, version string, mapOverrides map[string]map[string]*CPOOverride) string {
+	platform := strings.ToLower(rawPlatform)
+	platformOverrides, platformExists := mapOverrides[platform]
+	if !platformExists {
+		return ""
+	}
+	if override, exists := platformOverrides[version]; exists {
 		return override.CPOImage
 	}
 	return ""
 }
 
-func LatestOverrideTestReleases() (string, string) {
-	return overrides.Testing.Latest, overrides.Testing.Previous
+func LatestOverrideTestReleases(platform string) (string, string) {
+	return overrideTestReleases(platform, overrides)
+}
+
+func overrideTestReleases(platform string, o *CPOOverrides) (string, string) {
+	switch strings.ToLower(platform) {
+	case "aws":
+		if o.Platforms.AWS != nil && o.Platforms.AWS.Testing != nil {
+			return o.Platforms.AWS.Testing.Latest, o.Platforms.AWS.Testing.Previous
+		}
+	case "azure":
+		if o.Platforms.Azure != nil && o.Platforms.Azure.Testing != nil {
+			return o.Platforms.Azure.Testing.Latest, o.Platforms.Azure.Testing.Previous
+		}
+	}
+	return "", ""
 }
 
 func mustLoadOverrides() *CPOOverrides {
@@ -70,9 +103,23 @@ func loadOverrides(yamlContent []byte) (*CPOOverrides, error) {
 	return result, nil
 }
 
-func initOverridesByVersion() {
-	overridesByVersion = map[string]*CPOOverride{}
-	for i, override := range overrides.Overrides {
-		overridesByVersion[override.Version] = &overrides.Overrides[i]
+func initOverridesByPlatformAndVersion() {
+	overridesByPlatformAndVersion = getOverridesByPlatformAndVersion(overrides)
+}
+
+func getOverridesByPlatformAndVersion(o *CPOOverrides) map[string]map[string]*CPOOverride {
+	result := map[string]map[string]*CPOOverride{}
+	if o.Platforms.AWS != nil {
+		result["aws"] = map[string]*CPOOverride{}
+		for i, override := range o.Platforms.AWS.Overrides {
+			result["aws"][override.Version] = &o.Platforms.AWS.Overrides[i]
+		}
 	}
+	if o.Platforms.Azure != nil {
+		result["azure"] = map[string]*CPOOverride{}
+		for i, override := range o.Platforms.Azure.Overrides {
+			result["azure"][override.Version] = &o.Platforms.Azure.Overrides[i]
+		}
+	}
+	return result
 }

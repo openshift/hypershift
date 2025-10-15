@@ -1,7 +1,6 @@
 package node
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -115,7 +114,7 @@ func TestNodeToNodePoolName(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			got, err := r.nodeToNodePoolName(context.Background(), tc.node)
+			got, err := r.nodeToNodePoolName(t.Context(), tc.node)
 			g.Expect(got).To(Equal(tc.expectedNodePoolName))
 			g.Expect(err != nil).To(Equal(tc.error))
 		})

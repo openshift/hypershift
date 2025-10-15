@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestGetRegistryOverrides(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	testsCases := []struct {
 		name           string
 		ref            reference.DockerImageReference
@@ -108,44 +107,50 @@ func TestGetRegistryOverrides(t *testing.T) {
 }
 
 func TestGetManifest(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	pullSecret := []byte("{}")
 
 	testsCases := []struct {
-		name           string
-		imageRef       string
-		pullSecret     []byte
-		expectedErr    bool
-		validateCache  bool
-		expectedDigest digest.Digest
+		name             string
+		imageRef         string
+		pullSecret       []byte
+		expectedErr      bool
+		expectedCacheHit bool
 	}{
 		{
-			name:        "if failed to parse image reference",
-			imageRef:    "invalid-image-ref",
-			pullSecret:  pullSecret,
-			expectedErr: true,
+			name:             "if failed to parse image reference",
+			imageRef:         "invalid-image-ref",
+			pullSecret:       pullSecret,
+			expectedErr:      true,
+			expectedCacheHit: false,
 		},
 		{
-			name:        "Pull x86 manifest",
-			imageRef:    "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
-			pullSecret:  pullSecret,
-			expectedErr: false,
+			name:             "Pull x86 manifest",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 		{
-			name:           "Pull x86 manifest from cache",
-			imageRef:       "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
-			pullSecret:     pullSecret,
-			expectedErr:    false,
-			validateCache:  true,
-			expectedDigest: "sha256:2a50e5d5267916078145731db740bbc85ee764e1a194715fd986ab5bf9a3414e",
+			name:             "Pull x86 manifest from cache",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 		{
-			name:           "Pull Multiarch manifest",
-			imageRef:       "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
-			pullSecret:     pullSecret,
-			expectedErr:    false,
-			validateCache:  true,
-			expectedDigest: "sha256:727276732f03d8d5a2374efa3d01fb0ed9f65b32488b862e9a9d2ff4cde89ff6",
+			name:             "Pull Multiarch manifest",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
+		},
+		{
+			name:             "Pull Multiarch manifest with Shah",
+			imageRef:         "quay.io/openshift-release-dev/ocp-release@sha256:be8bcea2ab176321a4e1e54caab4709f9024bc437e52ca5bc088e729367cd0cf",
+			pullSecret:       pullSecret,
+			expectedErr:      false,
+			expectedCacheHit: true,
 		},
 	}
 
@@ -165,16 +170,16 @@ func TestGetManifest(t *testing.T) {
 				g.Expect(manifest).NotTo(BeNil())
 			}
 
-			if tc.validateCache {
-				_, exists := manifestsCache.Get(tc.expectedDigest)
-				g.Expect(exists).To(BeTrue())
-			}
+			parsedImageRef, err := reference.Parse(tc.imageRef)
+			g.Expect(err).NotTo(HaveOccurred())
+			_, exists := manifestsCache.Get(parsedImageRef.String())
+			g.Expect(exists).To(Equal(tc.expectedCacheHit))
 		})
 	}
 }
 
 func TestGetDigest(t *testing.T) {
-	ctx := context.TODO()
+	ctx := t.Context()
 	pullSecret := []byte("{}")
 
 	testsCases := []struct {
@@ -224,7 +229,7 @@ func TestGetDigest(t *testing.T) {
 			expectedDigest: "sha256:e96047c50caf0aaffeaf7ed0fe50bd3f574ad347cd0f588a56b876f79cc29d3e",
 		},
 		{
-			name:           "Image not present in overriden registry, falling back to original imageRef",
+			name:           "Image not present in overridden registry, falling back to original imageRef",
 			imageRef:       "quay.io/prometheus/busybox:latest",
 			pullSecret:     pullSecret,
 			expectedErr:    false,
@@ -414,13 +419,13 @@ func TestSeekOverride(t *testing.T) {
 
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.TODO()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			pullSecret, err := os.ReadFile("../../hack/dev/fakePullSecret.json")
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
-			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
+			imgRef := SeekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}

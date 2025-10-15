@@ -5,6 +5,7 @@ import (
 	"path"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,9 +55,9 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	}
 	image := cpContext.ReleaseImageProvider.GetImage("token-minter")
 
-	// we only mint cloud tokens for AWS.
+	// We mint cloud tokens for AWS and self-managed Azure.
 	if (opts.TokenType == CloudToken || opts.TokenType == CloudAndAPIServerToken) &&
-		cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform {
+		(cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform || azureutil.IsSelfManagedAzure(cpContext.HCP.Spec.Platform.Type)) {
 		tokenVolume := opts.buildVolume(string(CloudToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
@@ -85,9 +86,10 @@ func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedContro
 	tokenFileMountPath := "/var/run/secrets/openshift/serviceaccount"
 
 	var audience string
-	if tokenType == CloudToken {
+	switch tokenType {
+	case CloudToken:
 		audience = "openshift"
-	} else if tokenType == KubeAPIServerToken {
+	case KubeAPIServerToken:
 		audience = hcp.Spec.IssuerURL
 	}
 	args := []string{

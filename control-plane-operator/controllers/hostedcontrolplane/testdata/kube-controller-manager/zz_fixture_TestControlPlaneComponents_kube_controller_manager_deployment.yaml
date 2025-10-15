@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs,tmp-dir
         component.hypershift.openshift.io/config-hash: 1252551487ecf31a87ecf31acb8019bfd6265674
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -92,6 +92,7 @@ spec:
         - --controllers=-ttl
         - --controllers=-bootstrapsigner
         - --controllers=-tokencleaner
+        - --controllers=selinux-warning-controller
         - --enable-dynamic-provisioning=true
         - --flex-volume-plugin-dir=/etc/kubernetes/kubelet-plugins/volume/exec
         - --pv-recycler-pod-template-filepath-nfs=/etc/kubernetes/recycler-config/recycler-pod.yaml
@@ -108,6 +109,8 @@ spec:
         - --cluster-signing-duration=17520h
         - --tls-cert-file=/etc/kubernetes/certs/server/tls.crt
         - --tls-private-key-file=/etc/kubernetes/certs/server/tls.key
+        - --terminated-pod-gc-threshold=1000
+        - --concurrent-gc-syncs=5
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
         - --node-monitor-grace-period=50s
@@ -242,8 +245,10 @@ spec:
           timeoutSeconds: 10
         resources:
           requests:
-            cpu: 60m
-            memory: 400Mi
+            cpu: 100m
+            memory: 600Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/kubernetes
@@ -264,6 +269,8 @@ spec:
           name: server-crt
         - mountPath: /etc/kubernetes/certs/service-signer
           name: service-signer
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -320,4 +327,6 @@ spec:
           defaultMode: 420
           name: recycler-config
         name: recycler-config
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

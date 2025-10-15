@@ -1,0 +1,44 @@
+aliases:
+  tech-leads:
+    - enxebre
+    - csrwng
+    - sjenning
+  core-approvers:
+    - enxebre
+    - csrwng
+    - sjenning
+    - muraee
+    - bryan-cox
+    - jparrill
+  core-reviewers:
+    - enxebre
+    - csrwng
+    - sjenning
+    - muraee
+    - bryan-cox
+    - jparrill
+    - devguyio
+  konflux-approvers:
+    - celebdor
+  kubevirt-approvers:
+    - nunnatsa
+    - orenc1
+    - awels
+    - akalenyu
+    - qinqon
+  kubevirt-reviewers:
+    - nunnatsa
+    - orenc1
+    - awels
+    - akalenyu
+    - qinqon
+  ibm-reviewers:
+    - hasueki
+    - rtheis
+  openstack-approvers:
+    - mandre
+    - stephenfin
+  openstack-reviewers:
+    - gryf
+    - mandre
+    - stephenfin

@@ -1,34 +1,31 @@
 package azure
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/test/integration/framework"
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/yaml"
 
-	"github.com/go-logr/logr"
 	"github.com/spf13/pflag"
 )
 
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 
@@ -57,6 +54,7 @@ func TestCreateCluster(t *testing.T) {
 		BootImageID:       "fakeBootImageID",
 		InfraID:           "fakeInfraID",
 		SecurityGroupID:   "fakeSecurityGroupID",
+		ControlPlaneMIs:   &hyperv1.AzureResourceManagedIdentities{},
 	})
 	if err != nil {
 		t.Fatalf("failed to marshal infra: %v", err)
@@ -86,6 +84,7 @@ func TestCreateCluster(t *testing.T) {
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -105,6 +104,7 @@ func TestCreateCluster(t *testing.T) {
 				"--render-sensitive",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -126,6 +126,7 @@ func TestCreateCluster(t *testing.T) {
 				"--marketplace-version=414.92.2024021",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -139,6 +140,7 @@ func TestCreateCluster(t *testing.T) {
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 			},
 		},
 		{
@@ -151,6 +153,7 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--disable-cluster-capabilities=ImageRegistry",
 			},
 		},
@@ -164,17 +167,16 @@ func TestCreateCluster(t *testing.T) {
 				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--kas-dns-name=test-dns-name.example.com",
 			},
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
-			log := logr.Logger{}
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts, err := DefaultOptions(fakeClient, log)
+			azureOpts, err := DefaultOptions()
 			if err != nil {
 				t.Fatal("failed to create azure options: ", err)
 			}

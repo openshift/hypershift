@@ -18,6 +18,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,33 +27,39 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
+const (
+	SATokenIssuerSecret = "sa-token-issuer-key"
+)
+
 type RawCreateOptions struct {
-	Credentials                  awsutil.AWSCredentialsOptions
-	CredentialSecretName         string
-	AdditionalTags               []string
-	IAMJSON                      string
-	InstanceType                 string
-	IssuerURL                    string
-	PrivateZoneID                string
-	PublicZoneID                 string
-	Region                       string
-	RootVolumeIOPS               int64
-	RootVolumeSize               int64
-	RootVolumeType               string
-	RootVolumeEncryptionKey      string
-	EndpointAccess               string
-	Zones                        []string
-	EtcdKMSKeyARN                string
-	EnableProxy                  bool
-	EnableSecureProxy            bool
-	ProxyVPCEndpointServiceName  string
-	SingleNATGateway             bool
-	MultiArch                    bool
-	VPCCIDR                      string
-	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
-	PrivateZonesInClusterAccount bool
-	PublicOnly                   bool
-	AutoNode                     bool
+	Credentials                      awsutil.AWSCredentialsOptions
+	CredentialSecretName             string
+	AdditionalTags                   []string
+	IAMJSON                          string
+	InstanceType                     string
+	IssuerURL                        string
+	ServiceAccountTokenIssuerKeyPath string
+	PrivateZoneID                    string
+	PublicZoneID                     string
+	Region                           string
+	RootVolumeIOPS                   int64
+	RootVolumeSize                   int64
+	RootVolumeType                   string
+	RootVolumeEncryptionKey          string
+	EndpointAccess                   string
+	Zones                            []string
+	EtcdKMSKeyARN                    string
+	EnableProxy                      bool
+	EnableSecureProxy                bool
+	ProxyVPCEndpointServiceName      string
+	SingleNATGateway                 bool
+	MultiArch                        bool
+	VPCCIDR                          string
+	VPCOwnerCredentials              awsutil.AWSCredentialsOptions
+	PrivateZonesInClusterAccount     bool
+	PublicOnly                       bool
+	AutoNode                         bool
+	UseROSAManagedPolicies           bool
 }
 
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -90,6 +97,7 @@ type completedCreateOptions struct {
 	arch              string
 	externalDNSDomain string
 	namespace         string
+	name              string
 }
 
 type CreateOptions struct {
@@ -104,7 +112,12 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 			arch:                   opts.Arch,
 			externalDNSDomain:      opts.ExternalDNSDomain,
 			namespace:              opts.Namespace,
+			name:                   opts.Name,
 		},
+	}
+
+	if o.UseROSAManagedPolicies {
+		o.AdditionalTags = append(o.AdditionalTags, "red-hat-managed=true")
 	}
 
 	if opts.EtcdStorageClass == "" {
@@ -213,6 +226,12 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	cluster.Spec.InfraID = o.infra.InfraID
 	cluster.Spec.IssuerURL = o.iamInfo.IssuerURL
 
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		cluster.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+			Name: serviceAccountTokenIssuerSecret(o.namespace, o.name).Name,
+		}
+	}
+
 	if o.infra.MachineCIDR != "" {
 		cidr, err := ipnet.ParseCIDR(o.infra.MachineCIDR)
 		if err != nil {
@@ -254,7 +273,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	if o.AutoNode {
 		cluster.Spec.AutoNode = &hyperv1.AutoNode{
 			Provisioner: &hyperv1.ProvisionerConfig{
-				Name: hyperv1.ProvisionerKarpeneter,
+				Name: hyperv1.ProvisionerKarpenter,
 				Karpenter: &hyperv1.KarpenterConfig{
 					Platform: hyperv1.AWSPlatform,
 					AWS: &hyperv1.KarpenterAWSConfig{
@@ -398,6 +417,19 @@ func (o *CreateOptions) proxyPrivateSSHKeySecretName() string {
 	return fmt.Sprintf("%s-proxy-ssh-key", o.infra.Name)
 }
 
+func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", name, SATokenIssuerSecret),
+			Namespace: namespace,
+		},
+	}
+}
+
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 	var result []client.Object
 	if o.infra.ProxyCA != "" {
@@ -417,6 +449,18 @@ func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
 			"privatekey": decodedKey,
 		}
 		result = append(result, secret)
+	}
+	if len(o.ServiceAccountTokenIssuerKeyPath) > 0 {
+		privateKey, err := os.ReadFile(o.ServiceAccountTokenIssuerKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read pull secret file: %w", err)
+		}
+
+		saSecret := serviceAccountTokenIssuerSecret(o.namespace, o.name)
+		saSecret.Data = map[string][]byte{
+			"key": privateKey,
+		}
+		result = append(result, saSecret)
 	}
 	return result, nil
 }
@@ -451,11 +495,13 @@ func bindCoreOptions(opts *RawCreateOptions, flags *flag.FlagSet) {
 	flags.StringVar(&opts.ProxyVPCEndpointServiceName, "proxy-vpc-endpoint-service-name", opts.ProxyVPCEndpointServiceName, "The name of a VPC Endpoint Service offering a proxy service to use for the cluster")
 	flags.StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with needed AWS platform credentials: sts-creds, pull-secret, and a base-domain value. The secret must exist in the supplied \"--namespace\". If a value is provided through the flag '--pull-secret', that value will override the pull-secret value in 'secret-creds'.")
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer")
 	flags.BoolVar(&opts.MultiArch, "multi-arch", opts.MultiArch, "If true, this flag indicates the Hosted Cluster will support multi-arch NodePools and will perform additional validation checks to ensure a multi-arch release image or stream was used.")
 	flags.BoolVar(&opts.AutoNode, "auto-node", opts.AutoNode, "If true, this flag indicates the Hosted Cluster will support AutoNode feature.")
 	flags.StringVar(&opts.VPCCIDR, "vpc-cidr", opts.VPCCIDR, "The CIDR to use for the cluster VPC (mask must be 16)")
 	flags.BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	flags.BoolVar(&opts.PublicOnly, "public-only", opts.PublicOnly, "If true, creates a cluster that does not have private subnets or NAT gateway and assigns public IPs to all instances.")
+	flags.BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 
 	_ = flags.MarkDeprecated("multi-arch", "Multi-arch validation is now performed automatically based on the release image and signaled in the HostedCluster.Status.PayloadArch.")
 }
@@ -528,10 +574,12 @@ func CreateIAMOptions(awsOpts *ValidatedCreateOptions, infra *awsinfra.CreateInf
 		PrivateZoneID:                infra.PrivateZoneID,
 		PublicZoneID:                 infra.PublicZoneID,
 		LocalZoneID:                  infra.LocalZoneID,
+		BaseDomain:                   infra.BaseDomain,
 		KMSKeyARN:                    awsOpts.EtcdKMSKeyARN,
 		VPCOwnerCredentialsOpts:      awsOpts.VPCOwnerCredentials,
 		PrivateZonesInClusterAccount: awsOpts.PrivateZonesInClusterAccount,
 		CreateKarpenterRoleARN:       awsOpts.AutoNode,
+		UseROSAManagedPolicies:       awsOpts.UseROSAManagedPolicies,
 	}
 }
 

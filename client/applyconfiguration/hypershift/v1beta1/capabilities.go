@@ -24,6 +24,7 @@ import (
 // CapabilitiesApplyConfiguration represents a declarative configuration of the Capabilities type for use
 // with apply.
 type CapabilitiesApplyConfiguration struct {
+	Enabled  []hypershiftv1beta1.OptionalCapability `json:"enabled,omitempty"`
 	Disabled []hypershiftv1beta1.OptionalCapability `json:"disabled,omitempty"`
 }
 
@@ -31,6 +32,16 @@ type CapabilitiesApplyConfiguration struct {
 // apply.
 func Capabilities() *CapabilitiesApplyConfiguration {
 	return &CapabilitiesApplyConfiguration{}
+}
+
+// WithEnabled adds the given value to the Enabled field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Enabled field.
+func (b *CapabilitiesApplyConfiguration) WithEnabled(values ...hypershiftv1beta1.OptionalCapability) *CapabilitiesApplyConfiguration {
+	for i := range values {
+		b.Enabled = append(b.Enabled, values[i])
+	}
+	return b
 }
 
 // WithDisabled adds the given value to the Disabled field in the declarative configuration

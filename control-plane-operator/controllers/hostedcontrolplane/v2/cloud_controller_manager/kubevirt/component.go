@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	ComponentName = "cloud-controller-manager-kubevirt"
+	ComponentName = "kubevirt-cloud-controller-manager"
 )
 
 var _ component.ComponentOptions = &kubevirtOptions{}

@@ -20,6 +20,9 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
+  - group: monitoring.coreos.com
+    kind: PodMonitor
+    name: cluster-autoscaler
   - group: rbac.authorization.k8s.io
     kind: Role
     name: cluster-autoscaler
@@ -29,4 +32,3 @@ status:
   - group: ""
     kind: ServiceAccount
     name: cluster-autoscaler
-  version: 4.18.0

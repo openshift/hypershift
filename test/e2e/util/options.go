@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -20,8 +21,9 @@ import (
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	kubevirtnodepool "github.com/openshift/hypershift/cmd/nodepool/kubevirt"
 	openstacknodepool "github.com/openshift/hypershift/cmd/nodepool/openstack"
-	"github.com/openshift/hypershift/cmd/version"
+	"github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	"k8s.io/apimachinery/pkg/util/errors"
 
@@ -74,6 +76,15 @@ type Options struct {
 	HOInstallationOptions HyperShiftOperatorInstallOptions
 	// RunUpgradeTest is set to run HyperShift Operator upgrade test
 	RunUpgradeTest bool
+
+	// external oidc for authentication in spec.configurations
+	ExternalOIDCProvider        string
+	ExternalOIDCCliClientID     string
+	ExternalOIDCConsoleClientID string
+	ExternalOIDCIssuerURL       string
+	ExternalOIDCConsoleSecret   string
+	ExternalOIDCCABundleFile    string
+	ExternalOIDCTestUsers       string
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -102,6 +113,7 @@ type ConfigurableClusterOptions struct {
 	AzureCredentialsFile                  string
 	AzureManagedIdentitiesFile            string
 	AzureIssuerURL                        string
+	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
 	AzureEncryptionKeyID                  string
@@ -211,6 +223,12 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 		createOption.ClusterCIDR = o.ConfigurableClusterOptions.ClusterCIDR
 	}
 
+	// set external OIDC if enabled
+	if o.ExternalOIDCProvider != "" {
+		createOption.ExtOIDCConfig = GetExtOIDCConfig(o.ExternalOIDCProvider, o.ExternalOIDCCliClientID, o.ExternalOIDCConsoleClientID,
+			o.ExternalOIDCIssuerURL, o.ExternalOIDCConsoleSecret, o.ExternalOIDCCABundleFile, o.ExternalOIDCTestUsers)
+	}
+
 	return createOption
 }
 
@@ -247,11 +265,12 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		Credentials: awscmdutil.AWSCredentialsOptions{
 			AWSCredentialsFile: o.ConfigurableClusterOptions.AWSCredentialsFile,
 		},
-		Region:         o.ConfigurableClusterOptions.Region,
-		EndpointAccess: o.ConfigurableClusterOptions.AWSEndpointAccess,
-		IssuerURL:      o.IssuerURL,
-		MultiArch:      o.ConfigurableClusterOptions.AWSMultiArch,
-		PublicOnly:     true,
+		Region:                 o.ConfigurableClusterOptions.Region,
+		EndpointAccess:         o.ConfigurableClusterOptions.AWSEndpointAccess,
+		IssuerURL:              o.IssuerURL,
+		MultiArch:              o.ConfigurableClusterOptions.AWSMultiArch,
+		PublicOnly:             true,
+		UseROSAManagedPolicies: true,
 	}
 	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
@@ -315,6 +334,7 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 		DataPlaneIdentitiesFile:          o.ConfigurableClusterOptions.AzureDataPlaneIdentities,
 		DNSZoneRGName:                    "os4-common",
 		AssignServicePrincipalRoles:      true,
+		MultiArch:                        o.ConfigurableClusterOptions.AzureMultiArch,
 
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
@@ -373,11 +393,15 @@ func (o *Options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 func (o *Options) Complete() error {
 
 	if shouldTestCPOOverride() {
-		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases()
+		o.LatestReleaseImage, o.PreviousReleaseImage = controlplaneoperatoroverrides.LatestOverrideTestReleases(string(o.Platform))
 	}
 
 	if len(o.LatestReleaseImage) == 0 {
-		defaultVersion, err := version.LookupDefaultOCPVersion("")
+		client, err := util.GetClient()
+		if err != nil {
+			return fmt.Errorf("failed to get client: %w", err)
+		}
+		defaultVersion, err := supportedversion.LookupDefaultOCPVersion(context.TODO(), "", client)
 		if err != nil {
 			return fmt.Errorf("couldn't look up default OCP version: %w", err)
 		}
@@ -478,7 +502,7 @@ func (s *stringMapVar) String() string {
 }
 
 func (s *stringMapVar) Set(value string) error {
-	split := strings.Split(value, "=")
+	split := strings.SplitN(value, "=", 2)
 	if len(split) != 2 {
 		return fmt.Errorf("invalid argument: %s", value)
 	}

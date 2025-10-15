@@ -1,7 +1,6 @@
 package nodeclass
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -20,6 +19,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
 func TestReconcileEC2NodeClass(t *testing.T) {
@@ -29,7 +29,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Labels: map[string]string{
-				userDataAMILabel: "ami-123",
+				hyperkarpenterv1.UserDataAMILabel: "ami-123",
 			},
 		},
 	}
@@ -231,7 +231,7 @@ func TestGetUserDataSecret(t *testing.T) {
 				Namespace:        tc.namespace,
 			}
 
-			secret, err := r.getUserDataSecret(context.Background(), tc.hcp)
+			secret, err := r.getUserDataSecret(t.Context(), tc.hcp)
 
 			if tc.expectedError != "" {
 				g.Expect(err).To(MatchError(tc.expectedError))
@@ -243,6 +243,147 @@ func TestGetUserDataSecret(t *testing.T) {
 			g.Expect(secret).NotTo(BeNil())
 
 			g.Expect(secret.Name).To(Equal("newer-secret"))
+		})
+	}
+}
+
+func TestUserDataSecretPredicate(t *testing.T) {
+	testCases := []struct {
+		name           string
+		namespace      string
+		secret         *corev1.Secret
+		eventType      string
+		expectedResult bool
+	}{
+		{
+			name:      "should accept Create event for karpenter secret in correct namespace",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-secret",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/karpenter",
+					},
+				},
+			},
+			eventType:      "Create",
+			expectedResult: true,
+		},
+		{
+			name:      "should accept Update event for karpenter secret in correct namespace",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-secret",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/karpenter",
+					},
+				},
+			},
+			eventType:      "Update",
+			expectedResult: true,
+		},
+		{
+			name:      "should reject Delete event for karpenter secret",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-secret",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/karpenter",
+					},
+				},
+			},
+			eventType:      "Delete",
+			expectedResult: false,
+		},
+		{
+			name:      "should reject Generic event for karpenter secret",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-secret",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/karpenter",
+					},
+				},
+			},
+			eventType:      "Generic",
+			expectedResult: false,
+		},
+		{
+			name:      "should reject secret in wrong namespace",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "karpenter-secret",
+					Namespace: "wrong-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/karpenter",
+					},
+				},
+			},
+			eventType:      "Create",
+			expectedResult: false,
+		},
+		{
+			name:      "should reject secret without incorrect NodePoolLabel annotation",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-secret",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.NodePoolLabel: "clusters/other",
+					},
+				},
+			},
+			eventType:      "Create",
+			expectedResult: false,
+		},
+		{
+			name:      "should reject secret without NodePoolLabel annotation",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "regular-secret",
+					Namespace: "test-namespace",
+				},
+			},
+			eventType:      "Create",
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			r := &EC2NodeClassReconciler{
+				Namespace: tc.namespace,
+			}
+
+			pred := r.userDataSecretPredicate()
+
+			var result bool
+			switch tc.eventType {
+			case "Create":
+				result = pred.Create(event.CreateEvent{Object: tc.secret})
+			case "Update":
+				result = pred.Update(event.UpdateEvent{ObjectNew: tc.secret, ObjectOld: tc.secret})
+			case "Delete":
+				result = pred.Delete(event.DeleteEvent{Object: tc.secret})
+			case "Generic":
+				result = pred.Generic(event.GenericEvent{Object: tc.secret})
+			default:
+				t.Fatalf("invalid event type: %s", tc.eventType)
+			}
+
+			g.Expect(result).To(Equal(tc.expectedResult))
 		})
 	}
 }

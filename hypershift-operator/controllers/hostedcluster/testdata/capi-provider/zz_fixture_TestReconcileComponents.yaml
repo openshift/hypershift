@@ -10,21 +10,17 @@ metadata:
   namespace: hcp-namespace
   resourceVersion: "1"
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: capi-provider-controller-manager
       control-plane: capi-provider-controller-manager
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+  strategy: {}
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -96,6 +92,8 @@ spec:
           requests:
             cpu: 10m
             memory: 100Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /home/.aws
@@ -105,6 +103,8 @@ spec:
           readOnly: true
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: token
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --service-account-namespace=kube-system
         - --service-account-name=capa-controller-manager
@@ -121,23 +121,32 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: token
         - mountPath: /etc/kubernetes
           name: svc-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
-        image: test-image
+        - --kubeconfig=/var/kubeconfig/kubeconfig
+        - --wait-for-infrastructure-resource
+        image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/kubeconfig
+          name: svc-kubeconfig
       priorityClassName: hypershift-control-plane
       serviceAccountName: capi-provider
       terminationGracePeriodSeconds: 10
@@ -166,4 +175,6 @@ spec:
       - emptyDir:
           medium: Memory
         name: token
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

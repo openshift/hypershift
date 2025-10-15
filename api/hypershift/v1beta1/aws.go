@@ -38,10 +38,11 @@ type AWSNodePoolPlatform struct {
 	RootVolume *Volume `json:"rootVolume,omitempty"`
 
 	// resourceTags is an optional list of additional tags to apply to AWS node
-	// instances.
+	// instances. Changes to this field will be propagated in-place to AWS EC2 instances and their initial EBS volumes.
+	// Volumes created by the storage operator and attached to instances after they are created do not get these tags applied.
 	//
-	// These will be merged with HostedCluster scoped tags, and HostedCluster tags
-	// take precedence in case of conflicts.
+	// These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 	//
 	// See https://docs.aws.amazon.com/general/latest/gr/aws_tagging.html for
 	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
@@ -59,13 +60,17 @@ type AWSNodePoolPlatform struct {
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
+// +kubebuilder:validation:XValidation:rule="has(self.tenancy) && self.tenancy == 'host' ? !has(self.capacityReservation) : true", message="AWS Capacity Reservations cannot be used with Dedicated Hosts (tenancy 'host')"
 type PlacementOptions struct {
 	// tenancy indicates if instance should run on shared or single-tenant hardware.
 	//
 	// Possible values:
-	// default: NodePool instances run on shared hardware.
-	// dedicated: Each NodePool instance runs on single-tenant hardware.
-	// host: NodePool instances run on user's pre-allocated dedicated hosts.
+	// - "default": NodePool instances run on shared hardware.
+	// - "dedicated": Each NodePool instance runs on single-tenant hardware (Dedicated Instances).
+	// - "host": NodePool instances run on user's pre-allocated dedicated hosts (Dedicated Hosts).
+	//
+	// When tenancy is set to "host", capacityReservation cannot be specified
+	// as AWS does not support Capacity Reservations with Dedicated Hosts.
 	//
 	// +optional
 	// +kubebuilder:validation:Enum:=default;dedicated;host
@@ -73,11 +78,14 @@ type PlacementOptions struct {
 
 	// capacityReservation specifies Capacity Reservation options for the NodePool instances.
 	//
+	// Cannot be specified when tenancy is set to "host" as Dedicated Hosts
+	// do not support Capacity Reservations. Compatible with "default" and "dedicated" tenancy.
+	//
 	// +optional
 	CapacityReservation *CapacityReservationOptions `json:"capacityReservation,omitempty"`
 }
 
-// MarketType describes the market type of the CapacityReservationo for an Instance.
+// MarketType describes the market type of the CapacityReservation for an Instance.
 type MarketType string
 
 const (
@@ -89,26 +97,62 @@ const (
 )
 
 // CapacityReservationOptions specifies Capacity Reservation options for the NodePool instances.
+// +kubebuilder:validation:XValidation:rule="has(self.id) ? (!has(self.preference) || !(self.preference in ['Open','None'])) : true", message="AWS Capacity Reservation preference 'None' or 'Open' is incompatible with specifying a Capacity Reservation ID"
+// +kubebuilder:validation:XValidation:rule="has(self.marketType) && self.marketType == 'CapacityBlocks' ? has(self.id) : true", message="AWS Capacity Reservation market type 'CapacityBlocks' requires a Capacity Reservation ID"
 type CapacityReservationOptions struct {
 	// id specifies the target Capacity Reservation into which the EC2 instances should be launched.
 	// Must follow the format: cr- followed by 17 lowercase hexadecimal characters. For example: cr-0123456789abcdef0
+	// When empty, no specific Capacity Reservation is targeted.
+	//
+	// When specified, preference cannot be set to 'None' or 'Open' as these
+	// are mutually exclusive with targeting a specific reservation. Use preference 'CapacityReservationsOnly'
+	// or omit preference field when targeting a specific reservation.
 	//
 	// +kubebuilder:validation:XValidation:rule="self.matches('^cr-[a-f0-9]{17}$')", message="AWS Capacity Reservation ID must start with 'cr-' followed by 17 lowercase hexadecimal characters (e.g., cr-0123456789abcdef0)"
-	// +required
-	// +kubebuilder:validation:MinLength=20
 	// +kubebuilder:validation:MaxLength=20
-	ID string `json:"id"`
+	// +optional
+	ID *string `json:"id,omitempty"`
 
 	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
-	// "OnDemand": EC2 instances run as standard On-Demand instances.
-	// "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recomended when GPUs are needed to support ML workloads.
+	// - "OnDemand": EC2 instances run as standard On-Demand instances.
+	// - "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
 	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 	// The current default value is CapacityBlocks.
+	//
+	// When set to 'CapacityBlocks', a specific Capacity Reservation ID must be provided.
 	//
 	// +kubebuilder:validation:Enum:=OnDemand;CapacityBlocks
 	// +optional
 	MarketType MarketType `json:"marketType,omitempty"`
+
+	// preference specifies the preference for use of Capacity Reservations by the instance. Valid values include:
+	// - "": No preference (platform default)
+	// - "Open": The instance may make use of open Capacity Reservations that match its AZ and InstanceType
+	// - "None": The instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+	// - "CapacityReservationsOnly": The instance will only run if matched or targeted to a Capacity Reservation
+	//
+	// Cannot be set to 'None' or 'Open' when a specific Capacity Reservation ID is provided,
+	// as targeting a specific reservation is mutually exclusive with these general preference settings.
+	//
+	// +kubebuilder:validation:Enum="";None;CapacityReservationsOnly;Open
+	// +optional
+	Preference CapacityReservationPreference `json:"preference,omitempty"`
 }
+
+// CapacityReservationPreference describes the preferred use of capacity reservations
+// of an instance
+type CapacityReservationPreference string
+
+const (
+	// CapacityReservationPreferenceNone the instance may not make use of any Capacity Reservations. This is to conserve open reservations for desired workloads
+	CapacityReservationPreferenceNone CapacityReservationPreference = "None"
+
+	// CapacityReservationPreferenceOnly the instance will only run if matched or targeted to a Capacity Reservation
+	CapacityReservationPreferenceOnly CapacityReservationPreference = "CapacityReservationsOnly"
+
+	// CapacityReservationPreferenceOpen the instance may make use of open Capacity Reservations that match its AZ and InstanceType.
+	CapacityReservationPreferenceOpen CapacityReservationPreference = "Open"
+)
 
 // AWSResourceReference is a reference to a specific AWS resource by ID or filters.
 // Only one of ID or Filters may be specified. Specifying more than one will result in
@@ -253,6 +297,10 @@ type AWSPlatformSpec struct {
 	// information on tagging AWS resources. AWS supports a maximum of 50 tags per
 	// resource. OpenShift reserves 25 tags for its use, leaving 25 tags available
 	// for the user.
+	// Changes to this field will be propagated in-place to AWS resources (VPC Endpoints, EC2 instances, initial EBS volumes and default/endpoint security groups).
+	// These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile AWS resources created by them.
+	// Please consult the official documentation for a list of all AWS resources that support in-place tag updates.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional

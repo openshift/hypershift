@@ -3,6 +3,7 @@ package controlplaneoperator
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -20,7 +21,8 @@ import (
 )
 
 const (
-	managedServiceEnvVar = "MANAGED_SERVICE"
+	managedServiceEnvVar            = "MANAGED_SERVICE"
+	DefaultSecurityContextUIDEnvVar = "DEFAULT_SECURITY_CONTEXT_UID"
 )
 
 func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -84,6 +86,10 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 			{
 				Name:  "HYPERSHIFT_FEATURESET",
 				Value: string(cpo.FeatureSet),
+			},
+			{
+				Name:  DefaultSecurityContextUIDEnvVar,
+				Value: strconv.FormatInt(cpContext.DefaultSecurityContextUID, 10),
 			},
 			metrics.MetricsSetToEnv(cpContext.MetricsSet),
 		}...)
@@ -206,35 +212,37 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 				MountPath: "/etc/provider",
 			})
 	case hyperv1.AzurePlatform:
-		// Add the client ID of the managed Azure key vault as an environment variable on the CPO. This is used in
-		// configuring the SecretProviderClass CRs for OpenShift components on the HCP needing to authenticate with
-		// Azure cloud API.
-		aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
-		if ok {
-			deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
-				corev1.EnvVar{
-					Name:  config.AROHCPKeyVaultManagedIdentityClientID,
-					Value: aroHCPKVMIClientID,
-				})
-		}
+		if azureutil.IsAroHCP() {
+			// Add the client ID of the managed Azure key vault as an environment variable on the CPO. This is used in
+			// configuring the SecretProviderClass CRs for OpenShift components on the HCP needing to authenticate with
+			// Azure cloud API.
+			aroHCPKVMIClientID, ok := os.LookupEnv(config.AROHCPKeyVaultManagedIdentityClientID)
+			if ok {
+				deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+					corev1.EnvVar{
+						Name:  config.AROHCPKeyVaultManagedIdentityClientID,
+						Value: aroHCPKVMIClientID,
+					})
+			}
 
-		// Mount the control plane operator's credentials from the managed Azure key vault. The CPO authenticates with
-		// the Azure cloud API for validating resource group locations.
-		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-			azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName),
-		)
-		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-			azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName, config.ManagedAzureCPOSecretProviderClassName),
-		)
-
-		// Mount the KMS credentials so the HCP reconciliation can validate the Azure KMS configuration.
-		if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil {
+			// Mount the control plane operator's credentials from the managed Azure key vault. The CPO authenticates with
+			// the Azure cloud API for validating resource group locations.
 			deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
-				azureutil.CreateVolumeMountForKMSAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName),
+				azureutil.CreateVolumeMountForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName),
 			)
 			deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
-				azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
+				azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureCPOSecretStoreVolumeName, config.ManagedAzureCPOSecretProviderClassName),
 			)
+
+			// Mount the KMS credentials so the HCP reconciliation can validate the Azure KMS configuration.
+			if hcp.Spec.SecretEncryption != nil && hcp.Spec.SecretEncryption.KMS != nil {
+				deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+					azureutil.CreateVolumeMountForKMSAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName),
+				)
+				deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+					azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
+				)
+			}
 		}
 	}
 }

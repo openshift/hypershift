@@ -3,19 +3,22 @@ package nodepool
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 const (
@@ -107,18 +110,6 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 
 	instanceType := nodePool.Spec.Platform.AWS.InstanceType
 
-	tags := capiaws.Tags{}
-	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
-		tags[tag.Key] = tag.Value
-	}
-
-	// We enforce the AWS cluster cloud provider tag here.
-	// Otherwise, this would race with the HC defaulting itself hostedCluster.Spec.Platform.AWS.ResourceTags.
-	key := awsClusterCloudProviderTagKey(infraName)
-	if _, ok := tags[key]; !ok {
-		tags[key] = infraLifecycleOwned
-	}
-
 	instanceMetadataOptions := &capiaws.InstanceMetadataOptions{
 		HTTPTokens:              capiaws.HTTPTokensStateOptional,
 		HTTPPutResponseHopLimit: 2, // set to 2 as per AWS recommendation for container envs https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html#imds-considerations
@@ -145,22 +136,31 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 				AdditionalSecurityGroups: securityGroups,
 				Subnet:                   subnet,
 				RootVolume:               rootVolume,
-				AdditionalTags:           tags,
+				AdditionalTags:           awsAdditionalTags(nodePool, hostedCluster, infraName),
 				InstanceMetadataOptions:  instanceMetadataOptions,
 			},
 		},
 	}
 
-	if nodePool.Spec.Platform.AWS.Placement != nil {
-		awsMachineTemplateSpec.Template.Spec.Tenancy = nodePool.Spec.Platform.AWS.Placement.Tenancy
+	if placement := nodePool.Spec.Platform.AWS.Placement; placement != nil {
+		awsMachineTemplateSpec.Template.Spec.Tenancy = placement.Tenancy
 
-		if capacityReservation := nodePool.Spec.Platform.AWS.Placement.CapacityReservation; capacityReservation != nil {
-			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = ptr.To(capacityReservation.ID)
-			if capacityReservation.MarketType == hyperv1.MarketTypeOnDemand {
-				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
-			} else {
+		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = capacityReservation.ID
+
+			switch capacityReservation.MarketType {
+			case hyperv1.MarketTypeCapacityBlock:
 				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+			case hyperv1.MarketTypeOnDemand:
+				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+			default:
+				if placement.Tenancy != "host" && capacityReservation.ID != nil {
+					// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
+					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+				}
 			}
+
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 		}
 	}
 
@@ -169,6 +169,83 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	}
 
 	return awsMachineTemplateSpec, nil
+}
+
+func awsAdditionalTags(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.HostedCluster, infraName string) capiaws.Tags {
+	tags := capiaws.Tags{}
+	for _, tag := range append(nodePool.Spec.Platform.AWS.ResourceTags, hostedCluster.Spec.Platform.AWS.ResourceTags...) {
+		tags[tag.Key] = tag.Value
+	}
+
+	// We enforce the AWS cluster cloud provider tag here.
+	// Otherwise, this would race with the HC defaulting itself hostedCluster.Spec.Platform.AWS.ResourceTags.
+	key := awsClusterCloudProviderTagKey(infraName)
+	if _, ok := tags[key]; !ok {
+		tags[key] = infraLifecycleOwned
+	}
+	return tags
+}
+
+func (c *CAPI) awsMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiaws.AWSMachineTemplate, error) {
+	desiredSpec, err := awsMachineTemplateSpec(c.capiClusterName, c.hostedCluster, c.nodePool, c.cpoCapabilities.CreateDefaultAWSSecurityGroup, c.releaseImage)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate AWSMachineTemplateSpec: %w", err)
+	}
+
+	hashedSpec := *desiredSpec.DeepCopy()
+	// set tags to nil so that it doesn't get considered in the hash calculation for the MachineTemplate name.
+	// this is to avoid a rolling upgrade when tags are changed.
+	hashedSpec.Template.Spec.AdditionalTags = nil
+	templateName, err := templateNameGenerator(hashedSpec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate template name: %w", err)
+	}
+
+	existingTemplate := &capiaws.AWSMachineTemplate{}
+	if err := c.getExistingMachineTemplate(ctx, existingTemplate); err == nil {
+		opts := cmp.Options{
+			cmpopts.IgnoreFields(capiaws.AWSMachineSpec{}, "AdditionalTags"),
+		}
+
+		if cmp.Equal(*desiredSpec, existingTemplate.Spec, opts...) {
+			// If a template already exist and the spec has not changed (excluding AdditionalTags), we should reuse the existing template name.
+			// This is especially important for clusters created before the change that omitted the AdditionalTags from template name generation (https://github.com/openshift/hypershift/pull/6285).
+			// Otherwise, we would end up with a new template name and trigger a rolling upgrade.
+			templateName = existingTemplate.Name
+		}
+	} else if client.IgnoreNotFound(err) != nil {
+		return nil, fmt.Errorf("failed to get existing AWSMachineTemplate: %w", err)
+	}
+
+	template := &capiaws.AWSMachineTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: templateName,
+		},
+		Spec: *desiredSpec,
+	}
+
+	return template, nil
+}
+
+func (c *CAPI) reconcileAWSMachines(ctx context.Context) error {
+	awsMachines := &capiaws.AWSMachineList{}
+	if err := c.List(ctx, awsMachines, client.InNamespace(c.controlplaneNamespace), client.MatchingLabels{
+		capiv1.MachineDeploymentNameLabel: c.nodePool.Name,
+	}); err != nil {
+		return fmt.Errorf("failed to list AWSMachines for NodePool %s: %w", c.nodePool.Name, err)
+	}
+
+	var errs []error
+	for _, machine := range awsMachines.Items {
+		if _, err := controllerutil.CreateOrPatch(ctx, c.Client, &machine, func() error {
+			machine.Spec.AdditionalTags = awsAdditionalTags(c.nodePool, c.hostedCluster, c.capiClusterName)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile AWSMachine %s: %w", machine.Name, err))
+		}
+	}
+
+	return errors.NewAggregate(errs)
 }
 
 func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
@@ -224,20 +301,6 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 
 func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, oldCondition *hyperv1.NodePoolCondition) error {
 	if nodePool.Spec.Platform.AWS.Placement != nil && nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
-		id := nodePool.Spec.Platform.AWS.Placement.CapacityReservation.ID
-
-		// short circuit the validation early if CapacityReservation is expired/cancled to reduce AWS API calls.
-		if oldCondition != nil && oldCondition.Status == corev1.ConditionFalse {
-			if strings.Contains(oldCondition.Message, "expired") || strings.Contains(oldCondition.Message, "cancelled") {
-				var expiredID, state string
-				_, _ = fmt.Sscanf(oldCondition.Message, "capacityReservation %s is %s", &expiredID, &state)
-				// only return early, if the expired capacityReservation is the same as the current one.
-				if expiredID == id {
-					return fmt.Errorf("%s", oldCondition.Message)
-				}
-			}
-		}
-
 		pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
 		if err != nil {
 			return err
@@ -249,55 +312,6 @@ func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodeP
 
 		if hostedClusterVersion.Major == 4 && hostedClusterVersion.Minor < 19 {
 			return fmt.Errorf("capacityReservation is only supported on 4.19+ clusters")
-		}
-
-		if r.EC2Client == nil {
-			return fmt.Errorf("ec2Client is not configured")
-		}
-
-		output, err := r.EC2Client.DescribeCapacityReservationsWithContext(ctx, &ec2.DescribeCapacityReservationsInput{
-			CapacityReservationIds: []*string{&id},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to describe capacityReservation %s, code %s", id, supportawsutil.AWSErrorCode(err))
-		}
-		capacityReservation := output.CapacityReservations[0]
-
-		if state := *capacityReservation.State; state == "expired" || state == "cancelled" {
-			return fmt.Errorf("capacityReservation %s is %s", id, state)
-		}
-
-		instanceCount := int32(*capacityReservation.TotalInstanceCount)
-		if isAutoscalingEnabled(nodePool) {
-			if nodePool.Spec.AutoScaling.Max > instanceCount {
-				return fmt.Errorf("nodePool.Spec.AutoScaling.Max '%d' is greater than the capacityReservation total instance count '%d'", nodePool.Spec.AutoScaling.Max, instanceCount)
-			}
-		} else if *nodePool.Spec.Replicas > instanceCount {
-			return fmt.Errorf("nodePool.Spec.Replicas '%d' is greater than the capacityReservation total instance count '%d'", *nodePool.Spec.Replicas, instanceCount)
-		}
-
-		if instanceType := nodePool.Spec.Platform.AWS.InstanceType; instanceType != *capacityReservation.InstanceType {
-			return fmt.Errorf("nodePool.Spec.Platform.AWS.InstanceType '%s' doesn't match the capacityReservation instance type '%s'", instanceType, *capacityReservation.InstanceType)
-		}
-
-		var filters []*ec2.Filter
-		for _, filter := range nodePool.Spec.Platform.AWS.Subnet.Filters {
-			filters = append(filters, &ec2.Filter{
-				Name:   aws.String(filter.Name),
-				Values: aws.StringSlice(filter.Values),
-			})
-		}
-		subnetOutput, err := r.EC2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
-			SubnetIds: []*string{nodePool.Spec.Platform.AWS.Subnet.ID},
-			Filters:   filters,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to describe subnet, code %s", supportawsutil.AWSErrorCode(err))
-		}
-
-		availabilityZone := *subnetOutput.Subnets[0].AvailabilityZone
-		if availabilityZone != *capacityReservation.AvailabilityZone {
-			return fmt.Errorf("nodePool availabilityZone '%s' doesn't match the capacityReservation availabilityZone '%s'", availabilityZone, *capacityReservation.AvailabilityZone)
 		}
 	}
 

@@ -40,6 +40,7 @@ type HostedControlPlane struct {
 
 // HostedControlPlaneSpec defines the desired state of HostedControlPlane
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 type HostedControlPlaneSpec struct {
 	// releaseImage is the release image applied to the hosted control plane.
 	// +required
@@ -184,12 +185,11 @@ type HostedControlPlaneSpec struct {
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
 	//
 	// +optional
-	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
 	// imageContentSources lists sources/repositories for the release-image content.
 	// +optional
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=255
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
@@ -402,6 +402,10 @@ type HostedControlPlaneStatus struct {
 	// nodeCount tracks the number of nodes in the HostedControlPlane.
 	// +optional
 	NodeCount *int `json:"nodeCount,omitempty"`
+
+	// configuration contains the cluster configuration status of the HostedCluster
+	// +optional
+	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.

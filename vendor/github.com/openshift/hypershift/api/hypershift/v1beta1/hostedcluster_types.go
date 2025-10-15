@@ -281,6 +281,8 @@ const (
 
 	// AWSLoadBalancerSubnetsAnnotation allows specifying the subnets to use for control plane load balancers
 	// in the AWS platform. These subnets only apply to private load balancers.
+	// Deprecated: Subnets should not be specified for the private load balancer. This results in
+	// private link creation failures. The annotation has no effect.
 	AWSLoadBalancerSubnetsAnnotation = "hypershift.openshift.io/aws-load-balancer-subnets"
 
 	// AWSLoadBalancerTargetNodesAnnotation allows specifying label selectors to choose target nodes for
@@ -359,9 +361,26 @@ const (
 
 	// HostedClusterRestoredFromBackupAnnotation is set to true when the HostedCluster is restored from a backup using Hypershift
 	// OADP plugin. This annotation is set by the Hypershift OADP plugin during the Backup/Restore process. The annotation will trigger
-	// a process to check if the differents components in the DataPlane are working as expected. Checks:
+	// a process to check if the different components in the DataPlane are working as expected. Checks:
 	// - Validates the monitoring stack is properly working after restoration, if not HCCO will restart the prometheus-k8s pods.
 	HostedClusterRestoredFromBackupAnnotation = "hypershift.openshift.io/restored-from-backup"
+
+	// HostedClusterSourcedAnnotation is set to true on Secret and ConfigMap resources to designate them as
+	// hosted-cluster-sourced resources. This means that the hosted cluster version of these resources is the source of
+	// truth and the management cluster version will be just empty resources that have this annotation. This is useful
+	// to enable day-two configuration use cases where such resources are expected to be provided by the end-user after
+	// the cluster creation, and, due to certain restrictions, those resources include sensitive data that can't live
+	// on the control-plane. Setting this annotation will instruct HyperShift to skip creating this resource on the hosted
+	// cluster and to not override any changes done later on the hosted cluster version of this resource.
+	//
+	// This annotation can only be set on empty resources and currently it's only honored when set on secrets that are
+	// referenced in the HostedCluster `spec.configuration.authentication.oidcProviders[*].oidcClients[*].clientSecret`
+	// and only for the ARO-HCP platform.
+	HostedClusterSourcedAnnotation = "hypershift.openshift.io/hosted-cluster-sourced"
+
+	// SkipKASCertificateConflicSANValidation allows skipping the validation of the KAS certificate SANs so they do not conflict with ServicePublishingStrategy Hostname.
+	// This annotation is useful as a escape hatch, that IBM could use.
+	SkipKASConflicSANValidation = "hypershift.openshift.io/skip-kas-conflict-san-validation"
 )
 
 // RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
@@ -379,30 +398,47 @@ const (
 	PruneRetentionPolicy RetentionPolicy = "Prune"
 )
 
-// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples
+// +kubebuilder:validation:Enum=ImageRegistry;openshift-samples;Insights;baremetal;Console;NodeTuning;Ingress
 type OptionalCapability string
 
 const ImageRegistryCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityImageRegistry)
-
 const OpenShiftSamplesCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityOpenShiftSamples)
+const InsightsCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityInsights)
+const BaremetalCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityBaremetal)
+const ConsoleCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityConsole)
+const NodeTuningCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityNodeTuning)
+const IngressCapability OptionalCapability = OptionalCapability(configv1.ClusterVersionCapabilityIngress)
 
-// capabilities allows disabling optional components at install time.
+// capabilities allows enabling or disabling optional components at install time.
+// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
+// OpenShift version, minus the baremetal capability.
 // Once set, it cannot be changed.
+//
+// +kubebuilder:validation:XValidation:rule="has(self.enabled) && has(self.disabled) ? self.enabled.all(e, !(e in self.disabled)) : true", message="Capabilities can not be both enabled and disabled at once."
 type Capabilities struct {
-	// disabled when specified, sets the cluster version baselineCapabilitySet to None
-	// and sets all additionalEnabledCapabilities BUT the ones supplied in disabled.
-	// This effectively disables that capability on the hosted cluster.
-	//
-	// When this is not supplied, the cluster will use the DefaultCapabilitySet defined for the respective
-	// OpenShift version.
-	//
+	// enabled when specified, explicitly enables the specified capabilitíes on the hosted cluster.
 	// Once set, this field cannot be changed.
 	//
 	// +listType=atomic
 	// +immutable
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Enabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	Enabled []OptionalCapability `json:"enabled,omitempty"`
+
+	// TODO: Remove the validation that requires the Ingress capability to be disabled only when Console is also disabled, once OCPBUGS-58422 is resolved by the console team
+
+	// disabled when specified, explicitly disables the specified capabilitíes on the hosted cluster.
+	// Once set, this field cannot be changed.
+	//
+	// Note: Disabling 'openshift-samples','Insights', 'Console', 'NodeTuning', 'Ingress' are only supported in OpenShift versions 4.20 and above.
+	//
+	// +listType=atomic
+	// +immutable
+	// +optional
+	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Disabled is immutable. Changes might result in unpredictable and disruptive behavior."
+	// +kubebuilder:validation:XValidation:rule="!self.exists(cap, cap == 'Ingress') || self.exists(cap, cap == 'Console')",message="Ingress capability can only be disabled if Console capability is also disabled"
 	Disabled []OptionalCapability `json:"disabled,omitempty"`
 }
 
@@ -410,11 +446,13 @@ type Capabilities struct {
 
 // +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
-// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "APIServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires APIServer Route service with a hostname to be defined"
-// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires OAuthServer Route service with a hostname to be defined"
-// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Konnectivity Route service with a hostname to be defined"
-// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route" && s.servicePublishingStrategy.route.hostname != "") : true`,message="Azure platform requires Ignition Route service with a hostname to be defined"
+// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires OAuthServer to use Route service publishing strategy"
+// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Konnectivity to use Route service publishing strategy"
+// +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Ignition to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
+// +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
+// +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !self.?operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig.hasValue()", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -617,7 +655,6 @@ type HostedClusterSpec struct {
 	// operatorConfiguration specifies configuration for individual OCP operators in the cluster.
 	//
 	// +optional
-	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	OperatorConfiguration *OperatorConfiguration `json:"operatorConfiguration,omitempty"`
 
 	// auditWebhook contains metadata for configuring an audit webhook endpoint
@@ -770,7 +807,7 @@ type ImageContentSource struct {
 	//
 	// +optional
 	// +immutable
-	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:MaxItems=255
 	// +listType=set
 	// +kubebuilder:validation:items:MaxLength=255
 	Mirrors []string `json:"mirrors,omitempty"`
@@ -1003,7 +1040,6 @@ type ClusterNetworking struct {
 	// apiServer contains advanced network settings for the API server that affect
 	// how the APIServer is exposed inside a hosted cluster node.
 	//
-	// +immutable
 	// +optional
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
 }
@@ -1036,8 +1072,8 @@ type ServiceNetworkEntry struct {
 	CIDR ipnet.IPNet `json:"cidr"`
 }
 
-// +kubebuilder:validation:Pattern:=`^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/(3[0-2]|[1-2][0-9]|[0-9]))$`
-// +kubebuilder:validation:MaxLength=255
+// +kubebuilder:validation:XValidation:rule=`self.matches('^((\\d{1,3}\\.){3}\\d{1,3}/\\d{1,2})$') || self.matches('^([0-9a-fA-F]{0,4}:){2,7}([0-9a-fA-F]{0,4})?/[0-9]{1,3}$')`,message="cidr must be a valid IPv4 or IPv6 CIDR notation (e.g., 192.168.1.0/24 or 2001:db8::/64)"
+// +kubebuilder:validation:MaxLength=43
 type CIDRBlock string
 
 // APIServerNetworking specifies how the APIServer is exposed inside a cluster
@@ -1064,10 +1100,12 @@ type APIServerNetworking struct {
 	// +optional
 	Port *int32 `json:"port,omitempty"`
 
-	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer
+	// allowedCIDRBlocks is an allow list of CIDR blocks that can access the APIServer.
 	// If not specified, traffic is allowed from all addresses.
-	// This depends on underlying support by the cloud provider for Service LoadBalancerSourceRanges
-	// +kubebuilder:validation:MaxItems=25
+	// This field is enforced for ARO (Azure Red Hat OpenShift) via the shared-ingress HAProxy.
+	// For platforms other than ARO, the enforcement depends on whether the underlying cloud provider supports the Service LoadBalancerSourceRanges field.
+	// If the platform does not support LoadBalancerSourceRanges, this field may have no effect.
+	// +kubebuilder:validation:MaxItems=500
 	// +listType=set
 	// +optional
 	AllowedCIDRBlocks []CIDRBlock `json:"allowedCIDRBlocks,omitempty"`
@@ -1241,16 +1279,133 @@ type KarpenterAWSConfig struct {
 }
 
 const (
-	ProvisionerKarpeneter Provisioner = "Karpenter"
+	ProvisionerKarpenter Provisioner = "Karpenter"
 )
 
 // provisioner is a enum specifying the strategy for auto managing Nodes.
 // +kubebuilder:validation:Enum=Karpenter
 type Provisioner string
 
+// Configures when and how to scale down cluster nodes.
+type ScaleDownConfig struct {
+	// delayAfterAddSeconds sets how long after scale up the scale down evaluation resumes in seconds.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after scale up, without any delay.
+	// When omitted, the autoscaler defaults to 600s (10 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterAddSeconds *int32 `json:"delayAfterAddSeconds,omitempty"`
+
+	// delayAfterDeleteSeconds sets how long after node deletion, scale down evaluation resumes, defaults to scan-interval.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after node deletion, without any delay.
+	// When omitted, the autoscaler defaults to 0s.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterDeleteSeconds *int32 `json:"delayAfterDeleteSeconds,omitempty"`
+
+	// delayAfterFailureSeconds sets how long after a scale down failure, scale down evaluation resumes.
+	// It must be between 0 and 86400 (24 hours).
+	// When set to 0, this means scale down evaluation will resume immediately after a scale down failure, without any delay.
+	// When omitted, the autoscaler defaults to 180s (3 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	DelayAfterFailureSeconds *int32 `json:"delayAfterFailureSeconds,omitempty"`
+
+	// unneededDurationSeconds establishes how long a node should be unneeded before it is eligible for scale down in seconds.
+	// It must be between 0 and 86400 (24 hours).
+	// When omitted, the autoscaler defaults to 600s (10 minutes).
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=86400
+	// +optional
+	UnneededDurationSeconds *int32 `json:"unneededDurationSeconds,omitempty"`
+
+	// utilizationThresholdPercent determines the node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down.
+	// The value represents a percentage from 0 to 100.
+	// When set to 0, this means nodes will only be considered for scale down if they are completely idle (0% utilization).
+	// When set to 100, this means nodes will be considered for scale down regardless of their utilization level.
+	// A value between 0 and 100 represents the utilization threshold below which a node can be considered for scale down.
+	// When omitted, the autoscaler defaults to 50%.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	UtilizationThresholdPercent *int32 `json:"utilizationThresholdPercent,omitempty"`
+}
+
+// ExpanderString contains the name of an expander to be used by the cluster autoscaler.
+// +kubebuilder:validation:Enum=LeastWaste;Priority;Random
+type ExpanderString string
+
+// These constants define the valid values for an ExpanderString
+const (
+	LeastWasteExpander ExpanderString = "LeastWaste" // Selects the node group with the least idle resources.
+	PriorityExpander   ExpanderString = "Priority"   // Selects the node group with the highest priority.
+	RandomExpander     ExpanderString = "Random"     // Selects a node group randomly.
+)
+
+// ScalingType defines the scaling behavior for the cluster autoscaler.
+// +kubebuilder:validation:Enum=ScaleUpOnly;ScaleUpAndScaleDown
+type ScalingType string
+
+const (
+	// ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+	ScaleUpOnly ScalingType = "ScaleUpOnly"
+
+	// ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+	ScaleUpAndScaleDown ScalingType = "ScaleUpAndScaleDown"
+)
+
 // ClusterAutoscaling specifies auto-scaling behavior that applies to all
 // NodePools associated with a control plane.
+// +kubebuilder:validation:XValidation:rule="self.scaling == 'ScaleUpAndScaleDown' ? true : !has(self.scaleDown)",message="scaleDown can only be set when scaling is ScaleUpAndScaleDown"
 type ClusterAutoscaling struct {
+	// scaling defines the scaling behavior for the cluster autoscaler.
+	// ScaleUpOnly means the autoscaler will only scale up nodes, never scale down.
+	// ScaleUpAndScaleDown means the autoscaler will both scale up and scale down nodes.
+	// When set to ScaleUpAndScaleDown, the scaleDown field can be used to configure scale down behavior.
+	//
+	// Note: This field is only supported in OpenShift versions 4.19 and above.
+	//
+	// +kubebuilder:default=ScaleUpAndScaleDown
+	// +optional
+	Scaling ScalingType `json:"scaling,omitempty"`
+
+	// scaleDown configures the behavior of the Cluster Autoscaler scale down operation.
+	// This field is only valid when scaling is set to ScaleUpAndScaleDown.
+	//
+	// +optional
+	ScaleDown *ScaleDownConfig `json:"scaleDown,omitempty"`
+
+	// balancingIgnoredLabels sets "--balancing-ignore-label <label name>" flag on cluster-autoscaler for each listed label.
+	// This option specifies labels that cluster autoscaler should ignore when considering node group similarity.
+	// For example, if you have nodes with "topology.ebs.csi.aws.com/zone" label, you can add name of this label here
+	// to prevent cluster autoscaler from splitting nodes into different node groups based on its value.
+	//
+	// HyperShift automatically appends platform-specific balancing ignore labels:
+	// - AWS: "lifecycle", "k8s.amazonaws.com/eniConfig", "topology.k8s.aws/zone-id"
+	// - Azure: "agentpool", "kubernetes.azure.com/agentpool"
+	// - Common:
+	//   - "hypershift.openshift.io/nodePool"
+	//   - "topology.ebs.csi.aws.com/zone"
+	//   - "topology.disk.csi.azure.com/zone"
+	//   - "ibm-cloud.kubernetes.io/worker-id"
+	//   - "vpc-block-csi-driver-labels"
+	// These labels are added by default and do not need to be manually specified.
+	//
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MaxLength=317
+	// +kubebuilder:validation:XValidation:rule="self.all(l, l.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$'))", message="Each balancingIgnoredLabels item must be a valid label key"
+	// +optional
+	BalancingIgnoredLabels []string `json:"balancingIgnoredLabels,omitempty"`
+
 	// maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
 	// The autoscaler will not grow the cluster beyond this number.
 	// If omitted, the autoscaler will not have a maximum limit.
@@ -1276,6 +1431,19 @@ type ClusterAutoscaling struct {
 	// +kubebuilder:validation:MaxLength=100
 	MaxNodeProvisionTime string `json:"maxNodeProvisionTime,omitempty"`
 
+	// maxFreeDifferenceRatioPercent sets the maximum difference ratio for free resources between similar node groups. This parameter controls how strict the similarity check is when comparing node groups for load balancing.
+	// The value represents a percentage from 0 to 100.
+	// When set to 0, this means node groups must have exactly the same free resources to be considered similar (no difference allowed).
+	// When set to 100, this means node groups will be considered similar regardless of their free resource differences (any difference allowed).
+	// A value between 0 and 100 represents the maximum allowed difference ratio for free resources between node groups to be considered similar.
+	// When omitted, the autoscaler defaults to 10%.
+	// This affects the "--max-free-difference-ratio" flag on cluster-autoscaler.
+	//
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +optional
+	MaxFreeDifferenceRatioPercent *int32 `json:"maxFreeDifferenceRatioPercent,omitempty"`
+
 	// podPriorityThreshold enables users to schedule "best-effort" pods, which
 	// shouldn't trigger autoscaler actions, but only run when there are spare
 	// resources available. The default is -10.
@@ -1285,6 +1453,20 @@ type ClusterAutoscaling struct {
 	//
 	// +optional
 	PodPriorityThreshold *int32 `json:"podPriorityThreshold,omitempty"`
+
+	// expanders guide the autoscaler in choosing node groups during scale-out.
+	// Sets the order of expanders for scaling out node groups.
+	// Options include:
+	// * LeastWaste - selects the group with minimal idle CPU and memory after scaling.
+	// * Priority - selects the group with the highest user-defined priority.
+	// * Random - selects a group randomly.
+	// If not specified, `[Priority, LeastWaste]` is the default.
+	// Maximum of 3 expanders can be specified.
+	// +kubebuilder:validation:MaxItems=3
+	// +kubebuilder:validation:MinItems=1
+	//
+	// +optional
+	Expanders []ExpanderString `json:"expanders,omitempty"`
 }
 
 // EtcdManagementType is a enum specifying the strategy for managing the cluster's etcd instance
@@ -1588,6 +1770,10 @@ type HostedClusterStatus struct {
 	// platform contains platform-specific status of the HostedCluster
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
+
+	// configuration contains the cluster configuration status of the HostedCluster
+	// +optional
+	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
 }
 
 // PlatformStatus contains platform-specific status
@@ -1619,7 +1805,6 @@ type ClusterVersionStatus struct {
 	// is preserved.
 	//
 	// +optional
-	// +kubebuilder:validation:MaxItems=10
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
 	// observedGeneration reports which version of the spec is being synced.
@@ -1649,6 +1834,15 @@ type ClusterVersionStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
 	ConditionalUpdates []configv1.ConditionalUpdate `json:"conditionalUpdates,omitempty"`
+}
+
+// ConfigurationStatus contains the status of HostedCluster configuration
+type ConfigurationStatus struct {
+	// authentication contains the observed authentication configuration status from the hosted cluster.
+	// This field reflects the current state of the cluster authentication including OAuth metadata,
+	// OIDC client status, and other authentication-related configurations.
+	// +optional
+	Authentication configv1.AuthenticationStatus `json:"authentication,omitempty"`
 }
 
 // ClusterConfiguration specifies configuration for individual OCP components in the
@@ -1730,7 +1924,13 @@ type OperatorConfiguration struct {
 	// clusterVersionOperator specifies the configuration for the Cluster Version Operator in the hosted cluster.
 	//
 	// +optional
+	// +openshift:enable:FeatureGate=ClusterVersionOperatorConfiguration
 	ClusterVersionOperator *ClusterVersionOperatorSpec `json:"clusterVersionOperator,omitempty"`
+
+	// clusterNetworkOperator specifies the configuration for the Cluster Network Operator in the hosted cluster.
+	//
+	// +optional
+	ClusterNetworkOperator *ClusterNetworkOperatorSpec `json:"clusterNetworkOperator,omitempty"`
 }
 
 // +genclient

@@ -26,6 +26,8 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -45,6 +47,8 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+
+	ExtOIDCConfig *ExtOIDCConfig
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -92,7 +96,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 		}
 
 		h.teardown(hostedCluster, opts, artifactDir, false)
-		h.postTeardown(hostedCluster, opts)
+		h.postTeardown(hostedCluster, opts, platform)
 	}()
 
 	// fail safe to guarantee teardown() is always executed.
@@ -113,7 +117,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		validateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
 }
 
@@ -126,6 +130,10 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
 			}
+		}
+
+		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
+			ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 		}
 	})
 }
@@ -141,6 +149,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 
 		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
 		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
+		EnsureReadOnlyRootFilesystem(t, context.Background(), h.client, hcpNs)
 		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
 		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
 		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
@@ -158,15 +167,50 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform != hyperv1.NonePlatform {
 			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
 		}
-		ValidateMetrics(t, context.Background(), hostedCluster, []string{
-			hcmetrics.SilenceAlertsMetricName,
+		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
+			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
+		}
+		metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
 			hcmetrics.LimitedSupportEnabledMetricName,
 			hcmetrics.ProxyMetricName,
-			hcmetrics.InvalidAwsCredsMetricName,
 			HypershiftOperatorInfoName,
 			npmetrics.SizeMetricName,
 			npmetrics.AvailableReplicasMetricName,
-		}, true)
+		}
+		AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName}
+
+		AzureMetrics := []string{
+			hcmetrics.HostedClusterManagedAzureInfoMetricName,
+			/* only Managed Azure ARO at the moment
+			//hcmetrics.HostedClusterAzureInfoMetricName,
+			*/
+		}
+
+		switch platform {
+		case hyperv1.AWSPlatform:
+			metricsToValidate = append(metricsToValidate, AWSMetrics...)
+		case hyperv1.AzurePlatform:
+			metricsToValidate = append(metricsToValidate, AzureMetrics...)
+		}
+
+		ValidateMetrics(t, context.Background(), h.client, hostedCluster, metricsToValidate, true)
+
+		// TestHAEtcdChaos runs as NonePlatform and it's broken.
+		// so skipping until we fix it.
+		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
+		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
+			// Private clusters may won't be reachable from the test runner; assume workers exist.
+			hasWorkerNodes := true
+			if !util.IsPrivateHC(hostedCluster) {
+				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
+				var nodeList corev1.NodeList
+				if err := guestClient.List(t.Context(), &nodeList); err != nil {
+					t.Errorf("failed to list nodes in guest cluster: %v", err)
+				}
+				hasWorkerNodes = len(nodeList.Items) > 0
+			}
+			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+		}
 	})
 }
 
@@ -189,7 +233,7 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 	})
 }
 
-func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) {
+func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	// don't run if test has already failed
 	if h.Failed() {
 		h.Logf("skipping postTeardown()")
@@ -197,7 +241,7 @@ func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts
 	}
 
 	h.Run("PostTeardown", func(t *testing.T) {
-		ValidateMetrics(t, h.ctx, hostedCluster, []string{
+		ValidateMetrics(t, h.ctx, h.client, hostedCluster, []string{
 			hcmetrics.WaitingInitialAvailabilityDurationMetricName,
 			hcmetrics.InitialRollingOutDurationMetricName,
 			hcmetrics.UpgradingDurationMetricName,
@@ -246,6 +290,37 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		err = h.client.Create(h.ctx, serviceAccountSigningKeySecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
+		// create external oidc secret and configmap
+		if opts.ExtOIDCConfig != nil {
+			consoleClientSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.ConsoleClientSecretName,
+					Namespace: namespace.Name,
+				},
+				Type: corev1.SecretTypeOpaque,
+				StringData: map[string]string{
+					"clientSecret": opts.ExtOIDCConfig.ConsoleClientSecretValue,
+				},
+			}
+			err := h.client.Create(h.ctx, consoleClientSecret)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
+
+			caData, err := os.ReadFile(opts.ExtOIDCConfig.IssuerCABundleFile)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
+
+			oidcCAConfigmap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      opts.ExtOIDCConfig.IssuerCAConfigmapName,
+					Namespace: namespace.Name,
+				},
+				Data: map[string]string{
+					"ca-bundle.crt": string(caData),
+				},
+			}
+			err = h.client.Create(h.ctx, oidcCAConfigmap)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
+		}
+
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {
 			if originalBeforeApply != nil {
@@ -271,6 +346,13 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 							},
 						},
 					}
+				}
+
+				if opts.ExtOIDCConfig != nil {
+					if v.Spec.Configuration == nil {
+						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+					}
+					v.Spec.Configuration.Authentication = opts.ExtOIDCConfig.GetAuthenticationConfig()
 				}
 			}
 		}

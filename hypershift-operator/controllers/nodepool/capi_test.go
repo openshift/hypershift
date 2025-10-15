@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -376,8 +375,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 	g := NewWithT(t)
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 	r := &NodePoolReconciler{
-		Client:                 c,
-		CreateOrUpdateProvider: upsert.New(false),
+		Client: c,
 	}
 
 	infraID := "test"
@@ -447,7 +445,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 				},
 			},
 		}
-		err := r.Create(context.Background(), preCreatedMachineTemplate)
+		err := r.Create(t.Context(), preCreatedMachineTemplate)
 		g.Expect(err).ToNot(HaveOccurred())
 	}
 
@@ -505,6 +503,7 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 			ConfigGenerator: &ConfigGenerator{
 				hostedCluster: hcluster,
 				nodePool:      nodePool,
+				Client:        c,
 				rolloutConfig: &rolloutConfig{
 					releaseImage: &releaseinfo.ReleaseImage{},
 				},
@@ -515,18 +514,18 @@ func RunTestMachineTemplateBuilders(t *testing.T, preCreateMachineTemplate bool)
 		},
 		capiClusterName: "test",
 	}
-	template, mutateTemplate, machineTemplateSpecJSON, err := capi.machineTemplateBuilders()
+	template, err := capi.machineTemplateBuilders(t.Context())
 	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(machineTemplateSpecJSON).To(BeIdenticalTo(string(expectedMachineTemplateSpecJSON)))
+
+	machineTemplateSpec := template.(*capiaws.AWSMachineTemplate).Spec
+	g.Expect(machineTemplateSpec).To(BeEquivalentTo(expectedMachineTemplate.Spec))
 
 	// Validate that template and mutateTemplate are able to produce an expected target template.
-	_, err = r.CreateOrUpdate(context.Background(), r.Client, template, func() error {
-		return mutateTemplate(template)
-	})
+	_, err = upsert.NewApplyProvider(false).ApplyManifest(t.Context(), r.Client, template)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	gotMachineTemplate := &capiaws.AWSMachineTemplate{}
-	g.Expect(r.Client.Get(context.Background(), client.ObjectKeyFromObject(expectedMachineTemplate), gotMachineTemplate)).To(Succeed())
+	g.Expect(r.Client.Get(t.Context(), client.ObjectKeyFromObject(template), gotMachineTemplate)).To(Succeed())
 	g.Expect(expectedMachineTemplate.Spec).To(BeEquivalentTo(gotMachineTemplate.Spec))
 	g.Expect(expectedMachineTemplate.ObjectMeta.Annotations).To(BeEquivalentTo(gotMachineTemplate.ObjectMeta.Annotations))
 }
@@ -605,7 +604,7 @@ func TestCleanupMachineTemplates(t *testing.T) {
 		},
 	}
 
-	err = capi.cleanupMachineTemplates(context.Background(), logr.Discard(), nodePool, "test")
+	err = capi.cleanupMachineTemplates(t.Context(), logr.Discard(), nodePool, "test")
 	g.Expect(err).ToNot(HaveOccurred())
 
 	templates, err := capi.listMachineTemplates()
@@ -634,7 +633,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 			},
 		},
 	}
-	g.Expect(r.Client.Create(context.Background(), nodePool)).To(BeNil())
+	g.Expect(r.Client.Create(t.Context(), nodePool)).To(BeNil())
 
 	// MachineTemplate with the expected annotation
 	template1 := &capiaws.AWSMachineTemplate{
@@ -645,7 +644,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{},
 	}
-	g.Expect(r.Client.Create(context.Background(), template1)).To(BeNil())
+	g.Expect(r.Client.Create(t.Context(), template1)).To(BeNil())
 
 	// MachineTemplate without the expected annotation
 	template2 := &capiaws.AWSMachineTemplate{
@@ -655,7 +654,7 @@ func TestListMachineTemplatesAWS(t *testing.T) {
 		},
 		Spec: capiaws.AWSMachineTemplateSpec{},
 	}
-	g.Expect(r.Client.Create(context.Background(), template2)).To(BeNil())
+	g.Expect(r.Client.Create(t.Context(), template2)).To(BeNil())
 
 	capi := &CAPI{
 		Token: &Token{
@@ -689,7 +688,7 @@ func TestListMachineTemplatesIBMCloud(t *testing.T) {
 			},
 		},
 	}
-	g.Expect(r.Client.Create(context.Background(), nodePool)).To(BeNil())
+	g.Expect(r.Client.Create(t.Context(), nodePool)).To(BeNil())
 
 	capi := &CAPI{
 		Token: &Token{
@@ -1022,7 +1021,7 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 				capiClusterName: "cluster",
 			}
 			mhc := &capiv1.MachineHealthCheck{}
-			err := capi.reconcileMachineHealthCheck(context.Background(), mhc)
+			err := capi.reconcileMachineHealthCheck(t.Context(), mhc)
 			g.Expect(err).To(Not(HaveOccurred()))
 			g.Expect(mhc.Spec).To(testutil.MatchExpected(tt.expected.Spec))
 		})
@@ -1034,7 +1033,7 @@ func TestCAPIReconcile(t *testing.T) {
 	maxSurge := intstr.FromInt(1)
 	// This is the generated name by machineTemplateBuilders.
 	// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-	awsMachineTemplateName := "test-nodepool-77a60936"
+	awsMachineTemplateName := "test-nodepool-28d5cf5a"
 	capiClusterName := "infra-id"
 
 	tests := []struct {
@@ -1398,15 +1397,16 @@ func TestCAPIReconcile(t *testing.T) {
 					CreateOrUpdateProvider: upsert.New(false),
 				},
 				capiClusterName: capiClusterName,
+				ApplyProvider:   upsert.NewApplyProvider(false),
 			}
 
 			// Make sure the templates are populates in the control plane namespace
 			templateList := &capiaws.AWSMachineTemplateList{}
-			err := capi.Client.List(context.Background(), templateList, client.InNamespace(controlpaneNamespace))
+			err := capi.Client.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(templateList.Items).To(HaveLen(2))
 
-			err = capi.Reconcile(context.Background())
+			err = capi.Reconcile(t.Context())
 			if tt.expectedError {
 				g.Expect(err).To(HaveOccurred())
 			} else {
@@ -1414,7 +1414,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check that old machine templates are deleted.
 				templateList := &capiaws.AWSMachineTemplateList{}
-				err := capi.Client.List(context.Background(), templateList, client.InNamespace(controlpaneNamespace))
+				err := capi.Client.List(t.Context(), templateList, client.InNamespace(controlpaneNamespace))
 				g.Expect(err).NotTo(HaveOccurred())
 				// Expect templates which does not match the ref to be deleted.
 				g.Expect(templateList.Items).To(HaveLen(1))
@@ -1422,7 +1422,7 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check MachineDeployment.
 				md := &capiv1.MachineDeployment{}
-				err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
+				err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: "test-nodepool"}, md)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(md.Spec.Replicas).To(Equal(ptr.To[int32](3)))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
@@ -1471,19 +1471,19 @@ func TestCAPIReconcile(t *testing.T) {
 				// Check MachineHealthCheck
 				if tt.nodePool.Spec.Management.AutoRepair {
 					mhc := &capiv1.MachineHealthCheck{}
-					err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, mhc)
 					g.Expect(err).NotTo(HaveOccurred())
 					g.Expect(mhc.Spec.ClusterName).To(Equal(capiClusterName))
 				} else {
 					mhc := &capiv1.MachineHealthCheck{}
-					err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
 					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 
 				if tt.sameUserData {
 					// Get the MachineDeployment.
 					md := &capiv1.MachineDeployment{}
-					err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Update MachineDeployment status to indicate rollout is complete.
@@ -1492,15 +1492,15 @@ func TestCAPIReconcile(t *testing.T) {
 					md.Status.ReadyReplicas = *tt.nodePool.Spec.Replicas
 					md.Status.AvailableReplicas = *tt.nodePool.Spec.Replicas
 					md.Status.ObservedGeneration = md.Generation
-					err = capi.Client.Update(context.Background(), md)
+					err = capi.Client.Update(t.Context(), md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					md = &capiv1.MachineDeployment{}
-					err = capi.Client.Get(context.Background(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName()}, md)
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Re-run reconcile.
-					err = capi.Reconcile(context.Background())
+					err = capi.Reconcile(t.Context())
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Check for the expected annotations.
@@ -1566,24 +1566,24 @@ func TestPause(t *testing.T) {
 
 	// Create MachineDeployment and MachineSet.
 	md := capi.machineDeployment()
-	err := capi.Client.Create(context.Background(), md)
+	err := capi.Client.Create(t.Context(), md)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	ms := capi.machineSet()
-	err = capi.Client.Create(context.Background(), ms)
+	err = capi.Client.Create(t.Context(), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// Test Pause
-	err = capi.Pause(context.Background())
+	err = capi.Pause(t.Context())
 	g.Expect(err).NotTo(HaveOccurred())
 
 	// Verify MachineDeployment is paused.
-	err = capi.Client.Get(context.Background(), client.ObjectKeyFromObject(md), md)
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(md), md)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(md.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 
 	// Verify MachineSet is paused
-	err = capi.Client.Get(context.Background(), client.ObjectKeyFromObject(ms), ms)
+	err = capi.Client.Get(t.Context(), client.ObjectKeyFromObject(ms), ms)
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(ms.Annotations).To(HaveKeyWithValue(capiv1.PausedAnnotation, "true"))
 }

@@ -25,11 +25,12 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
       labels:
+        app: cluster-image-registry-operator
         hypershift.openshift.io/control-plane-component: cluster-image-registry-operator
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
         name: cluster-image-registry-operator
@@ -121,6 +122,8 @@ spec:
           requests:
             cpu: 10m
             memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/certificate/ca
@@ -131,6 +134,8 @@ spec:
           name: cloud-token
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: apiserver-token
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --token-audience=openshift
         - --service-account-namespace=openshift-image-registry
@@ -147,12 +152,16 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - --token-audience=
         - --service-account-namespace=openshift-image-registry
@@ -169,12 +178,16 @@ spec:
           requests:
             cpu: 10m
             memory: 30Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: apiserver-token
         - mountPath: /etc/kubernetes
           name: kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       priorityClassName: hypershift-control-plane
       tolerations:
       - effect: NoSchedule
@@ -204,4 +217,6 @@ spec:
       - emptyDir:
           medium: Memory
         name: apiserver-token
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

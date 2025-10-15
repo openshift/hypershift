@@ -26,7 +26,7 @@ func (c *kubevirtCSIOptions) MultiZoneSpread() bool {
 
 // NeedsManagementKASAccess implements controlplanecomponent.ComponentOptions.
 func (c *kubevirtCSIOptions) NeedsManagementKASAccess() bool {
-	return false
+	return true
 }
 
 func NewComponent() component.ControlPlaneComponent {

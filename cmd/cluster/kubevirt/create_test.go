@@ -1,7 +1,6 @@
 package kubevirt
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -66,7 +65,7 @@ func TestRawCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if _, err := test.input.Validate(context.Background(), nil); err != nil {
+		if _, err := test.input.Validate(t.Context(), nil); err != nil {
 			errString = err.Error()
 		}
 		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
@@ -120,7 +119,7 @@ func TestParseTenantClassString(t *testing.T) {
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
 	certs.UnsafeSeed(1234567890)
-	ctx := framework.InterruptableContext(context.Background())
+	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
 	t.Setenv("FAKE_CLIENT", "true")
 

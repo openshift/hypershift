@@ -195,6 +195,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
+				TerminationGracePeriodSeconds: ptr.To[int64](10),
 				Volumes: []corev1.Volume{
 					{
 						Name: "capi-webhooks-tls",
@@ -202,6 +203,15 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 							Secret: &corev1.SecretVolumeSource{
 								DefaultMode: &defaultMode,
 								SecretName:  "capi-webhooks-tls",
+							},
+						},
+					},
+					{
+						Name: "svc-kubeconfig",
+						VolumeSource: corev1.VolumeSource{
+							Secret: &corev1.SecretVolumeSource{
+								DefaultMode: &defaultMode,
+								SecretName:  "service-network-admin-kubeconfig",
 							},
 						},
 					},
@@ -250,6 +260,10 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 							Name:      "capi-webhooks-tls",
 							ReadOnly:  true,
 							MountPath: "/tmp/k8s-webhook-server/serving-certs",
+						},
+						{
+							Name:      "svc-kubeconfig",
+							MountPath: "/etc/kubernetes",
 						},
 					},
 					Env: []corev1.EnvVar{

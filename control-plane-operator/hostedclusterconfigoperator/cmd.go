@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/globalps"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
@@ -30,10 +31,10 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
-	"github.com/openshift/hypershift/pkg/version"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/labelenforcingclient"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -219,8 +220,8 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 	cfg := operator.CfgFromFile(o.TargetKubeconfig)
 	cpConfig := ctrl.GetConfigOrDie()
-	mgr := operator.Mgr(cfg, cpConfig, o.Namespace)
-	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", version.String())
+	mgr := operator.Mgr(ctx, cfg, cpConfig, o.Namespace, o.HostedControlPlaneName)
+	mgr.GetLogger().Info("Starting hosted-cluster-config-operator", "version", supportedversion.String())
 	cpCluster, err := cluster.New(cpConfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
 			DefaultNamespaces: map[string]cache.Config{o.Namespace: {}},
@@ -281,6 +282,10 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
+	if o.platformType == string(hyperv1.AzurePlatform) || o.platformType == string(hyperv1.AWSPlatform) {
+		controllersToRun[globalps.ControllerName] = globalps.Setup
+	}
+
 	for _, controllerName := range o.Controllers {
 		if setup, registered := controllerFuncs[controllerName]; !registered {
 			return fmt.Errorf("requested to run unknown controller %q", controllerName)

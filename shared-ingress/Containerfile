@@ -1,10 +1,10 @@
-FROM registry.access.redhat.com/ubi10/ubi:10.0-1747220028
+FROM registry.access.redhat.com/ubi10/ubi:10.0-1753787353
 
-RUN dnf install -y haproxy-3.0.5-4.el10 \
+RUN dnf install -y haproxy-3.0.5-4.el10 socat-1.7.4.4-8.el10 \
   && dnf clean all
 
 ENTRYPOINT [ "/usr/sbin/haproxy" ]
-CMD ["-W", "-db", "-f", "/config/haproxy.cfg"]
+CMD ["-W", "-f", "/config/haproxy.cfg"]
 
 LABEL name="multicluster-engine/hypershift-shared-ingress"
 LABEL description="HyperShift's HAProxy 3 based Shared Ingress container"

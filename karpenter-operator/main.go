@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -23,8 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
-	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	"github.com/spf13/cobra"
 )
@@ -83,15 +80,6 @@ func run(ctx context.Context) error {
 	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClass{})
 	scheme.AddKnownTypes(awsKarpanterGroupVersion, &awskarpenterv1.EC2NodeClassList{})
 
-	karpanterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
-	metav1.AddToGroupVersion(scheme, karpanterGroupVersion)
-	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaim{})
-	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodeClaimList{})
-	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePool{})
-	scheme.AddKnownTypes(karpanterGroupVersion, &karpenterv1.NodePoolList{})
-
-	_ = hyperkarpenterv1.AddToScheme(scheme)
-
 	managementCluster, err := cluster.New(managementKubeconfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
@@ -139,6 +127,10 @@ func run(ctx context.Context) error {
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
+	if err := setupOperatorInfoMetric(managementCluster); err != nil {
+		return fmt.Errorf("failed to setup operator info metric: %w", err)
 	}
 
 	if err := mgr.Start(ctx); err != nil {

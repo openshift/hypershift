@@ -25,6 +25,7 @@ spec:
   template:
     metadata:
       annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       creationTimestamp: null
@@ -78,7 +79,7 @@ spec:
         - --oauth-address=
         - --oauth-port=0
         - --registry-overrides
-        - =
+        - registry=override
         env:
         - name: POD_NAMESPACE
           valueFrom:
@@ -92,7 +93,9 @@ spec:
         - name: OPERATE_ON_RELEASE_IMAGE
           value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         - name: OPENSHIFT_IMG_OVERRIDES
-          value: =
+          value: registry=override
+        - name: HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE
+          value: hosted-cluster-config-operator
         image: hosted-cluster-config-operator
         imagePullPolicy: IfNotPresent
         livenessProbe:
@@ -123,6 +126,8 @@ spec:
           requests:
             cpu: 60m
             memory: 80Mi
+        securityContext:
+          readOnlyRootFilesystem: true
         terminationMessagePolicy: FallbackToLogsOnError
         volumeMounts:
         - mountPath: /etc/kubernetes/cluster-signer-ca
@@ -134,6 +139,8 @@ spec:
         - mountPath: /etc/pki/ca-trust/extracted/pem
           name: openshift-config-managed-trusted-ca-bundle
           readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
       initContainers:
       - command:
         - /usr/bin/control-plane-operator
@@ -156,6 +163,9 @@ spec:
         - --required-api=config.openshift.io,v1,OperatorHub
         - --required-api=operator.openshift.io,v1,Network
         - --required-api=operator.openshift.io,v1,CloudCredential
+        - --required-api=operator.openshift.io,v1,Storage
+        - --required-api=operator.openshift.io,v1,CSISnapshotController
+        - --required-api=operator.openshift.io,v1,ClusterCSIDriver
         - --required-api=operator.openshift.io,v1,IngressController
         image: availability-prober
         imagePullPolicy: IfNotPresent
@@ -199,4 +209,6 @@ spec:
           name: openshift-config-managed-trusted-ca-bundle
           optional: true
         name: openshift-config-managed-trusted-ca-bundle
+      - emptyDir: {}
+        name: tmp-dir
 status: {}

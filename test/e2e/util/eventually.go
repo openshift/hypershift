@@ -25,7 +25,7 @@ import (
 
 func defaultOptions() *EventuallyOptions {
 	return &EventuallyOptions{
-		interval:       1 * time.Second,
+		interval:       3 * time.Second, // Increased from 1s to 2s globally to reduce API load
 		timeout:        10 * time.Minute,
 		immediate:      true,
 		dumpConditions: true,
@@ -475,6 +475,8 @@ func Conditions(item client.Object) ([]Condition, error) {
 	case *hyperv1.HostedControlPlane:
 		return adaptConditions(obj.Status.Conditions), nil
 	case *certificatesv1alpha1.CertificateRevocationRequest:
+		return adaptConditions(obj.Status.Conditions), nil
+	case *hyperv1.ControlPlaneComponent:
 		return adaptConditions(obj.Status.Conditions), nil
 	case *certificatesv1.CertificateSigningRequest:
 		conditions := make([]Condition, len(obj.Status.Conditions))

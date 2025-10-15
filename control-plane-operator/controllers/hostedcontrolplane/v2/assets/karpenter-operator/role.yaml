@@ -68,3 +68,22 @@ rules:
       - "controlplanecomponents/status"
     verbs:
       - "*"
+  - apiGroups:
+      - "monitoring.coreos.com"
+      - "monitoring.rhobs"
+    resources:
+      - "podmonitors"
+    verbs:
+      - "get"
+      - "list"
+      - "watch"
+      - "create"
+      - "update"
+      - "patch"
+      - "delete"
+  - apiGroups:
+      - ""
+    resources:
+      - "pods"
+    verbs:
+      - "get"

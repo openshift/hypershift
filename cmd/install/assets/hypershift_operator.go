@@ -8,12 +8,12 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
-	"github.com/openshift/hypershift/pkg/version"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -401,6 +401,7 @@ type HyperShiftOperatorDeployment struct {
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
 	PlatformsInstalled                      string
+	ImagePullPolicy                         string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -684,7 +685,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 						{
 							Name:            "init-environment",
 							Image:           image,
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: corev1.PullPolicy(o.ImagePullPolicy),
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            []string{"init"},
 							SecurityContext: &corev1.SecurityContext{
@@ -715,7 +716,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 								Privileged:             &privileged,
 							},
 							Image:           image,
-							ImagePullPolicy: corev1.PullIfNotPresent,
+							ImagePullPolicy: corev1.PullPolicy(o.ImagePullPolicy),
 							Env:             envVars,
 							Command:         []string{"/usr/bin/hypershift-operator"},
 							Args:            args,
@@ -777,7 +778,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	if o.IncludeVersion {
 		deployment.Annotations = map[string]string{
-			HyperShiftInstallCLIVersionAnnotation: version.String(),
+			HyperShiftInstallCLIVersionAnnotation: supportedversion.String(),
 		}
 	}
 
@@ -1123,6 +1124,15 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 					"endpoints",
 				},
 				Verbs: []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{
+					"persistentvolumes",
+				},
+				Verbs: []string{
+					"get",
+				},
 			},
 			{
 				APIGroups: []string{"apps"},

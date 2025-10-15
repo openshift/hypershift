@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -80,6 +81,21 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	}
 }
 
+func UpdateObject[T client.Object](ctx context.Context, c client.Client, obj T, mutate func() error) error {
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+			return err
+		}
+
+		original := obj.DeepCopyObject().(T)
+		if err := mutate(); err != nil {
+			return err
+		}
+
+		return c.Patch(ctx, obj, client.MergeFrom(original))
+	})
+}
+
 func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
 		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
@@ -91,6 +107,29 @@ func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Ob
 		return true, nil
 	}
 	if err := c.Delete(ctx, o, opts...); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error deleting %T: %w", o, err)
+	}
+
+	return true, nil
+}
+
+func DeleteIfNeededWithPredicate[T client.Object](ctx context.Context, c client.Client, o T, predicate func(T) bool) (exists bool, err error) {
+	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("error getting %T: %w", o, err)
+	}
+	if o.GetDeletionTimestamp() != nil {
+		return true, nil
+	}
+	if !predicate(o) {
+		return true, nil
+	}
+	if err := c.Delete(ctx, o); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -243,13 +282,13 @@ func HashSimple(o interface{}) string {
 }
 
 // HashStruct takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string
-// The struct is first marshalled to JSON before hashing
+// The struct is first marshaled to JSON before hashing
 func HashStruct(data interface{}) (string, error) {
 	return HashStructWithJSONMapper(data, nil)
 }
 
 // HashStructWithJSONMapper takes a struct and returns a 32-bit FNV-1a hashed version of the struct as a string after
-// The struct is first marshalled to JSON before hashing. You can provide a JSONMapper that transforms the marshalled
+// The struct is first marshaled to JSON before hashing. You can provide a JSONMapper that transforms the marshaled
 // JSON before computing the hash or nil if no transformation is needed.
 func HashStructWithJSONMapper(data interface{}, mapper JSONMapper) (string, error) {
 	jsonData, err := json.Marshal(data)
@@ -341,6 +380,11 @@ func ConvertImageRegistryOverrideStringToMap(envVar string) map[string][]string 
 		registry := registryMirror[0]
 		mirror := registryMirror[1]
 
+		// Skip empty registry or mirror entries
+		if registry == "" || mirror == "" {
+			continue
+		}
+
 		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], mirror)
 	}
 
@@ -400,19 +444,6 @@ func ParseNodeSelector(str string) map[string]string {
 		result[kv[0]] = kv[1]
 	}
 	return result
-}
-
-func ApplyAWSLoadBalancerSubnetsAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
-	if hcp.Spec.Platform.Type != hyperv1.AWSPlatform {
-		return
-	}
-	if svc.Annotations == nil {
-		svc.Annotations = make(map[string]string)
-	}
-	subnets, ok := hcp.Annotations[hyperv1.AWSLoadBalancerSubnetsAnnotation]
-	if ok {
-		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-subnets"] = subnets
-	}
 }
 
 func ApplyAWSLoadBalancerTargetNodesAnnotation(svc *corev1.Service, hcp *hyperv1.HostedControlPlane) {
@@ -622,7 +653,7 @@ func GetControlPlaneOperatorImage(ctx context.Context, hc *hyperv1.HostedCluster
 		return "", err
 	}
 	if controlplaneoperatoroverrides.IsOverridesEnabled() {
-		overrideImage := controlplaneoperatoroverrides.CPOImage(version.String())
+		overrideImage := controlplaneoperatoroverrides.CPOImage(string(hc.Spec.Platform.Type), version.String())
 		if overrideImage != "" {
 			return overrideImage, nil
 		}

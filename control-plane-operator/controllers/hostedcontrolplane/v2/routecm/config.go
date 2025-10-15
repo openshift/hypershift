@@ -28,7 +28,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 		return fmt.Errorf("unable to decode existing openshift route controller manager configuration: %w", err)
 	}
 
-	adaptConfig(config, cpContext.HCP.Spec.Configuration)
+	adaptConfig(config, cpContext.HCP.Spec.Configuration, cpContext.HCP.Spec.Capabilities)
 	configStr, err := util.SerializeResource(config, api.Scheme)
 	if err != nil {
 		return fmt.Errorf("failed to serialize openshift route controller manager configuration: %w", err)
@@ -38,7 +38,7 @@ func adaptConfigMap(cpContext component.WorkloadContext, cm *corev1.ConfigMap) e
 	return nil
 }
 
-func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration) {
+func adaptConfig(cfg *openshiftcpv1.OpenShiftControllerManagerConfig, configuration *hyperv1.ClusterConfiguration, caps *hyperv1.Capabilities) {
 	// network config
 	if cidrs := configuration.GetAutoAssignCIDRs(); len(cidrs) > 0 {
 		cfg.Ingress.IngressIPNetworkCIDR = cidrs[0]

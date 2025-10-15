@@ -3,6 +3,8 @@ package globalconfig
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -134,8 +136,18 @@ func getImageDigestMirrorSets(ctx context.Context, client crclient.Client) (map[
 		for _, imageDigestMirror := range item.Spec.ImageDigestMirrors {
 			source := imageDigestMirror.Source
 
+			// Skip empty sources
+			if source == "" {
+				continue
+			}
+
 			for n := range imageDigestMirror.Mirrors {
-				idmsRegistryOverrides[source] = append(idmsRegistryOverrides[source], string(imageDigestMirror.Mirrors[n]))
+				mirror := string(imageDigestMirror.Mirrors[n])
+				// Skip empty mirrors
+				if mirror == "" {
+					continue
+				}
+				idmsRegistryOverrides[source] = append(idmsRegistryOverrides[source], mirror)
 			}
 		}
 	}
@@ -159,12 +171,36 @@ func getImageContentSourcePolicies(ctx context.Context, client crclient.Client) 
 		log.Info("Detected ImageContentSourcePolicy Custom Resources. ImageContentSourcePolicy will be deprecated in favor of ImageDigestMirrorSet. See https://issues.redhat.com/browse/OCPNODE-1258 for more details.")
 	}
 
+	// Sort the items by name to ensure consistent ordering
+	sort.Slice(imageContentSourcePolicies.Items, func(i, j int) bool {
+		// This sorts ascending by name, so we can unit test the output.
+		// The fake client, unlike the actual kubernetes client, returns
+		// items in descending order by name.  By inverting the returned
+		// sorting order, we can unit test that the output is deterministic.
+		return strings.Compare(imageContentSourcePolicies.Items[i].Name, imageContentSourcePolicies.Items[j].Name) > 0
+	})
+
 	// For each image content source policy in the management cluster, map the source with each of its mirrors
 	for _, item := range imageContentSourcePolicies.Items {
 		for _, mirror := range item.Spec.RepositoryDigestMirrors {
 			source := mirror.Source
 
-			icspRegistryOverrides[source] = append(icspRegistryOverrides[source], mirror.Mirrors...)
+			// Skip empty sources
+			if source == "" {
+				continue
+			}
+
+			// Filter out empty mirrors
+			var validMirrors []string
+			for _, m := range mirror.Mirrors {
+				if m != "" {
+					validMirrors = append(validMirrors, m)
+				}
+			}
+
+			if len(validMirrors) > 0 {
+				icspRegistryOverrides[source] = append(icspRegistryOverrides[source], validMirrors...)
+			}
 		}
 	}
 

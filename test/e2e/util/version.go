@@ -14,6 +14,7 @@ import (
 
 var (
 	// y-stream versions supported by e2e in main
+	Version421 = semver.MustParse("4.21.0")
 	Version420 = semver.MustParse("4.20.0")
 	Version419 = semver.MustParse("4.19.0")
 	Version418 = semver.MustParse("4.18.0")
@@ -29,6 +30,7 @@ func init() {
 	// Ensure that the version constants are valid semver versions
 	// This is a compile-time check to ensure that the versions are valid
 	// semver versions.
+	_ = Version421
 	_ = Version420
 	_ = Version419
 	_ = Version418
@@ -77,4 +79,8 @@ func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster)
 
 func IsLessThan(version semver.Version) bool {
 	return releaseVersion.LT(version)
+}
+
+func IsGreaterThanOrEqualTo(version semver.Version) bool {
+	return releaseVersion.GE(version)
 }

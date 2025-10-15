@@ -3,9 +3,9 @@ package karpenteroperator
 import (
 	"fmt"
 
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/util"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -43,6 +43,9 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		WithManifestAdapter("karpenter-credentials.yaml",
 			component.WithAdaptFunction(adaptCredentialsSecret),
 		).
+		WithManifestAdapter("podmonitor.yaml",
+			component.WithAdaptFunction(adaptPodMonitor),
+		).
 		WithPredicate(predicate).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
@@ -57,8 +60,7 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 func predicate(cpContext component.WorkloadContext) (bool, error) {
 	hcp := cpContext.HCP
 
-	if hcp.Spec.AutoNode == nil || hcp.Spec.AutoNode.Provisioner == nil || hcp.Spec.AutoNode.Provisioner.Karpenter == nil ||
-		hcp.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform {
+	if !karpenterutil.IsKarpenterEnabled(hcp.Spec.AutoNode) {
 		return false, nil
 	}
 

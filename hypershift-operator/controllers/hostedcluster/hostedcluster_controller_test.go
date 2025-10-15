@@ -15,7 +15,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/cmd/util"
-	"github.com/openshift/hypershift/cmd/version"
 	capimanagerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_manager"
 	capiproviderv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/capi_provider"
 	cpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/controlplaneoperator"
@@ -27,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
@@ -206,7 +206,7 @@ func TestHasBeenAvailable(t *testing.T) {
 			clock := clocktesting.NewFakeClock(tc.timestamp)
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+				Lookup(t.Context(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 			r := &HostedClusterReconciler{
 				Client:                        client,
 				Clock:                         clock,
@@ -222,7 +222,7 @@ func TestHasBeenAvailable(t *testing.T) {
 				now: func() metav1.Time { return reconcilerNow },
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)})
 			if err != nil {
 				t.Fatalf("error on %s reconciliation: %v", hcluster.Name, err)
@@ -240,6 +240,63 @@ func TestHasBeenAvailable(t *testing.T) {
 				} else {
 					t.Errorf("expected annotation %s not to be set, but annotation is set", hcmetrics.HasBeenAvailableAnnotation)
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
+	tests := []struct {
+		name                          string
+		cluster                       hyperv1.HostedCluster
+		controlPlane                  hyperv1.HostedControlPlane
+		expectedAdditionalTrustBundle *corev1.LocalObjectReference
+	}{
+		{
+			name: "no additional trust bundle",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expectedAdditionalTrustBundle: nil,
+		},
+		{
+			name: "additional trust bundle",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "test-bundle"},
+				},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expectedAdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+		},
+		{
+			name: "additional trust bundle removed",
+			cluster: hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			controlPlane: hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+				},
+			},
+			expectedAdditionalTrustBundle: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			updated := test.controlPlane.DeepCopy()
+			err := reconcileHostedControlPlane(updated, &test.cluster, true, func() (map[string]string, error) { return nil, nil })
+			if err != nil {
+				t.Error(err)
+			}
+			if !equality.Semantic.DeepEqual(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle) {
+				t.Error(cmp.Diff(test.expectedAdditionalTrustBundle, updated.Spec.AdditionalTrustBundle))
 			}
 		})
 	}
@@ -1200,12 +1257,12 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 				CertRotationScale: 24 * time.Hour,
 			}
 
-			if err := r.reconcileAWSResourceTags(context.Background(), cluster); err != nil {
+			if err := r.reconcileAWSResourceTags(t.Context(), cluster); err != nil {
 				t.Fatalf("reconcileAWSResourceTags failed: %v", err)
 			}
 
 			reconciledCluster := &hyperv1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Name: "123"}}
-			if err := client.Get(context.Background(), crclient.ObjectKeyFromObject(reconciledCluster), reconciledCluster); err != nil {
+			if err := client.Get(t.Context(), crclient.ObjectKeyFromObject(reconciledCluster), reconciledCluster); err != nil {
 				t.Fatalf("failed to get cluster after reconcilding it: %v", err)
 			}
 
@@ -1217,8 +1274,6 @@ func TestReconcileAWSResourceTags(t *testing.T) {
 }
 
 func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
-	t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
-
 	mockCtrl := gomock.NewController(t)
 	mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 	mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
@@ -1231,7 +1286,8 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		GetRegistryOverrides().
 		Return(nil).AnyTimes()
 
-	releaseImage, _ := version.LookupDefaultOCPVersion("")
+	releaseImage := "quay.io/openshift-release-dev/ocp-release:4.15.0"
+
 	manifests := []manifestlist.ManifestDescriptor{
 		{
 			Descriptor: distribution.Descriptor{
@@ -1263,8 +1319,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 	}
 
 	testCases := []struct {
-		platform      string
-		hostedCluster *hyperv1.HostedCluster
+		platform         string
+		hostedCluster    *hyperv1.HostedCluster
+		isManagedService bool
 	}{
 		{
 			platform: "agent",
@@ -1279,7 +1336,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						Agent: &hyperv1.AgentPlatformSpec{AgentNamespace: "agent-namespace"},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 				Status: hyperv1.HostedClusterStatus{
@@ -1312,7 +1369,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1329,7 +1386,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						Type: hyperv1.NonePlatform,
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1347,7 +1404,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						IBMCloud: &hyperv1.IBMCloudPlatformSpec{},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1385,7 +1442,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1408,72 +1465,114 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
 							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
 							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
-							ManagedIdentities: hyperv1.AzureResourceManagedIdentities{
-								ControlPlane: hyperv1.ControlPlaneManagedIdentities{
-									ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
-										Name:     "test-keyvault",
-										TenantID: "12345678-1234-1234-1234-123456789abc",
-									},
-									CloudProvider: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									NodePoolManagement: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									ControlPlaneOperator: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									ImageRegistry: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Ingress: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Network: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									Disk: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
-									File: hyperv1.ManagedIdentity{
-										ClientID:              "12345678-1234-1234-1234-123456789abc",
-										CertificateName:       "test-cert",
-										ObjectEncoding:        "utf-8",
-										CredentialsSecretName: "test-secret",
-									},
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "WorkloadIdentities",
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
 								},
-								DataPlane: hyperv1.DataPlaneManagedIdentities{
-									ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
-									DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
-									FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+								ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+									ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+										ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+											Name:     "test-keyvault",
+											TenantID: "12345678-1234-1234-1234-123456789abc",
+										},
+										CloudProvider: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										NodePoolManagement: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										ControlPlaneOperator: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										ImageRegistry: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Ingress: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Network: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										Disk: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+										File: hyperv1.ManagedIdentity{
+											ClientID:              "12345678-1234-1234-1234-123456789abc",
+											ObjectEncoding:        "utf-8",
+											CredentialsSecretName: "test-secret",
+										},
+									},
+									DataPlane: hyperv1.DataPlaneManagedIdentities{
+										ImageRegistryMSIClientID: "12345678-1234-1234-1234-123456789abc",
+										DiskMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+										FileMSIClientID:          "12345678-1234-1234-1234-123456789abc",
+									},
 								},
 							},
 							TenantID: "12345678-1234-1234-1234-123456789abc",
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
+					},
+				},
+			},
+			isManagedService: true,
+		},
+		{
+			platform: "azure",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "self-managed-azure",
+					Namespace: "test",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud:             "AzurePublicCloud",
+							Location:          "eastus",
+							ResourceGroupName: "test-resource-group",
+							VnetID:            "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet",
+							SubnetID:          "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							SubscriptionID:    "12345678-1234-1234-1234-123456789abc",
+							SecurityGroupID:   "/subscriptions/12345678-1234-1234-1234-123456789abc/resourceGroups/test-resource-group/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+							AzureAuthenticationConfig: hyperv1.AzureAuthenticationConfiguration{
+								AzureAuthenticationConfigType: "WorkloadIdentities",
+								WorkloadIdentities: &hyperv1.AzureWorkloadIdentities{
+									ImageRegistry:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Ingress:            hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									File:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									Disk:               hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									NodePoolManagement: hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+									CloudProvider:      hyperv1.WorkloadIdentity{ClientID: "12345678-1234-1234-1234-123456789abc"},
+								},
+							},
+							TenantID: "12345678-1234-1234-1234-123456789abc",
+						},
+					},
+					Release: hyperv1.Release{
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1495,7 +1594,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 						},
 					},
 					Release: hyperv1.Release{
-						Image: releaseImage.PullSpec,
+						Image: releaseImage,
 					},
 				},
 			},
@@ -1543,6 +1642,19 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cloud", Namespace: "test"},
 		},
 		&configv1.Infrastructure{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "supported-versions",
+				Namespace: "hypershift",
+				Labels: map[string]string{
+					"hypershift.openshift.io/supported-versions": "true",
+				},
+			},
+			Data: map[string]string{
+				"supported-versions": "{\"versions\":[\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
+				"server-version":     "some-fake-server-version",
+			},
+		},
 	}
 
 	// Initialize some common data among the HostedClusters
@@ -1570,6 +1682,10 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.platform, func(t *testing.T) {
+			if testCase.isManagedService {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
+			}
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 			r := &HostedClusterReconciler{
 				Client:            client,
@@ -1603,17 +1719,13 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				o.EncodeTime = zapcore.RFC3339TimeEncoder
 			})))
 
-			ctx := context.WithValue(context.Background(), registryclient.DeserializeFuncName, deserializeFunc)
+			ctx := context.WithValue(t.Context(), registryclient.DeserializeFuncName, deserializeFunc)
 			_, err := r.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hostedCluster.Namespace, Name: testCase.hostedCluster.Name}})
 			if err != nil {
 				t.Fatalf("Reconcile failed: %v", err)
 			}
 
 			t.Setenv("PLATFORMS_INSTALLED", testCase.platform)
-
-			if strings.EqualFold(testCase.platform, string(hyperv1.AzurePlatform)) {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
-			}
 
 			watchedResources := sets.New[string]()
 			for _, resource := range r.managedResources() {
@@ -1801,7 +1913,7 @@ func TestReconcileCLISecrets(t *testing.T) {
 		t.Run(tc.name, func(tt *testing.T) {
 			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.secrets...).Build()
 			r := &HostedClusterReconciler{Client: cli}
-			ctx := context.Background()
+			ctx := t.Context()
 			err := r.reconcileCLISecrets(ctx, createOrUpdate, hc)
 			if err != nil {
 				tt.Fatalf("should not return error but returned %q", err.Error())
@@ -2059,7 +2171,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 
 			r.KubevirtInfraClients = kvinfra.NewMockKubevirtInfraClientMap(r.Client, tc.infraKubeVirtVersion, tc.infraK8sVersion)
 
-			ctx := context.Background()
+			ctx := t.Context()
 			actual := r.validateConfigAndClusterCapabilities(ctx, tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedResult, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
@@ -2463,7 +2575,7 @@ func TestValidateReleaseImage(t *testing.T) {
 				},
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
 			actual := r.validateReleaseImage(ctx, tc.hostedCluster, r.RegistryProvider.GetReleaseProvider())
@@ -2532,10 +2644,10 @@ func TestPauseHostedControlPlane(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
-			err := pauseHostedControlPlane(context.Background(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
+			err := pauseHostedControlPlane(t.Context(), c, tc.inputHostedControlPlane, &fakePauseAnnotationValue)
 			g.Expect(err).ToNot(HaveOccurred())
 			finalHCP := manifests.HostedControlPlane(fakeHCPNamespace, fakeHCPName)
-			err = c.Get(context.Background(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
+			err = c.Get(t.Context(), crclient.ObjectKeyFromObject(finalHCP), finalHCP)
 			if tc.expectedHostedControlPlaneObject != nil {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(finalHCP.Annotations).To(BeEquivalentTo(tc.expectedHostedControlPlaneObject.Annotations))
@@ -2589,10 +2701,10 @@ func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 			g := NewGomegaWithT(t)
 			previousInfraID := test.hc.Spec.InfraID
 			previousClusterID := test.hc.Spec.ClusterID
-			err := r.defaultClusterIDsIfNeeded(context.Background(), test.hc)
+			err := r.defaultClusterIDsIfNeeded(t.Context(), test.hc)
 			g.Expect(err).ToNot(HaveOccurred())
 			resultHC := &hyperv1.HostedCluster{}
-			err = r.Client.Get(context.Background(), crclient.ObjectKeyFromObject(test.hc), resultHC)
+			err = r.Client.Get(t.Context(), crclient.ObjectKeyFromObject(test.hc), resultHC)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(resultHC.Spec.ClusterID).NotTo(BeEmpty())
 			g.Expect(resultHC.Spec.InfraID).NotTo(BeEmpty())
@@ -2824,11 +2936,11 @@ func TestIsUpgradeable(t *testing.T) {
 		}
 
 		t.Run(test.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), test.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(t.Context(), test.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isUpgrading() internal err = %v", err)
 			}
@@ -2968,7 +3080,7 @@ func TestReconciliationSuccessConditionSetting(t *testing.T) {
 				now: func() metav1.Time { return reconcilerNow },
 			}
 
-			ctx := context.Background()
+			ctx := t.Context()
 
 			var actualErrString string
 			if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}); err != nil {
@@ -3227,11 +3339,11 @@ func TestIsProgressing(t *testing.T) {
 		}
 
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			g := NewGomegaWithT(t)
 			err := r.RegistryProvider.Reconcile(ctx, r.Client)
 			g.Expect(err).ToNot(HaveOccurred())
-			releaseImage, err := r.lookupReleaseImage(context.TODO(), tt.hc, r.RegistryProvider.GetReleaseProvider())
+			releaseImage, err := r.lookupReleaseImage(t.Context(), tt.hc, r.RegistryProvider.GetReleaseProvider())
 			if err != nil {
 				t.Errorf("isProgressing() internal err = %v", err)
 			}
@@ -3390,38 +3502,155 @@ func TestComputeAWSEndpointServiceCondition(t *testing.T) {
 
 func TestValidateSliceNetworkCIDRs(t *testing.T) {
 	tests := []struct {
-		name    string
-		mn      []hyperv1.MachineNetworkEntry
-		cn      []hyperv1.ClusterNetworkEntry
-		sn      []hyperv1.ServiceNetworkEntry
-		wantErr bool
+		name        string
+		mn          []hyperv1.MachineNetworkEntry
+		cn          []hyperv1.ClusterNetworkEntry
+		sn          []hyperv1.ServiceNetworkEntry
+		networkType hyperv1.NetworkType
+		ovnConfig   *hyperv1.OVNKubernetesConfig
+		wantErr     bool
 	}{
 		{
-			name:    "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
-			wantErr: true,
+			name:        "given a conflicting IPv6 clusterNetwork overlapped with machineNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     true,
 		},
 		{
-			name:    "given different IPv6 network CIDRs, it should success",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			name:        "given different IPv6 network CIDRs, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd02::/48")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("fd01::/64")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("2620:52:0:1306::1/64")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     false,
+		},
+		{
+			name:        "given a conflicting IPv4 clusterNetwork overlapped with serviceNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     true,
+		},
+		{
+			name:        "given different IPv4 network CIDRs, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig:   nil,
+			wantErr:     false,
+		},
+		{
+			name:        "When OVN-Kubernetes with valid InternalJoinSubnet, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "100.64.0.0/16",
+				},
+			},
 			wantErr: false,
 		},
 		{
-			name:    "given a conflicting IPv4 clusterNetwork overlapped with serviceNetwork, it should fail",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/16")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			name:        "When OVN-Kubernetes with valid InternalTransitSwitchSubnet, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalTransitSwitchSubnet: "100.65.0.0/16",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes with both valid subnets, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "100.64.0.0/16",
+					InternalTransitSwitchSubnet: "100.65.0.0/16",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When OVN-Kubernetes InternalJoinSubnet overlaps with MachineNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.0.0/16",
+				},
+			},
 			wantErr: true,
 		},
 		{
-			name:    "given different IPv4 network CIDRs, it should success",
-			mn:      []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
-			cn:      []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.1.0/24")}},
-			sn:      []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.16.0.0/24")}},
+			name:        "When OVN-Kubernetes InternalTransitSwitchSubnet overlaps with ClusterNetwork, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalTransitSwitchSubnet: "10.129.0.0/16",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes subnets overlap with each other, it should fail",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "100.64.0.0/16",
+					InternalTransitSwitchSubnet: "100.64.0.0/24",
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name:        "When OVN-Kubernetes with empty subnet strings, it should success",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OVNKubernetes,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "",
+					InternalTransitSwitchSubnet: "",
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name:        "When network type is not OVN-Kubernetes, OVN config should be ignored",
+			mn:          []hyperv1.MachineNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+			cn:          []hyperv1.ClusterNetworkEntry{{CIDR: *ipnet.MustParseCIDR("10.128.0.0/14")}},
+			sn:          []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("172.30.0.0/16")}},
+			networkType: hyperv1.OpenShiftSDN,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet: "192.168.0.0/16",
+				},
+			},
 			wantErr: false,
 		},
 	}
@@ -3435,12 +3664,24 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 				},
 				Spec: hyperv1.HostedClusterSpec{
 					Networking: hyperv1.ClusterNetworking{
+						NetworkType:    tt.networkType,
 						MachineNetwork: tt.mn,
 						ClusterNetwork: tt.cn,
 						ServiceNetwork: tt.sn,
 					},
 				},
 			}
+
+			// Set OVN configuration if provided
+			if tt.ovnConfig != nil {
+				//OperatorConfiguration
+				hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
+					ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
+						OVNKubernetesConfig: tt.ovnConfig,
+					},
+				}
+			}
+
 			err := validateSliceNetworkCIDRs(hc)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("validateSliceNetworkCIDRs() wantErr %v, err %v", tt.wantErr, err)
@@ -4079,7 +4320,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				Build()}
 			mockedProviderWithOpenShiftImageRegistryOverrides := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
 			mockedProviderWithOpenShiftImageRegistryOverrides.EXPECT().
-				Lookup(context.Background(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+				Lookup(t.Context(), gomock.Any(), gomock.Any()).Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
 
 			r := &HostedClusterReconciler{
 				Client:            client,
@@ -4100,13 +4341,13 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				now: metav1.Now,
 			}
 
-			if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {
+			if _, err := r.Reconcile(t.Context(), reconcile.Request{NamespacedName: types.NamespacedName{Namespace: testCase.hc.Namespace, Name: testCase.hc.Name}}); err != nil {
 				tt.Fatalf("Reconcile failed: %v", err)
 			}
 
 			if testCase.secretExpected {
 				secList := &corev1.SecretList{}
-				err := client.List(context.Background(), secList)
+				err := client.List(t.Context(), secList)
 				if err != nil {
 					tt.Fatalf("should create etcd encryptiuon key secret, but no secret found")
 				}
@@ -4132,7 +4373,7 @@ func TestKubevirtETCDEncKey(t *testing.T) {
 				},
 			}
 
-			err := client.Get(context.Background(), crclient.ObjectKeyFromObject(hcFromTest), hcFromTest)
+			err := client.Get(t.Context(), crclient.ObjectKeyFromObject(hcFromTest), hcFromTest)
 			if err != nil {
 				tt.Fatalf("should read the hosted cluster but got error; %v", err)
 			}
@@ -4193,7 +4434,7 @@ func TestReconcileComponents(t *testing.T) {
 	}
 
 	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:                context.Background(),
+		Context:                t.Context(),
 		ReleaseImageProvider:   testutil.FakeImageProvider(),
 		HCP:                    hcp,
 		ApplyProvider:          upsert.NewApplyProvider(true),
@@ -4246,7 +4487,7 @@ func TestReconcileComponents(t *testing.T) {
 				Namespace: hcp.Namespace,
 			},
 		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+		if err := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
 			t.Fatalf("failed to get deployment: %v", err)
 		}
 
@@ -4263,7 +4504,7 @@ func TestReconcileComponents(t *testing.T) {
 				Namespace: hcp.Namespace,
 			},
 		}
-		if err := fakeClient.Get(context.Background(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
+		if err := fakeClient.Get(t.Context(), crclient.ObjectKeyFromObject(controlPaneComponent), controlPaneComponent); err != nil {
 			t.Fatalf("expected ControlPlaneComponent to exist for component %s: %v", component.Name(), err)
 		}
 
@@ -4283,5 +4524,278 @@ func TestReconcileComponents(t *testing.T) {
 
 	if err := cpContext.ApplyProvider.ValidateUpdateEvents(1); err != nil {
 		t.Fatalf("update loop detected: %v", err)
+	}
+}
+
+func TestEnsureHostedResourcesAreEmpty(t *testing.T) {
+	// Setup test cases
+	testCases := []struct {
+		name          string
+		setAROHCP     bool
+		annotations   map[string]string
+		secretContent map[string][]byte
+		expectError   bool
+		errorMessage  string
+	}{
+		{
+			name:          "non-ARO-HCP environment should pass",
+			setAROHCP:     false,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP without annotation should pass",
+			setAROHCP:     true,
+			annotations:   nil,
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP with annotation but empty secret should pass",
+			setAROHCP:     true,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{},
+			expectError:   false,
+		},
+		{
+			name:          "ARO-HCP with annotation and non-empty secret should fail",
+			setAROHCP:     true,
+			annotations:   map[string]string{hyperv1.HostedClusterSourcedAnnotation: "true"},
+			secretContent: map[string][]byte{"key": []byte("value")},
+			expectError:   true,
+			errorMessage:  "secret test-secret is not empty. Secrets annotated with hypershift.openshift.io/hosted-cluster-sourced must be empty",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setAROHCP {
+				azureutil.SetAsAroHCPTest(t)
+			}
+			// Create the test namespace
+			namespace := "test-namespace"
+			secretName := "test-secret"
+
+			// Create a HostedCluster
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: namespace,
+				},
+			}
+
+			// Create a Secret that would exist in the cluster
+			secret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        secretName,
+					Namespace:   namespace,
+					Annotations: tc.annotations,
+				},
+				Data: tc.secretContent,
+			}
+
+			// Create a fake client with proper scheme
+			scheme := api.Scheme
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(hcluster, secret).
+				Build()
+
+			// Create a Secret to be validated (this would be the object passed to ensureHostedResroucesAreEmpty)
+			validateSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        secretName,
+					Namespace:   namespace,
+					Annotations: tc.annotations,
+				},
+			}
+
+			// Run the function being tested
+			err := ensureHostedResourcesAreEmpty(context.Background(), fakeClient, hcluster, validateSecret)
+
+			// Check the result
+			if tc.expectError && err == nil {
+				t.Errorf("expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("expected no error but got: %v", err)
+			}
+			if tc.expectError && err != nil && !strings.Contains(err.Error(), tc.errorMessage) {
+				t.Errorf("expected error message to contain %q but got: %v", tc.errorMessage, err)
+			}
+		})
+	}
+}
+
+func TestReconcileAdditionalTrustBundle(t *testing.T) {
+	const (
+		testNamespace            = "test-ns"
+		controlPlaneNamespace    = "test-hcp-ns"
+		hostedClusterName        = "test-cluster"
+		trustBundleConfigMapName = "additional-trust-bundle"
+		caBundleData             = "-----BEGIN CERTIFICATE-----\nMIIBkTCB..."
+	)
+
+	testCases := []struct {
+		name                   string
+		hostedCluster          *hyperv1.HostedCluster
+		existingObjects        []crclient.Object
+		expectError            bool
+		expectConfigMapCreated bool
+		expectConfigMapDeleted bool
+		expectedErrorSubstring string
+	}{
+		{
+			name: "creates configmap when AdditionalTrustBundle is specified",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      trustBundleConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": caBundleData,
+					},
+				},
+			},
+			expectError:            false,
+			expectConfigMapCreated: true,
+		},
+		{
+			name: "deletes configmap when AdditionalTrustBundle is nil",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: nil,
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "user-ca-bundle",
+						Namespace: controlPlaneNamespace,
+					},
+					Data: map[string]string{
+						"ca-bundle.crt": caBundleData,
+					},
+				},
+			},
+			expectError:            false,
+			expectConfigMapDeleted: true,
+		},
+		{
+			name: "returns error when source configmap does not exist",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects:        []crclient.Object{},
+			expectError:            true,
+			expectedErrorSubstring: "failed to get hostedcluster AdditionalTrustBundle ConfigMap",
+		},
+		{
+			name: "returns error when source configmap missing ca-bundle.crt key",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      hostedClusterName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: trustBundleConfigMapName,
+					},
+				},
+			},
+			existingObjects: []crclient.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      trustBundleConfigMapName,
+						Namespace: testNamespace,
+					},
+					Data: map[string]string{
+						"wrong-key": caBundleData,
+					},
+				},
+			},
+			expectError:            true,
+			expectedErrorSubstring: "must have a ca-bundle.crt key",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			g := NewWithT(t)
+
+			// Create fake client with existing objects
+			client := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.existingObjects...).
+				Build()
+
+			// Create the reconciler
+			r := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			// Create a mock createOrUpdate function
+			createOrUpdate := upsert.New(false).CreateOrUpdate
+
+			// Call the function under test
+			err := r.reconcileAdditionalTrustBundle(ctx, tc.hostedCluster, createOrUpdate, controlPlaneNamespace)
+
+			// Check error expectations
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorSubstring != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorSubstring))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Check if destination configmap was created/updated
+			if tc.expectConfigMapCreated {
+				destConfigMap := &corev1.ConfigMap{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "user-ca-bundle",
+					Namespace: controlPlaneNamespace,
+				}, destConfigMap)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(destConfigMap.Data).To(HaveKeyWithValue("ca-bundle.crt", caBundleData))
+			}
+
+			// Check if destination configmap was deleted
+			if tc.expectConfigMapDeleted {
+				destConfigMap := &corev1.ConfigMap{}
+				err := client.Get(ctx, crclient.ObjectKey{
+					Name:      "user-ca-bundle",
+					Namespace: controlPlaneNamespace,
+				}, destConfigMap)
+				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
 	}
 }

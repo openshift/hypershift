@@ -47,8 +47,47 @@ spec:
           metadata:
             type: object
           spec:
-            description: ClusterClassSpec describes the desired state of the ClusterClass.
+            description: spec is the desired state of ClusterClass.
             properties:
+              availabilityGates:
+                description: |-
+                  availabilityGates specifies additional conditions to include when evaluating Cluster Available condition.
+
+                  NOTE: this field is considered only for computing v1beta2 conditions.
+                  NOTE: If a Cluster is using this ClusterClass, and this Cluster defines a custom list of availabilityGates,
+                  such list overrides availabilityGates defined in this field.
+                items:
+                  description: ClusterAvailabilityGate contains the type of a Cluster
+                    condition to be used as availability gate.
+                  properties:
+                    conditionType:
+                      description: |-
+                        conditionType refers to a condition with matching type in the Cluster's condition list.
+                        If the conditions doesn't exist, it will be treated as unknown.
+                        Note: Both Cluster API conditions or conditions added by 3rd party controllers can be used as availability gates.
+                      maxLength: 316
+                      minLength: 1
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                    polarity:
+                      description: |-
+                        polarity of the conditionType specified in this availabilityGate.
+                        Valid values are Positive, Negative and omitted.
+                        When omitted, the default behaviour will be Positive.
+                        A positive polarity means that the condition should report a true status under normal conditions.
+                        A negative polarity means that the condition should report a false status under normal conditions.
+                      enum:
+                      - Positive
+                      - Negative
+                      type: string
+                  required:
+                  - conditionType
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - conditionType
+                x-kubernetes-list-type: map
               controlPlane:
                 description: |-
                   controlPlane is a reference to a local struct that holds the details
@@ -65,7 +104,8 @@ spec:
                         - type: integer
                         - type: string
                         description: |-
-                          Any further remediation is only allowed if at most "MaxUnhealthy" machines selected by
+                          maxUnhealthy specifies the maximum number of unhealthy machines allowed.
+                          Any further remediation is only allowed if at most "maxUnhealthy" machines selected by
                           "selector" are not healthy.
                         x-kubernetes-int-or-string: true
                       nodeStartupTimeout:
@@ -144,11 +184,19 @@ spec:
                             status for at least the timeout value, a node is considered unhealthy.
                           properties:
                             status:
+                              description: status of the condition, one of True, False,
+                                Unknown.
                               minLength: 1
                               type: string
                             timeout:
+                              description: |-
+                                timeout is the duration that a node must be in a given status for,
+                                after which the node is considered unhealthy.
+                                For example, with a value of "1h", the node must match the status
+                                for at least 1 hour before being considered unhealthy.
                               type: string
                             type:
+                              description: type of Node condition
                               minLength: 1
                               type: string
                           required:
@@ -156,14 +204,18 @@ spec:
                           - timeout
                           - type
                           type: object
+                        maxItems: 100
                         type: array
                       unhealthyRange:
                         description: |-
+                          unhealthyRange specifies the range of unhealthy machines allowed.
                           Any further remediation is only allowed if the number of machines selected by "selector" as not healthy
-                          is within the range of "UnhealthyRange". Takes precedence over MaxUnhealthy.
+                          is within the range of "unhealthyRange". Takes precedence over maxUnhealthy.
                           Eg. "[3-5]" - This means that remediation will be allowed only when:
                           (a) there are at least 3 unhealthy machines (and)
                           (b) there are at most 5 unhealthy machines
+                        maxLength: 32
+                        minLength: 1
                         pattern: ^\[[0-9]+-[0-9]+\]$
                         type: string
                     type: object
@@ -246,7 +298,7 @@ spec:
                         additionalProperties:
                           type: string
                         description: |-
-                          Map of string keys and values that can be used to organize and categorize
+                          labels is a map of string keys and values that can be used to organize and categorize
                           (scope and select) objects. May match selectors of replication controllers
                           and services.
                           More info: http://kubernetes.io/docs/user-guide/labels
@@ -265,6 +317,8 @@ spec:
                           The templating mechanism provides the following arguments:
                           * `.cluster.name`: The name of the cluster object.
                           * `.random`: A random alphanumeric string, without vowels, of length 5.
+                        maxLength: 1024
+                        minLength: 1
                         type: string
                     type: object
                   nodeDeletionTimeout:
@@ -287,6 +341,50 @@ spec:
                       to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
                       NOTE: This value can be overridden while defining a Cluster.Topology.
                     type: string
+                  readinessGates:
+                    description: |-
+                      readinessGates specifies additional conditions to include when evaluating Machine Ready condition.
+
+                      This field can be used e.g. to instruct the machine controller to include in the computation for Machine's ready
+                      computation a condition, managed by an external controllers, reporting the status of special software/hardware installed on the Machine.
+
+                      NOTE: This field is considered only for computing v1beta2 conditions.
+                      NOTE: If a Cluster defines a custom list of readinessGates for the control plane,
+                      such list overrides readinessGates defined in this field.
+                      NOTE: Specific control plane provider implementations might automatically extend the list of readinessGates;
+                      e.g. the kubeadm control provider adds ReadinessGates for the APIServerPodHealthy, SchedulerPodHealthy conditions, etc.
+                    items:
+                      description: MachineReadinessGate contains the type of a Machine
+                        condition to be used as a readiness gate.
+                      properties:
+                        conditionType:
+                          description: |-
+                            conditionType refers to a condition with matching type in the Machine's condition list.
+                            If the conditions doesn't exist, it will be treated as unknown.
+                            Note: Both Cluster API conditions or conditions added by 3rd party controllers can be used as readiness gates.
+                          maxLength: 316
+                          minLength: 1
+                          pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                          type: string
+                        polarity:
+                          description: |-
+                            polarity of the conditionType specified in this readinessGate.
+                            Valid values are Positive, Negative and omitted.
+                            When omitted, the default behaviour will be Positive.
+                            A positive polarity means that the condition should report a true status under normal conditions.
+                            A negative polarity means that the condition should report a false status under normal conditions.
+                          enum:
+                          - Positive
+                          - Negative
+                          type: string
+                      required:
+                      - conditionType
+                      type: object
+                    maxItems: 32
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - conditionType
+                    x-kubernetes-list-type: map
                   ref:
                     description: |-
                       ref is a required reference to a custom resource
@@ -391,6 +489,23 @@ spec:
                 required:
                 - ref
                 type: object
+              infrastructureNamingStrategy:
+                description: infrastructureNamingStrategy allows changing the naming
+                  pattern used when creating the infrastructure object.
+                properties:
+                  template:
+                    description: |-
+                      template defines the template to use for generating the name of the Infrastructure object.
+                      If not defined, it will fallback to `{{ .cluster.name }}-{{ .random }}`.
+                      If the templated string exceeds 63 characters, it will be trimmed to 58 characters and will
+                      get concatenated with a random suffix of length 5.
+                      The templating mechanism provides the following arguments:
+                      * `.cluster.name`: The name of the cluster object.
+                      * `.random`: A random alphanumeric string, without vowels, of length 5.
+                    maxLength: 1024
+                    minLength: 1
+                    type: string
+                type: object
               patches:
                 description: |-
                   patches defines the patches which are applied to customize
@@ -421,6 +536,10 @@ spec:
                                   description: |-
                                     op defines the operation of the patch.
                                     Note: Only `add`, `replace` and `remove` are supported.
+                                  enum:
+                                  - add
+                                  - replace
+                                  - remove
                                   type: string
                                 path:
                                   description: |-
@@ -429,6 +548,8 @@ spec:
                                     Note: For now the only allowed array modifications are `append` and `prepend`, i.e.:
                                     * for op: `add`: only index 0 (prepend) and - (append) are allowed
                                     * for op: `replace` or `remove`: no indexes are allowed
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 value:
                                   description: |-
@@ -451,17 +572,22 @@ spec:
                                         template is the Go template to be used to calculate the value.
                                         A template can reference variables defined in .spec.variables and builtin variables.
                                         Note: The template must evaluate to a valid YAML or JSON value.
+                                      maxLength: 10240
+                                      minLength: 1
                                       type: string
                                     variable:
                                       description: |-
                                         variable is the variable to be used as value.
                                         Variable can be one of the variables defined in .spec.variables or a builtin variable.
+                                      maxLength: 256
+                                      minLength: 1
                                       type: string
                                   type: object
                               required:
                               - op
                               - path
                               type: object
+                            maxItems: 100
                             type: array
                           selector:
                             description: selector defines on which templates the patch
@@ -469,9 +595,13 @@ spec:
                             properties:
                               apiVersion:
                                 description: apiVersion filters templates by apiVersion.
+                                maxLength: 512
+                                minLength: 1
                                 type: string
                               kind:
                                 description: kind filters templates by kind.
+                                maxLength: 256
+                                minLength: 1
                                 type: string
                               matchResources:
                                 description: matchResources selects templates based
@@ -496,7 +626,10 @@ spec:
                                         description: names selects templates by class
                                           names.
                                         items:
+                                          maxLength: 256
+                                          minLength: 1
                                           type: string
+                                        maxItems: 100
                                         type: array
                                     type: object
                                   machinePoolClass:
@@ -508,7 +641,10 @@ spec:
                                         description: names selects templates by class
                                           names.
                                         items:
+                                          maxLength: 256
+                                          minLength: 1
                                           type: string
+                                        maxItems: 100
                                         type: array
                                     type: object
                                 type: object
@@ -521,10 +657,13 @@ spec:
                         - jsonPatches
                         - selector
                         type: object
+                      maxItems: 100
                       type: array
                     description:
                       description: description is a human-readable description of
                         this patch.
+                      maxLength: 1024
+                      minLength: 1
                       type: string
                     enabledIf:
                       description: |-
@@ -533,6 +672,8 @@ spec:
                         The patch will be enabled if the template evaluates to `true`, otherwise it will
                         be disabled.
                         If EnabledIf is not set, the patch will be enabled per default.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     external:
                       description: |-
@@ -542,10 +683,14 @@ spec:
                         discoverVariablesExtension:
                           description: discoverVariablesExtension references an extension
                             which is called to discover variables.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         generateExtension:
                           description: generateExtension references an extension which
                             is called to generate patches.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         settings:
                           additionalProperties:
@@ -558,14 +703,19 @@ spec:
                         validateExtension:
                           description: validateExtension references an extension which
                             is called to validate the topology.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       type: object
                     name:
                       description: name of the patch.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                   required:
                   - name
                   type: object
+                maxItems: 1000
                 type: array
               variables:
                 description: |-
@@ -596,12 +746,14 @@ spec:
                           additionalProperties:
                             type: string
                           description: |-
-                            Map of string keys and values that can be used to organize and categorize
+                            labels is a map of string keys and values that can be used to organize and categorize
                             (scope and select) variables.
                           type: object
                       type: object
                     name:
                       description: name of the variable.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     required:
                       description: |-
@@ -647,6 +799,8 @@ spec:
                             description:
                               description: description is a human-readable description
                                 of this variable.
+                              maxLength: 4096
+                              minLength: 1
                               type: string
                             enum:
                               description: |-
@@ -654,6 +808,7 @@ spec:
                                 NOTE: Can be set for all types.
                               items:
                                 x-kubernetes-preserve-unknown-fields: true
+                              maxItems: 100
                               type: array
                             example:
                               description: example is an example for this variable.
@@ -674,6 +829,8 @@ spec:
                                 For a list of supported formats please see: (of the k8s.io/apiextensions-apiserver version we're currently using)
                                 https://github.com/kubernetes/apiextensions-apiserver/blob/master/pkg/apiserver/validation/formats.go
                                 NOTE: Can only be set if type is string.
+                              maxLength: 32
+                              minLength: 1
                               type: string
                             items:
                               description: |-
@@ -750,6 +907,8 @@ spec:
                               description: |-
                                 pattern is the regex which a string variable must match.
                                 NOTE: Can only be set if type is string.
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             properties:
                               description: |-
@@ -764,12 +923,22 @@ spec:
                                 required specifies which fields of an object are required.
                                 NOTE: Can only be set if type is object.
                               items:
+                                maxLength: 256
+                                minLength: 1
                                 type: string
+                              maxItems: 1000
                               type: array
                             type:
                               description: |-
                                 type is the type of the variable.
                                 Valid values are: object, array, string, integer, number or boolean.
+                              enum:
+                              - object
+                              - array
+                              - string
+                              - integer
+                              - number
+                              - boolean
                               type: string
                             uniqueItems:
                               description: |-
@@ -817,6 +986,8 @@ spec:
                                       Numeric index of array is not supported.
                                       For field name which contains special characters, use `['specialName']` to refer the field name.
                                       e.g. for attribute `foo.34$` appears in a list `testList`, the fieldPath could be set to `.testList['foo.34$']`
+                                    maxLength: 512
+                                    minLength: 1
                                     type: string
                                   message:
                                     description: |-
@@ -824,6 +995,8 @@ spec:
                                       line breaks. The message must not contain line breaks.
                                       If unset, the message is "failed rule: {Rule}".
                                       e.g. "must be a URL with the host matching spec.host"
+                                    maxLength: 512
+                                    minLength: 1
                                     type: string
                                   messageExpression:
                                     description: |-
@@ -836,6 +1009,8 @@ spec:
                                       messageExpression has access to all the same variables as the rule; the only difference is the return type.
                                       Example:
                                       "x must be less than max ("+string(self.max)+")"
+                                    maxLength: 1024
+                                    minLength: 1
                                     type: string
                                   reason:
                                     default: FieldValueInvalid
@@ -911,10 +1086,13 @@ spec:
                                       rules by default are applied only on UPDATE
                                       requests and are\nskipped if an old value could
                                       not be found."
+                                    maxLength: 4096
+                                    minLength: 1
                                     type: string
                                 required:
                                 - rule
                                 type: object
+                              maxItems: 100
                               type: array
                               x-kubernetes-list-map-keys:
                               - rule
@@ -936,7 +1114,7 @@ spec:
                                   additionalProperties:
                                     type: string
                                   description: |-
-                                    Map of string keys and values that can be used to organize and categorize
+                                    labels is a map of string keys and values that can be used to organize and categorize
                                     (scope and select) variables.
                                   type: object
                               type: object
@@ -949,6 +1127,7 @@ spec:
                   - required
                   - schema
                   type: object
+                maxItems: 1000
                 type: array
               workers:
                 description: |-
@@ -970,12 +1149,16 @@ spec:
                             class denotes a type of worker node present in the cluster,
                             this name MUST be unique within a ClusterClass and can be referenced
                             in the Cluster to create a managed MachineDeployment.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         failureDomain:
                           description: |-
                             failureDomain is the failure domain the machines will be created in.
                             Must match a key in the FailureDomains map stored on the cluster object.
                             NOTE: This value can be overridden while defining a Cluster.Topology using this MachineDeploymentClass.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         machineHealthCheck:
                           description: machineHealthCheck defines a MachineHealthCheck
@@ -986,7 +1169,8 @@ spec:
                               - type: integer
                               - type: string
                               description: |-
-                                Any further remediation is only allowed if at most "MaxUnhealthy" machines selected by
+                                maxUnhealthy specifies the maximum number of unhealthy machines allowed.
+                                Any further remediation is only allowed if at most "maxUnhealthy" machines selected by
                                 "selector" are not healthy.
                               x-kubernetes-int-or-string: true
                             nodeStartupTimeout:
@@ -1065,11 +1249,19 @@ spec:
                                   status for at least the timeout value, a node is considered unhealthy.
                                 properties:
                                   status:
+                                    description: status of the condition, one of True,
+                                      False, Unknown.
                                     minLength: 1
                                     type: string
                                   timeout:
+                                    description: |-
+                                      timeout is the duration that a node must be in a given status for,
+                                      after which the node is considered unhealthy.
+                                      For example, with a value of "1h", the node must match the status
+                                      for at least 1 hour before being considered unhealthy.
                                     type: string
                                   type:
+                                    description: type of Node condition
                                     minLength: 1
                                     type: string
                                 required:
@@ -1077,20 +1269,24 @@ spec:
                                 - timeout
                                 - type
                                 type: object
+                              maxItems: 100
                               type: array
                             unhealthyRange:
                               description: |-
+                                unhealthyRange specifies the range of unhealthy machines allowed.
                                 Any further remediation is only allowed if the number of machines selected by "selector" as not healthy
-                                is within the range of "UnhealthyRange". Takes precedence over MaxUnhealthy.
+                                is within the range of "unhealthyRange". Takes precedence over maxUnhealthy.
                                 Eg. "[3-5]" - This means that remediation will be allowed only when:
                                 (a) there are at least 3 unhealthy machines (and)
                                 (b) there are at most 5 unhealthy machines
+                              maxLength: 32
+                              minLength: 1
                               pattern: ^\[[0-9]+-[0-9]+\]$
                               type: string
                           type: object
                         minReadySeconds:
                           description: |-
-                            Minimum number of seconds for which a newly created machine should
+                            minReadySeconds is the minimum number of seconds for which a newly created machine should
                             be ready.
                             Defaults to 0 (machine will be considered available as soon as it
                             is ready)
@@ -1111,6 +1307,8 @@ spec:
                                 * `.cluster.name`: The name of the cluster object.
                                 * `.random`: A random alphanumeric string, without vowels, of length 5.
                                 * `.machineDeployment.topologyName`: The name of the MachineDeployment topology (Cluster.spec.topology.workers.machineDeployments[].name).
+                              maxLength: 1024
+                              minLength: 1
                               type: string
                           type: object
                         nodeDeletionTimeout:
@@ -1133,9 +1331,51 @@ spec:
                             to be detached. The default value is 0, meaning that the volumes can be detached without any time limitations.
                             NOTE: This value can be overridden while defining a Cluster.Topology using this MachineDeploymentClass.
                           type: string
+                        readinessGates:
+                          description: |-
+                            readinessGates specifies additional conditions to include when evaluating Machine Ready condition.
+
+                            This field can be used e.g. to instruct the machine controller to include in the computation for Machine's ready
+                            computation a condition, managed by an external controllers, reporting the status of special software/hardware installed on the Machine.
+
+                            NOTE: This field is considered only for computing v1beta2 conditions.
+                            NOTE: If a Cluster defines a custom list of readinessGates for a MachineDeployment using this MachineDeploymentClass,
+                            such list overrides readinessGates defined in this field.
+                          items:
+                            description: MachineReadinessGate contains the type of
+                              a Machine condition to be used as a readiness gate.
+                            properties:
+                              conditionType:
+                                description: |-
+                                  conditionType refers to a condition with matching type in the Machine's condition list.
+                                  If the conditions doesn't exist, it will be treated as unknown.
+                                  Note: Both Cluster API conditions or conditions added by 3rd party controllers can be used as readiness gates.
+                                maxLength: 316
+                                minLength: 1
+                                pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                                type: string
+                              polarity:
+                                description: |-
+                                  polarity of the conditionType specified in this readinessGate.
+                                  Valid values are Positive, Negative and omitted.
+                                  When omitted, the default behaviour will be Positive.
+                                  A positive polarity means that the condition should report a true status under normal conditions.
+                                  A negative polarity means that the condition should report a false status under normal conditions.
+                                enum:
+                                - Positive
+                                - Negative
+                                type: string
+                            required:
+                            - conditionType
+                            type: object
+                          maxItems: 32
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - conditionType
+                          x-kubernetes-list-type: map
                         strategy:
                           description: |-
-                            The deployment strategy to use to replace existing machines with
+                            strategy is the deployment strategy to use to replace existing machines with
                             new ones.
                             NOTE: This value can be overridden while defining a Cluster.Topology using this MachineDeploymentClass.
                           properties:
@@ -1167,7 +1407,7 @@ spec:
                               type: object
                             rollingUpdate:
                               description: |-
-                                Rolling update config params. Present only if
+                                rollingUpdate is the rolling update config params. Present only if
                                 MachineDeploymentStrategyType = RollingUpdate.
                               properties:
                                 deletePolicy:
@@ -1185,7 +1425,7 @@ spec:
                                   - type: integer
                                   - type: string
                                   description: |-
-                                    The maximum number of machines that can be scheduled above the
+                                    maxSurge is the maximum number of machines that can be scheduled above the
                                     desired number of machines.
                                     Value can be an absolute number (ex: 5) or a percentage of
                                     desired machines (ex: 10%).
@@ -1204,7 +1444,7 @@ spec:
                                   - type: integer
                                   - type: string
                                   description: |-
-                                    The maximum number of machines that can be unavailable during the update.
+                                    maxUnavailable is the maximum number of machines that can be unavailable during the update.
                                     Value can be an absolute number (ex: 5) or a percentage of desired
                                     machines (ex: 10%).
                                     Absolute number is calculated from percentage by rounding down.
@@ -1356,7 +1596,7 @@ spec:
                                   additionalProperties:
                                     type: string
                                   description: |-
-                                    Map of string keys and values that can be used to organize and categorize
+                                    labels is a map of string keys and values that can be used to organize and categorize
                                     (scope and select) objects. May match selectors of replication controllers
                                     and services.
                                     More info: http://kubernetes.io/docs/user-guide/labels
@@ -1370,6 +1610,7 @@ spec:
                       - class
                       - template
                       type: object
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - class
@@ -1388,6 +1629,8 @@ spec:
                             class denotes a type of machine pool present in the cluster,
                             this name MUST be unique within a ClusterClass and can be referenced
                             in the Cluster to create a managed MachinePool.
+                          maxLength: 256
+                          minLength: 1
                           type: string
                         failureDomains:
                           description: |-
@@ -1395,11 +1638,14 @@ spec:
                             Must match a key in the FailureDomains map stored on the cluster object.
                             NOTE: This value can be overridden while defining a Cluster.Topology using this MachinePoolClass.
                           items:
+                            maxLength: 256
+                            minLength: 1
                             type: string
+                          maxItems: 100
                           type: array
                         minReadySeconds:
                           description: |-
-                            Minimum number of seconds for which a newly created machine pool should
+                            minReadySeconds is the minimum number of seconds for which a newly created machine pool should
                             be ready.
                             Defaults to 0 (machine will be considered available as soon as it
                             is ready)
@@ -1420,6 +1666,8 @@ spec:
                                 * `.cluster.name`: The name of the cluster object.
                                 * `.random`: A random alphanumeric string, without vowels, of length 5.
                                 * `.machinePool.topologyName`: The name of the MachinePool topology (Cluster.spec.topology.workers.machinePools[].name).
+                              maxLength: 1024
+                              minLength: 1
                               type: string
                           type: object
                         nodeDeletionTimeout:
@@ -1571,7 +1819,7 @@ spec:
                                   additionalProperties:
                                     type: string
                                   description: |-
-                                    Map of string keys and values that can be used to organize and categorize
+                                    labels is a map of string keys and values that can be used to organize and categorize
                                     (scope and select) objects. May match selectors of replication controllers
                                     and services.
                                     More info: http://kubernetes.io/docs/user-guide/labels
@@ -1585,6 +1833,7 @@ spec:
                       - class
                       - template
                       type: object
+                    maxItems: 100
                     type: array
                     x-kubernetes-list-map-keys:
                     - class
@@ -1592,7 +1841,7 @@ spec:
                 type: object
             type: object
           status:
-            description: ClusterClassStatus defines the observed state of the ClusterClass.
+            description: status is the observed state of ClusterClass.
             properties:
               conditions:
                 description: conditions defines current observed state of the ClusterClass.
@@ -1602,27 +1851,32 @@ spec:
                   properties:
                     lastTransitionTime:
                       description: |-
-                        Last time the condition transitioned from one status to another.
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
                         This should be when the underlying condition changed. If that is not known, then using the time when
                         the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
                       description: |-
-                        A human readable message indicating details about the transition.
+                        message is a human readable message indicating details about the transition.
                         This field may be empty.
+                      maxLength: 10240
+                      minLength: 1
                       type: string
                     reason:
                       description: |-
-                        The reason for the condition's last transition in CamelCase.
+                        reason is the reason for the condition's last transition in CamelCase.
                         The specific API may choose whether or not this field is considered a guaranteed API.
                         This field may be empty.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     severity:
                       description: |-
                         severity provides an explicit classification of Reason code, so the users or machines can immediately
                         understand the current situation and act accordingly.
                         The Severity field MUST be set only when Status=False.
+                      maxLength: 32
                       type: string
                     status:
                       description: status of the condition, one of True, False, Unknown.
@@ -1632,6 +1886,8 @@ spec:
                         type of condition in CamelCase or in foo.example.com/CamelCase.
                         Many .condition.type values are consistent across resources like Available, but because arbitrary conditions
                         can be useful (see .node.status.conditions), the ability to deconflict is important.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                   required:
                   - lastTransitionTime
@@ -1731,6 +1987,8 @@ spec:
                               from specifies the origin of the variable definition.
                               This will be `inline` for variables defined in the ClusterClass or the name of a patch defined in the ClusterClass
                               for variables discovered from a DiscoverVariables runtime extensions.
+                            maxLength: 256
+                            minLength: 1
                             type: string
                           metadata:
                             description: |-
@@ -1752,7 +2010,7 @@ spec:
                                 additionalProperties:
                                   type: string
                                 description: |-
-                                  Map of string keys and values that can be used to organize and categorize
+                                  labels is a map of string keys and values that can be used to organize and categorize
                                   (scope and select) variables.
                                 type: object
                             type: object
@@ -1800,6 +2058,8 @@ spec:
                                   description:
                                     description: description is a human-readable description
                                       of this variable.
+                                    maxLength: 4096
+                                    minLength: 1
                                     type: string
                                   enum:
                                     description: |-
@@ -1807,6 +2067,7 @@ spec:
                                       NOTE: Can be set for all types.
                                     items:
                                       x-kubernetes-preserve-unknown-fields: true
+                                    maxItems: 100
                                     type: array
                                   example:
                                     description: example is an example for this variable.
@@ -1827,6 +2088,8 @@ spec:
                                       For a list of supported formats please see: (of the k8s.io/apiextensions-apiserver version we're currently using)
                                       https://github.com/kubernetes/apiextensions-apiserver/blob/master/pkg/apiserver/validation/formats.go
                                       NOTE: Can only be set if type is string.
+                                    maxLength: 32
+                                    minLength: 1
                                     type: string
                                   items:
                                     description: |-
@@ -1903,6 +2166,8 @@ spec:
                                     description: |-
                                       pattern is the regex which a string variable must match.
                                       NOTE: Can only be set if type is string.
+                                    maxLength: 512
+                                    minLength: 1
                                     type: string
                                   properties:
                                     description: |-
@@ -1917,12 +2182,22 @@ spec:
                                       required specifies which fields of an object are required.
                                       NOTE: Can only be set if type is object.
                                     items:
+                                      maxLength: 256
+                                      minLength: 1
                                       type: string
+                                    maxItems: 1000
                                     type: array
                                   type:
                                     description: |-
                                       type is the type of the variable.
                                       Valid values are: object, array, string, integer, number or boolean.
+                                    enum:
+                                    - object
+                                    - array
+                                    - string
+                                    - integer
+                                    - number
+                                    - boolean
                                     type: string
                                   uniqueItems:
                                     description: |-
@@ -1970,6 +2245,8 @@ spec:
                                             Numeric index of array is not supported.
                                             For field name which contains special characters, use `['specialName']` to refer the field name.
                                             e.g. for attribute `foo.34$` appears in a list `testList`, the fieldPath could be set to `.testList['foo.34$']`
+                                          maxLength: 512
+                                          minLength: 1
                                           type: string
                                         message:
                                           description: |-
@@ -1977,6 +2254,8 @@ spec:
                                             line breaks. The message must not contain line breaks.
                                             If unset, the message is "failed rule: {Rule}".
                                             e.g. "must be a URL with the host matching spec.host"
+                                          maxLength: 512
+                                          minLength: 1
                                           type: string
                                         messageExpression:
                                           description: |-
@@ -1989,6 +2268,8 @@ spec:
                                             messageExpression has access to all the same variables as the rule; the only difference is the return type.
                                             Example:
                                             "x must be less than max ("+string(self.max)+")"
+                                          maxLength: 1024
+                                          minLength: 1
                                           type: string
                                         reason:
                                           default: FieldValueInvalid
@@ -2073,10 +2354,13 @@ spec:
                                             rules by default are applied only on UPDATE
                                             requests and are\nskipped if an old value
                                             could not be found."
+                                          maxLength: 4096
+                                          minLength: 1
                                           type: string
                                       required:
                                       - rule
                                       type: object
+                                    maxItems: 100
                                     type: array
                                     x-kubernetes-list-map-keys:
                                     - rule
@@ -2098,7 +2382,7 @@ spec:
                                         additionalProperties:
                                           type: string
                                         description: |-
-                                          Map of string keys and values that can be used to organize and categorize
+                                          labels is a map of string keys and values that can be used to organize and categorize
                                           (scope and select) variables.
                                         type: object
                                     type: object
@@ -2111,6 +2395,7 @@ spec:
                         - required
                         - schema
                         type: object
+                      maxItems: 100
                       type: array
                     definitionsConflict:
                       description: definitionsConflict specifies whether or not there
@@ -2118,11 +2403,14 @@ spec:
                       type: boolean
                     name:
                       description: name is the name of the variable.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                   required:
                   - definitions
                   - name
                   type: object
+                maxItems: 1000
                 type: array
             type: object
         type: object

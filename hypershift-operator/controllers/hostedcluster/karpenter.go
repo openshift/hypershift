@@ -17,10 +17,12 @@ import (
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	hyperutil "github.com/openshift/hypershift/support/util"
@@ -28,11 +30,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
-	if hcluster.Spec.AutoNode == nil || hcluster.Spec.AutoNode.Provisioner.Name != hyperv1.ProvisionerKarpeneter ||
-		hcluster.Spec.AutoNode.Provisioner.Karpenter.Platform != hyperv1.AWSPlatform || hcluster.Status.KubeConfig == nil {
+// from hypershift-operator/controllers/nodepool/nodepool_controller.go
+const nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+
+// karpenterNodePoolAnnotationCurrentConfigVersion tracks the current config version for the singleton karpenter hyperv1.NodePool
+const karpenterNodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/karpenterNodePoolCurrentConfigVersion"
+
+func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
+	if !karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) || hcluster.Status.KubeConfig == nil {
 		return nil
 	}
 
@@ -68,8 +77,9 @@ spec:
 
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "karpenter",
-			Namespace: hcluster.Namespace,
+			Name:        hyperkarpenterv1.KarpenterNodePool,
+			Namespace:   hcluster.Namespace,
+			Annotations: map[string]string{},
 		},
 		Spec: hyperv1.NodePoolSpec{
 			ClusterName: hcluster.Name,
@@ -149,8 +159,32 @@ func (r *HostedClusterReconciler) reconcileKarpenterUserDataSecret(cpContext con
 		return err
 	}
 
+	currentConfigVersion, ok := hcluster.GetAnnotations()[karpenterNodePoolAnnotationCurrentConfigVersion]
+	if !ok || currentConfigVersion == "" {
+		// annotation is needed in token.Reconcile in order to check for outdated token
+		nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = configGenerator.Hash()
+	} else {
+		nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+	}
+
 	if err := token.Reconcile(cpContext); err != nil {
 		return err
+	}
+
+	// skip updating the annotation if nothing has changed
+	if currentConfigVersion == configGenerator.Hash() {
+		return nil
+	}
+
+	original := hcluster.DeepCopy()
+	if hcluster.Annotations == nil {
+		hcluster.Annotations = make(map[string]string)
+	}
+	hcluster.Annotations[karpenterNodePoolAnnotationCurrentConfigVersion] = configGenerator.Hash()
+	// persists the current config on the hcluster, since the NodePool itself does not actually exist
+	err = r.Patch(cpContext, hcluster, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+	if err != nil {
+		return fmt.Errorf("failed to patch: %w", err)
 	}
 
 	return nil

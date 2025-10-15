@@ -1,0 +1,12 @@
+---
+description: Code formatting rules for the project.
+globs: 
+alwaysApply: true
+---
+# Code quality, formatting and conventions
+
+- Use `make lint-fix` after writing Go code to automatically fix most linting issues
+- Run `make verify` to verify both linting and tests pass before committing
+- For markdown files, use `make verify-codespell` to catch spelling errors
+- Always use "When ... it should ..." format for describing test cases when creating unit tests
+- Always include unit tests when creating new functions or modifying existing ones

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -73,8 +74,6 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				obj.Labels = make(map[string]string)
 			}
 			obj.Labels[hostedClusterUpgradeTestLabel] = "true"
-			// TOOD: remove when the switch to CPOv2 is merged and the new HO version is used as the init image for this test.
-			obj.Annotations["hypershift.openshift.io/cpo-v2"] = "true"
 		}
 	}
 
@@ -231,5 +230,6 @@ func TestUpgradeHyperShiftOperator(t *testing.T) {
 				return true
 			}, "5m", "1s").Should(gomega.BeTrue(), "Verification should consistently succeed for 5 minutes")
 		})).To(gomega.BeTrue(), "Verify upgrade invariants should succeed")
+		e2eutil.ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ho-upgrade", globalOpts.ServiceAccountSigningKey)
 }

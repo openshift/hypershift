@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -164,7 +163,7 @@ func TestUpdatingConfigCondition(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.TODO()
+			ctx := t.Context()
 
 			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
 
@@ -318,7 +317,7 @@ func TestUpdatingVersionCondition(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx := context.TODO()
+			ctx := t.Context()
 
 			pullSecret, ignitionServerCACert, machineConfig, ignitionConfig, ignitionConfig2, ignitionConfig3 := setupTestObjects()
 

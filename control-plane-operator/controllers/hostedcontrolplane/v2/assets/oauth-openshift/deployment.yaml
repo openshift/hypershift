@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   name: oauth-openshift
 spec:
-  replicas: 1
   revisionHistoryLimit: 2
   selector:
     matchLabels:

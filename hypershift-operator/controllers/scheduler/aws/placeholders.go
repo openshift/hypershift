@@ -33,8 +33,11 @@ import (
 
 type PlaceholderScheduler struct{}
 
-const placeholderNamespace = "hypershift-request-serving-node-placeholders"
-const placeholderControllerName = "PlaceholderScheduler"
+const (
+	placeholderNamespace      = "hypershift-request-serving-node-placeholders"
+	placeholderControllerName = "PlaceholderScheduler"
+	defaultPlaceholderImage   = "registry.access.redhat.com/ubi8/pause:latest"
+)
 
 func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	kubernetesClient, err := kubernetes.NewForConfig(mgr.GetConfig())
@@ -464,7 +467,7 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 					).
 					WithContainers(corev1applyconfigurations.Container().
 						WithName("placeholder").
-						WithImage("quay.io/openshift/origin-hello-openshift:latest"),
+						WithImage(defaultPlaceholderImage),
 					),
 				),
 			),
