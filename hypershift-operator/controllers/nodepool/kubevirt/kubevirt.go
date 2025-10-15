@@ -38,10 +38,16 @@ var (
 	}
 )
 
-func defaultImage(releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-	arch, foundArch := releaseImage.StreamMetadata.Architectures["x86_64"]
+func defaultImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
+        default_arch := "x86_64"
+	arch, foundArch := releaseImage.StreamMetadata.Architectures[default_arch]
+
+	if nodePool.Spec.Arch == "s390x" {
+		arch, foundArch = releaseImage.StreamMetadata.Architectures["s390x"]
+	}
+
 	if !foundArch {
-		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", "x84_64")
+		return "", "", fmt.Errorf("couldn't find OS metadata for architecture %q", arch)
 	}
 
 	containerImage := arch.Images.Kubevirt.DigestRef
@@ -81,7 +87,7 @@ func GetImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage
 		return newBootImage(imageName, isHTTP), nil
 	}
 
-	imageName, imageHash, err := defaultImage(releaseImage)
+	imageName, imageHash, err := defaultImage(nodePool, releaseImage)
 	if err != nil && allowUnsupportedRHCOSVariants(nodePool) {
 		imageName, imageHash, err = openstack.OpenstackDefaultImage(releaseImage)
 		if err != nil {
