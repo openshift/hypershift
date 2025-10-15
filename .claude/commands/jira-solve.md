@@ -23,6 +23,13 @@ Analyze a JIRA issue and create a pull request to solve it.
 
 ## Process Flow:
 
+0. **Pre-flight Validation**:
+   - Validate that required tools are available (curl, jq, git, make)
+   - Check if current directory is a valid git repository
+   - Ensure working directory is clean or warn user about uncommitted changes
+   - Validate upstream remote is properly configured
+   - Fetch latest changes from upstream repository: `git fetch upstream`
+
 1. **Issue Analysis**: Parse JIRA URL and fetch issue details:
    - Use curl to fetch JIRA issue data: curl -s "https://issues.redhat.com/rest/api/2/issue/{$1}"
    - Parse JSON response to extract:
@@ -34,7 +41,7 @@ Analyze a JIRA issue and create a pull request to solve it.
          - Optional
             - Steps to reproduce (for bugs)
             - Expected vs actual behavior
-   - Ask the user for further issue grooming if the requried sections are missing
+   - Ask the user for further issue grooming if the required sections are missing
 
 2. **Codebase Analysis**: Search and analyze relevant code:
    - Find related files and functions
@@ -65,7 +72,7 @@ Analyze a JIRA issue and create a pull request to solve it.
    - You absolutely must run `make pre-commit` and get it passing before going to the "Commit Creation"
 
 4. **Commit Creation**: 
-   - Create feature branch using the jira-key $1 as the branch name. For example: "git checkout -b fix-{jira-key}"
+   - Create feature branch using the jira-key $1 as the branch name. Use main branch from upstream as base. For example: "git checkout -b fix-{jira-key} upstream/main"
    - Break commits into logical components based on the nature of the changes
    - Each commit should honor https://www.conventionalcommits.org/en/v1.0.0/ and always include a commit message body articulating the "why"
    - Use your judgment to organize commits in a way that makes them easy to review and understand
