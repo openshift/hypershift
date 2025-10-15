@@ -115,7 +115,7 @@ github.com/ahmetb/gen-crd-api-reference-docs
 # github.com/alecthomas/go-check-sumtype v0.3.1
 ## explicit; go 1.22.0
 github.com/alecthomas/go-check-sumtype
-# github.com/alecthomas/participle/v2 v2.1.1
+# github.com/alecthomas/participle/v2 v2.1.4
 ## explicit; go 1.18
 github.com/alecthomas/participle/v2/lexer
 # github.com/alexkohler/nakedret/v2 v2.0.5
