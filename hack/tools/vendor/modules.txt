@@ -1158,8 +1158,8 @@ github.com/subosito/gotenv
 # github.com/tdakkota/asciicheck v0.4.1
 ## explicit; go 1.22.0
 github.com/tdakkota/asciicheck
-# github.com/tetafro/godot v1.5.0
-## explicit; go 1.20
+# github.com/tetafro/godot v1.5.4
+## explicit; go 1.22
 github.com/tetafro/godot
 # github.com/timakin/bodyclose v0.0.0-20241017074812-ed6a65f985e3
 ## explicit; go 1.12
