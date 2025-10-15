@@ -1753,7 +1753,7 @@
 					},
 				},
 				{
-					name: "when arch is s390x and platform is not kubevirt it should fail",
+					name: "when arch is s390x and platform not kubevirt it should fail",
 					file: "nodepool-base.yaml",
 					validations: []struct {
 						name                   string
