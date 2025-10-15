@@ -50,6 +50,10 @@ spec:
         image: cluster-ingress-operator
         imagePullPolicy: IfNotPresent
         name: ingress-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+          protocol: TCP
         resources:
           requests:
             cpu: 10m
