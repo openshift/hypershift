@@ -813,8 +813,8 @@ github.com/krishicks/yaml-patch
 # github.com/kulti/thelper v0.6.3
 ## explicit; go 1.18
 github.com/kulti/thelper/pkg/analyzer
-# github.com/kunwardeep/paralleltest v1.0.10
-## explicit; go 1.17
+# github.com/kunwardeep/paralleltest v1.0.15
+## explicit; go 1.23.0
 github.com/kunwardeep/paralleltest/pkg/paralleltest
 # github.com/lasiar/canonicalheader v1.1.2
 ## explicit; go 1.22.0

@@ -358,8 +358,8 @@ github.com/krishicks/yaml-patch v0.0.10 h1:H4FcHpnNwVmw8u0MjPRjWyIXtco6zM2F78t+5
 github.com/krishicks/yaml-patch v0.0.10/go.mod h1:Sm5TchwZS6sm7RJoyg87tzxm2ZcKzdRE4Q7TjNhPrME=
 github.com/kulti/thelper v0.6.3 h1:ElhKf+AlItIu+xGnI990no4cE2+XaSu1ULymV2Yulxs=
 github.com/kulti/thelper v0.6.3/go.mod h1:DsqKShOvP40epevkFrvIwkCMNYxMeTNjdWL4dqWHZ6I=
-github.com/kunwardeep/paralleltest v1.0.10 h1:wrodoaKYzS2mdNVnc4/w31YaXFtsc21PCTdvWJ/lDDs=
-github.com/kunwardeep/paralleltest v1.0.10/go.mod h1:2C7s65hONVqY7Q5Efj5aLzRCNLjw2h4eMc9EcypGjcY=
+github.com/kunwardeep/paralleltest v1.0.15 h1:ZMk4Qt306tHIgKISHWFJAO1IDQJLc6uDyJMLyncOb6w=
+github.com/kunwardeep/paralleltest v1.0.15/go.mod h1:di4moFqtfz3ToSKxhNjhOZL+696QtJGCFe132CbBLGk=
 github.com/lasiar/canonicalheader v1.1.2 h1:vZ5uqwvDbyJCnMhmFYimgMZnJMjwljN5VGY0VKbMXb4=
 github.com/lasiar/canonicalheader v1.1.2/go.mod h1:qJCeLFS0G/QlLQ506T+Fk/fWMa2VmBUiEI2cuMK4djI=
 github.com/ldez/exptostd v0.4.2 h1:l5pOzHBz8mFOlbcifTxzfyYbgEmoUqjxLFHZkjlbHXs=
