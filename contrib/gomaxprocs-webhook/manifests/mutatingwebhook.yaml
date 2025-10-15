@@ -1,0 +1,27 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: gomaxprocs-webhook
+  annotations:
+    service.beta.openshift.io/inject-cabundle: "true"
+webhooks:
+- name: gomaxprocs-webhook.hypershift.svc
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  failurePolicy: Ignore
+  namespaceSelector:
+    matchLabels:
+      hypershift.openshift.io/hosted-control-plane: "true"
+  clientConfig:
+    service:
+      name: gomaxprocs-webhook
+      namespace: hypershift
+      path: "/mutate-pod"
+  rules:
+  - operations: ["CREATE"]
+    apiGroups: [""]
+    apiVersions: ["v1"]
+    resources: ["pods"]
+
+
+
