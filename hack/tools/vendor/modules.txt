@@ -226,7 +226,7 @@ github.com/curioswitch/go-reassign/internal/analyzer
 # github.com/cyphar/filepath-securejoin v0.2.5
 ## explicit; go 1.13
 github.com/cyphar/filepath-securejoin
-# github.com/daixiang0/gci v0.13.5
+# github.com/daixiang0/gci v0.13.7
 ## explicit; go 1.21
 github.com/daixiang0/gci/pkg/config
 github.com/daixiang0/gci/pkg/format
