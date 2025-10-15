@@ -202,8 +202,8 @@ github.com/charithe/durationcheck
 # github.com/chavacava/garif v0.1.0
 ## explicit; go 1.16
 github.com/chavacava/garif
-# github.com/ckaznocha/intrange v0.3.0
-## explicit; go 1.22
+# github.com/ckaznocha/intrange v0.3.1
+## explicit; go 1.23.0
 github.com/ckaznocha/intrange
 # github.com/cloudflare/circl v1.3.7
 ## explicit; go 1.19
