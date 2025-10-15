@@ -783,7 +783,7 @@ github.com/jingyugao/rowserrcheck/passes/rowserr
 # github.com/jinzhu/copier v0.4.0
 ## explicit; go 1.13
 github.com/jinzhu/copier
-# github.com/jjti/go-spancheck v0.6.4
+# github.com/jjti/go-spancheck v0.6.5
 ## explicit; go 1.22.1
 github.com/jjti/go-spancheck
 # github.com/josharian/intern v1.0.0
