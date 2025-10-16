@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	github.com/aws/karpenter-provider-aws v1.0.8
-	github.com/openshift/api v0.0.0-20250609083529-2b129d95495e
+	github.com/openshift/api 44baf885fd37
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 )
