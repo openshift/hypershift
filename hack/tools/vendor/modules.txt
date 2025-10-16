@@ -843,8 +843,8 @@ github.com/leonklingele/grouper/pkg/analyzer/globals
 github.com/leonklingele/grouper/pkg/analyzer/imports
 github.com/leonklingele/grouper/pkg/analyzer/types
 github.com/leonklingele/grouper/pkg/analyzer/vars
-# github.com/macabu/inamedparam v0.1.3
-## explicit; go 1.20
+# github.com/macabu/inamedparam v0.2.0
+## explicit; go 1.23.0
 github.com/macabu/inamedparam
 # github.com/magiconair/properties v1.8.7
 ## explicit; go 1.19
