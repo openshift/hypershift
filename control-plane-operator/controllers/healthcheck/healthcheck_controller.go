@@ -81,7 +81,7 @@ func (hcu *HealthCheckUpdater) update(ctx context.Context) error {
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.AWSPlatform {
 		// This is the best effort ping to the identity provider
 		// that enables access from the operator to the cloud provider resources.
-		if err := awsHealthCheckIdentityProvider(ctx, hostedControlPlane); err != nil {
+		if err := awsHealthCheckIdentityProvider(ctx, hcu.Client, hostedControlPlane); err != nil {
 			errs = append(errs, err)
 		}
 
