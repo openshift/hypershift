@@ -897,7 +897,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupFailures:        make(map[string]*cleanupFailureTracker),
+				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -973,18 +973,20 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				cleanupFailures:        make(map[string]*cleanupFailureTracker),
+				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
 
-			remaining, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+			remaining, skipReason, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			if test.expectCleanupSkipped {
 				// When KAS is unavailable, cleanup should be skipped with empty remaining
 				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(Equal("KubeAPIServerUnavailable"))
 			} else {
 				// When KAS is available, cleanup should proceed normally
 				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(BeEmpty())
 			}
 		})
 	}
@@ -1067,53 +1069,6 @@ func TestConnectionErrorTracking(t *testing.T) {
 			g.Expect(result).To(Equal(test.expectedConnection))
 		})
 	}
-}
-
-func TestCleanupFailureTracking(t *testing.T) {
-	g := NewGomegaWithT(t)
-	r := &reconciler{
-		cleanupFailures: make(map[string]*cleanupFailureTracker),
-	}
-
-	hcpKey := "test-namespace/test-hcp"
-
-	// Initially, should not skip cleanup
-	g.Expect(r.shouldSkipCleanup(hcpKey)).To(BeFalse())
-
-	// Record failures
-	for i := 0; i < maxCleanupFailures-1; i++ {
-		r.recordCleanupFailure(hcpKey)
-		g.Expect(r.shouldSkipCleanup(hcpKey)).To(BeFalse())
-	}
-
-	// After max failures, should skip
-	r.recordCleanupFailure(hcpKey)
-	g.Expect(r.shouldSkipCleanup(hcpKey)).To(BeTrue())
-
-	// Reset should clear tracking
-	r.resetCleanupFailures(hcpKey)
-	g.Expect(r.shouldSkipCleanup(hcpKey)).To(BeFalse())
-}
-
-func TestCleanupFailureDurationTimeout(t *testing.T) {
-	g := NewGomegaWithT(t)
-	r := &reconciler{
-		cleanupFailures: make(map[string]*cleanupFailureTracker),
-	}
-
-	hcpKey := "test-namespace/test-hcp"
-
-	// Record one failure
-	r.recordCleanupFailure(hcpKey)
-
-	// Manually set first failure time to past
-	tracker := r.getCleanupFailureTracker(hcpKey)
-	r.cleanupMutex.Lock()
-	tracker.firstFailureTime = time.Now().Add(-maxCleanupFailureDuration - 1*time.Minute)
-	r.cleanupMutex.Unlock()
-
-	// Should skip due to duration timeout even with only 1 failure
-	g.Expect(r.shouldSkipCleanup(hcpKey)).To(BeTrue())
 }
 
 func TestListAccessor(t *testing.T) {

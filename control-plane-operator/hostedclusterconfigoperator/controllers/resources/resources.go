@@ -102,9 +102,6 @@ web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
 region = %s
 `
-	// Cleanup failure tracking constants
-	maxCleanupFailures        = 5
-	maxCleanupFailureDuration = 5 * time.Minute
 )
 
 var (
@@ -127,12 +124,6 @@ exec /bin/azure-cloud-node-manager \
   --wait-routes=false
 `
 
-// cleanupFailureTracker tracks connection failures during cloud resource cleanup
-type cleanupFailureTracker struct {
-	count            int
-	firstFailureTime time.Time
-}
-
 type reconciler struct {
 	client         client.Client
 	uncachedClient client.Client
@@ -152,8 +143,7 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
-	cleanupFailures           map[string]*cleanupFailureTracker
-	cleanupMutex              sync.RWMutex
+	cleanupTracker            *util.CleanupTracker
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -210,7 +200,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
-		cleanupFailures:           make(map[string]*cleanupFailureTracker),
+		cleanupTracker:            util.NewCleanupTracker(),
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -2127,7 +2117,7 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 }
 
 func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
-	remaining, err := r.ensureCloudResourcesDestroyed(ctx, hcp)
+	remaining, skipReason, err := r.ensureCloudResourcesDestroyed(ctx, hcp)
 
 	var status metav1.ConditionStatus
 	var reason, message string
@@ -2136,6 +2126,20 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		reason = "ErrorOccurred"
 		status = metav1.ConditionFalse
 		message = fmt.Sprintf("Error: %v", err)
+	} else if skipReason != "" {
+		// Cleanup was skipped - set condition to indicate why
+		reason = skipReason
+		status = metav1.ConditionFalse
+		switch skipReason {
+		case "KubeAPIServerUnavailable":
+			message = "Cleanup skipped: KubeAPIServer deployment not available in control plane"
+		case "MaxConnectionFailuresExceeded":
+			message = "Cleanup skipped: Maximum connection failures exceeded"
+		case "ConnectionFailureTimeout":
+			message = "Cleanup skipped: Connection failure timeout exceeded"
+		default:
+			message = fmt.Sprintf("Cleanup skipped: %s", skipReason)
+		}
 	} else {
 		if remaining.Len() == 0 {
 			reason = "CloudResourcesDestroyed"
@@ -2170,42 +2174,33 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	}
 }
 
-func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.Set[string], error) {
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.Set[string], string, error) {
 	log := ctrl.LoggerFrom(ctx)
 	remaining := sets.New[string]()
-	hcpKey := fmt.Sprintf("%s/%s", hcp.Namespace, hcp.Name)
+	hcpKey := client.ObjectKeyFromObject(hcp).String()
 
-	// Check if KubeAPIServer deployment exists
-	kasAvailable, err := r.isKubeAPIServerAvailable(ctx, hcp)
+	// Check if we should skip cleanup (includes KAS availability check and failure tracking)
+	shouldSkip, reason, err := r.cleanupTracker.ShouldSkipCleanup(ctx, hcp, r.cpClient)
 	if err != nil {
-		log.Error(err, "Failed to check KubeAPIServer availability")
-		return remaining, err
+		log.Error(err, "Failed to check if cleanup should be skipped")
+		return remaining, "", err
 	}
-	if !kasAvailable {
-		log.Info("KubeAPIServer deployment not found, skipping guest cluster resource cleanup")
-		r.resetCleanupFailures(hcpKey)
-		return remaining, nil
-	}
-
-	// Check if we should skip cleanup due to repeated connection failures
-	if r.shouldSkipCleanup(hcpKey) {
-		tracker := r.getCleanupFailureTracker(hcpKey)
-		log.Info("Skipping cleanup after repeated connection failures",
-			"failureCount", tracker.count,
-			"firstFailureTime", tracker.firstFailureTime,
-			"duration", time.Since(tracker.firstFailureTime))
-		return remaining, nil
+	if shouldSkip {
+		log.Info("Skipping cleanup", "reason", reason,
+			"failureCount", r.cleanupTracker.GetFailureCount(hcpKey),
+			"firstFailureTime", r.cleanupTracker.GetFirstFailureTime(hcpKey))
+		return remaining, reason, nil
 	}
 
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx, hcp); err != nil {
 		if isConnectionError(err) {
 			log.Info("Connection error while blocking resource creation", "error", err.Error())
-			r.recordCleanupFailure(hcpKey)
-			return remaining, err
+			r.cleanupTracker.RecordFailure(hcpKey)
+			return remaining, "", err
 		}
-		r.resetCleanupFailures(hcpKey)
-		return remaining, err
+		r.cleanupTracker.ResetFailures(hcpKey)
+		return remaining, "", err
 	}
 
 	var errs []error
@@ -2293,17 +2288,17 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	aggregatedErr := utilerrors.NewAggregate(errs)
 	if aggregatedErr != nil {
 		if hasConnectionError {
-			r.recordCleanupFailure(hcpKey)
+			r.cleanupTracker.RecordFailure(hcpKey)
 		} else {
 			// Reset on non-connection errors (different issue)
-			r.resetCleanupFailures(hcpKey)
+			r.cleanupTracker.ResetFailures(hcpKey)
 		}
-		return remaining, aggregatedErr
+		return remaining, "", aggregatedErr
 	}
 
 	// Success - reset failure tracking
-	r.resetCleanupFailures(hcpKey)
-	return remaining, nil
+	r.cleanupTracker.ResetFailures(hcpKey)
+	return remaining, "", nil
 }
 
 func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
@@ -2743,24 +2738,6 @@ func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
 		meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
 }
 
-// isKubeAPIServerAvailable checks if the kube-apiserver deployment exists in the control plane namespace.
-// Returns false if the deployment is not found, true if it exists.
-func (r *reconciler) isKubeAPIServerAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "kube-apiserver",
-			Namespace: hcp.Namespace,
-		},
-	}
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check kube-apiserver deployment: %w", err)
-	}
-	return true, nil
-}
-
 // isConnectionError detects connection-related errors that indicate the guest cluster API is unavailable.
 func isConnectionError(err error) bool {
 	if err == nil {
@@ -2776,67 +2753,6 @@ func isConnectionError(err error) bool {
 	// These are typically connection refused, EOF, DNS resolution failures, timeouts, etc.
 	var netErr net.Error
 	if errors.As(err, &netErr) {
-		return true
-	}
-
-	return false
-}
-
-// getCleanupFailureTracker returns the failure tracker for a given HCP, creating it if it doesn't exist.
-func (r *reconciler) getCleanupFailureTracker(hcpKey string) *cleanupFailureTracker {
-	r.cleanupMutex.RLock()
-	tracker, exists := r.cleanupFailures[hcpKey]
-	r.cleanupMutex.RUnlock()
-
-	if !exists {
-		r.cleanupMutex.Lock()
-		// Double-check after acquiring write lock
-		if tracker, exists = r.cleanupFailures[hcpKey]; !exists {
-			tracker = &cleanupFailureTracker{}
-			r.cleanupFailures[hcpKey] = tracker
-		}
-		r.cleanupMutex.Unlock()
-	}
-
-	return tracker
-}
-
-// recordCleanupFailure increments the failure count for a given HCP.
-func (r *reconciler) recordCleanupFailure(hcpKey string) {
-	tracker := r.getCleanupFailureTracker(hcpKey)
-	r.cleanupMutex.Lock()
-	defer r.cleanupMutex.Unlock()
-
-	if tracker.count == 0 {
-		tracker.firstFailureTime = time.Now()
-	}
-	tracker.count++
-}
-
-// resetCleanupFailures resets the failure tracking for a given HCP.
-func (r *reconciler) resetCleanupFailures(hcpKey string) {
-	r.cleanupMutex.Lock()
-	defer r.cleanupMutex.Unlock()
-	delete(r.cleanupFailures, hcpKey)
-}
-
-// shouldSkipCleanup checks if cleanup should be skipped based on failure count or duration.
-func (r *reconciler) shouldSkipCleanup(hcpKey string) bool {
-	tracker := r.getCleanupFailureTracker(hcpKey)
-	r.cleanupMutex.RLock()
-	defer r.cleanupMutex.RUnlock()
-
-	if tracker.count == 0 {
-		return false
-	}
-
-	// Skip if max failures exceeded
-	if tracker.count >= maxCleanupFailures {
-		return true
-	}
-
-	// Skip if max duration exceeded
-	if time.Since(tracker.firstFailureTime) >= maxCleanupFailureDuration {
 		return true
 	}
 
