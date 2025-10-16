@@ -1,0 +1,14 @@
+{
+  "extraKnownMarketplaces": {
+    "openshift-ai-helpers": {
+      "source": {
+        "source": "github",
+        "repo": "openshift-eng/ai-helpers"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "jira@ai-helpers": true,
+    "utils@ai-helpers": true
+  }
+}
