@@ -167,8 +167,8 @@ github.com/breml/bidichk/pkg/bidichk
 # github.com/breml/errchkjson v0.4.0
 ## explicit; go 1.22.0
 github.com/breml/errchkjson
-# github.com/butuzov/ireturn v0.3.1
-## explicit; go 1.18
+# github.com/butuzov/ireturn v0.4.0
+## explicit; go 1.23.0
 github.com/butuzov/ireturn/analyzer
 github.com/butuzov/ireturn/analyzer/internal/config
 github.com/butuzov/ireturn/analyzer/internal/types
