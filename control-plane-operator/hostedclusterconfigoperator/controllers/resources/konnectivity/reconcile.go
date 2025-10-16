@@ -160,6 +160,14 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 		}
 		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.VolumeMounts = volumeMounts.ContainerMounts(c.Name)
+		c.SecurityContext = &corev1.SecurityContext{
+			AllowPrivilegeEscalation: ptr.To(false),
+			ReadOnlyRootFilesystem:   ptr.To(true),
+			RunAsNonRoot:             ptr.To(true),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+			},
+		}
 		c.Resources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("50Mi"),
