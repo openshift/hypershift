@@ -14,8 +14,7 @@ import (
 )
 
 type CVOParams struct {
-	ReleaseImage            string
-	ControlPlaneImage       string
+	CVOImage                string
 	CLIImage                string
 	AvailabilityProberImage string
 	ClusterID               string
@@ -29,16 +28,15 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imagepro
 	p := &CVOParams{
 		CLIImage:                releaseImageProvider.GetImage("cli"),
 		AvailabilityProberImage: releaseImageProvider.GetImage(util.AvailabilityProberImageName),
-		ControlPlaneImage:       util.HCPControlPlaneReleaseImage(hcp),
-		ReleaseImage:            releaseImageProvider.GetImage("cluster-version-operator"),
+		CVOImage:                releaseImageProvider.GetImage("cluster-version-operator"),
 		OwnerRef:                config.OwnerRefFrom(hcp),
 		ClusterID:               hcp.Spec.ClusterID,
 		PlatformType:            hcp.Spec.Platform.Type,
 	}
 	// fallback to hcp.Spec.ReleaseImage if "cluster-version-operator" image is not available.
 	// This could happen for example in local dev environments if the "OPERATE_ON_RELEASE_IMAGE" env variable is not set.
-	if p.ReleaseImage == "" {
-		p.ReleaseImage = hcp.Spec.ReleaseImage
+	if p.CVOImage == "" {
+		p.CVOImage = util.HCPControlPlaneReleaseImage(hcp)
 	}
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.FeatureGate != nil {
 		p.FeatureSet = hcp.Spec.Configuration.FeatureGate.FeatureSet
