@@ -68,7 +68,7 @@ github.com/JoelSpeed/kal/pkg/analysis/statussubresource
 github.com/JoelSpeed/kal/pkg/analysis/utils
 github.com/JoelSpeed/kal/pkg/config
 github.com/JoelSpeed/kal/pkg/validation
-# github.com/Masterminds/semver/v3 v3.3.0
+# github.com/Masterminds/semver/v3 v3.4.0
 ## explicit; go 1.21
 github.com/Masterminds/semver/v3
 # github.com/Microsoft/go-winio v0.6.1
