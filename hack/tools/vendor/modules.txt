@@ -774,8 +774,8 @@ github.com/jbenet/go-context/io
 # github.com/jessevdk/go-flags v1.6.1
 ## explicit; go 1.20
 github.com/jessevdk/go-flags
-# github.com/jgautheron/goconst v1.7.1
-## explicit; go 1.13
+# github.com/jgautheron/goconst v1.8.2
+## explicit; go 1.16
 github.com/jgautheron/goconst
 # github.com/jingyugao/rowserrcheck v1.1.1
 ## explicit; go 1.13
