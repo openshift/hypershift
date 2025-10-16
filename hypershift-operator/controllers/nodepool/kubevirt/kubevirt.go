@@ -39,7 +39,7 @@ var (
 )
 
 func defaultImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
-        default_arch := "x86_64"
+	default_arch := "x86_64"
 	arch, foundArch := releaseImage.StreamMetadata.Architectures[default_arch]
 
 	if nodePool.Spec.Arch == "s390x" {
