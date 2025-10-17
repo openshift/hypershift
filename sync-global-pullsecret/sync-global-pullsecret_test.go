@@ -86,6 +86,68 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectedFinalContent: `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			expectError:          true,
 		},
+		{
+			name:               "preserve trailing newline when original file has one",
+			description:        "file has trailing newline, new content doesn't, should preserve newline",
+			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
+			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
+			expectError:          true,
+		},
+		{
+			name:               "preserve single newline when both have newlines",
+			description:        "both original file and new content have trailing newlines, should preserve single newline",
+			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
+			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
+			expectError:          true,
+		},
+		{
+			name:               "no newline when original file has none",
+			description:        "original file has no newline, new content has newline, should preserve new content format",
+			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "no newlines preserved",
+			description:        "neither original file nor new content have newlines, should preserve format",
+			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			expectError:          true,
+		},
+		{
+			name:                  "same content with newline - no change needed",
+			description:           "file content is identical including newline, no restart should be attempted",
+			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail:    false,
+			expectedErrorContains: []string{},
+			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			expectError:           false,
+		},
 	}
 
 	for _, tt := range tests {
