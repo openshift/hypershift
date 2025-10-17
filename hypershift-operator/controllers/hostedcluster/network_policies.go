@@ -28,11 +28,6 @@ import (
 	"github.com/go-logr/logr"
 )
 
-const (
-	NeedManagementKASAccessLabel = "hypershift.openshift.io/need-management-kas-access"
-	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
-)
-
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
@@ -74,7 +69,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// ManagementKASNetworkPolicy restricts traffic for pods unless they have a known annotation.
-	if controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel && hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+	if controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel {
 		policy = networkpolicy.ManagementKASNetworkPolicy(controlPlaneNamespaceName)
 		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 			return reconcileManagementKASNetworkPolicy(policy, managementClusterNetwork, kubernetesEndpoint, r.ManagementClusterCapabilities.Has(capabilities.CapabilityDNS))
@@ -790,14 +785,20 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{
 			{
-				Key:      NeedManagementKASAccessLabel,
+				Key:      config.NeedManagementKASAccessLabel,
 				Operator: "DoesNotExist",
 				Values:   nil,
 			},
 			{
 				Key:      "name",
 				Operator: "NotIn",
-				Values:   []string{"aws-ebs-csi-driver-operator"},
+				Values: []string{
+					"aws-ebs-csi-driver-operator",
+					"azure-disk-csi-driver-operator",
+					"azure-file-csi-driver-operator",
+					"openstack-cinder-csi-driver-operator",
+					"manila-csi-driver-operator",
+				},
 			},
 		},
 	}
@@ -859,7 +860,7 @@ func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 	policy.Spec.PodSelector = metav1.LabelSelector{
 		MatchExpressions: []metav1.LabelSelectorRequirement{
 			{
-				Key:      NeedMetricsServerAccessLabel,
+				Key:      config.NeedMetricsServerAccessLabel,
 				Operator: "Exists",
 				Values:   nil,
 			},

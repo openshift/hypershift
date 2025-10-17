@@ -100,6 +100,10 @@ var expectedKasManagementComponents = []string{
 	"cloud-controller-manager",
 	"olm-collect-profiles",
 	"aws-ebs-csi-driver-operator",
+	"azure-disk-csi-driver-operator",
+	"azure-file-csi-driver-operator",
+	"openstack-cinder-csi-driver-operator",
+	"manila-csi-driver-operator",
 	"karpenter",
 	"karpenter-operator",
 	"featuregate-generator",
@@ -1104,11 +1108,8 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureNetworkPolicies", func(t *testing.T) {
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
-		}
-
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			g := NewWithT(t)
 			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
@@ -1141,23 +1142,19 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			}
 
 			// Validate cluster-version-operator is not allowed to access management KAS.
-			_, err = RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
-			g.Expect(err).To(HaveOccurred())
+			stdOut, err := RunCommandInPod(ctx, c, "cluster-version-operator", hcpNamespace, command, "cluster-version-operator", 0)
+			g.Expect(err).To(HaveOccurred(), fmt.Sprintf("cluster-version-operator pod was unexpectedly allowed to reach the management KAS. stdOut: %s.", stdOut))
 
-			// Validate private router is not allowed to access management KAS.
-			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-				if hostedCluster.Spec.Platform.AWS.EndpointAccess != hyperv1.Private {
-					// TODO (alberto): Run also in private case. Today it results in a flake:
-					// === CONT  TestCreateClusterPrivate/EnsureHostedCluster/EnsureNetworkPolicies/EnsureLimitedEgressTrafficToManagementKAS
-					//    util.go:851: private router pod was unexpectedly allowed to reach the management KAS. stdOut: . stdErr: Internal error occurred: error executing command in container: container is not created or running
-					// Should be solve with https://issues.redhat.com/browse/HOSTEDCP-1200
-					_, err := RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
-					g.Expect(err).To(HaveOccurred())
-				}
+			// private-router policy only applied on AWS and Azure.
+			if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform ||
+				hostedCluster.Spec.Platform.Type == hyperv1.AzurePlatform {
+				// Validate private router is not allowed to access management KAS.
+				stdOut, err = RunCommandInPod(ctx, c, "private-router", hcpNamespace, command, "private-router", 0)
+				g.Expect(err).To(HaveOccurred(), fmt.Sprintf("private-router pod was unexpectedly allowed to reach the management KAS. stdOut: %s.", stdOut))
 			}
 
 			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
+			stdOut, err = RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
 			// Expect curl return a 403 from the KAS.
 			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
 				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
