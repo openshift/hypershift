@@ -8,13 +8,16 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	crreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
@@ -35,7 +38,18 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create kube-system cache: %w", err)
 	}
 
-	// Create a crclient from new cache
+	// Create a cache for nodes (cluster-scoped)
+	nodeCache, err := cache.New(opts.Manager.GetConfig(), cache.Options{
+		Scheme: opts.Manager.GetScheme(),
+		DefaultNamespaces: map[string]cache.Config{
+			"": {}, // Empty string for cluster-scoped resources like nodes
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create node cache: %w", err)
+	}
+
+	// Create a crclient from kube-system cache
 	kubeSystemClient, err := crclient.New(opts.Manager.GetConfig(), crclient.Options{
 		Scheme: opts.Manager.GetScheme(),
 		Cache:  &crclient.CacheOptions{Reader: kubeSystemCache},
@@ -44,10 +58,24 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create kube-system client: %w", err)
 	}
 
-	// Get the informer for secrets from new cache
+	// Create a crclient from node cache
+	nodeClient, err := crclient.New(opts.Manager.GetConfig(), crclient.Options{
+		Scheme: opts.Manager.GetScheme(),
+		Cache:  &crclient.CacheOptions{Reader: nodeCache},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create node client: %w", err)
+	}
+
+	// Get the informers for Watch usage only (not for hybrid approach)
 	kubeSystemSecretInformer, err := kubeSystemCache.GetInformer(ctx, &corev1.Secret{})
 	if err != nil {
 		return fmt.Errorf("failed to get kube-system secret informer: %w", err)
+	}
+
+	nodeInformer, err := nodeCache.GetInformer(ctx, &corev1.Node{})
+	if err != nil {
+		return fmt.Errorf("failed to get node informer: %w", err)
 	}
 
 	uncachedClientRestConfig := opts.Manager.GetConfig()
@@ -69,15 +97,18 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		cpClient:               opts.CPCluster.GetClient(),
 		hcUncachedClient:       uncachedClient,
 		kubeSystemSecretClient: kubeSystemClient,
-		hcpName:                opts.HCPName,
+		nodeClient:             nodeClient,
 		hcpNamespace:           opts.Namespace,
 		hccoImage:              hccoImage,
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 	}
 
-	// Add the cache to the manager
+	// Add the caches to the manager
 	if err := opts.Manager.Add(kubeSystemCache); err != nil {
 		return fmt.Errorf("failed to add kube-system cache: %w", err)
+	}
+	if err := opts.Manager.Add(nodeCache); err != nil {
+		return fmt.Errorf("failed to add node cache: %w", err)
 	}
 
 	// Create a controller
@@ -95,6 +126,34 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to watch kube-system secrets: %w", err)
+	}
+
+	// Watch for nodes - when nodes are created, we need to reconcile global pull secret
+	if err := c.Watch(&source.Informer{
+		Informer: nodeInformer,
+		Handler: handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o crclient.Object) []crreconcile.Request {
+			// Trigger reconciliation for node creation using the node's name for better observability
+			// The reconciler ignores the NamespacedName but this helps with logging and debugging
+			return []crreconcile.Request{{NamespacedName: types.NamespacedName{Name: o.GetName(), Namespace: ""}}}
+		}),
+		Predicates: []predicate.Predicate{
+			predicate.Funcs{
+				CreateFunc: func(e event.CreateEvent) bool {
+					// Only reconcile when new nodes are created
+					return true
+				},
+				UpdateFunc: func(e event.UpdateEvent) bool {
+					// Ignore node updates
+					return false
+				},
+				DeleteFunc: func(e event.DeleteEvent) bool {
+					// Ignore node deletions
+					return false
+				},
+			},
+		},
+	}); err != nil {
+		return fmt.Errorf("failed to watch nodes: %w", err)
 	}
 
 	return nil
