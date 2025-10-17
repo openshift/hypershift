@@ -1205,8 +1205,8 @@ github.com/x448/float16
 # github.com/xanzy/ssh-agent v0.3.3
 ## explicit; go 1.16
 github.com/xanzy/ssh-agent
-# github.com/xen0n/gosmopolitan v1.2.2
-## explicit; go 1.19
+# github.com/xen0n/gosmopolitan v1.3.0
+## explicit; go 1.23.0
 github.com/xen0n/gosmopolitan
 # github.com/yagipy/maintidx v1.0.0
 ## explicit; go 1.17
