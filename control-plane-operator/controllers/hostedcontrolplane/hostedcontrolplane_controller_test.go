@@ -66,6 +66,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
@@ -2181,4 +2182,126 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
 
 	return fakeComponents
+}
+
+func TestUseHCPRouter(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		expectedResult bool
+	}{
+		{
+			name: "Provider is IBM Cloud",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.IBMCloudPlatform,
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "Provider is NonePlatform, services are exposed with Routes",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.NonePlatform,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "cluster1.api.tenant1.com",
+								},
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "cluster1.tunnel.tenant1.com",
+								},
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "cluster1.ignition.tenant1.com",
+								},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "cluster1.oauth.tenant1.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "Provider is AWS, Public and Private",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.PublicAndPrivate,
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "Provider is AWS, Private",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Private,
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expectedResult, useHCPRouter(tc.hcp))
+		})
+	}
 }

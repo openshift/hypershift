@@ -1126,6 +1126,9 @@ func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
 	if sharedingress.UseSharedIngress() {
 		return false
 	}
+	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		return false
+	}
 	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
 }
 
