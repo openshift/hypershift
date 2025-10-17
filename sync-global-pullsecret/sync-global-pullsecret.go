@@ -195,14 +195,22 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
+	// Preserve trailing newline if it exists in the original file
+	contentToWrite := pullSecretBytes
+	if len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n' {
+		if len(pullSecretBytes) == 0 || pullSecretBytes[len(pullSecretBytes)-1] != '\n' {
+			contentToWrite = append(pullSecretBytes, '\n')
+		}
+	}
+
 	// If file content is different, write the desired content
-	if string(existingContent) != string(pullSecretBytes) {
+	if string(existingContent) != string(contentToWrite) {
 		s.log.Info("file content is different, updating it")
 		// Save original content for potential rollback
 		originalContent := existingContent
 
 		// Write the new content
-		if err := writeFileFunc(s.kubeletConfigJsonPath, pullSecretBytes, 0600); err != nil {
+		if err := writeFileFunc(s.kubeletConfigJsonPath, contentToWrite, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 		s.log.Info("Pull secret updated", "file", s.kubeletConfigJsonPath)
