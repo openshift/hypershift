@@ -1164,7 +1164,7 @@ github.com/tetafro/godot
 # github.com/timakin/bodyclose v0.0.0-20241017074812-ed6a65f985e3
 ## explicit; go 1.12
 github.com/timakin/bodyclose/passes/bodyclose
-# github.com/timonwong/loggercheck v0.10.1
+# github.com/timonwong/loggercheck v0.11.0
 ## explicit; go 1.22.0
 github.com/timonwong/loggercheck
 github.com/timonwong/loggercheck/internal/checkers
