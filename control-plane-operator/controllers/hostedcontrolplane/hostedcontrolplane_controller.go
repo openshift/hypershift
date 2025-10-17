@@ -3822,8 +3822,8 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 	}
 
 	var (
-		controlPlaneReleaseImage string
-		dataPlaneReleaseImage    string
+		cvoImage              string
+		dataPlaneReleaseImage string
 	)
 	// The CVO prepare-payload script needs the ReleaseImage digest for disconnected environments
 	pullSecret := common.PullSecret(hcp.Namespace)
@@ -3831,25 +3831,23 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 	}
 	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-	_, controlPlaneReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, p.ControlPlaneImage, pullSecretBytes)
+	// Get the CVO image digest. p.CVOImage includes image overrides from the annotation if specified.
+	_, cvoImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, p.CVOImage, pullSecretBytes)
 	if err != nil {
-		return fmt.Errorf("failed to get control plane release image digest %s: %w", p.ControlPlaneImage, err)
+		return fmt.Errorf("failed to get CVO image digest %s: %w", p.CVOImage, err)
 	}
-	controlPlaneReleaseImage = controlPlaneReleaseImageRef.String()
+	cvoImage = cvoImageRef.String()
 
-	if p.ControlPlaneImage != hcp.Spec.ReleaseImage {
-		_, dataPlaneReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, hcp.Spec.ReleaseImage, pullSecretBytes)
-		if err != nil {
-			return fmt.Errorf("failed to get release image digest %s: %w", hcp.Spec.ReleaseImage, err)
-		}
-		dataPlaneReleaseImage = dataPlaneReleaseImageRef.String()
-	} else {
-		dataPlaneReleaseImage = controlPlaneReleaseImage
+	// Get the data plane release image digest
+	_, dataPlaneReleaseImageRef, err := r.ImageMetadataProvider.GetDigest(ctx, hcp.Spec.ReleaseImage, pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to get data plane release image digest %s: %w", hcp.Spec.ReleaseImage, err)
 	}
+	dataPlaneReleaseImage = dataPlaneReleaseImageRef.String()
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet, hcp.Spec.Capabilities)
+		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, cvoImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet, hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
