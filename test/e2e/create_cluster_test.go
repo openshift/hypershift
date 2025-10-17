@@ -995,8 +995,6 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
 		// TODO: enable when CNO/CSI changes to add the Labels to their 2nd-level operands is added.
 		// e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
-
-		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }

@@ -11,9 +11,11 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	apiversion "k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -801,6 +803,121 @@ func TestHostFromURL(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
 			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func TestCountAvailableNodes(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+
+	tests := []struct {
+		name      string
+		nodes     []corev1.Node
+		expected  int32
+		expectErr bool
+	}{
+		{
+			name: "all nodes ready and schedulable",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Spec:       corev1.NodeSpec{Unschedulable: false},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node2"},
+					Spec:       corev1.NodeSpec{Unschedulable: false},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+			expected: 2,
+		},
+		{
+			name: "one node cordoned",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Spec:       corev1.NodeSpec{Unschedulable: false},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node2"},
+					Spec:       corev1.NodeSpec{Unschedulable: true}, // cordoned
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+			expected: 1,
+		},
+		{
+			name: "one node not ready",
+			nodes: []corev1.Node{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node1"},
+					Spec:       corev1.NodeSpec{Unschedulable: false},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "node2"},
+					Spec:       corev1.NodeSpec{Unschedulable: false},
+					Status: corev1.NodeStatus{
+						Conditions: []corev1.NodeCondition{
+							{Type: corev1.NodeReady, Status: corev1.ConditionFalse}, // not ready
+						},
+					},
+				},
+			},
+			expected: 1,
+		},
+		{
+			name:     "no nodes",
+			nodes:    []corev1.Node{},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			objects := make([]client.Object, len(tt.nodes))
+			for i := range tt.nodes {
+				objects[i] = &tt.nodes[i]
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				Build()
+
+			result, err := CountAvailableNodes(context.Background(), fakeClient)
+			if tt.expectErr && err == nil {
+				t.Errorf("expected error, got none")
+			}
+			if !tt.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if result != tt.expected {
+				t.Errorf("expected %d available nodes, got %d", tt.expected, result)
+			}
 		})
 	}
 }
