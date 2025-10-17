@@ -1,6 +1,7 @@
-/*
- *
- * Copyright 2022 gRPC authors.
+//go:build go1.24
+
+/*-
+ * Copyright 2014 Square Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,20 +14,15 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
-package grpcsync
+package jose
 
 import (
-	"sync"
+	"crypto/pbkdf2"
+	"hash"
 )
 
-// OnceFunc returns a function wrapping f which ensures f is only executed
-// once even if the returned function is executed multiple times.
-func OnceFunc(f func()) func() {
-	var once sync.Once
-	return func() {
-		once.Do(f)
-	}
+func pbkdf2Key(h func() hash.Hash, password string, salt []byte, iter, keyLen int) ([]byte, error) {
+	return pbkdf2.Key(h, password, salt, iter, keyLen)
 }
