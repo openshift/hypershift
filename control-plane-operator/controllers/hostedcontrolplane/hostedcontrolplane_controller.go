@@ -1393,6 +1393,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
+
 	// Create the Service type LB internal for private endpoints.
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
