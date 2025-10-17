@@ -384,7 +384,13 @@ func (r *AWSMachine) validateNetworkElasticIPPool() field.ErrorList {
 func (r *AWSMachine) validateCapacityReservation() field.ErrorList {
 	var allErrs field.ErrorList
 	if r.Spec.CapacityReservationID != nil && r.Spec.CapacityReservationPreference != CapacityReservationPreferenceOnly && r.Spec.CapacityReservationPreference != "" {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when a reservation ID is specified, capacityReservationPreference may only be `capacity-reservations-only` or empty"))
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when capacityReservationId is specified, capacityReservationPreference may only be 'CapacityReservationsOnly' or empty"))
+	}
+	if r.Spec.CapacityReservationPreference == CapacityReservationPreferenceOnly && r.Spec.MarketType == MarketTypeSpot {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when marketType is set to 'Spot', capacityReservationPreference cannot be set to 'CapacityReservationsOnly'"))
+	}
+	if r.Spec.CapacityReservationPreference == CapacityReservationPreferenceOnly && r.Spec.SpotMarketOptions != nil {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when capacityReservationPreference is 'CapacityReservationsOnly', spotMarketOptions cannot be set (which implies marketType: 'Spot')"))
 	}
 	return allErrs
 }
@@ -445,11 +451,13 @@ func (*awsMachineWebhook) Default(_ context.Context, obj runtime.Object) error {
 		r.Spec.CloudInit.SecureSecretsBackend = SecretBackendSecretsManager
 	}
 
-	if r.ignitionEnabled() && r.Spec.Ignition.Version == "" {
-		r.Spec.Ignition.Version = DefaultIgnitionVersion
-	}
 	if r.ignitionEnabled() && r.Spec.Ignition.StorageType == "" {
 		r.Spec.Ignition.StorageType = DefaultIgnitionStorageType
+	}
+	// Defaults the version field if StorageType is not set to `UnencryptedUserData`.
+	// When using `UnencryptedUserData` the version field is ignored because the userdata defines its version itself.
+	if r.ignitionEnabled() && r.Spec.Ignition.Version == "" && r.Spec.Ignition.StorageType != IgnitionStorageTypeOptionUnencryptedUserData {
+		r.Spec.Ignition.Version = DefaultIgnitionVersion
 	}
 
 	return nil
