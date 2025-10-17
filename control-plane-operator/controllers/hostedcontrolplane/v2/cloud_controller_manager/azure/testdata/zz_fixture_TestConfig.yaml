@@ -1,0 +1,36 @@
+apiVersion: v1
+data:
+  cloud.conf: |-
+    {
+      "cloud": "AzurePublicCloud",
+      "tenantId": "my-tenant-id",
+      "useManagedIdentityExtension": false,
+      "useFederatedWorkloadIdentityExtension": true,
+      "subscriptionId": "my-subscription-id",
+      "aadClientId": "my-client-id",
+      "aadClientSecret": "",
+      "aadClientCertPath": "",
+      "aadFederatedTokenFile": "/var/run/secrets/openshift/serviceaccount/token",
+      "aadMSIDataPlaneIdentityPath": "",
+      "resourceGroup": "my-resource-group",
+      "location": "eastus",
+      "vnetName": "my-vnet",
+      "vnetResourceGroup": "my-vnet-rg",
+      "subnetName": "my-subnet",
+      "securityGroupName": "my-security-group",
+      "securityGroupResourceGroup": "my-sg-rg",
+      "routeTableName": "",
+      "cloudProviderBackoff": true,
+      "cloudProviderBackoffDuration": 6,
+      "useInstanceMetadata": true,
+      "loadBalancerSku": "standard",
+      "disableOutboundSNAT": true,
+      "loadBalancerName": "my-infra-ID",
+      "clusterServiceLoadBalancerHealthProbeMode": "shared",
+      "clusterServiceSharedLoadBalancerHealthProbePath": "/healthz",
+      "clusterServiceSharedLoadBalancerHealthProbePort": 10256
+    }
+kind: ConfigMap
+metadata:
+  creationTimestamp: null
+  name: azure-cloud-config
