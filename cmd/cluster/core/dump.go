@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path"
@@ -164,7 +164,6 @@ func NewDumpCommand() *cobra.Command {
 	_ = cmd.MarkFlagRequired("artifact-dir")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		rand.New(rand.NewSource(time.Now().UnixNano()))
 		if err := DumpCluster(cmd.Context(), opts); err != nil {
 			opts.Log.Error(err, "Error")
 			return err
@@ -200,7 +199,7 @@ func dumpGuestCluster(ctx context.Context, opts *DumpOptions) error {
 	if opts.DumpGuestClusterThroughKubeService {
 		localPort = -1
 	} else {
-		localPort = rand.Intn(45000-32767) + 32767
+		localPort = rand.IntN(45000-32767) + 32767
 		podToForward, err := supportforwarder.GetRunningKubeAPIServerPod(ctx, c, cpNamespace)
 		if err != nil {
 			return fmt.Errorf("failed to get running kube-apiserver pod for guest cluster: %w", err)
