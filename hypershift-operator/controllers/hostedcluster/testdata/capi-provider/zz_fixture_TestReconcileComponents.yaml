@@ -137,16 +137,11 @@ spec:
         - availability-prober
         - --target
         - https://kube-apiserver:6443/readyz
-        - --kubeconfig=/var/kubeconfig/kubeconfig
-        - --wait-for-infrastructure-resource
         image: availability-prober
         imagePullPolicy: IfNotPresent
         name: availability-prober
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
-        volumeMounts:
-        - mountPath: /var/kubeconfig
-          name: svc-kubeconfig
       priorityClassName: hypershift-control-plane
       serviceAccountName: capi-provider
       terminationGracePeriodSeconds: 10

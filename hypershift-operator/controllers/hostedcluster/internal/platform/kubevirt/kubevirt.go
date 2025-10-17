@@ -99,15 +99,6 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 							},
 						},
 					},
-					{
-						Name: "svc-kubeconfig",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								DefaultMode: &defaultMode,
-								SecretName:  "service-network-admin-kubeconfig",
-							},
-						},
-					},
 				},
 				Containers: []corev1.Container{
 					{
@@ -125,10 +116,6 @@ func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ 
 								Name:      "capi-webhooks-tls",
 								ReadOnly:  true,
 								MountPath: "/tmp/k8s-webhook-server/serving-certs",
-							},
-							{
-								Name:      "svc-kubeconfig",
-								MountPath: "/etc/kubernetes",
 							},
 						},
 						Env: []corev1.EnvVar{
