@@ -218,7 +218,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// Run EnsureGlobalPullSecret at the end to avoid interference with upgrade tests
 		// that may have executed earlier in the same cluster. This test modifies
 		// /var/lib/kubelet/config.json and can cause disk validation failures in upgrades.
-		EnsureGlobalPullSecret(t, t.Context(), h.client, hostedCluster)
+		t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
+			EnsureGlobalPullSecret(t, context.Background(), h.client, hostedCluster)
+		})
 	})
 }
 
