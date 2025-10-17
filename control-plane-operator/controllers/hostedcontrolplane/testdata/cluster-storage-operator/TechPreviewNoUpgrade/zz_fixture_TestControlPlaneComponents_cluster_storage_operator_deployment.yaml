@@ -90,10 +90,6 @@ spec:
           value: openstack-cinder-csi-driver-operator
         - name: OPENSTACK_CINDER_DRIVER_IMAGE
           value: openstack-cinder-csi-driver
-        - name: OVIRT_DRIVER_OPERATOR_IMAGE
-          value: ovirt-csi-driver-operator
-        - name: OVIRT_DRIVER_IMAGE
-          value: ovirt-csi-driver
         - name: MANILA_DRIVER_OPERATOR_IMAGE
           value: csi-driver-manila-operator
         - name: MANILA_DRIVER_IMAGE
