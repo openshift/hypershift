@@ -54,6 +54,11 @@ func (b mustNotExceedCostBudget) Validate(crd *apiextensionsv1.CustomResourceDef
 					return false
 				}
 
+				if schema.XValidations == nil {
+					// There are no XValidations at this level, we do not need to continue with checks.
+					return false
+				}
+
 				schemaInfos, schemaWarnings, err := inspectSchema(schema, simpleLocation, len(ancestry) == 0)
 				if err != nil {
 					errsToReport = append(errsToReport, err.Error())
@@ -280,10 +285,6 @@ func isUnboundedCardinality(schema *apiextensions.JSONSchemaProps) bool {
 }
 
 func inspectSchema(schema *apiextensions.JSONSchemaProps, simpleLocation *field.Path, isRoot bool) ([]string, []string, error) {
-	if schema.XValidations == nil {
-		return nil, nil, nil
-	}
-
 	typeInfo, err := getDeclType(schema, isRoot)
 	if err != nil {
 		return nil, nil, err
