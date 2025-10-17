@@ -17,7 +17,7 @@ var (
 )
 
 // specialReplacer is a replacer for some types of special lines in comments,
-// which shouldn't be checked. For example, if comment ends with a block of
+// which shouldn't be checked. For example, if a comment ends with a block of
 // code it should not necessarily have a period at the end.
 const specialReplacer = "<godotSpecialReplacer>"
 
@@ -68,7 +68,7 @@ func (pf *parsedFile) getComments(scope Scope, exclude []*regexp.Regexp) []comme
 		comments = pf.getAllComments(exclude)
 	case NoInlineScope:
 		// All except inline comments
-		comments = pf.getNoInline(exclude)
+		comments = pf.getNoInlineComments(exclude)
 	case TopLevelScope:
 		// All top level comments and comments from the inside
 		// of top level blocks
@@ -176,8 +176,8 @@ func (pf *parsedFile) getDeclarationComments(exclude []*regexp.Regexp) []comment
 	return comments
 }
 
-// getNoInline gets all except inline comments.
-func (pf *parsedFile) getNoInline(exclude []*regexp.Regexp) []comment {
+// getNoInlineComments gets all except inline comments.
+func (pf *parsedFile) getNoInlineComments(exclude []*regexp.Regexp) []comment {
 	var comments []comment //nolint:prealloc
 	for _, c := range pf.file.Comments {
 		if c == nil || len(c.List) == 0 {
