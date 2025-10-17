@@ -2068,7 +2068,27 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
+}
+
+func TestCreateClusterIngressOperatorConfiguration(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platform AWS, Azure")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
+
+		// ensure Ingress Operator configuration changes are properly handled
+		e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ingress-operator-config", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
