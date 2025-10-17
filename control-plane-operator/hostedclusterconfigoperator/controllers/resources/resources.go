@@ -2128,18 +2128,9 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		message = fmt.Sprintf("Error: %v", err)
 	} else if skipReason != "" {
 		// Cleanup was skipped - set condition to indicate why
-		reason = skipReason
+		reason = string(hyperv1.CloudResourcesCleanupSkippedReason)
 		status = metav1.ConditionFalse
-		switch skipReason {
-		case "KubeAPIServerUnavailable":
-			message = "Cleanup skipped: KubeAPIServer deployment not available in control plane"
-		case "MaxConnectionFailuresExceeded":
-			message = "Cleanup skipped: Maximum connection failures exceeded"
-		case "ConnectionFailureTimeout":
-			message = "Cleanup skipped: Connection failure timeout exceeded"
-		default:
-			message = fmt.Sprintf("Cleanup skipped: %s", skipReason)
-		}
+		message = fmt.Sprintf("Cleanup skipped: %s", skipReason)
 	} else {
 		if remaining.Len() == 0 {
 			reason = "CloudResourcesDestroyed"
