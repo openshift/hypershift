@@ -729,3 +729,27 @@ func HostFromURL(addr string) (string, error) {
 func EnableIfCustomKubeconfig(hcp *hyperv1.HostedControlPlane) bool {
 	return len(hcp.Spec.KubeAPIServerDNSName) > 0
 }
+
+// CountAvailableNodes counts the number of available nodes in the cluster.
+// Available nodes are defined as Ready nodes that are not cordoned (Unschedulable).
+func CountAvailableNodes(ctx context.Context, client client.Client) (int32, error) {
+	var nodeList corev1.NodeList
+	if err := client.List(ctx, &nodeList); err != nil {
+		return 0, fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	// Count only available nodes (Ready nodes that are not cordoned)
+	availableNodesCount := int32(0)
+	for _, node := range nodeList.Items {
+		if !node.Spec.Unschedulable {
+			for _, condition := range node.Status.Conditions {
+				if condition.Type == corev1.NodeReady && condition.Status == corev1.ConditionTrue {
+					availableNodesCount++
+					break
+				}
+			}
+		}
+	}
+
+	return availableNodesCount, nil
+}
