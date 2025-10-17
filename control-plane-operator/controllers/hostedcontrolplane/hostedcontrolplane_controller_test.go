@@ -78,6 +78,10 @@ func (*fakeEC2Client) DescribeVpcEndpointsWithContext(aws.Context, *ec2.Describe
 	return &ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")
 }
 
+func (*fakeEC2Client) DescribeSecurityGroups(*ec2.DescribeSecurityGroupsInput) (*ec2.DescribeSecurityGroupsOutput, error) {
+	return &ec2.DescribeSecurityGroupsOutput{}, nil
+}
+
 func TestReconcileKubeadminPassword(t *testing.T) {
 	targetNamespace := "test"
 

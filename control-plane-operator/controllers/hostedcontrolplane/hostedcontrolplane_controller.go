@@ -2890,6 +2890,18 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		return nil
 	}
 
+	// Check if a security group already exists but isn't tracked in the status (e.g., after OADP restore).
+	// This handles the case where AWS resources exist but the HostedControlPlane status was not restored.
+	if hcp.Status.Platform == nil || hcp.Status.Platform.AWS == nil || hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID == "" {
+		found, err := r.discoverAndUpdateExistingSecurityGroup(ctx, hcp)
+		if err != nil {
+			return fmt.Errorf("failed to discover existing security group: %w", err)
+		}
+		if found {
+			return nil
+		}
+	}
+
 	validProvider := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 	if validProvider == nil || validProvider.Status != metav1.ConditionTrue {
 		logger.Info("Identity provider not ready. Skipping security group creation.")
@@ -3106,6 +3118,67 @@ func awsSecurityGroupTags(hcp *hyperv1.HostedControlPlane) map[string]string {
 	}
 
 	return tags
+}
+
+// discoverAndUpdateExistingSecurityGroup searches for an existing security group and updates the HCP status if found.
+// This handles the case where AWS resources exist but the HostedControlPlane status was not restored (e.g., after OADP restore).
+// Returns true if an existing security group was found and the status was updated, false otherwise.
+func (r *HostedControlPlaneReconciler) discoverAndUpdateExistingSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	logger := ctrl.LoggerFrom(ctx)
+	logger.Info("Security group ID not found in status, checking for existing security group")
+
+	describeSGResult, err := r.ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(hcp.Spec.InfraID)})
+	if err != nil {
+		// Log the error but don't fail here, as we'll try to create below if needed
+		logger.Info("Failed to describe security groups while looking for existing group", "error", err.Error())
+		return false, nil
+	}
+
+	if len(describeSGResult.SecurityGroups) == 0 {
+		logger.Info("No existing security group found")
+		return false, nil
+	}
+
+	// Found an existing security group, update the status
+	existingSG := describeSGResult.SecurityGroups[0]
+	existingSGID := awssdk.StringValue(existingSG.GroupId)
+	logger.Info("Found existing security group, updating status", "sgID", existingSGID)
+
+	originalHCP := hcp.DeepCopy()
+	if hcp.Status.Platform == nil {
+		hcp.Status.Platform = &hyperv1.PlatformStatus{}
+	}
+	if hcp.Status.Platform.AWS == nil {
+		hcp.Status.Platform.AWS = &hyperv1.AWSPlatformStatus{}
+	}
+	hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID = existingSGID
+
+	// Set the condition for successful discovery
+	condition := &metav1.Condition{
+		Type:    string(hyperv1.AWSDefaultSecurityGroupCreated),
+		Status:  metav1.ConditionTrue,
+		Message: fmt.Sprintf("Found existing security group %s", existingSGID),
+		Reason:  hyperv1.AsExpectedReason,
+	}
+	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+
+	if err := r.Client.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		return false, fmt.Errorf("failed to update status with existing security group: %w", err)
+	}
+
+	// Update the last-applied-security-group-tags annotation with current tags
+	existingTags := supportawsutil.EC2TagsToMap(existingSG.Tags)
+	if err := util.UpdateObject(ctx, r.Client, hcp, func() error {
+		if err := updateLastAppliedSecurityGroupTagsAnnotation(hcp, existingTags); err != nil {
+			return fmt.Errorf("failed to update last applied security group tags annotation")
+		}
+		return nil
+	}); err != nil {
+		return false, fmt.Errorf("failed to update HostedControlPlane object: %w", err)
+	}
+
+	logger.Info("Successfully discovered and registered existing security group", "sgID", existingSGID)
+	return true, nil
 }
 
 func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
