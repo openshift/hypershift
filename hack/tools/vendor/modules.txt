@@ -1099,11 +1099,9 @@ github.com/sivchari/tenv
 # github.com/skeema/knownhosts v1.3.0
 ## explicit; go 1.17
 github.com/skeema/knownhosts
-# github.com/sonatard/noctx v0.1.0
-## explicit; go 1.22.0
+# github.com/sonatard/noctx v0.4.0
+## explicit; go 1.23.0
 github.com/sonatard/noctx
-github.com/sonatard/noctx/ngfunc
-github.com/sonatard/noctx/reqwithoutctx
 # github.com/sourcegraph/go-diff v0.7.0
 ## explicit; go 1.14
 github.com/sourcegraph/go-diff/diff
