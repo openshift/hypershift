@@ -231,7 +231,7 @@ func (r *AWSMachinePool) validateCapacityReservation() field.ErrorList {
 	if r.Spec.AWSLaunchTemplate.CapacityReservationID != nil &&
 		r.Spec.AWSLaunchTemplate.CapacityReservationPreference != infrav1.CapacityReservationPreferenceOnly &&
 		r.Spec.AWSLaunchTemplate.CapacityReservationPreference != "" {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when a reservation ID is specified, capacityReservationPreference may only be `capacity-reservations-only` or empty"))
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "capacityReservationPreference"), "when capacityReservationId is specified, capacityReservationPreference may only be `CapacityReservationsOnly` or empty"))
 	}
 	return allErrs
 }
@@ -314,11 +314,13 @@ func (*AWSMachinePoolWebhook) Default(ctx context.Context, obj runtime.Object) e
 		r.Spec.DefaultInstanceWarmup.Duration = 300 * time.Second
 	}
 
-	if r.ignitionEnabled() && r.Spec.Ignition.Version == "" {
-		r.Spec.Ignition.Version = infrav1.DefaultIgnitionVersion
-	}
 	if r.ignitionEnabled() && r.Spec.Ignition.StorageType == "" {
 		r.Spec.Ignition.StorageType = infrav1.DefaultMachinePoolIgnitionStorageType
+	}
+	// Defaults the version field if StorageType is not set to `UnencryptedUserData`.
+	// When using `UnencryptedUserData` the version field is ignored because the userdata defines its version itself.
+	if r.ignitionEnabled() && r.Spec.Ignition.Version == "" && r.Spec.Ignition.StorageType != infrav1.IgnitionStorageTypeOptionUnencryptedUserData {
+		r.Spec.Ignition.Version = infrav1.DefaultIgnitionVersion
 	}
 
 	return nil
