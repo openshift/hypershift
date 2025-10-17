@@ -2786,6 +2786,13 @@ func (r *HostedControlPlaneReconciler) removeCloudResources(ctx context.Context,
 		return true, nil
 	}
 
+	// check if cleanup has been skipped
+	if resourcesDestroyedCond != nil && resourcesDestroyedCond.Status == metav1.ConditionFalse &&
+		resourcesDestroyedCond.Reason == string(hyperv1.CloudResourcesCleanupSkippedReason) {
+		log.Info("Cleanup has been skipped", "reason", resourcesDestroyedCond.Message)
+		return true, nil
+	}
+
 	// if CVO has been scaled down, we're waiting for resources to be destroyed
 	cvoScaledDownCond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
 	if cvoScaledDownCond != nil && cvoScaledDownCond.Status == metav1.ConditionTrue {

@@ -31,9 +31,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -523,7 +524,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
-				g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
@@ -592,7 +593,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
 			} else {
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(errors.IsNotFound(err)).To(BeTrue())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 		})
 	}
@@ -883,12 +884,20 @@ func TestDestroyCloudResources(t *testing.T) {
 			fakeHCP := fakeHostedControlPlane()
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existing...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingUncached...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
-			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			// Add KubeAPIServer deployment to cpClient so cleanup proceeds normally
+			kasDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver",
+					Namespace: fakeHCP.Namespace,
+				},
+			}
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(fakeHCP, kasDeployment).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
 				client:                 guestClient,
 				uncachedClient:         uncachedClient,
 				cpClient:               cpClient,
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
 			g.Expect(err).ToNot(HaveOccurred())
@@ -901,6 +910,163 @@ func TestDestroyCloudResources(t *testing.T) {
 			} else {
 				verifyNotDoneCond(g, cpClient)
 			}
+		})
+	}
+}
+
+func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
+	fakeHCP := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: "test-namespace",
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			Conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.CloudResourcesDestroyed),
+					Status: metav1.ConditionFalse,
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name                  string
+		kasDeploymentExists   bool
+		expectCleanupSkipped  bool
+		expectFailureTracking bool
+	}{
+		{
+			name:                 "KAS deployment not found - cleanup skipped",
+			kasDeploymentExists:  false,
+			expectCleanupSkipped: true,
+		},
+		{
+			name:                 "KAS deployment exists - cleanup proceeds",
+			kasDeploymentExists:  true,
+			expectCleanupSkipped: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+			cpClientObjects := []client.Object{fakeHCP}
+			if test.kasDeploymentExists {
+				kasDeployment := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: fakeHCP.Namespace,
+					},
+				}
+				cpClientObjects = append(cpClientObjects, kasDeployment)
+			}
+
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpClientObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				uncachedClient:         uncachedClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cleanupTracker:         supportutil.NewCleanupTracker(),
+			}
+
+			remaining, skipReason, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if test.expectCleanupSkipped {
+				// When KAS is unavailable, cleanup should be skipped with empty remaining
+				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(Equal("KubeAPIServerUnavailable"))
+			} else {
+				// When KAS is available, cleanup should proceed normally
+				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(BeEmpty())
+			}
+		})
+	}
+}
+
+// mockNetError is a test helper that implements net.Error
+type mockNetError struct {
+	error
+	timeout   bool
+	temporary bool
+}
+
+func (e *mockNetError) Timeout() bool   { return e.timeout }
+func (e *mockNetError) Temporary() bool { return e.temporary }
+
+func TestConnectionErrorTracking(t *testing.T) {
+
+	tests := []struct {
+		name               string
+		err                error
+		expectedConnection bool
+	}{
+		{
+			name:               "K8s timeout error",
+			err:                apierrors.NewTimeoutError("request timeout", 5),
+			expectedConnection: true,
+		},
+		{
+			name:               "K8s server timeout error",
+			err:                apierrors.NewServerTimeout(schema.GroupResource{Group: "", Resource: "pods"}, "get", 5),
+			expectedConnection: true,
+		},
+		{
+			name:               "K8s service unavailable error",
+			err:                apierrors.NewServiceUnavailable("service unavailable"),
+			expectedConnection: true,
+		},
+		{
+			name: "net.Error with timeout",
+			err: &mockNetError{
+				error:   fmt.Errorf("connection timeout"),
+				timeout: true,
+			},
+			expectedConnection: true,
+		},
+		{
+			name: "net.Error temporary",
+			err: &mockNetError{
+				error:     fmt.Errorf("temporary network error"),
+				temporary: true,
+			},
+			expectedConnection: true,
+		},
+		{
+			name:               "wrapped net.Error",
+			err:                fmt.Errorf("failed to connect: %w", &mockNetError{error: fmt.Errorf("connection refused"), timeout: false}),
+			expectedConnection: true,
+		},
+		{
+			name:               "other K8s error (not found)",
+			err:                apierrors.NewNotFound(schema.GroupResource{Group: "", Resource: "pods"}, "test-pod"),
+			expectedConnection: false,
+		},
+		{
+			name:               "other error",
+			err:                fmt.Errorf("permission denied"),
+			expectedConnection: false,
+		},
+		{
+			name:               "nil error",
+			err:                nil,
+			expectedConnection: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := isConnectionError(test.err)
+			g.Expect(result).To(Equal(test.expectedConnection))
 		})
 	}
 }
@@ -2093,7 +2259,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Name:      provider.Issuer.CertificateAuthority.Name,
 				}, caConfigMap)
 				g.Expect(err).To(HaveOccurred())
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "CA configmap should not exist before reconciliation")
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "CA configmap should not exist before reconciliation")
 			}
 
 			for _, secretName := range test.expectOIDCClientSecrets {
@@ -2103,7 +2269,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Name:      secretName,
 				}, clientSecret)
 				g.Expect(err).To(HaveOccurred())
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "OIDC client secret should not exist before reconciliation")
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "OIDC client secret should not exist before reconciliation")
 			}
 
 			err := r.reconcileAuthOIDC(ctx, test.inputHCP)
@@ -2165,7 +2331,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 						Namespace: ConfigNamespace,
 						Name:      provider.Issuer.CertificateAuthority.Name,
 					}, caConfigMap)
-					g.Expect(errors.IsNotFound(err)).To(BeTrue())
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 			}
 			// Verify that no unexpected client secrets were copied
