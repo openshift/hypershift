@@ -751,7 +751,21 @@ spec:
                           azureMarketplace:
                             description: azureMarketplace contains the Azure Marketplace
                               image info to use to boot the Azure VMs from.
+                            minProperties: 1
                             properties:
+                              imageGeneration:
+                                default: Gen2
+                                description: |-
+                                  imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+                                  This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+                                  from the release payload metadata when publisher, offer, sku, and version are not explicitly provided.
+                                  It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+                                  encoded into the SKU field that CAPZ uses.
+                                  Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
+                                enum:
+                                - Gen1
+                                - Gen2
+                                type: string
                               offer:
                                 description: offer specifies the name of a group of
                                   related images created by the publisher.
@@ -786,12 +800,19 @@ spec:
                                 minLength: 1
                                 pattern: ^[0-9]+\.[0-9]+\.[0-9]+$|^latest$
                                 type: string
-                            required:
-                            - offer
-                            - publisher
-                            - sku
-                            - version
                             type: object
+                            x-kubernetes-validations:
+                            - message: must specify imageGeneration or must specify
+                                publisher, offer, sku and version
+                              rule: has(self.imageGeneration) || has(self.publisher)
+                                && has(self.offer) && has(self.sku) && has(self.version)
+                            - message: publisher, offer, sku and version must either
+                                be all set, or all omitted
+                              rule: '[has(self.publisher), has(self.offer), has(self.sku),
+                                has(self.version)].filter(x, x == true).size() ==
+                                0 || [has(self.publisher), has(self.offer), has(self.sku),
+                                has(self.version)].filter(x, x == true).size() ==
+                                4'
                           imageID:
                             description: imageID is the Azure resource ID of a VHD
                               image to use to boot the Azure VMs from.
@@ -804,6 +825,10 @@ spec:
                               ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
                               AzureMarketplace means the VM will boot from an Azure Marketplace image.
                               Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
+                              When Type is "AzureMarketplace", you can either:
+                              1. Specify only imageGeneration to use marketplace defaults from the release payload
+                              2. Specify publisher, offer, sku, and version to use an explicit marketplace image
+                              3. Specify all fields (imageGeneration along with publisher, offer, sku, version)
                             enum:
                             - ImageID
                             - AzureMarketplace
@@ -816,10 +841,10 @@ spec:
                             otherwise
                           rule: 'has(self.type) && self.type == ''ImageID'' ?  has(self.imageID)
                             : !has(self.imageID)'
-                        - message: azureMarketplace is required when type is RequiredMember,
-                            and forbidden otherwise
+                        - message: azureMarketplace is forbidden when type is not
+                            AzureMarketplace
                           rule: 'has(self.type) && self.type == ''AzureMarketplace''
-                            ?  has(self.azureMarketplace) : !has(self.azureMarketplace)'
+                            ?  true : !has(self.azureMarketplace)'
                       osDisk:
                         description: |-
                           osDisk provides configuration for the OS disk for the nodepool.
