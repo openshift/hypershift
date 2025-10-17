@@ -68,7 +68,7 @@ github.com/JoelSpeed/kal/pkg/analysis/statussubresource
 github.com/JoelSpeed/kal/pkg/analysis/utils
 github.com/JoelSpeed/kal/pkg/config
 github.com/JoelSpeed/kal/pkg/validation
-# github.com/Masterminds/semver/v3 v3.3.0
+# github.com/Masterminds/semver/v3 v3.3.1
 ## explicit; go 1.21
 github.com/Masterminds/semver/v3
 # github.com/Microsoft/go-winio v0.6.1
@@ -1054,8 +1054,8 @@ github.com/russross/blackfriday
 # github.com/russross/blackfriday/v2 v2.1.0
 ## explicit
 github.com/russross/blackfriday/v2
-# github.com/ryancurrah/gomodguard v1.3.5
-## explicit; go 1.22.0
+# github.com/ryancurrah/gomodguard v1.4.1
+## explicit; go 1.23.0
 github.com/ryancurrah/gomodguard
 # github.com/ryanrolds/sqlclosecheck v0.5.1
 ## explicit; go 1.20
