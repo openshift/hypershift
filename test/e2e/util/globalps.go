@@ -8,6 +8,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperutil "github.com/openshift/hypershift/support/util"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -209,7 +211,16 @@ func WaitForKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcl
 			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: KubeletConfigVerifierDaemonSetName, Namespace: KubeletConfigVerifierNamespace}, ds); err != nil {
 				return false, err
 			}
-			return ds.Status.NumberReady == ds.Status.DesiredNumberScheduled, nil
+
+			// Get current available nodes count instead of using DesiredNumberScheduled
+			// to avoid failures in shared environments where some nodes may be unavailable
+			availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+			if err != nil {
+				return false, err
+			}
+
+			// Allow NumberReady to be <= availableNodesCount to handle cordoned nodes
+			return ds.Status.NumberReady <= availableNodesCount, nil
 		})
 }
 

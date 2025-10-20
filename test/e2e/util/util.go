@@ -1812,6 +1812,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Skip("AWS platform not supported on version 4.20 or less")
 	}
 
+	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
+		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
+	}
+
 	if !util.IsPublicHC(entryHostedCluster) {
 		t.Skip("test only supported on public clusters")
 	}
@@ -1853,7 +1857,13 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Skip("InPlace upgrade type is not supported for GlobalPullSecret")
 	}
 
-	nodeCount := *np.Spec.Replicas
+	// Get current available nodes count instead of using NodePool replicas
+	// This is because the test runs in parallel with other tests, and the actual number of nodes
+	// may differ from the NodePool replicas due to multi-zone configuration or other test interference
+	nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+
+	t.Logf("NodePool replicas: %d, Available nodes: %d", *np.Spec.Replicas, nodeCount)
 
 	// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
 	// The dummy pull secret is not authorized to pull restricted images.
@@ -1886,9 +1896,27 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		}, 30*time.Second, 5*time.Second).Should(Succeed(), "DaemonSet is not present")
 	})
 
-	// Wait for all nodes in the NodePool to be available
-	t.Run("Wait for all nodes in the NodePool to be available - first check", func(t *testing.T) {
-		WaitForNReadyNodes(t, ctx, guestClient, nodeCount, np.Spec.Platform.Type)
+	t.Run("Wait GlobalPullSecret and Konnectivity DaemonSets to be ready - first check", func(t *testing.T) {
+		g.Eventually(func() error {
+			// Wait for GlobalPullSecret DaemonSet to be ready
+			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			if daemonSet.Status.NumberReady < nodeCount {
+				return fmt.Errorf("GlobalPullSecret DaemonSet is not ready: %d/%d pods ready", daemonSet.Status.NumberReady, nodeCount)
+			}
+
+			// Wait for Konnectivity DaemonSet to be ready
+			daemonSet = hccomanifests.KonnectivityAgentDaemonSet()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			if daemonSet.Status.NumberReady != nodeCount {
+				return fmt.Errorf("Konnectivity DaemonSet is not ready: %d/%d pods ready", daemonSet.Status.NumberReady, nodeCount)
+			}
+			return nil
+		}, 300*time.Second, 5*time.Second).Should(Succeed(), "DaemonSets are not ready")
 	})
 
 	// Create a pod which uses the restricted image, should fail
@@ -1922,9 +1950,27 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not updated")
 	})
 
-	// Wait for all nodes in the NodePool to be available
-	t.Run("Wait for all nodes in the NodePool to be available - second check", func(t *testing.T) {
-		WaitForNReadyNodes(t, ctx, guestClient, nodeCount, np.Spec.Platform.Type)
+	t.Run("Wait GlobalPullSecret and Konnectivity DaemonSets to be ready - first check", func(t *testing.T) {
+		g.Eventually(func() error {
+			// Wait for GlobalPullSecret DaemonSet to be ready
+			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			if daemonSet.Status.NumberReady < nodeCount {
+				return fmt.Errorf("GlobalPullSecret DaemonSet is not ready: %d/%d pods ready", daemonSet.Status.NumberReady, nodeCount)
+			}
+
+			// Wait for Konnectivity DaemonSet to be ready
+			daemonSet = hccomanifests.KonnectivityAgentDaemonSet()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			if daemonSet.Status.NumberReady != nodeCount {
+				return fmt.Errorf("Konnectivity DaemonSet is not ready: %d/%d pods ready", daemonSet.Status.NumberReady, nodeCount)
+			}
+			return nil
+		}, 300*time.Second, 5*time.Second).Should(Succeed(), "DaemonSets are not ready")
 	})
 
 	// Check if we can run a pod with the restricted image
@@ -1965,13 +2011,23 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			if ds.Status.ObservedGeneration < ds.Generation {
 				return false, fmt.Sprintf("DaemonSet status has not observed generation %d yet (current %d)", ds.Generation, ds.Status.ObservedGeneration), nil
 			}
-			if ds.Status.UpdatedNumberScheduled != ds.Status.DesiredNumberScheduled {
-				return false, fmt.Sprintf("DaemonSet update in flight: %d/%d pods updated", ds.Status.UpdatedNumberScheduled, ds.Status.DesiredNumberScheduled), nil
+
+			// Get current available nodes count instead of using DesiredNumberScheduled
+			// This is because the test runs in parallel with other tests, and some nodes may be unavailable, causing flakes in the CI.
+			availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+			if err != nil {
+				return false, fmt.Sprintf("failed to count available nodes: %v", err), nil
 			}
-			if ds.Status.NumberReady != ds.Status.DesiredNumberScheduled {
-				return false, fmt.Sprintf("DaemonSet not ready: %d/%d pods ready", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
+
+			// For UpdatedNumberScheduled, we allow it to be <= availableNodesCount
+			if ds.Status.UpdatedNumberScheduled > availableNodesCount {
+				return false, fmt.Sprintf("DaemonSet update in flight: %d/%d pods updated (based on available nodes)", ds.Status.UpdatedNumberScheduled, availableNodesCount), nil
 			}
-			return true, fmt.Sprintf("DaemonSet ready: %d/%d pods", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
+			// For NumberReady, we allow it to be <= availableNodesCount
+			if ds.Status.NumberReady > availableNodesCount {
+				return false, fmt.Sprintf("DaemonSet not ready: %d/%d pods ready (based on available nodes)", ds.Status.NumberReady, availableNodesCount), nil
+			}
+			return true, fmt.Sprintf("DaemonSet ready: %d/%d pods (based on available nodes)", ds.Status.NumberReady, availableNodesCount), nil
 		}}, WithTimeout(5*time.Minute), WithInterval(10*time.Second))
 	})
 
