@@ -4,6 +4,29 @@ This directory contains Claude Code skills that are automatically applied when w
 
 ## Available Skills
 
+### Code Formatting
+
+**Location:** `.claude/skills/code-formatting/`
+
+**Description:** Applies HyperShift code quality, formatting and testing conventions.
+
+**Auto-applies when:**
+- Writing Go code
+- Creating unit tests
+- Preparing commits
+
+**Covers:**
+- Running `make lint-fix` after writing Go code
+- Running `make verify` before committing
+- Using `make verify-codespell` for markdown
+- "When...it should..." test naming convention
+- Including unit tests with new functions
+
+**Benefits:**
+- Ensures code passes linting before commits
+- Enforces consistent test naming
+- Catches spelling errors in documentation
+
 ### Effective Go
 
 **Location:** `.claude/skills/effective-go/`
