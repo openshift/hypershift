@@ -83,6 +83,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 		Name:                         o.Name,
 		BaseDomain:                   baseDomain,
 		BaseDomainPrefix:             baseDomainPrefix,
+		RedactBaseDomain:             o.RedactBaseDomain,
 		AwsInfraGracePeriod:          o.AWSPlatform.AwsInfraGracePeriod,
 		Log:                          o.Log,
 		CredentialsSecretData:        secretData,

@@ -36,6 +36,7 @@ type CreateInfraOptions struct {
 	Name                        string
 	BaseDomain                  string
 	BaseDomainPrefix            string
+	RedactBaseDomain            bool
 	Zones                       []string
 	OutputFile                  string
 	AdditionalTags              []string
