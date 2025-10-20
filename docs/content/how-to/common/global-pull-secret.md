@@ -101,7 +101,16 @@ The Global Pull Secret functionality operates through a multi-component system:
 - A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
 - RBAC resources (ServiceAccount, Role, RoleBinding) are created for the DaemonSet in both `kube-system` and `openshift-config` namespaces
 - We use Role and RoleBinding in both namespaces to access secrets in `kube-system` and `openshift-config` namespaces
-- A DaemonSet named `global-pull-secret-syncer` is deployed to all nodes
+- A DaemonSet named `global-pull-secret-syncer` is deployed to eligible nodes
+
+!!! warning "NodePool InPlace Strategy Restriction"
+
+    The Global Pull Secret DaemonSet is **not deployed** to nodes that belong to NodePools using the **InPlace upgrade strategy**. This restriction prevents conflicts between the DaemonSet's modifications to `/var/lib/kubelet/config.json` and the Machine Config Daemon (MCD) during InPlace upgrades.
+
+    - **Nodes with Replace strategy**: ✅ Receive Global Pull Secret DaemonSet
+    - **Nodes with InPlace strategy**: ❌ Do not receive Global Pull Secret DaemonSet
+
+    This ensures that MCD operations during InPlace upgrades do not fail due to unexpected changes in kubelet configuration files.
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
@@ -185,6 +194,7 @@ The implementation consists of several key components working together:
    - Manages the merging logic between original and additional pull secrets
    - Creates and manages RBAC resources
    - Deploys and manages the DaemonSet
+   - **Node eligibility assessment**: Labels nodes from InPlace NodePools and configures DaemonSet scheduling restrictions
 
 2. **Sync Global Pull Secret Command** (`sync-global-pullsecret` package)
    - Runs as a DaemonSet on each node
@@ -297,7 +307,46 @@ graph TB
 - **Efficiency**
   - Only updates when there are actual changes
   - The globalPullSecret implementation has their own controller so it cannot interfere with the HCCO reonciliation
-- **Minimal privileges**: Specific RBAC for only the required resources in each namespace
+- **Security considerations**: Uses specific RBAC for only the required resources in each namespace. The DaemonSet containers run in privileged mode due to the need to:
+  - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
+  - Connect to systemd via DBus for service management
+  - Restart kubelet.service, which requires root privileges
+- **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
+
+### InPlace NodePool Handling
+
+To prevent conflicts with Machine Config Daemon operations, the implementation includes intelligent node targeting:
+
+#### Node Labeling Process
+1. **MachineSets Discovery**: The controller queries the management cluster for MachineSets with InPlace-specific annotations (`hypershift.openshift.io/nodePoolTargetConfigVersion`)
+2. **Machine Enumeration**: For each InPlace MachineSets, it lists all associated Machines
+3. **Node Identification**: Maps Machine objects to their corresponding nodes via `machine.Status.NodeRef.Name`
+4. **Labeling**: Applies `hypershift.openshift.io/nodepool-inplace-strategy=true` label to identified nodes
+
+#### DaemonSet Scheduling Configuration
+The DaemonSet uses NodeAffinity to exclude InPlace nodes:
+
+```yaml
+spec:
+  template:
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: hypershift.openshift.io/nodepool-inplace-strategy
+                operator: DoesNotExist
+```
+
+This ensures that:
+- **Nodes without the label**: ✅ Are eligible for DaemonSet scheduling
+- **Nodes with the label** (any value): ❌ Are excluded from DaemonSet scheduling
+
+#### Conflict Prevention Benefits
+- **Prevents MCD failures**: Avoids conflicts when MCD expects specific kubelet configuration during InPlace upgrades
+- **Maintains upgrade reliability**: InPlace upgrade processes are not interrupted by Global Pull Secret modifications
+- **Automatic detection**: No manual intervention required - the system automatically identifies and handles InPlace nodes
 
 ### Error Handling
 
