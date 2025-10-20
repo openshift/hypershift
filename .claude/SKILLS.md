@@ -27,6 +27,31 @@ This directory contains Claude Code skills that are automatically applied when w
 - Enforces consistent test naming
 - Catches spelling errors in documentation
 
+### Git Commit Format
+
+**Location:** `.claude/skills/git-commit-format/`
+
+**Description:** Applies HyperShift conventional commit formatting rules.
+
+**Auto-applies when:**
+- Generating commit messages
+- Creating commits
+- Discussing commit practices
+
+**Covers:**
+- Conventional commit format: `<type>(<scope>): <description>`
+- All commit types (feat, fix, docs, style, refactor, test, chore, build, ci, perf, revert)
+- Breaking change syntax (`!` and `BREAKING CHANGE` footer)
+- `Signed-off-by` and `Assisted-by` footers
+- Gitlint validation rules (120 char title, 140 char body)
+- Running `make run-gitlint` for validation
+
+**Benefits:**
+- Ensures consistent commit message format
+- Passes gitlint validation automatically
+- Includes proper attribution footers
+- Follows conventional commits specification
+
 ### Effective Go
 
 **Location:** `.claude/skills/effective-go/`
@@ -55,7 +80,10 @@ This directory contains Claude Code skills that are automatically applied when w
 
 ## How Skills Work
 
-Skills are automatically invoked by Claude based on context. You don't need to do anything special - just ask Claude to work with Go code, and the Effective Go guidelines will be applied automatically.
+Skills are automatically invoked by Claude based on context. You don't need to do anything special - just ask Claude to:
+- Write or review Go code → Code Formatting + Effective Go apply automatically
+- Create commits → Git Commit Format applies automatically
+- Create tests → Code Formatting ("When...it should..." convention) applies
 
 ## Adding New Skills
 
