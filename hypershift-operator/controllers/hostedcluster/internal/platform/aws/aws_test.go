@@ -95,61 +95,99 @@ func TestReconcileAWSCluster(t *testing.T) {
 	}
 }
 
-func TestValidCredentials(t *testing.T) {
+func TestGetCredentialStatus(t *testing.T) {
 	testCases := []struct {
 		name                                    string
-		ValidOIDCConfigurationConditionStatus   metav1.ConditionStatus
-		ValidAWSIdentityProviderConditionStatus metav1.ConditionStatus
+		ValidOIDCConfigurationConditionStatus   *metav1.ConditionStatus // nil means condition not present
+		ValidAWSIdentityProviderConditionStatus *metav1.ConditionStatus // nil means condition not present
 
-		expectedResult bool
+		expectedResult CredentialStatus
 	}{
 		{
-			name:                                    "When ValidOIDCConfigurationCondition status False, return False",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
-			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
-			expectedResult:                          false,
+			name:                                    "When both conditions are True, return Valid",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			expectedResult:                          CredentialStatusValid,
 		},
 		{
-			name:                                    "When ValidOIDCConfigurationCondition status Unknown, return True",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
-			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
-			expectedResult:                          true,
+			name:                                    "When OIDC is False, return Invalid",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When ValidAWSIdentityProviderCondition status False, return False",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
-			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
-			expectedResult:                          false,
+			name:                                    "When AWS Identity Provider is False, return Invalid",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When ValidAWSIdentityProviderCondition status Unknown, return False",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
-			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
-			expectedResult:                          false,
+			name:                                    "When both are False, return Invalid",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionFalse}[0],
+			expectedResult:                          CredentialStatusInvalid,
 		},
 		{
-			name:                                    "When both ValidAWSIdentityProviderCondition and ValidOIDCConfigurationCondition status True, return True",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
-			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
-			expectedResult:                          true,
+			name:                                    "When OIDC is Unknown, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			expectedResult:                          CredentialStatusUnknown,
+		},
+		{
+			name:                                    "When AWS Identity Provider is Unknown, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			expectedResult:                          CredentialStatusUnknown,
+		},
+		{
+			name:                                    "When both are Unknown, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionUnknown}[0],
+			expectedResult:                          CredentialStatusUnknown,
+		},
+		{
+			name:                                    "When OIDC condition is missing, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   nil,
+			ValidAWSIdentityProviderConditionStatus: &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			expectedResult:                          CredentialStatusUnknown,
+		},
+		{
+			name:                                    "When AWS Identity Provider condition is missing, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   &[]metav1.ConditionStatus{metav1.ConditionTrue}[0],
+			ValidAWSIdentityProviderConditionStatus: nil,
+			expectedResult:                          CredentialStatusUnknown,
+		},
+		{
+			name:                                    "When both conditions are missing, return Unknown",
+			ValidOIDCConfigurationConditionStatus:   nil,
+			ValidAWSIdentityProviderConditionStatus: nil,
+			expectedResult:                          CredentialStatusUnknown,
 		},
 	}
 
-	hc := hyperv1.HostedCluster{}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-				Type:   string(hyperv1.ValidOIDCConfiguration),
-				Status: tc.ValidOIDCConfigurationConditionStatus,
-			})
-			meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
-				Type:   string(hyperv1.ValidAWSIdentityProvider),
-				Status: tc.ValidAWSIdentityProviderConditionStatus,
-			})
+			hc := hyperv1.HostedCluster{}
 
-			result := ValidCredentials(&hc)
+			// Set OIDC condition if provided
+			if tc.ValidOIDCConfigurationConditionStatus != nil {
+				meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidOIDCConfiguration),
+					Status: *tc.ValidOIDCConfigurationConditionStatus,
+				})
+			}
+
+			// Set AWS Identity Provider condition if provided
+			if tc.ValidAWSIdentityProviderConditionStatus != nil {
+				meta.SetStatusCondition(&hc.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidAWSIdentityProvider),
+					Status: *tc.ValidAWSIdentityProviderConditionStatus,
+				})
+			}
+
+			result := GetCredentialStatus(&hc)
 			if tc.expectedResult != result {
-				t.Errorf("ValidCredentials returned %v, expected %v", result, tc.expectedResult)
+				t.Errorf("GetCredentialStatus returned %v, expected %v", result, tc.expectedResult)
 			}
 		})
 	}
