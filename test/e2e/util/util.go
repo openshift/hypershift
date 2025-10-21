@@ -1624,18 +1624,14 @@ type labelSelector struct {
 	value string
 }
 
-// auditedContainersHas checks the given map to see if the container name exists in it; if the map is empty, always return true
-func auditedContainersHas(container corev1.Container, auditedContainers map[string]struct{}) bool {
-	if auditedContainers == nil {
-		return false
+// findAuditedContainers returns the map of audited containers for a pod, or nil if the pod is not audited
+func findAuditedContainers(pod *corev1.Pod, auditedContainersSelector map[labelSelector]map[string]struct{}) map[string]struct{} {
+	for selector, containers := range auditedContainersSelector {
+		if pod.Labels[selector.label] == selector.value {
+			return containers
+		}
 	}
-
-	if len(auditedContainers) == 0 {
-		return true
-	}
-
-	_, has := auditedContainers[container.Name]
-	return has
+	return nil
 }
 
 func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
@@ -1653,7 +1649,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
 		}
 
-		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
+		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem != true
 		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false.
 		// if a labelSelector is given with an empty map, allow all containers to be false
 		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
@@ -1682,21 +1678,23 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
-			var auditedContainers map[string]struct{}
+			auditedContainers := findAuditedContainers(&pod, auditedAppContainersNoRORFS)
 
-			for selector, containers := range auditedAppContainersNoRORFS {
-				if v, has := pod.Labels[selector.label]; has && v == selector.value {
-					auditedContainers = containers
-					break
-				}
+			// skip all containers if the pod is audited and the auditedContainers map is empty
+			if auditedContainers != nil && len(auditedContainers) == 0 {
+				continue
 			}
 
 			for _, c := range pod.Spec.Containers {
-				isAuditedOff := auditedContainersHas(c, auditedContainers)
-				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
+				// skip if this specific container is exempted
+				if auditedContainers != nil {
+					if _, ok := auditedContainers[c.Name]; ok {
+						continue
+					}
+				}
 
-				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
-				g.Expect(isRORFS).ToNot(BeIdenticalTo(isAuditedOff), "container %s in pod %s expects readOnlyRootFilesystem to be %v, it was %v", c.Name, pod.Name, !isAuditedOff, isRORFS)
+				g.Expect(c.SecurityContext).NotTo(BeNil(), "expected container %s in pod %s to have a security context", c.Name, pod.Name)
+				g.Expect(c.SecurityContext.ReadOnlyRootFilesystem).To(HaveValue(BeTrue()), "expected container %s in pod %s to have a readOnlyRootFilesystem field set to true", c.Name, pod.Name)
 			}
 		}
 	})
@@ -1745,18 +1743,19 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
-			var auditedContainers map[string]struct{}
+			auditedContainers := findAuditedContainers(&pod, auditedAppContainerNoTmpDir)
 
-			for selector, containers := range auditedAppContainerNoTmpDir {
-				if v, has := pod.Labels[selector.label]; has && v == selector.value {
-					auditedContainers = containers
-					break
-				}
+			// skip all containers if the pod is audited and the auditedContainers map is empty
+			if auditedContainers != nil && len(auditedContainers) == 0 {
+				continue
 			}
 
 			for _, c := range pod.Spec.Containers {
-				if auditedContainersHas(c, auditedContainers) {
-					continue
+				// skip if this specific container is exempted
+				if auditedContainers != nil {
+					if _, ok := auditedContainers[c.Name]; ok {
+						continue
+					}
 				}
 				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
 					return v.MountPath == util.PodTmpDirMountPath
