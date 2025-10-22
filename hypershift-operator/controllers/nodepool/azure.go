@@ -18,7 +18,7 @@ import (
 // The CAPI AzureMachineTemplate requires an SSH key to be set, so we provide a dummy one here.
 const dummySSHKey = "c3NoLXJzYSBBQUFBQjNOemFDMXljMkVBQUFBREFRQUJBQUFCQVFDTGFjOTR4dUE4QjkyMEtjejhKNjhUdmZCRjQyR2UwUllXSUx3Lzd6dDhUQlU5ell5Q0Q2K0ZlekFwWndLRjB1V3luMGVBQmlBWVdIV0tKbENxS0VIT2hOQmV2Mkx3S0dnZHFqM0dvcHV2N3RpZFVqSVpqYi9DVWtjQVRZUWhMWkxVTCs3eWkzRThKNHdhYkxEMWVNS1p1U3ZmMUsxT0RwVUFXYTkwbWVmR0FBOVdIVEhMcnF1UUpWdC9JT0JLN1ROZFNwMDVuM0Ywa29xZlE2empwRlFYMk8zaWJUc29yR3ZEekdhYS9yUENxQWhTSjRJaEhnMDNVb3FBbVlraW51NTFvVEcxRlRXaTh2b00vRVJ4TlduamNUSElET1JmYmo2bFVyZ3Zkci9MZGtqc2dFcENiNEMxUS9IbW5MRHVpTEdPM2tNZ2cyOHFzZ0ZmTHloUjl3ay8K"
 
-func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
+func azureMachineTemplateSpec(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*capiazure.AzureMachineTemplateSpec, error) {
 	subnetName, err := azureutil.GetSubnetNameFromSubnetID(nodePool.Spec.Platform.Azure.SubnetID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to determine subnet name for Azure machine: %w", err)
@@ -95,11 +95,42 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 
 	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
 
+	// Only set AdditionalTags if there are actually tags to avoid noisy diffs from empty maps
+	if tags := azureAdditionalTags(hostedCluster, nodePool); len(tags) > 0 {
+		azureMachineTemplate.Template.Spec.AdditionalTags = tags
+	}
+
 	return azureMachineTemplate, nil
 }
 
+// azureAdditionalTags merges tags from nodepool and cluster, with cluster tags taking precedence
+func azureAdditionalTags(hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) map[string]string {
+	tags := make(map[string]string)
+
+	// Add nodepool tags first
+	if nodePool.Spec.Platform.Azure != nil {
+		for _, tag := range nodePool.Spec.Platform.Azure.ResourceTags {
+			tags[tag.Key] = tag.Value
+		}
+	}
+
+	// Add cluster tags (which take precedence over nodepool tags)
+	if hostedCluster.Spec.Platform.Azure != nil {
+		for _, tag := range hostedCluster.Spec.Platform.Azure.ResourceTags {
+			tags[tag.Key] = tag.Value
+		}
+	}
+
+	// Return nil if no tags were added to match expected test behavior
+	if len(tags) == 0 {
+		return nil
+	}
+
+	return tags
+}
+
 func (c *CAPI) azureMachineTemplate(templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
-	spec, err := azureMachineTemplateSpec(c.nodePool)
+	spec, err := azureMachineTemplateSpec(c.hostedCluster, c.nodePool)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate AzureMachineTemplateSpec: %w", err)
 	}

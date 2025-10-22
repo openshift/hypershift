@@ -98,6 +98,26 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// resourceTags is an optional list of additional tags to apply to Azure node
+	// instances.
+	//
+	// These will be merged with HostedCluster scoped tags, which take precedence in case of conflicts.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in Azure in case of conflicts.
+	//
+	// See https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-support and
+	// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources for
+	// information on tagging Azure resources. Azure VMs support up to 50 tags
+	// per resource/resource group/subscription by default. Tag names can be up to 512 characters
+	// tag values can be up to 256 characters, and empty tag values are allowed.
+	// Kubernetes/OpenShift reserves 1 tag for its use,
+	// leaving up to 49 tags available for user use on instances.
+	//
+	// +kubebuilder:validation:MaxItems=49
+	// +listType=map
+	// +listMapKey=key
+	// +optional
+	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
 }
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
@@ -433,6 +453,28 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// resourceTags is a list of additional tags to apply to Azure resources created
+	// for the cluster. See
+	// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-support and
+	// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources for
+	// information on tagging Azure resources. Most Azure resources support up to 50 tags
+	// per resource/resource group/subscription by default. Tag names can be up to 512 characters
+	// (though storage accounts limit tag names to 128 characters), tag values can be up to 256
+	// characters, and empty tag values are allowed. However, certain resource types including
+	// Automation, Content Delivery Network (CDN), Public/Private DNS zones, and Log Analytics
+	// saved searches remain limited to 15 tags total. OpenShift reserves 5 tags for its use,
+	// leaving up to 45 tags available for user use on most resources (10 tags on limited resources).
+	// Changes to this field will be propagated in-place to Azure resources.
+	// These tags will be propagated to the infrastructure CR in the guest cluster, where other OCP operators might choose to honor this input to reconcile Azure resources created by them.
+	// Please consult the official Azure documentation for a list of all Azure resources that support in-place tag updates.
+	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in Azure in case of conflicts.
+	//
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=map
+	// +listMapKey=key
+	// +optional
+	ResourceTags []AzureResourceTag `json:"resourceTags,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -739,4 +781,25 @@ type AzureAuthenticationConfiguration struct {
 	// This is required for self-managed Azure.
 	// +optional
 	WorkloadIdentities *AzureWorkloadIdentities `json:"workloadIdentities,omitempty"`
+}
+
+// AzureResourceTag is a tag to apply to Azure resources created for the cluster.
+type AzureResourceTag struct {
+	// key is the key part of the tag. A tag key can have a maximum of 512 characters and cannot be empty. Key
+	// must begin with a letter, end with a letter, number or underscore, and must contain only alphanumeric
+	// characters and the following special characters `_ . -`.
+	// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources#limitations
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z]([0-9A-Za-z_.-]*[0-9A-Za-z_])?$`
+	Key string `json:"key"`
+	// value is the value part of the tag. A tag value can have a maximum of 256 characters and cannot be empty. Value
+	// must contain only alphanumeric characters and the following special characters `_ + , - . / : ; < = > ? @`.
+	// https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources#limitations
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +kubebuilder:validation:Pattern=`^[0-9A-Za-z_+,\-./:;<>?=@]+$`
+	Value string `json:"value"`
 }
