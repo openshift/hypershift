@@ -1,6 +1,7 @@
 package create
 
 import (
+	"github.com/openshift/hypershift/cmd/backup"
 	"github.com/openshift/hypershift/cmd/bastion"
 	"github.com/openshift/hypershift/cmd/cluster"
 	"github.com/openshift/hypershift/cmd/infra"
@@ -17,6 +18,7 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	cmd.AddCommand(backup.NewCreateCommand())
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(infra.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateIAMCommand())
