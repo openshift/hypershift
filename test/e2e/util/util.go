@@ -985,7 +985,6 @@ func EnsureNodeCountMatchesNodePoolReplicas(t *testing.T, ctx context.Context, h
 		t.Errorf("Failed to list NodePools: %v", err)
 		return
 	}
-	t.Fatalf("Induce failure")
 
 	for i := range nodePoolList.Items {
 		WaitForReadyNodesByNodePool(t, ctx, guestClient, &nodePoolList.Items[i], platform)

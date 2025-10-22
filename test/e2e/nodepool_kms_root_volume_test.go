@@ -79,6 +79,7 @@ func (k *KMSRootVolumeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePo
 func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 
+	g.Fail("Induce failure")
 	providerID := nodes[0].Spec.ProviderID
 	g.Expect(providerID).NotTo(BeEmpty())
 
