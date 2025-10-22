@@ -1293,34 +1293,35 @@ func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, 
 }
 
 func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureHostedClusterImmutability", func(t *testing.T) {
-		g := NewWithT(t)
+	t.Helper()
+	t.Logf("Ensuring APIUX is set correctly for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 
-		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			for i, svc := range obj.Spec.Services {
-				if svc.Service == hyperv1.APIServer {
-					svc.Type = hyperv1.NodePort
-					obj.Spec.Services[i] = svc
-				}
-			}
-		})
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
+	g := NewWithT(t)
 
-		err = UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
-				obj.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+	err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		for i, svc := range obj.Spec.Services {
+			if svc.Service == hyperv1.APIServer {
+				svc.Type = hyperv1.NodePort
+				obj.Spec.Services[i] = svc
 			}
-			if obj.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
-				obj.Spec.ControllerAvailabilityPolicy = hyperv1.HighlyAvailable
-			}
-		})
-		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
+		}
 	})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("Services is immutable"))
 
-	t.Run("EnsureHostedClusterCapabilitiesImmutability", func(t *testing.T) {
-		AtLeast(t, Version419)
+	err = UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		if obj.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+			obj.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+		}
+		if obj.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+			obj.Spec.ControllerAvailabilityPolicy = hyperv1.HighlyAvailable
+		}
+	})
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
+
+	if IsAtLeast(Version419) {
+		t.Logf("Ensuring HostedCluster capabilities immutability for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 		g := NewWithT(t)
 
 		err := UpdateObject(t, ctx, hostClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
@@ -1330,7 +1331,7 @@ func EnsureAPIUX(t *testing.T, ctx context.Context, hostClient crclient.Client, 
 		})
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
-	})
+	}
 }
 
 func EnsureSecretEncryptedUsingKMS(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) {
