@@ -28,6 +28,7 @@ var (
 )
 
 type HostedClusterNodePoolTestCases struct {
+	name  string
 	build HostedClusterNodePoolTestCasesBuilderFn
 	setup func(t *testing.T)
 }
@@ -45,6 +46,7 @@ func TestNodePool(t *testing.T) {
 
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
+			name: "HostedClusterDefault",
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{
 					{
@@ -134,6 +136,7 @@ func TestNodePool(t *testing.T) {
 		},
 		// This kubevirt test need to run at different hosted cluster
 		{
+			name: "HostedClusterKubevirt",
 			setup: func(t *testing.T) {
 				if globalOpts.Platform != hyperv1.KubevirtPlatform {
 					t.Skip("tests only supported on platform KubeVirt")
@@ -147,6 +150,7 @@ func TestNodePool(t *testing.T) {
 			},
 		},
 		{
+			name: "HostedClusterAddTrustBundle",
 			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
 				return []NodePoolTestCase{{
 					name: "TestAdditionalTrustBundlePropagation",
@@ -163,6 +167,7 @@ func TestNodePoolMultiArch(t *testing.T) {
 	t.Parallel()
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
+			name: "HostedClusterMultiArch",
 			setup: func(t *testing.T) {
 				if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
 					t.Skip("test only supported on multi-arch clusters")
@@ -186,8 +191,8 @@ func TestNodePoolMultiArch(t *testing.T) {
 }
 
 func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []HostedClusterNodePoolTestCases) {
-	for i, _ := range nodePoolTestCasesPerHostedCluster {
-		t.Run(fmt.Sprintf("HostedCluster%d", i), func(t *testing.T) {
+	for i := range nodePoolTestCasesPerHostedCluster {
+		t.Run(nodePoolTestCasesPerHostedCluster[i].name, func(t *testing.T) {
 			nodePoolTestCases := nodePoolTestCasesPerHostedCluster[i]
 			if nodePoolTestCases.setup != nil {
 				nodePoolTestCases.setup(t)
