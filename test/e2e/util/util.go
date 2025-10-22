@@ -949,7 +949,7 @@ func EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t *tes
 // NOTE: This function assumes that it is not called in the middle of a version rollout
 // i.e. It expects that the first entry in ClusterVersion history is Completed
 func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crclient.Client) {
-	if !IsAtLeast(Version419) {
+	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
 
@@ -1329,7 +1329,7 @@ func EnsureHostedClusterImmutability(t *testing.T, ctx context.Context, hostClie
 }
 
 func EnsureHostedClusterCapabilitiesImmutability(t *testing.T, ctx context.Context, hostClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if !IsAtLeast(Version419) {
+	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
 
@@ -2044,9 +2044,11 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 }
 
 func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
-	t.Helper()
+	if !IsGreaterThanOrEqualTo(Version419) {
+		return
+	}
+
 	t.Logf("EnsureKubeAPIDNSNameCustomCert")
-	AtLeast(t, Version419)
 
 	// Skip for kubevirt HostedClusters
 	if entryHostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
@@ -2240,64 +2242,13 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 	// KAS deployment readiness should ensure certificate configuration is loaded
 	// If certificate loading becomes an issue, we'll see TLS errors (not DNS errors)
 
-	t.Run("EnsureCustomAdminKubeconfigStatusExists", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Log("Checking CustomAdminKubeconfigStatus are present")
-		g.Expect(hcp.Status.CustomKubeconfig).ToNot(BeNil(), "HostedControlPlaneKASCustomKubeconfigis nil")
-		g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "HostedClusterKASCustomKubeconfigis nil")
-		hcKASCustomKubeconfigSecretName = hc.Status.CustomKubeconfig.Name
-	})
-	t.Run("EnsureCustomAdminKubeconfigExists", func(t *testing.T) {
-		g := NewWithT(t)
-		// Get KASCustomKubeconfig secret from HCP Namespace
-		t.Log("Checking CustomAdminKubeconfigs are present")
-		hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret")
-		g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "KASCustomKubeconfig is nil")
+	ensureCustomAdminKubeconfigStatusExists(t, g, hcp, hc)
 
-		// Get KASCustomKubeconfig secret from HC Namespace
-		hcCustomKubeconfigSecret := &corev1.Secret{}
-		err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.CustomKubeconfig.Name}, hcCustomKubeconfigSecret)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret from HC namespace")
-	})
-	t.Run("EnsureCustomAdminKubeconfigReachesTheKAS", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Log("Checking CustomAdminKubeconfig reaches the KAS")
-		if isAzure {
-			t.Log("Using extended retry timeout for Azure DNS propagation")
-		}
-		// Add retry logic for DNS-related failures with platform-specific timeout
-		g.Eventually(func() error {
-			cv := &configv1.ClusterVersion{}
-			err := kbCrclient.Get(ctx, types.NamespacedName{Name: "version"}, cv)
-			if err != nil {
-				// Check if this is a DNS-related error
-				if strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "dial tcp") ||
-					strings.Contains(err.Error(), "failed to get API group resources") {
-					t.Logf("DNS resolution issue detected, retrying: %v", err)
-					return err
-				}
-				// For non-DNS errors, fail immediately
-				return fmt.Errorf("non-DNS error occurred: %w", err)
-			}
-			t.Logf("Successfully verified custom kubeconfig can reach KAS")
-			return nil
-		}, retryTimeout, 10*time.Second).Should(Succeed(), "failed to get HostedCluster ClusterVersion with KAS custom kubeconfig")
-	})
-	t.Run("EnsureCustomAdminKubeconfigInfraStatusIsUpdated", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Log("Checking CustomAdminKubeconfig Infrastructure status is updated")
-		EventuallyObject(t, ctx, "a successful connection to the custom DNS guest API server",
-			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
-				return kasCustomKubeconfigClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(30*time.Minute),
-		)
-		infra := &configv1.Infrastructure{}
-		err := kbCrclient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with KAS custom kubeconfig")
-		g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
-	})
+	hcKASCustomKubeconfigSecretName = hc.Status.CustomKubeconfig.Name
+
+	ensureCustomAdminKubeconfigExists(t, ctx, mgmtClient, hcpNamespace, hc)
+	ensureCustomAdminKubeconfigReachesTheKAS(t, ctx, kbCrclient, isAzure, retryTimeout)
+	ensureCustomAdminKubeconfigInfraStatusIsUpdated(t, ctx, kasCustomKubeconfigClient, kbCrclient, hc)
 
 	// removing KubeAPIDNSName from HC
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -2354,18 +2305,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		}, WithInterval(5*time.Second), WithTimeout(30*time.Minute),
 	)
 
-	t.Run("EnsureCustomAdminKubeconfigIsRemoved", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Log("Checking CustomAdminKubeconfig are removed")
-		hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-		err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
-		g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HCP namespace")
-
-		// Get KASCustomKubeconfig secret from HC Namespace
-		hcKASCustomKubeconfigSecret := &corev1.Secret{}
-		err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hcKASCustomKubeconfigSecretName}, hcKASCustomKubeconfigSecret)
-		g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HC namespace")
-	})
+	ensureCustomAdminKubeconfigIsRemoved(t, ctx, mgmtClient, hcpNamespace, hc, hcKASCustomKubeconfigSecretName)
 
 	updatedHC := &hyperv1.HostedCluster{}
 	EventuallyObject(t, ctx, "the KAS custom kubeconfig status to be removed",
@@ -2383,11 +2323,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		}, WithInterval(5*time.Second), WithTimeout(30*time.Minute),
 	)
 
-	t.Run("EnsureCustomAdminKubeconfigStatusIsRemoved", func(t *testing.T) {
-		g := NewWithT(t)
-		t.Log("Checking CustomAdminKubeconfigStatus are removed")
-		g.Expect(updatedHC.Status.CustomKubeconfig).To(BeNil(), "HostedClusterKASCustomKubeconfigis not nil")
-	})
+	ensureCustomAdminKubeconfigStatusIsRemoved(t, updatedHC)
 
 	// Delete NamedCertificates from the KAS
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -2407,6 +2343,103 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get custom certificate secret")
 	err = mgmtClient.Delete(ctx, latestCustomCertSecret)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to delete custom certificate secret")
+}
+
+// ensureCustomAdminKubeconfigStatusExists validates that custom admin kubeconfig status exists
+func ensureCustomAdminKubeconfigStatusExists(t *testing.T, g Gomega, hcp *hyperv1.HostedControlPlane, hc *hyperv1.HostedCluster) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigStatusExists")
+	t.Log("Checking CustomAdminKubeconfigStatus are present")
+	g.Expect(hcp.Status.CustomKubeconfig).ToNot(BeNil(), "HostedControlPlaneKASCustomKubeconfigis nil")
+	g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "HostedClusterKASCustomKubeconfigis nil")
+}
+
+// ensureCustomAdminKubeconfigExists validates that custom admin kubeconfig secrets exist
+func ensureCustomAdminKubeconfigExists(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hcpNamespace string, hc *hyperv1.HostedCluster) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigExists")
+	g := NewWithT(t)
+	// Get KASCustomKubeconfig secret from HCP Namespace
+	t.Log("Checking CustomAdminKubeconfigs are present")
+	hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
+	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret")
+	g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "KASCustomKubeconfig is nil")
+
+	// Get KASCustomKubeconfig secret from HC Namespace
+	hcCustomKubeconfigSecret := &corev1.Secret{}
+	err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.CustomKubeconfig.Name}, hcCustomKubeconfigSecret)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret from HC namespace")
+}
+
+// ensureCustomAdminKubeconfigReachesTheKAS validates that custom admin kubeconfig can reach the KAS
+func ensureCustomAdminKubeconfigReachesTheKAS(t *testing.T, ctx context.Context, kbCrclient crclient.Client, isAzure bool, retryTimeout time.Duration) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigReachesTheKAS")
+	g := NewWithT(t)
+	t.Log("Checking CustomAdminKubeconfig reaches the KAS")
+	if isAzure {
+		t.Log("Using extended retry timeout for Azure DNS propagation")
+	}
+	// Add retry logic for DNS-related failures with platform-specific timeout
+	g.Eventually(func() error {
+		cv := &configv1.ClusterVersion{}
+		err := kbCrclient.Get(ctx, types.NamespacedName{Name: "version"}, cv)
+		if err != nil {
+			// Check if this is a DNS-related error
+			if strings.Contains(err.Error(), "no such host") || strings.Contains(err.Error(), "dial tcp") ||
+				strings.Contains(err.Error(), "failed to get API group resources") {
+				t.Logf("DNS resolution issue detected, retrying: %v", err)
+				return err
+			}
+			// For non-DNS errors, fail immediately
+			return fmt.Errorf("non-DNS error occurred: %w", err)
+		}
+		t.Logf("Successfully verified custom kubeconfig can reach KAS")
+		return nil
+	}, retryTimeout, 10*time.Second).Should(Succeed(), "failed to get HostedCluster ClusterVersion with KAS custom kubeconfig")
+}
+
+// ensureCustomAdminKubeconfigInfraStatusIsUpdated validates that custom admin kubeconfig infrastructure status is updated
+func ensureCustomAdminKubeconfigInfraStatusIsUpdated(t *testing.T, ctx context.Context, kasCustomKubeconfigClient *kubeclient.Clientset, kbCrclient crclient.Client, hc *hyperv1.HostedCluster) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigInfraStatusIsUpdated")
+	g := NewWithT(t)
+	t.Log("Checking CustomAdminKubeconfig Infrastructure status is updated")
+	EventuallyObject(t, ctx, "a successful connection to the custom DNS guest API server",
+		func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
+			return kasCustomKubeconfigClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+		}, nil, WithTimeout(30*time.Minute),
+	)
+	infra := &configv1.Infrastructure{}
+	err := kbCrclient.Get(ctx, types.NamespacedName{Name: "cluster"}, infra)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get HostedCluster Infrastructure with KAS custom kubeconfig")
+	g.Expect(infra.Status.APIServerURL).To(ContainSubstring(hc.Spec.KubeAPIServerDNSName), "Infrastructure APIServerURL does not contains the KubeAPIServerDNSName set in the HostedCluster")
+}
+
+// ensureCustomAdminKubeconfigIsRemoved validates that custom admin kubeconfig is removed
+func ensureCustomAdminKubeconfigIsRemoved(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hcpNamespace string, hc *hyperv1.HostedCluster, hcKASCustomKubeconfigSecretName string) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigIsRemoved")
+	g := NewWithT(t)
+	t.Log("Checking CustomAdminKubeconfig are removed")
+	hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
+	err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+	g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HCP namespace")
+
+	// Get KASCustomKubeconfig secret from HC Namespace
+	hcKASCustomKubeconfigSecret := &corev1.Secret{}
+	err = mgmtClient.Get(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hcKASCustomKubeconfigSecretName}, hcKASCustomKubeconfigSecret)
+	g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HC namespace")
+}
+
+// ensureCustomAdminKubeconfigStatusIsRemoved validates that custom admin kubeconfig status is removed
+func ensureCustomAdminKubeconfigStatusIsRemoved(t *testing.T, updatedHC *hyperv1.HostedCluster) {
+	t.Helper()
+	t.Logf("EnsureCustomAdminKubeconfigStatusIsRemoved")
+	g := NewWithT(t)
+	t.Log("Checking CustomAdminKubeconfigStatus are removed")
+	g.Expect(updatedHC.Status.CustomKubeconfig).To(BeNil(), "HostedClusterKASCustomKubeconfigis not nil")
 }
 
 func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
@@ -3115,7 +3148,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 }
 
 func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if !IsAtLeast(Version419) {
+	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
 
@@ -3146,7 +3179,7 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 }
 
 func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if !IsAtLeast(Version419) {
+	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
 
@@ -3187,7 +3220,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 }
 
 func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	if !IsAtLeast(Version419) {
+	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
 
@@ -3221,7 +3254,7 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 }
 
 func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
-	if !IsAtLeast(Version420) {
+	if !IsGreaterThanOrEqualTo(Version420) {
 		return
 	}
 
@@ -3278,7 +3311,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 }
 
 func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClient crclient.Client, guestConfig *rest.Config, hc *hyperv1.HostedCluster) {
-	if !IsAtLeast(Version420) {
+	if !IsGreaterThanOrEqualTo(Version420) {
 		return
 	}
 
