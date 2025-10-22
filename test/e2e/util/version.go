@@ -66,10 +66,6 @@ func AtLeast(t *testing.T, version semver.Version) {
 	}
 }
 
-func IsAtLeast(version semver.Version) bool {
-	return releaseVersion.GE(version)
-}
-
 func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) {
 	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
 		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
