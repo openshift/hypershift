@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -123,16 +123,20 @@ func parseMDStat(mdStatData []byte) ([]MDStat, error) {
 		finish := float64(0)
 		pct := float64(0)
 		recovering := strings.Contains(lines[syncLineIdx], "recovery")
+		reshaping := strings.Contains(lines[syncLineIdx], "reshape")
 		resyncing := strings.Contains(lines[syncLineIdx], "resync")
 		checking := strings.Contains(lines[syncLineIdx], "check")
 
 		// Append recovery and resyncing state info.
-		if recovering || resyncing || checking {
-			if recovering {
+		if recovering || resyncing || checking || reshaping {
+			switch {
+			case recovering:
 				state = "recovering"
-			} else if checking {
+			case reshaping:
+				state = "reshaping"
+			case checking:
 				state = "checking"
-			} else {
+			default:
 				state = "resyncing"
 			}
 
