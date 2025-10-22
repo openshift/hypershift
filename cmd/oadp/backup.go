@@ -13,70 +13,12 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
-
-	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 )
 
-type CreateOptions struct {
-	// Required flags
-	HCName      string
-	HCNamespace string
+// Note: CreateOptions is now defined in types.go
 
-	// Optional flags with defaults
-	OADPNamespace            string
-	StorageLocation          string
-	TTL                      time.Duration
-	SnapshotMoveData         bool
-	DefaultVolumesToFsBackup bool
-	Render                   bool
-	IncludedResources        []string
-
-	// Client context
-	Log    logr.Logger
-	Client client.Client
-}
-
-var (
-	// Base resources common to all platforms
-	baseResources = []string{
-		"serviceaccounts", "roles", "rolebindings", "pods", "persistentvolumeclaims", "persistentvolumes", "configmaps",
-		"priorityclasses", "poddisruptionbudgets", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io",
-		"secrets", "services", "deployments", "statefulsets",
-		"hostedcontrolplanes.hypershift.openshift.io", "clusters.cluster.x-k8s.io",
-		"machinedeployments.cluster.x-k8s.io", "machinesets.cluster.x-k8s.io", "machines.cluster.x-k8s.io",
-		"routes.route.openshift.io", "clusterdeployments.hive.openshift.io",
-	}
-
-	// Platform-specific resources constants
-	awsResources = []string{
-		"awsclusters.infrastructure.cluster.x-k8s.io", "awsmachinetemplates.infrastructure.cluster.x-k8s.io", "awsmachines.infrastructure.cluster.x-k8s.io",
-	}
-	agentResources = []string{
-		"agentclusters.infrastructure.cluster.x-k8s.io", "agentmachinetemplates.infrastructure.cluster.x-k8s.io", "agentmachines.infrastructure.cluster.x-k8s.io",
-		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "baremetalhosts.metal3.io",
-	}
-	kubevirtResources = []string{
-		"kubevirtclusters.infrastructure.cluster.x-k8s.io", "kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io",
-	}
-	openstackResources = []string{
-		"openstackclusters.infrastructure.cluster.x-k8s.io", "openstackmachinetemplates.infrastructure.cluster.x-k8s.io", "openstackmachines.infrastructure.cluster.x-k8s.io",
-	}
-	azureResources = []string{
-		"azureclusters.infrastructure.cluster.x-k8s.io", "azuremachinetemplates.infrastructure.cluster.x-k8s.io", "azuremachines.infrastructure.cluster.x-k8s.io",
-	}
-
-	// Platform resource mapping
-	platformResourceMap = map[string][]string{
-		"AWS":       awsResources,
-		"AGENT":     agentResources,
-		"KUBEVIRT":  kubevirtResources,
-		"OPENSTACK": openstackResources,
-		"AZURE":     azureResources,
-	}
-)
+// Note: All variable declarations are now in types.go
 
 func NewCreateBackupCommand() *cobra.Command {
 	opts := &CreateOptions{
@@ -106,7 +48,7 @@ For detailed documentation and examples, visit:
 https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return opts.Run(cmd.Context())
+			return opts.RunBackup(cmd.Context())
 		},
 	}
 
@@ -130,7 +72,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
-func (o *CreateOptions) Run(ctx context.Context) error {
+func (o *CreateOptions) RunBackup(ctx context.Context) error {
 	// Client is needed for validations and actual creation
 	if o.Client == nil {
 		var err error
@@ -144,7 +86,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 				if err != nil {
 					return fmt.Errorf("backup generation failed: %w", err)
 				}
-				return o.renderBackup(backup)
+				return renderYAMLObject(backup)
 			}
 			return fmt.Errorf("failed to create kubernetes client: %w", err)
 		}
@@ -203,7 +145,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 
 	if o.Render {
 		// Render mode: output YAML to STDOUT
-		err := o.renderBackup(backup)
+		err := renderYAMLObject(backup)
 		if err != nil {
 			return err
 		}
@@ -232,8 +174,7 @@ func (o *CreateOptions) verifyDPAExists(ctx context.Context) error {
 	return verifyDPAStatus(ctx, o.Client, o.OADPNamespace)
 }
 
-// randomStringGenerator is a function type for generating random strings
-type randomStringGenerator func(int) string
+// Note: randomStringGenerator type is now in types.go
 
 // generateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
 func generateBackupName(hcName, hcNamespace string, randomGen randomStringGenerator) string {
@@ -242,6 +183,17 @@ func generateBackupName(hcName, hcNamespace string, randomGen randomStringGenera
 }
 
 func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
+	// Apply default values if not set
+	if o.StorageLocation == "" {
+		o.StorageLocation = "default"
+	}
+	if o.TTL == 0 {
+		o.TTL = 2 * time.Hour
+	}
+	if o.OADPNamespace == "" {
+		o.OADPNamespace = "openshift-adp"
+	}
+
 	// Generate backup name with random suffix
 	backupName := generateBackupName(o.HCName, o.HCNamespace, utilrand.String)
 
@@ -300,23 +252,4 @@ func getDefaultResourcesForPlatform(platform string) []string {
 	copy(result[len(baseResources):], platformResources)
 
 	return result
-}
-
-func (o *CreateOptions) renderBackup(backup *unstructured.Unstructured) error {
-	// Convert to YAML
-	yamlBytes, err := yaml.Marshal(backup.Object)
-	if err != nil {
-		return fmt.Errorf("failed to marshal backup to YAML: %w", err)
-	}
-
-	// Output to STDOUT
-	_, err = os.Stdout.WriteString("\n---\n")
-	if err != nil {
-		return fmt.Errorf("failed to write trailing newline to stdout: %w", err)
-	}
-	_, err = os.Stdout.Write(yamlBytes)
-	if err != nil {
-		return fmt.Errorf("failed to write YAML to stdout: %w", err)
-	}
-	return nil
 }

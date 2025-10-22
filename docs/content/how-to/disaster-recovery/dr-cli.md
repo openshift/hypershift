@@ -634,6 +634,609 @@ echo "hypershift_backup_success{cluster=\"prod\"} 1" | curl -X POST --data-binar
 echo "hypershift_backup_success{cluster=\"prod\"} 0" | curl -X POST --data-binary @- http://pushgateway:9091/metrics/job/hypershift_backup
 ```
 
+## Restore
+
+The `hypershift create oadp-restore` command creates restore operations from hosted cluster backups using OADP (OpenShift API for Data Protection).
+
+### Prerequisites
+
+Before restoring from backups, ensure that:
+
+1. **OADP Operator is installed**: The OADP operator must be installed and running in your management cluster
+2. **DataProtectionApplication (DPA) exists**: A DPA custom resource must be configured and ready
+3. **Backup or Schedule exists**: Either a completed backup or a backup schedule must be available
+4. **Storage location configured**: The backup storage location must be accessible
+
+### Basic Usage
+
+#### Restore from a specific backup
+```bash
+hypershift create oadp-restore \
+  --hc-name my-hosted-cluster \
+  --hc-namespace my-hosted-cluster-namespace \
+  --from-backup my-backup-name
+```
+
+#### Restore from a schedule (uses latest backup)
+```bash
+hypershift create oadp-restore \
+  --hc-name my-hosted-cluster \
+  --hc-namespace my-hosted-cluster-namespace \
+  --from-schedule daily-backup-schedule
+```
+
+### Command Options
+
+| Flag | Type | Default | Required | Description |
+|------|------|---------|----------|-------------|
+| `--hc-name` | string | - | ✅ | Name of the hosted cluster to restore |
+| `--hc-namespace` | string | - | ✅ | Namespace of the hosted cluster to restore |
+| `--from-backup` | string | - | ⚠️ | Name of the backup to restore from (mutually exclusive with `--from-schedule`) |
+| `--from-schedule` | string | - | ⚠️ | Name of the schedule to restore from (uses latest backup, mutually exclusive with `--from-backup`) |
+| `--name` | string | - | ❌ | Custom name for the restore (auto-generated if not specified) |
+| `--oadp-namespace` | string | `openshift-adp` | ❌ | Namespace where OADP operator is installed |
+| `--existing-resource-policy` | string | `update` | ❌ | Policy for handling existing resources (`none`, `update`) |
+| `--include-namespaces` | []string | (see below) | ❌ | Override included namespaces (replaces defaults completely) |
+| `--render` | bool | `false` | ❌ | Render the restore object to STDOUT instead of creating it |
+| `--restore-pvs` | bool | `true` | ❌ | Restore persistent volumes |
+| `--preserve-node-ports` | bool | `true` | ❌ | Preserve NodePort assignments during restore |
+
+> **Note**: Either `--from-backup` OR `--from-schedule` must be specified, but not both.
+
+#### Flag Details
+
+**`--hc-name` and `--hc-namespace`**
+These identify the hosted cluster to restore. These should match the original cluster that was backed up.
+
+**`--from-backup` vs `--from-schedule`**
+- `--from-backup`: Restores from a specific backup by name. The backup must exist and be in "Completed" status.
+- `--from-schedule`: Restores from the latest successful backup created by the specified schedule. Velero automatically selects the most recent backup.
+
+**`--existing-resource-policy`**
+Controls how to handle resources that already exist in the target cluster:
+- `update` (default): Update existing resources with backup data
+- `none`: Skip existing resources, only restore missing ones
+
+**`--include-namespaces`**
+By default, restores include:
+- `{hc-namespace}` - The hosted cluster's namespace
+- `{hc-namespace}-{hc-name}` - The control plane namespace
+
+When specified, this flag **completely overrides** the default namespaces (it doesn't add to them).
+
+**`--name`**
+Specifies a custom name for the restore resource. If not provided, a name is automatically generated using the pattern `{source-name}-{hc-name}-restore-{random-suffix}`.
+
+**`--render`**
+Outputs the restore YAML to STDOUT instead of creating the resource. Useful for inspection or GitOps workflows.
+
+### Example Commands
+
+#### Basic restore from backup
+```bash
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup prod01-hcp01-abc123
+```
+
+#### Restore from schedule (latest backup)
+```bash
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-schedule daily-prod-backup
+```
+
+#### Restore with custom settings
+```bash
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup prod01-hcp01-abc123 \
+  --existing-resource-policy none \
+  --restore-pvs=false \
+  --preserve-node-ports=false
+```
+
+#### Restore to custom namespaces
+```bash
+# Override default namespaces completely
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup prod01-hcp01-abc123 \
+  --include-namespaces hcp01,hcp01-prod01,custom-namespace
+```
+
+#### Restore with custom name
+```bash
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup prod01-hcp01-abc123 \
+  --name my-custom-restore-name
+```
+
+#### Render restore object without creating it
+```bash
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup prod01-hcp01-abc123 \
+  --render
+```
+
+This outputs the restore YAML to STDOUT:
+```bash
+# Save to file
+hypershift create oadp-restore --hc-name prod01 --hc-namespace hcp01 --from-backup backup-123 --render > restore.yaml
+
+# Apply with kubectl
+hypershift create oadp-restore --hc-name prod01 --hc-namespace hcp01 --from-backup backup-123 --render | kubectl apply -f -
+```
+
+### What Gets Restored
+
+The restore process includes the following by default:
+
+**Included Namespaces:**
+- `{hc-namespace}` - Contains the HostedCluster resource and related objects
+- `{hc-namespace}-{hc-name}` - Contains the HostedControlPlane and control plane components
+
+**Excluded Resources (automatically):**
+For safety and compatibility, these resources are always excluded from restore:
+- `nodes` - Cluster nodes (managed by the platform)
+- `events` - Kubernetes events (ephemeral)
+- `events.events.k8s.io` - Extended events
+- `backups.velero.io` - Velero backup resources
+- `restores.velero.io` - Velero restore resources
+- `resticrepositories.velero.io` - Velero repository data
+- `csinodes.storage.k8s.io` - CSI node information
+- `volumeattachments.storage.k8s.io` - Volume attachment state
+- `backuprepositories.velero.io` - Backup repository information
+
+### Restore Naming
+
+#### Automatic Name Generation
+
+When `--name` is not specified, restore names are automatically generated using the pattern:
+```
+{source-name}-{hc-name}-restore-{random-hash}
+```
+
+Examples:
+- From backup: `prod01-hcp01-abc123-production-restore-def456`
+- From schedule: `daily-backup-production-restore-ghi789`
+
+#### Custom Naming
+
+When using the `--name` flag, the specified name is used exactly as provided:
+```bash
+# Results in restore named "my-custom-restore"
+hypershift create oadp-restore \
+  --hc-name prod01 \
+  --hc-namespace hcp01 \
+  --from-backup backup-123 \
+  --name my-custom-restore
+```
+
+### Validation Process
+
+The command performs the following validations before creating a restore:
+
+1. **Backup/Schedule Validation**:
+   - **From backup**: Verifies the backup exists and is in "Completed" status
+   - **From schedule**: Verifies the schedule exists and is not paused
+2. **OADP Operator Check**: Verifies that the OADP operator deployment is running
+3. **Velero Check**: Confirms that Velero deployment is ready
+
+#### Render Mode Validation
+
+When using the `--render` flag:
+- If the cluster is accessible, all validations run normally but failures become warnings
+- If the cluster is not accessible, validations are skipped and the restore YAML is still rendered
+- This allows you to generate restore manifests without requiring cluster connectivity
+
+### Restore Scenarios
+
+#### Scenario 1: Full Disaster Recovery
+Complete restore from backup after cluster loss:
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup production-hcp01-20241022-abc123
+```
+
+#### Scenario 2: Schedule-Based Recovery
+Restore using the latest backup from a schedule:
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-schedule daily-production-backup
+```
+
+#### Scenario 3: Selective Namespace Restore
+Restore only specific namespaces:
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup production-backup-abc123 \
+  --include-namespaces hcp01,app-namespace-1,app-namespace-2
+```
+
+#### Scenario 4: Configuration-Only Restore
+Restore without persistent volumes (faster):
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup config-backup-abc123 \
+  --restore-pvs=false
+```
+
+#### Scenario 5: Non-Destructive Restore
+Restore only missing resources, don't update existing ones:
+```bash
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup production-backup-abc123 \
+  --existing-resource-policy none
+```
+
+#### Scenario 6: Cross-Cluster Restore
+Restore to a different management cluster:
+```bash
+# Ensure backup storage is accessible from target cluster
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup production-backup-abc123 \
+  --oadp-namespace oadp-system  # Different OADP namespace
+```
+
+### Best Practices
+
+#### Pre-Restore Checklist
+
+1. **Verify backup status**:
+   ```bash
+   kubectl get backup <backup-name> -n openshift-adp -o jsonpath='{.status.phase}'
+   ```
+
+2. **Check target namespace availability**:
+   ```bash
+   kubectl get namespace <hc-namespace>
+   ```
+
+3. **Ensure sufficient resources**: Verify the target cluster has adequate CPU, memory, and storage
+
+4. **Review existing resources**: Decide on `--existing-resource-policy` based on what's already present
+
+#### Resource Policy Guidelines
+
+| Scenario | Recommended Policy | Result |
+|----------|-------------------|--------|
+| **Clean cluster** | `update` (default) | All resources restored |
+| **Partial restore** | `none` | Only missing resources restored |
+| **Force overwrite** | `update` | Existing resources updated |
+| **Incremental restore** | `none` | Preserves local changes |
+
+#### Namespace Strategy
+
+**Default behavior** (recommended for most cases):
+```bash
+# Restores to: hcp01, hcp01-production
+hypershift create oadp-restore --hc-name production --hc-namespace hcp01 --from-backup backup-123
+```
+
+**Custom namespace mapping**:
+```bash
+# Restores to: new-hcp, new-hcp-prod, additional-ns
+hypershift create oadp-restore \
+  --hc-name production \
+  --hc-namespace hcp01 \
+  --from-backup backup-123 \
+  --include-namespaces new-hcp,new-hcp-prod,additional-ns
+```
+
+#### Schedule vs Backup Selection
+
+| Use Case | Recommendation | Command |
+|----------|----------------|---------|
+| **Latest data** | Use schedule | `--from-schedule daily-backup` |
+| **Specific point-in-time** | Use backup | `--from-backup backup-20241022-123` |
+| **Automated recovery** | Use schedule | `--from-schedule <schedule-name>` |
+| **Manual/precise recovery** | Use backup | `--from-backup <specific-backup>` |
+
+#### Naming Strategy
+
+**Automatic naming** (recommended for most cases):
+```bash
+# Results in: backup-name-cluster-name-restore-abc123
+hypershift create oadp-restore --hc-name cluster-name --hc-namespace hcp01 --from-backup backup-name
+```
+
+**Custom naming** (useful for tracking or automation):
+```bash
+# For DR scenarios
+--name "prod-cluster-dr-$(date +%Y%m%d)"
+
+# For testing
+--name "test-restore-$(git rev-parse --short HEAD)"
+
+# For scheduled restores
+--name "weekly-restore-week-$(date +%U)"
+```
+
+### Troubleshooting
+
+#### Backup Not Found
+```
+Error: backup validation failed: backup 'my-backup' not found in namespace 'openshift-adp'
+```
+**Solution**: Verify backup exists:
+```bash
+kubectl get backups -n openshift-adp | grep my-backup
+```
+
+#### Backup Not Completed
+```
+Error: backup validation failed: backup 'my-backup' is not completed, current phase: InProgress
+```
+**Solution**: Wait for backup to complete or use a different backup:
+```bash
+kubectl get backup my-backup -n openshift-adp -o jsonpath='{.status.phase}'
+```
+
+#### Schedule Not Found
+```
+Error: schedule validation failed: schedule 'daily-backup' not found in namespace 'openshift-adp'
+```
+**Solution**: Verify schedule exists:
+```bash
+kubectl get schedules -n openshift-adp | grep daily-backup
+```
+
+#### Schedule Paused
+```
+Error: schedule validation failed: schedule 'daily-backup' is paused
+```
+**Solution**: Resume the schedule or use a different one:
+```bash
+kubectl patch schedule daily-backup -n openshift-adp --type='json' -p='[{"op": "replace", "path": "/spec/paused", "value": false}]'
+```
+
+#### Mutually Exclusive Flags
+```
+Error: --from-backup and --from-schedule are mutually exclusive, specify only one
+```
+**Solution**: Use only one source flag:
+```bash
+# Either this:
+hypershift create oadp-restore --hc-name prod --hc-namespace hcp01 --from-backup backup-123
+
+# Or this:
+hypershift create oadp-restore --hc-name prod --hc-namespace hcp01 --from-schedule daily-backup
+```
+
+#### Missing Source
+```
+Error: either --from-backup or --from-schedule must be specified
+```
+**Solution**: Specify exactly one source:
+```bash
+hypershift create oadp-restore --hc-name prod --hc-namespace hcp01 --from-backup backup-123
+```
+
+#### Invalid Resource Policy
+```
+Error: invalid existing-resource-policy 'invalid'. Valid values are: none, update
+```
+**Solution**: Use a valid policy:
+```bash
+hypershift create oadp-restore \
+  --hc-name prod \
+  --hc-namespace hcp01 \
+  --from-backup backup-123 \
+  --existing-resource-policy update  # or 'none'
+```
+
+#### Insufficient Permissions
+```
+Error: failed to create restore resource: admission webhook denied the request
+```
+**Solution**: Ensure proper RBAC permissions:
+```bash
+kubectl auth can-i create restores.velero.io -n openshift-adp
+```
+
+#### Restore Stuck in Progress
+If a restore remains in "InProgress" status:
+1. Check restore logs:
+   ```bash
+   kubectl logs -n openshift-adp deployment/velero
+   ```
+2. Check restore status:
+   ```bash
+   kubectl describe restore <restore-name> -n openshift-adp
+   ```
+
+### Monitoring and Verification
+
+#### Check Restore Status
+```bash
+# List all restores
+kubectl get restores -n openshift-adp
+
+# Check specific restore details
+kubectl describe restore <restore-name> -n openshift-adp
+
+# View restore logs
+kubectl logs -n openshift-adp deployment/velero -f
+```
+
+#### Verify Restored Resources
+```bash
+# Check HostedCluster
+kubectl get hostedcluster -n <hc-namespace>
+
+# Check HostedControlPlane
+kubectl get hostedcontrolplane -n <hc-namespace>-<hc-name>
+
+# Check NodePools
+kubectl get nodepool -n <hc-namespace>
+```
+
+#### Monitor Restore Progress
+```bash
+# Watch restore status
+kubectl get restore <restore-name> -n openshift-adp -w
+
+# Check restored namespace
+kubectl get all -n <hc-namespace>
+```
+
+### Automation Examples
+
+#### GitOps Restore Workflow
+```yaml
+# .github/workflows/restore.yml
+name: Disaster Recovery Restore
+on:
+  workflow_dispatch:
+    inputs:
+      backup_name:
+        description: 'Backup name to restore from'
+        required: true
+      cluster_name:
+        description: 'Cluster name to restore'
+        required: true
+      cluster_namespace:
+        description: 'Cluster namespace'
+        required: true
+        default: 'hcp01'
+
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Generate restore manifest
+      run: |
+        hypershift create oadp-restore \
+          --hc-name ${{ github.event.inputs.cluster_name }} \
+          --hc-namespace ${{ github.event.inputs.cluster_namespace }} \
+          --from-backup ${{ github.event.inputs.backup_name }} \
+          --render > restore-manifest.yaml
+
+    - name: Apply restore
+      run: |
+        kubectl apply -f restore-manifest.yaml
+```
+
+#### Automated Schedule-Based Recovery
+```bash
+#!/bin/bash
+# restore-latest.sh - Restore from the latest backup in a schedule
+
+CLUSTER_NAME="$1"
+CLUSTER_NAMESPACE="$2"
+SCHEDULE_NAME="$3"
+
+if [[ -z "$CLUSTER_NAME" || -z "$CLUSTER_NAMESPACE" || -z "$SCHEDULE_NAME" ]]; then
+    echo "Usage: $0 <cluster-name> <cluster-namespace> <schedule-name>"
+    exit 1
+fi
+
+echo "Starting restore for cluster $CLUSTER_NAME from schedule $SCHEDULE_NAME..."
+
+hypershift create oadp-restore \
+  --hc-name "$CLUSTER_NAME" \
+  --hc-namespace "$CLUSTER_NAMESPACE" \
+  --from-schedule "$SCHEDULE_NAME"
+
+if [[ $? -eq 0 ]]; then
+    echo "✅ Restore initiated successfully"
+    echo "Monitor progress with: kubectl get restores -n openshift-adp"
+else
+    echo "❌ Restore failed"
+    exit 1
+fi
+```
+
+### Security Considerations
+
+#### RBAC Requirements
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hypershift-restore
+rules:
+- apiGroups: ["velero.io"]
+  resources: ["restores", "backups", "schedules"]
+  verbs: ["create", "get", "list"]
+- apiGroups: ["oadp.openshift.io"]
+  resources: ["dataprotectionapplications"]
+  verbs: ["get", "list"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list"]
+```
+
+#### Data Security
+- **Encryption**: Ensure restored data maintains encryption at rest
+- **Access Control**: Verify restored resources have appropriate RBAC
+- **Secrets**: Validate that restored secrets are current and secure
+- **Certificates**: Check certificate validity after restore
+
+### Performance Considerations
+
+#### Restore Duration Estimates
+
+| Restore Type | Typical Duration | Factors |
+|--------------|-----------------|---------|
+| **Configuration only** | 1-5 minutes | Cluster size, network |
+| **With PVs (small)** | 5-15 minutes | Volume size, storage speed |
+| **With PVs (large)** | 15-60 minutes | Volume size, storage speed |
+| **Full cluster** | 30-120 minutes | Complete cluster complexity |
+
+#### Optimization Tips
+- Use `--restore-pvs=false` for faster configuration-only restores
+- Consider `--existing-resource-policy=none` for incremental restores
+- Use `--include-namespaces` to restore only required namespaces
+- Ensure adequate network bandwidth for cross-region restores
+
+### Testing and Validation
+
+#### Integration Tests
+
+The HyperShift CLI includes comprehensive integration tests for both backup and restore functionality:
+
+```bash
+# Run all OADP integration tests
+go test -tags integration ./test/integration/oadp/... -v
+
+# Run only backup tests
+go test -tags integration ./test/integration/oadp/ -run "TestBackup" -v
+
+# Run only restore tests
+go test -tags integration ./test/integration/oadp/ -run "TestRestore" -v
+```
+
+The tests validate:
+- Manifest generation against Velero CRDs
+- CLI configuration and defaults
+- Business rules and validation logic
+- Platform-specific resource selection
+- Namespace configuration
+
+> **Note**: Tests require internet connectivity to download Velero CRDs from GitHub for validation.
+
 ### Related Documentation
 
 - [OADP Installation Guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-ocs.html)

@@ -3,19 +3,18 @@ package backup
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/oadp"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -94,6 +93,25 @@ The backup command automatically detects the platform type of your HostedCluster
 the appropriate platform-specific resources. It validates OADP installation and creates
 comprehensive backups that can be used for disaster recovery scenarios.
 
+Examples:
+  # Basic backup with defaults
+  hypershift create backup --hc-name production --hc-namespace clusters
+
+  # Backup with custom settings
+  hypershift create backup --hc-name production --hc-namespace clusters --storage-location s3-backup --ttl 24h
+
+  # Backup with custom resource selection
+  hypershift create backup --hc-name production --hc-namespace clusters --included-resources hostedcluster,nodepool,secrets,configmap
+
+  # Render backup YAML without creating it
+  hypershift create backup --hc-name production --hc-namespace clusters --render
+
+  # Cross-region backup with data movement
+  hypershift create backup --hc-name production --hc-namespace clusters --storage-location cross-region-s3 --snapshot-move-data=true --ttl 720h
+
+  # Configuration-only backup (faster)
+  hypershift create backup --hc-name dev-cluster --hc-namespace dev --included-resources hostedcluster,nodepool --ttl 24h
+
 For detailed documentation and examples, visit:
 https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 		SilenceUsage: true,
@@ -136,7 +154,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 				if err != nil {
 					return fmt.Errorf("backup generation failed: %w", err)
 				}
-				return o.renderBackup(backup)
+				return oadp.RenderVeleroResource(backup)
 			}
 			return fmt.Errorf("failed to create kubernetes client: %w", err)
 		}
@@ -146,7 +164,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 	if o.Client != nil {
 		// Step 1: Validate HostedCluster exists and get platform
 		o.Log.Info("Validating HostedCluster...")
-		detectedPlatform, err := validateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
+		detectedPlatform, err := oadp.ValidateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
 		if err != nil {
 			if o.Render {
 				o.Log.Info("Warning: HostedCluster validation failed, using default platform (AWS)", "error", err.Error())
@@ -161,23 +179,23 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 		if !o.Render {
 			// Step 2: Validate OADP components (only in non-render mode)
 			o.Log.Info("Validating OADP installation...")
-			if err := o.validateOADPInstallation(ctx); err != nil {
+			if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
 				return fmt.Errorf("OADP validation failed: %w", err)
 			}
 
 			// Step 3: Verify DPA CR exists (only in non-render mode)
 			o.Log.Info("Verifying DataProtectionApplication resource...")
-			if err := o.verifyDPAExists(ctx); err != nil {
+			if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
 				return fmt.Errorf("DPA verification failed: %w", err)
 			}
 		} else {
 			// In render mode, run optional validations
 			o.Log.Info("Validating OADP installation...")
-			if err := o.validateOADPInstallation(ctx); err != nil {
+			if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
 				o.Log.Info("Warning: OADP validation failed, but continuing with render", "error", err.Error())
 			} else {
 				o.Log.Info("Verifying DataProtectionApplication resource...")
-				if err := o.verifyDPAExists(ctx); err != nil {
+				if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
 					o.Log.Info("Warning: DPA verification failed, but continuing with render", "error", err.Error())
 				}
 			}
@@ -195,13 +213,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 
 	if o.Render {
 		// Render mode: output YAML to STDOUT
-		err := o.renderBackup(backup)
-		if err != nil {
-			return err
-		}
-		// Ensure proper newline after render for terminal prompt
-		fmt.Fprintln(os.Stderr, "")
-		return nil
+		return oadp.RenderVeleroResource(backup)
 	} else {
 		// Normal mode: create the backup
 		o.Log.Info("Creating backup...")
@@ -212,16 +224,6 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func (o *CreateOptions) validateOADPInstallation(ctx context.Context) error {
-	// Check if OADP operator deployment exists and is ready
-	return validateOADPComponents(ctx, o.Client, o.OADPNamespace)
-}
-
-func (o *CreateOptions) verifyDPAExists(ctx context.Context) error {
-	// Check if DataProtectionApplication CR exists
-	return verifyDPAStatus(ctx, o.Client, o.OADPNamespace)
 }
 
 // randomStringGenerator is a function type for generating random strings
@@ -292,23 +294,4 @@ func getDefaultResourcesForPlatform(platform string) []string {
 	copy(result[len(baseResources):], platformResources)
 
 	return result
-}
-
-func (o *CreateOptions) renderBackup(backup *velerov1.Backup) error {
-	// Convert to YAML
-	yamlBytes, err := yaml.Marshal(backup)
-	if err != nil {
-		return fmt.Errorf("failed to marshal backup to YAML: %w", err)
-	}
-
-	// Output to STDOUT
-	_, err = os.Stdout.WriteString("\n---\n")
-	if err != nil {
-		return fmt.Errorf("failed to write trailing newline to stdout: %w", err)
-	}
-	_, err = os.Stdout.Write(yamlBytes)
-	if err != nil {
-		return fmt.Errorf("failed to write YAML to stdout: %w", err)
-	}
-	return nil
 }

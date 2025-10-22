@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package integration
+package oadp
 
 import (
 	"fmt"
@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"github.com/openshift/hypershift/cmd/oadp"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	. "github.com/onsi/gomega"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/yaml"
@@ -26,8 +25,10 @@ const (
 	veleroBackupCRDURL = "https://raw.githubusercontent.com/vmware-tanzu/velero/v1.14.1/config/crd/v1/bases/velero.io_backups.yaml"
 )
 
-// TestBackupManifestValidation validates that generated manifests are valid according to Velero CRD
+// TestBackupManifestValidation validates that generated backup manifests are valid according to Velero CRD
 func TestBackupManifestValidation(t *testing.T) {
+	g := NewWithT(t)
+
 	tests := []struct {
 		name     string
 		platform string
@@ -42,37 +43,39 @@ func TestBackupManifestValidation(t *testing.T) {
 	// Download Velero Backup CRD once
 	t.Log("Downloading Velero Backup CRD...")
 	backupCRD, err := downloadBackupCRD()
-	require.NoError(t, err, "Failed to download Velero Backup CRD")
+	g.Expect(err).ToNot(HaveOccurred(), "Failed to download Velero Backup CRD")
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
 			// Generate backup manifest
 			opts := &oadp.CreateOptions{
-				HCName:      "test-cluster",
-				HCNamespace: "test-cluster-ns",
-				OADPNamespace: "openshift-adp",
+				HCName:          "test-cluster",
+				HCNamespace:     "test-cluster-ns",
+				OADPNamespace:   "openshift-adp",
 				StorageLocation: "default",
-				TTL: 2 * time.Hour,
+				TTL:             2 * time.Hour,
 			}
 
 			backup, _, err := opts.GenerateBackupObjectWithPlatform(tt.platform)
-			require.NoError(t, err, "Failed to generate backup object")
+			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
 
 			// Convert to YAML for validation
 			yamlBytes, err := yaml.Marshal(backup.Object)
-			require.NoError(t, err, "Failed to marshal backup to YAML")
+			g.Expect(err).ToNot(HaveOccurred(), "Failed to marshal backup to YAML")
 
 			// Validate against CRD schema
 			err = validateBackupAgainstCRD(backup.Object, backupCRD)
-			assert.NoError(t, err, "Backup manifest failed CRD validation for %s", tt.platform)
+			g.Expect(err).ToNot(HaveOccurred(), "Backup manifest failed CRD validation for %s", tt.platform)
 
 			// Additional specific validations
 			t.Run("required_fields", func(t *testing.T) {
-				validateRequiredFields(t, backup.Object)
+				validateBackupRequiredFields(t, backup.Object)
 			})
 
 			t.Run("platform_resources", func(t *testing.T) {
-				validatePlatformResources(t, backup.Object, tt.platform)
+				validateBackupPlatformResources(t, backup.Object, tt.platform)
 			})
 
 			t.Logf("✅ %s backup manifest validated successfully", tt.platform)
@@ -81,9 +84,68 @@ func TestBackupManifestValidation(t *testing.T) {
 	}
 }
 
+// TestBackupCLIConfiguration validates backup CLI configuration and defaults
+func TestBackupCLIConfiguration(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     *oadp.CreateOptions
+		wantErr  bool
+		validate func(g Gomega, backup map[string]interface{})
+	}{
+		{
+			name: "default configuration",
+			opts: &oadp.CreateOptions{
+				HCName:      "test-cluster",
+				HCNamespace: "test-cluster-ns",
+			},
+			wantErr: false,
+			validate: func(g Gomega, backup map[string]interface{}) {
+				spec := backup["spec"].(map[string]interface{})
+				g.Expect(spec["storageLocation"]).To(Equal("default"), "Default storage location should be 'default'")
+				g.Expect(spec["ttl"]).To(Equal("2h0m0s"), "Default TTL should be 2h")
+			},
+		},
+		{
+			name: "custom configuration",
+			opts: &oadp.CreateOptions{
+				HCName:                   "custom-cluster",
+				HCNamespace:              "custom-ns",
+				StorageLocation:          "s3-backup",
+				TTL:                      24 * time.Hour,
+				SnapshotMoveData:         false,
+				DefaultVolumesToFsBackup: true,
+			},
+			wantErr: false,
+			validate: func(g Gomega, backup map[string]interface{}) {
+				spec := backup["spec"].(map[string]interface{})
+				g.Expect(spec["storageLocation"]).To(Equal("s3-backup"), "Storage location should be custom")
+				g.Expect(spec["ttl"]).To(Equal("24h0m0s"), "TTL should be 24h")
+				g.Expect(spec["snapshotMoveData"]).To(Equal(false), "SnapshotMoveData should be false")
+				g.Expect(spec["defaultVolumesToFsBackup"]).To(Equal(true), "DefaultVolumesToFsBackup should be true")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			backup, _, err := tt.opts.GenerateBackupObjectWithPlatform("AWS")
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tt.validate != nil {
+				tt.validate(g, backup.Object)
+			}
+		})
+	}
+}
+
 // downloadBackupCRD downloads the Velero Backup CRD directly
 func downloadBackupCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
-	// Download Backup CRD directly
 	resp, err := http.Get(veleroBackupCRDURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download Backup CRD: %w", err)
@@ -99,7 +161,6 @@ func downloadBackupCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
 		return nil, fmt.Errorf("failed to read Backup CRD: %w", err)
 	}
 
-	// Parse CRD directly
 	var crd apiextensionsv1.CustomResourceDefinition
 	if err := yaml.Unmarshal(crdYAML, &crd); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal Backup CRD: %w", err)
@@ -108,10 +169,8 @@ func downloadBackupCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
 	return &crd, nil
 }
 
-
 // validateBackupAgainstCRD validates the backup object against the CRD schema
 func validateBackupAgainstCRD(backupObj map[string]interface{}, crd *apiextensionsv1.CustomResourceDefinition) error {
-	// Get the v1 version of the schema
 	var schema *apiextensionsv1.JSONSchemaProps
 	for _, version := range crd.Spec.Versions {
 		if version.Name == "v1" && version.Schema != nil {
@@ -124,13 +183,11 @@ func validateBackupAgainstCRD(backupObj map[string]interface{}, crd *apiextensio
 		return fmt.Errorf("no v1 schema found in backup CRD")
 	}
 
-	// Validate object against schema
 	return validateObjectAgainstSchema(backupObj, schema, field.NewPath(""))
 }
 
 // validateObjectAgainstSchema performs basic schema validation
 func validateObjectAgainstSchema(obj map[string]interface{}, schema *apiextensionsv1.JSONSchemaProps, path *field.Path) error {
-	// Validation of required fields
 	if len(schema.Required) > 0 {
 		for _, req := range schema.Required {
 			if _, exists := obj[req]; !exists {
@@ -139,7 +196,6 @@ func validateObjectAgainstSchema(obj map[string]interface{}, schema *apiextensio
 		}
 	}
 
-	// Validation of properties
 	if schema.Properties != nil {
 		for key, value := range obj {
 			if propSchema, exists := schema.Properties[key]; exists {
@@ -157,49 +213,48 @@ func validateObjectAgainstSchema(obj map[string]interface{}, schema *apiextensio
 	return nil
 }
 
-// validateRequiredFields validates that required fields are present
-func validateRequiredFields(t *testing.T, obj map[string]interface{}) {
-	// Validate apiVersion
+// validateBackupRequiredFields validates that required backup fields are present
+func validateBackupRequiredFields(t *testing.T, obj map[string]interface{}) {
+	g := NewWithT(t)
+
 	apiVersion, exists := obj["apiVersion"]
-	assert.True(t, exists, "apiVersion should be present")
-	assert.Equal(t, "velero.io/v1", apiVersion, "apiVersion should be velero.io/v1")
+	g.Expect(exists).To(BeTrue(), "apiVersion should be present")
+	g.Expect(apiVersion).To(Equal("velero.io/v1"), "apiVersion should be velero.io/v1")
 
-	// Validate kind
 	kind, exists := obj["kind"]
-	assert.True(t, exists, "kind should be present")
-	assert.Equal(t, "Backup", kind, "kind should be Backup")
+	g.Expect(exists).To(BeTrue(), "kind should be present")
+	g.Expect(kind).To(Equal("Backup"), "kind should be Backup")
 
-	// Validate metadata
 	metadata, exists := obj["metadata"]
-	assert.True(t, exists, "metadata should be present")
+	g.Expect(exists).To(BeTrue(), "metadata should be present")
 
 	if metaMap, ok := metadata.(map[string]interface{}); ok {
-		assert.NotEmpty(t, metaMap["name"], "metadata.name should not be empty")
-		assert.NotEmpty(t, metaMap["namespace"], "metadata.namespace should not be empty")
+		g.Expect(metaMap["name"]).ToNot(BeEmpty(), "metadata.name should not be empty")
+		g.Expect(metaMap["namespace"]).ToNot(BeEmpty(), "metadata.namespace should not be empty")
 	}
 
-	// Validate spec
 	spec, exists := obj["spec"]
-	assert.True(t, exists, "spec should be present")
+	g.Expect(exists).To(BeTrue(), "spec should be present")
 
 	if specMap, ok := spec.(map[string]interface{}); ok {
-		assert.NotEmpty(t, specMap["includedNamespaces"], "spec.includedNamespaces should not be empty")
-		assert.NotEmpty(t, specMap["includedResources"], "spec.includedResources should not be empty")
+		g.Expect(specMap["includedNamespaces"]).ToNot(BeEmpty(), "spec.includedNamespaces should not be empty")
+		g.Expect(specMap["includedResources"]).ToNot(BeEmpty(), "spec.includedResources should not be empty")
 	}
 }
 
-// validatePlatformResources validates that platform-specific resources are included
-func validatePlatformResources(t *testing.T, obj map[string]interface{}, platform string) {
+// validateBackupPlatformResources validates that platform-specific backup resources are included
+func validateBackupPlatformResources(t *testing.T, obj map[string]interface{}, platform string) {
+	g := NewWithT(t)
+
 	spec, exists := obj["spec"]
-	require.True(t, exists, "spec should exist")
+	g.Expect(exists).To(BeTrue(), "spec should exist")
 
 	specMap, ok := spec.(map[string]interface{})
-	require.True(t, ok, "spec should be a map")
+	g.Expect(ok).To(BeTrue(), "spec should be a map")
 
 	includedResourcesInterface, exists := specMap["includedResources"]
-	require.True(t, exists, "includedResources should exist")
+	g.Expect(exists).To(BeTrue(), "includedResources should exist")
 
-	// Convert to string slice
 	var includedResources []string
 	if resourcesSlice, ok := includedResourcesInterface.([]string); ok {
 		includedResources = resourcesSlice
@@ -208,12 +263,12 @@ func validatePlatformResources(t *testing.T, obj map[string]interface{}, platfor
 			includedResources = append(includedResources, res.(string))
 		}
 	} else {
-		t.Fatalf("includedResources should be []string or []interface{}, got %T", includedResourcesInterface)
+		g.Expect(fmt.Sprintf("%T", includedResourcesInterface)).To(Equal("[]string"),
+			"includedResources should be []string or []interface{}, got %T", includedResourcesInterface)
 	}
 
 	resourcesStr := strings.Join(includedResources, ",")
 
-	// Validate base resources always present
 	baseResources := []string{
 		"hostedclusters.hypershift.openshift.io",
 		"nodepools.hypershift.openshift.io",
@@ -222,24 +277,22 @@ func validatePlatformResources(t *testing.T, obj map[string]interface{}, platfor
 	}
 
 	for _, baseRes := range baseResources {
-		assert.Contains(t, resourcesStr, baseRes,
+		g.Expect(resourcesStr).To(ContainSubstring(baseRes),
 			"Platform %s should include base resource %s", platform, baseRes)
 	}
 
-	// Validate platform-specific resources
 	platformSpecific := map[string][]string{
-		"AWS": {"awsclusters.infrastructure.cluster.x-k8s.io"},
-		"AGENT": {"agentclusters.infrastructure.cluster.x-k8s.io"},
-		"KUBEVIRT": {"kubevirtclusters.infrastructure.cluster.x-k8s.io"},
-		"AZURE": {"azureclusters.infrastructure.cluster.x-k8s.io"},
+		"AWS":       {"awsclusters.infrastructure.cluster.x-k8s.io"},
+		"AGENT":     {"agentclusters.infrastructure.cluster.x-k8s.io"},
+		"KUBEVIRT":  {"kubevirtclusters.infrastructure.cluster.x-k8s.io"},
+		"AZURE":     {"azureclusters.infrastructure.cluster.x-k8s.io"},
 		"OPENSTACK": {"openstackclusters.infrastructure.cluster.x-k8s.io"},
 	}
 
 	if expectedResources, exists := platformSpecific[platform]; exists {
 		for _, expectedRes := range expectedResources {
-			assert.Contains(t, resourcesStr, expectedRes,
+			g.Expect(resourcesStr).To(ContainSubstring(expectedRes),
 				"Platform %s should include platform-specific resource %s", platform, expectedRes)
 		}
 	}
 }
-

@@ -1,8 +1,9 @@
-package backup
+package oadp
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 
@@ -16,10 +17,13 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	velerov1 "github.com/vmware-tanzu/velero/pkg/apis/velero/v1"
 )
 
-// validateOADPComponents checks if OADP operator is installed and running
-func validateOADPComponents(ctx context.Context, c client.Client, namespace string) error {
+// ValidateOADPComponents checks if OADP operator is installed and running
+func ValidateOADPComponents(ctx context.Context, c client.Client, namespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	// Check if OADP operator deployment exists
 	deployment := &appsv1.Deployment{}
@@ -51,7 +55,7 @@ func validateOADPComponents(ctx context.Context, c client.Client, namespace stri
 	}
 
 	// Check DPA plugins configuration
-	if err := checkDPAHypershiftPlugin(ctx, c, namespace); err != nil {
+	if err := CheckDPAHypershiftPlugin(ctx, c, namespace); err != nil {
 		// Log as warning but don't fail validation
 		log.Info("Warning: HyperShift plugin validation", "error", err.Error())
 	}
@@ -59,9 +63,9 @@ func validateOADPComponents(ctx context.Context, c client.Client, namespace stri
 	return nil
 }
 
-// verifyDPAStatus checks if DataProtectionApplication CR exists and is ready
+// VerifyDPAStatus checks if DataProtectionApplication CR exists and is ready
 // Not vendored the oadp-operator API to save space in the binary
-func verifyDPAStatus(ctx context.Context, c client.Client, namespace string) error {
+func VerifyDPAStatus(ctx context.Context, c client.Client, namespace string) error {
 	// List all DPA resources in the namespace using unstructured
 	dpaList := &unstructured.UnstructuredList{}
 	dpaList.SetGroupVersionKind(schema.GroupVersionKind{
@@ -106,8 +110,8 @@ func verifyDPAStatus(ctx context.Context, c client.Client, namespace string) err
 	return fmt.Errorf("no ready DataProtectionApplication found in namespace %s", namespace)
 }
 
-// validateAndGetHostedClusterPlatform validates that the HostedCluster exists and returns its platform
-func validateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, hcName, hcNamespace string) (string, error) {
+// ValidateAndGetHostedClusterPlatform validates that the HostedCluster exists and returns its platform
+func ValidateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, hcName, hcNamespace string) (string, error) {
 	// Get the HostedCluster resource using typed API
 	hostedCluster := &hypershiftv1beta1.HostedCluster{}
 
@@ -129,8 +133,8 @@ func validateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, h
 	return strings.ToUpper(string(platformSpec.Type)), nil
 }
 
-// checkDPAHypershiftPlugin checks if the hypershift plugin is configured in DataProtectionApplication resources
-func checkDPAHypershiftPlugin(ctx context.Context, c client.Client, namespace string) error {
+// CheckDPAHypershiftPlugin checks if the hypershift plugin is configured in DataProtectionApplication resources
+func CheckDPAHypershiftPlugin(ctx context.Context, c client.Client, namespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	// List all DPA resources in the namespace using unstructured
 	dpaList := &unstructured.UnstructuredList{}
@@ -173,6 +177,54 @@ func checkDPAHypershiftPlugin(ctx context.Context, c client.Client, namespace st
 
 	if !hypershiftPluginFound {
 		return fmt.Errorf("HyperShift plugin not found in any DataProtectionApplication. Please add 'hypershift' to the defaultPlugins list in your DPA configuration")
+	}
+
+	return nil
+}
+
+// RenderVeleroResource converts supported Velero resources to YAML and outputs them to STDOUT
+func RenderVeleroResource(resource interface{}) error {
+	// Defensive programming: validate resource type before processing
+	var resourceToRender interface{}
+	var resourceType string
+
+	switch r := resource.(type) {
+	case *velerov1.Backup:
+		if r == nil {
+			return fmt.Errorf("backup resource is nil")
+		}
+		resourceToRender = r
+		resourceType = "Backup"
+	case *velerov1.Restore:
+		if r == nil {
+			return fmt.Errorf("restore resource is nil")
+		}
+		resourceToRender = r
+		resourceType = "Restore"
+	case *velerov1.Schedule:
+		if r == nil {
+			return fmt.Errorf("schedule resource is nil")
+		}
+		resourceToRender = r
+		resourceType = "Schedule"
+	default:
+		return fmt.Errorf("unsupported resource type: %T. Only Velero Backup, Restore, and Schedule resources are supported", resource)
+	}
+
+	// Convert validated resource to YAML
+	yamlBytes, err := yaml.Marshal(resourceToRender)
+	if err != nil {
+		return fmt.Errorf("failed to marshal %s resource to YAML: %w", resourceType, err)
+	}
+
+	// Output to STDOUT
+	_, err = os.Stdout.WriteString("\n---\n")
+	if err != nil {
+		return fmt.Errorf("failed to write trailing newline to stdout: %w", err)
+	}
+	_, err = os.Stdout.Write(yamlBytes)
+	if err != nil {
+		return fmt.Errorf("failed to write %s YAML to stdout: %w", resourceType, err)
 	}
 
 	return nil
