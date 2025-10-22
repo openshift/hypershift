@@ -2,6 +2,7 @@ package dr
 
 import (
 	"github.com/openshift/hypershift/cmd/dr/backup"
+	"github.com/openshift/hypershift/cmd/dr/restore"
 
 	"github.com/spf13/cobra"
 )
@@ -21,6 +22,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	}
 
 	cmd.AddCommand(backup.NewCreateCommand())
+	cmd.AddCommand(restore.NewCreateCommand())
 
 	return cmd
 }

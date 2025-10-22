@@ -9,6 +9,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/oadp"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -145,7 +146,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 	if o.Client != nil {
 		// Step 1: Validate HostedCluster exists and get platform
 		o.Log.Info("Validating HostedCluster...")
-		detectedPlatform, err := validateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
+		detectedPlatform, err := oadp.ValidateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
 		if err != nil {
 			if o.Render {
 				o.Log.Info("Warning: HostedCluster validation failed, using default platform (AWS)", "error", err.Error())
@@ -209,12 +210,12 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 
 func (o *CreateOptions) validateOADPInstallation(ctx context.Context) error {
 	// Check if OADP operator deployment exists and is ready
-	return validateOADPComponents(ctx, o.Client, o.OADPNamespace)
+	return oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace)
 }
 
 func (o *CreateOptions) verifyDPAExists(ctx context.Context) error {
 	// Check if DataProtectionApplication CR exists
-	return verifyDPAStatus(ctx, o.Client, o.OADPNamespace)
+	return oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace)
 }
 
 // randomStringGenerator is a function type for generating random strings
