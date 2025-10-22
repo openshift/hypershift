@@ -3205,6 +3205,7 @@ func EnsureSATokenNotMountedUnlessNecessary(t *testing.T, ctx context.Context, c
 
 func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Logf("EnsurePayloadArchSetCorrectly")
+	t.Fatalf("Induce failure")
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid Status.Payload", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
@@ -3304,6 +3305,7 @@ func EnsureAppLabel(t *testing.T, ctx context.Context, client crclient.Client, h
 	if !IsGreaterThanOrEqualTo(Version419) {
 		return
 	}
+	t.Fatalf("Induce failure")
 
 	t.Logf("EnsureAppLabel")
 
