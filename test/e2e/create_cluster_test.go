@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -286,6 +287,49 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.DNS.PublicZoneID = "123"
 							hc.Spec.DNS.PrivateZoneID = "123"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when GCP project/region validation is applied it should handle formats",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when GCP project ID has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "My-Project",
+								Region:  "us-central1",
+							}
+						},
+						expectedErrorSubstring: "project in body should match",
+					},
+					{
+						name: "when GCP region has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project",
+								Region:  "us-central",
+							}
+						},
+						expectedErrorSubstring: "region in body should match",
+					},
+					{
+						name: "when GCP project and region are valid it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "europe-west2",
+							}
 						},
 						expectedErrorSubstring: "",
 					},
@@ -1428,10 +1472,17 @@ func TestOnCreateAPIUX(t *testing.T) {
 
 		for _, tc := range testCases {
 			for _, v := range tc.validations {
+
 				t.Logf("Running validation %q", v.name)
 				hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
 				defer client.Delete(ctx, hostedCluster)
 				v.mutateInput(hostedCluster)
+
+				// Skip GCP validations outside TechPreviewNoUpgrade
+				if hostedCluster.Spec.Platform.Type == hyperv1.GCPPlatform && os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+					t.Logf("Skipping GCP validation outside TechPreviewNoUpgrade: %s", v.name)
+					continue
+				}
 
 				err = client.Create(ctx, hostedCluster)
 				if v.expectedErrorSubstring != "" {
