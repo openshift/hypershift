@@ -84,6 +84,7 @@ func IsCPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluste
 			t.Logf("Version %s is not greater than or equal to %s", releaseVersion, version)
 			return false
 		}
+		return true
 	}
 	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
 	if cpoVersion.LT(version) {
