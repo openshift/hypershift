@@ -1804,7 +1804,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
-				name: "when Azure VM image configuration has invalid combinations it should fail",
+				name: "when Azure VM image configuration has valid and invalid combinations",
 				file: "nodepool-base.yaml",
 				validations: []struct {
 					name                   string
@@ -1812,7 +1812,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when marketplace is fully populated with imageGeneration set it should fail",
+						name: "when marketplace is fully populated with imageGeneration set it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
@@ -1896,6 +1896,69 @@ func TestOnCreateAPIUX(t *testing.T) {
 							}
 						},
 						expectedErrorSubstring: "",
+					},
+					{
+						name: "when marketplace has only publisher and offer but not sku and version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
+					},
+					{
+						name: "when marketplace has only sku without publisher, offer, and version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										SKU: "aro_417_rhel8_gen2",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
+					},
+					{
+						name: "when marketplace has publisher, offer, sku but not version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+										SKU:       "aro_417_rhel8_gen2",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
 					},
 				},
 			},
