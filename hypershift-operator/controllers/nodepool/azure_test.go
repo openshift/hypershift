@@ -7,7 +7,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/releaseinfo"
 
+	imageapi "github.com/openshift/api/image/v1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
@@ -473,7 +477,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 				},
 			},
 			expectedErr:    true,
-			expectedErrMsg: "either ImageID or AzureMarketplace needs to be provided for the Azure machine",
+			expectedErrMsg: "no Azure VM image configured",
 		},
 		{
 			name: "error case since a bad subnetID was provided",
@@ -510,7 +514,7 @@ func TestAzureMachineTemplateSpec(t *testing.T) {
 
 			azureSpec, err := azureMachineTemplateSpec(tc.nodePool)
 			if tc.expectedErr {
-				g.Expect(err.Error()).To(Equal(tc.expectedErrMsg))
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
 			} else {
 				g.Expect(err).To(BeNil())
 				g.Expect(azureSpec).To(Equal(tc.expectedAzureMachineTemplateSpec))
@@ -523,6 +527,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		nodePool               *hyperv1.NodePool
+		releaseImage           *releaseinfo.ReleaseImage
 		templateNameGenerator  func(spec any) (string, error)
 		expectedTemplateName   string
 		expectedErr            bool
@@ -689,11 +694,12 @@ func TestAzureMachineTemplate(t *testing.T) {
 					},
 				},
 			},
+			releaseImage: createMockReleaseImage("4.20.0", false),
 			templateNameGenerator: func(spec any) (string, error) {
 				return "should-not-be-called", nil
 			},
 			expectedErr:    true,
-			expectedErrMsg: "failed to generate AzureMachineTemplateSpec: either ImageID or AzureMarketplace needs to be provided for the Azure machine",
+			expectedErrMsg: "no Azure VM image configured",
 		},
 		{
 			name: "When NodePool has encryption and ephemeral disk, it should create template with security configuration",
@@ -735,17 +741,26 @@ func TestAzureMachineTemplate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
+			// Use test-specific release image or default to one with marketplace metadata
+			releaseImg := tc.releaseImage
+			if releaseImg == nil {
+				releaseImg = createMockReleaseImage("4.20.0", true)
+			}
+
 			// Create a CAPI instance with minimal required fields
 			capi := &CAPI{
 				Token: &Token{
 					ConfigGenerator: &ConfigGenerator{
 						nodePool: tc.nodePool,
+						rolloutConfig: &rolloutConfig{
+							releaseImage: releaseImg,
+						},
 					},
 				},
 			}
 
 			// Call the method under test
-			template, err := capi.azureMachineTemplate(tc.templateNameGenerator)
+			template, err := capi.azureMachineTemplate(t.Context(), tc.templateNameGenerator)
 
 			if tc.expectedErr {
 				g.Expect(err).ToNot(BeNil())
