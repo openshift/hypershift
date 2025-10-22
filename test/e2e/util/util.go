@@ -1034,7 +1034,8 @@ func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crcli
 	}
 
 	if !psaEnabled {
-		t.Skip("OpenShiftPodSecurityAdmission feature gate is not enabled, skipping PSA test")
+		t.Logf("OpenShiftPodSecurityAdmission feature gate is not enabled, skipping PSA test")
+		return
 	}
 	testNamespaceName := "e2e-psa-check"
 	namespace := &corev1.Namespace{
@@ -1073,7 +1074,8 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 	t.Logf("EnsureAllRoutesUseHCPRouter")
 	for _, svc := range hostedCluster.Spec.Services {
 		if svc.Service == hyperv1.APIServer && svc.Type != hyperv1.Route {
-			t.Skip("skipping test because APIServer is not exposed through a route")
+			t.Logf("skipping test because APIServer is not exposed through a route")
+			return
 		}
 	}
 	var routes routev1.RouteList
@@ -1092,7 +1094,8 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Logf("EnsureNetworkPolicies")
 	if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skipf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
+		t.Logf("test only supported on AWS platform, saw %s", hostedCluster.Spec.Platform.Type)
+		return
 	}
 
 	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -2110,7 +2113,8 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 
 	// Skip for kubevirt HostedClusters
 	if entryHostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
-		t.Skip("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
+		t.Logf("Skipping EnsureKubeAPIDNSNameCustomCert test for kubevirt")
+		return
 	}
 
 	var (
@@ -2650,7 +2654,8 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 	// https://storage.googleapis.com/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032/build-log.txt
 	// https://prow.ci.openshift.org/view/gs/origin-ci-test/pr-logs/pull/openshift_hypershift/2459/pull-ci-openshift-hypershift-main-e2e-aws/1650438383060652032
 	if hc.Spec.Platform.Type == hyperv1.NonePlatform {
-		t.Skip("skipping on None platform")
+		t.Logf("skipping on None platform")
+		return
 	}
 
 	// Polling to prevent races with prometheus scrape interval.
@@ -2735,7 +2740,8 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 
 	t.Logf("Creating Ingress Route53 Record for HostedCluster %s", hostedCluster.Name)
 	if clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile == "" {
-		t.Skip("AWS credentials file is not provided")
+		t.Logf("AWS credentials file is not provided")
+		return
 	}
 	// This is hardcoded too in aws CreateInfraOptions
 	awsRegion := "us-east-1"
@@ -2765,7 +2771,8 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 
 	t.Logf("Deleting Ingress Route53 Records for HostedCluster %s", hostedCluster.Name)
 	if clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile == "" {
-		t.Skip("AWS credentials file is not provided")
+		t.Logf("AWS credentials file is not provided")
+		return
 	}
 	// This is hardcoded too in aws CreateInfraOptions
 	awsRegion := "us-east-1"
@@ -3330,7 +3337,8 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 	t.Logf("EnsureDefaultSecurityGroupTags")
 
 	if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-		t.Skip("This test is only applicable for AWS platform")
+		t.Logf("This test is only applicable for AWS platform")
+		return
 	}
 	g := NewWithT(t)
 
