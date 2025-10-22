@@ -73,11 +73,21 @@ type CoreOSImages struct {
 
 type CoreRHCOSImage struct {
 	AzureDisk CoreAzureDisk `json:"azure-disk"`
+	AWSWinLi  CoreAWSWinLi  `json:"aws-winli"`
 }
 
 type CoreAzureDisk struct {
 	Release string `json:"release"`
 	URL     string `json:"url"`
+}
+
+type CoreAWSWinLi struct {
+	Regions map[string]CoreAWSWinLiRegion `json:"regions"`
+}
+
+type CoreAWSWinLiRegion struct {
+	Release string `json:"release"`
+	Image   string `json:"image"`
 }
 
 type CoreOSAWSImages struct {

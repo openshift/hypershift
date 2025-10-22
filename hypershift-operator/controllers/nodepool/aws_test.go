@@ -11,6 +11,7 @@ import (
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
+	v1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -166,6 +167,36 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				tmpl.Spec.Template.Spec.InstanceMetadataOptions.HTTPTokens = capiaws.HTTPTokensStateRequired
 			}),
 		},
+		{
+			name: "Windows ImageType without AMI specified should use Windows AMI mapping",
+			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+			}}},
+			nodePool: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					ImageType: hyperv1.ImageTypeWindows,
+				}},
+				Arch: hyperv1.ArchitectureAMD64,
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AMI.ID = ptr.To("ami-0abcdef1234567890")
+			}),
+		},
+		{
+			name: "Windows ImageType with AMI specified should use specified AMI",
+			cluster: hyperv1.HostedClusterSpec{Platform: hyperv1.PlatformSpec{AWS: &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+			}}},
+			nodePool: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					AMI:       "ami-custom-windows",
+					ImageType: hyperv1.ImageTypeWindows,
+				}},
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AMI.ID = ptr.To("ami-custom-windows")
+			}),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -179,6 +210,29 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			if tc.clusterStatus != nil {
 				clusterStatus = *tc.clusterStatus
 			}
+			releaseImage := &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+										"us-east-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-0abcdef1234567890",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
 			result, err := awsMachineTemplateSpec(infraName,
 				&hyperv1.HostedCluster{Spec: tc.cluster, Status: clusterStatus},
 				&hyperv1.NodePool{
@@ -188,7 +242,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 					Spec: tc.nodePool,
 				},
 				true,
-				&releaseinfo.ReleaseImage{},
+				releaseImage,
 			)
 			if tc.checkError != nil {
 				tc.checkError(t, err)
@@ -555,6 +609,225 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 
 			if !strings.Contains(err.Error(), tc.expectedError) {
 				t.Fatalf("expected error to contain %s, got %v", tc.expectedError, err)
+			}
+		})
+	}
+}
+
+func TestGetWindowsAMI(t *testing.T) {
+	testCases := []struct {
+		name          string
+		region        string
+		arch          string
+		releaseImage  *releaseinfo.ReleaseImage
+		expectedAMI   string
+		expectedError string
+	}{
+		{
+			name:          "nil release image",
+			region:        "us-east-1",
+			arch:          hyperv1.ArchitectureAMD64,
+			releaseImage:  nil,
+			expectedError: "release image is nil",
+		},
+		{
+			name:   "nil stream metadata",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: nil,
+			},
+			expectedError: "release image stream metadata is nil",
+		},
+		{
+			name:   "architecture not found",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{},
+				},
+			},
+			expectedError: "couldn't find OS metadata for architecture \"amd64\"",
+		},
+		{
+			name:   "no aws-winli regions data",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: nil,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedError: "no aws-winli regions data found in release image metadata",
+		},
+		{
+			name:   "unsupported region",
+			region: "unsupported-region",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+										"us-east-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-testimage",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedError: "no Windows AMI found for region unsupported-region in release image metadata",
+		},
+		{
+			name:   "empty AMI image",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+										"us-east-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedError: "windows AMI image is empty for region us-east-1 in release image metadata",
+		},
+		{
+			name:   "successful Windows AMI lookup",
+			region: "us-east-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+										"us-east-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-0abcdef1234567890",
+										},
+										"eu-west-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-0123456789abcdef0",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedAMI: "ami-0abcdef1234567890",
+		},
+		{
+			name:   "successful Windows AMI lookup for different region",
+			region: "eu-west-1",
+			arch:   hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &v1.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "4.17.0",
+					},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							RHCOS: releaseinfo.CoreRHCOSImage{
+								AWSWinLi: releaseinfo.CoreAWSWinLi{
+									Regions: map[string]releaseinfo.CoreAWSWinLiRegion{
+										"us-east-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-0abcdef1234567890",
+										},
+										"eu-west-1": {
+											Release: "418.94.202410090804-0",
+											Image:   "ami-0123456789abcdef0",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedAMI: "ami-0123456789abcdef0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ami, err := getWindowsAMI(tc.region, tc.arch, tc.releaseImage)
+
+			if tc.expectedError != "" {
+				if err == nil {
+					t.Fatalf("expected error containing %q, but got nil", tc.expectedError)
+				}
+				if !strings.Contains(err.Error(), tc.expectedError) {
+					t.Fatalf("expected error containing %q, but got %q", tc.expectedError, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if ami != tc.expectedAMI {
+					t.Fatalf("expected AMI %q, but got %q", tc.expectedAMI, ami)
+				}
 			}
 		})
 	}
