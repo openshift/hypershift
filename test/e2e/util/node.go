@@ -19,32 +19,31 @@ import (
 )
 
 func EnsureNodeCommunication(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureNodeCommunication", func(t *testing.T) {
-		g := NewWithT(t)
+	t.Logf("EnsureNodeCommunication")
+	g := NewWithT(t)
 
-		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
+	guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
 
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-		guestClient := kubeclient.NewForConfigOrDie(guestConfig)
+	guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+	g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+	guestClient := kubeclient.NewForConfigOrDie(guestConfig)
 
-		// Mulham: konnectivity-agent pod is not available immediately after switching from private to public.
-		// This simply adds retries to solve that.
-		err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-			podList, err := guestClient.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "app=konnectivity-agent"})
-			if err != nil || len(podList.Items) == 0 {
-				return false, nil
-			}
+	// Mulham: konnectivity-agent pod is not available immediately after switching from private to public.
+	// This simply adds retries to solve that.
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		podList, err := guestClient.CoreV1().Pods("kube-system").List(ctx, metav1.ListOptions{LabelSelector: "app=konnectivity-agent"})
+		if err != nil || len(podList.Items) == 0 {
+			return false, nil
+		}
 
-			_, err = guestClient.CoreV1().Pods("kube-system").GetLogs(podList.Items[0].Name, &corev1.PodLogOptions{Container: "konnectivity-agent"}).DoRaw(ctx)
-			if err != nil {
-				return false, nil
-			}
+		_, err = guestClient.CoreV1().Pods("kube-system").GetLogs(podList.Items[0].Name, &corev1.PodLogOptions{Container: "konnectivity-agent"}).DoRaw(ctx)
+		if err != nil {
+			return false, nil
+		}
 
-			return true, nil
-		})
-		g.Expect(err).NotTo(HaveOccurred())
+		return true, nil
 	})
+	g.Expect(err).NotTo(HaveOccurred())
 }
 
 func EnsureNodesLabelsAndTaints(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
