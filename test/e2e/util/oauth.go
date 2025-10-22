@@ -35,61 +35,60 @@ import (
 )
 
 func EnsureOAuthWithIdentityProvider(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	t.Run("EnsureOAuthWithIdentityProvider", func(t *testing.T) {
-		validateClusterPreIDP(t, ctx, client, hostedCluster)
+	t.Logf("EnsureOAuthWithIdentityProvider")
+	validateClusterPreIDP(t, ctx, client, hostedCluster)
 
-		g := NewWithT(t)
-		// secret containing htpasswd "file": `htpasswd -cbB htpasswd.tmp testuser password`
-		secret := corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "htpasswd",
-				Namespace: hostedCluster.Namespace},
-			Data: map[string][]byte{
-				"htpasswd": []byte("testuser:$2y$05$0Fk2s.0FbLy0FZ82JAqajOV/kbT/wqKX5/QFKgps6J69J2jY6r5ZG"),
-			},
+	g := NewWithT(t)
+	// secret containing htpasswd "file": `htpasswd -cbB htpasswd.tmp testuser password`
+	secret := corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "htpasswd",
+			Namespace: hostedCluster.Namespace},
+		Data: map[string][]byte{
+			"htpasswd": []byte("testuser:$2y$05$0Fk2s.0FbLy0FZ82JAqajOV/kbT/wqKX5/QFKgps6J69J2jY6r5ZG"),
+		},
+	}
+
+	err := client.Create(ctx, &secret)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
+
+	err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
+		if obj.Spec.Configuration == nil {
+			obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
 		}
-
-		err := client.Create(ctx, &secret)
-		g.Expect(err).ToNot(HaveOccurred(), "failed to create htpasswd secret")
-
-		err = UpdateObject(t, ctx, client, hostedCluster, func(obj *hyperv1.HostedCluster) {
-			if obj.Spec.Configuration == nil {
-				obj.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-			}
-			obj.Spec.Configuration.OAuth = &v1.OAuthSpec{
-				IdentityProviders: []v1.IdentityProvider{
-					{
-						Name:          "my_htpasswd_provider",
-						MappingMethod: v1.MappingMethodClaim,
-						IdentityProviderConfig: v1.IdentityProviderConfig{
-							Type: v1.IdentityProviderTypeHTPasswd,
-							HTPasswd: &v1.HTPasswdIdentityProvider{
-								FileData: v1.SecretNameReference{
-									Name: secret.Name,
-								},
+		obj.Spec.Configuration.OAuth = &v1.OAuthSpec{
+			IdentityProviders: []v1.IdentityProvider{
+				{
+					Name:          "my_htpasswd_provider",
+					MappingMethod: v1.MappingMethodClaim,
+					IdentityProviderConfig: v1.IdentityProviderConfig{
+						Type: v1.IdentityProviderTypeHTPasswd,
+						HTPasswd: &v1.HTPasswdIdentityProvider{
+							FileData: v1.SecretNameReference{
+								Name: secret.Name,
 							},
 						},
 					},
 				},
-			}
-		})
-		g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
-
-		guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
-		g.Expect(err).ToNot(HaveOccurred())
-		// wait for oauth route to be ready
-		oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)
-		// wait for oauth config map to be reconciled
-		WaitForOauthConfig(t, ctx, client, hostedCluster)
-		// wait for oauth token request to succeed
-		access_token := WaitForOAuthToken(t, ctx, oauthRoute, guestConfig, "testuser", "password")
-
-		user, err := GetUserForToken(guestConfig, access_token)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(user.Name).To(Equal("testuser"))
-
-		validateClusterPostIDP(t, ctx, client, hostedCluster)
+			},
+		}
 	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed to update hostedcluster identity providers")
+
+	guestConfig, err := guestRestConfig(t, ctx, client, hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred())
+	// wait for oauth route to be ready
+	oauthRoute := WaitForOAuthRouteReady(t, ctx, client, guestConfig, hostedCluster)
+	// wait for oauth config map to be reconciled
+	WaitForOauthConfig(t, ctx, client, hostedCluster)
+	// wait for oauth token request to succeed
+	access_token := WaitForOAuthToken(t, ctx, oauthRoute, guestConfig, "testuser", "password")
+
+	user, err := GetUserForToken(guestConfig, access_token)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(user.Name).To(Equal("testuser"))
+
+	validateClusterPostIDP(t, ctx, client, hostedCluster)
 }
 
 func guestRestConfig(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (*restclient.Config, error) {
