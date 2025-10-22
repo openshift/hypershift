@@ -2520,7 +2520,9 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 
 // ensureValidatingAdmissionPoliciesExists checks that all ValidatingAdmissionPolicies are present
 func ensureValidatingAdmissionPoliciesExists(t *testing.T, ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
-	CPOAtLeast(t, Version418, hc)
+	if !IsCPOAtLeast(t, Version418, hc) {
+		return
+	}
 	t.Logf("Checking that all ValidatingAdmissionPolicies are present")
 	g := NewWithT(t)
 	var validatingAdmissionPolicies k8sadmissionv1.ValidatingAdmissionPolicyList
@@ -2548,7 +2550,9 @@ func ensureValidatingAdmissionPoliciesExists(t *testing.T, ctx context.Context, 
 
 // ensureValidatingAdmissionPoliciesCheckDeniedRequests checks that denied KAS requests are blocked
 func ensureValidatingAdmissionPoliciesCheckDeniedRequests(t *testing.T, ctx context.Context, guestClient crclient.Client, hc *hyperv1.HostedCluster) {
-	CPOAtLeast(t, Version418, hc)
+	if !IsCPOAtLeast(t, Version418, hc) {
+		return
+	}
 	t.Logf("Checking Denied KAS Requests for ValidatingAdmissionPolicies")
 	g := NewWithT(t)
 	apiServer := &configv1.APIServer{
