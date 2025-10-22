@@ -1,0 +1,322 @@
+package oadp
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
+
+	"github.com/go-logr/logr"
+	"github.com/spf13/cobra"
+)
+
+type CreateOptions struct {
+	// Required flags
+	HCName      string
+	HCNamespace string
+
+	// Optional flags with defaults
+	OADPNamespace            string
+	StorageLocation          string
+	TTL                      time.Duration
+	SnapshotMoveData         bool
+	DefaultVolumesToFsBackup bool
+	Render                   bool
+	IncludedResources        []string
+
+	// Client context
+	Log    logr.Logger
+	Client client.Client
+}
+
+var (
+	// Base resources common to all platforms
+	baseResources = []string{
+		"serviceaccounts", "roles", "rolebindings", "pods", "persistentvolumeclaims", "persistentvolumes", "configmaps",
+		"priorityclasses", "poddisruptionbudgets", "hostedclusters.hypershift.openshift.io", "nodepools.hypershift.openshift.io",
+		"secrets", "services", "deployments", "statefulsets",
+		"hostedcontrolplanes.hypershift.openshift.io", "clusters.cluster.x-k8s.io",
+		"machinedeployments.cluster.x-k8s.io", "machinesets.cluster.x-k8s.io", "machines.cluster.x-k8s.io",
+		"routes.route.openshift.io", "clusterdeployments.hive.openshift.io",
+	}
+
+	// Platform-specific resources constants
+	awsResources = []string{
+		"awsclusters.infrastructure.cluster.x-k8s.io", "awsmachinetemplates.infrastructure.cluster.x-k8s.io", "awsmachines.infrastructure.cluster.x-k8s.io",
+	}
+	agentResources = []string{
+		"agentclusters.infrastructure.cluster.x-k8s.io", "agentmachinetemplates.infrastructure.cluster.x-k8s.io", "agentmachines.infrastructure.cluster.x-k8s.io",
+		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "baremetalhosts.metal3.io",
+	}
+	kubevirtResources = []string{
+		"kubevirtclusters.infrastructure.cluster.x-k8s.io", "kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io",
+	}
+	openstackResources = []string{
+		"openstackclusters.infrastructure.cluster.x-k8s.io", "openstackmachinetemplates.infrastructure.cluster.x-k8s.io", "openstackmachines.infrastructure.cluster.x-k8s.io",
+	}
+	azureResources = []string{
+		"azureclusters.infrastructure.cluster.x-k8s.io", "azuremachinetemplates.infrastructure.cluster.x-k8s.io", "azuremachines.infrastructure.cluster.x-k8s.io",
+	}
+
+	// Platform resource mapping
+	platformResourceMap = map[string][]string{
+		"AWS":       awsResources,
+		"AGENT":     agentResources,
+		"KUBEVIRT":  kubevirtResources,
+		"OPENSTACK": openstackResources,
+		"AZURE":     azureResources,
+	}
+)
+
+func NewCreateBackupCommand() *cobra.Command {
+	opts := &CreateOptions{
+		Log: log.Log,
+	}
+
+	cmd := &cobra.Command{
+		Use:   "oadp-backup",
+		Short: "Create a backup of a hosted cluster using OADP",
+		Long: `Create a backup of a hosted cluster using OADP (OpenShift API for Data Protection).
+
+The oadp-backup command automatically detects the platform type of your HostedCluster and includes
+the appropriate platform-specific resources. It validates OADP installation and creates
+comprehensive backups that can be used for disaster recovery scenarios.
+
+Examples:
+  # Basic backup with default settings
+  hypershift create oadp-backup --hc-name prod-cluster --hc-namespace prod-cluster-ns
+
+  # Backup with custom storage location and TTL
+  hypershift create oadp-backup --hc-name dev-cluster --hc-namespace dev-cluster-ns --storage-location s3-backup --ttl 24h
+
+  # Render backup YAML without creating it (for GitOps workflows)
+  hypershift create oadp-backup --hc-name test-cluster --hc-namespace test-cluster-ns --render
+
+For detailed documentation and examples, visit:
+https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return opts.Run(cmd.Context())
+		},
+	}
+
+	// Required flags
+	cmd.Flags().StringVar(&opts.HCName, "hc-name", "", "Name of the hosted cluster to backup (required)")
+	cmd.Flags().StringVar(&opts.HCNamespace, "hc-namespace", "", "Namespace of the hosted cluster to backup (required)")
+
+	// Optional flags with defaults
+	cmd.Flags().StringVar(&opts.OADPNamespace, "oadp-namespace", "openshift-adp", "Namespace where OADP operator is installed")
+	cmd.Flags().StringVar(&opts.StorageLocation, "storage-location", "default", "Storage location for the backup")
+	cmd.Flags().DurationVar(&opts.TTL, "ttl", 2*time.Hour, "Time to live for the backup")
+	cmd.Flags().BoolVar(&opts.SnapshotMoveData, "snapshot-move-data", true, "Enable snapshot move data feature")
+	cmd.Flags().BoolVar(&opts.DefaultVolumesToFsBackup, "default-volumes-to-fs-backup", false, "Use filesystem backup for volumes by default")
+	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the backup object to STDOUT instead of creating it")
+	cmd.Flags().StringSliceVar(&opts.IncludedResources, "included-resources", nil, "Comma-separated list of resources to include in backup (overrides defaults)")
+
+	// Mark required flags
+	_ = cmd.MarkFlagRequired("hc-name")
+	_ = cmd.MarkFlagRequired("hc-namespace")
+
+	return cmd
+}
+
+func (o *CreateOptions) Run(ctx context.Context) error {
+	// Client is needed for validations and actual creation
+	if o.Client == nil {
+		var err error
+		o.Client, err = util.GetClient()
+		if err != nil {
+			if o.Render {
+				// In render mode, if we can't connect to cluster, we'll still render but skip validations
+				o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
+				// Step: Generate backup object with default platform (AWS)
+				backup, _, err := o.generateBackupObjectWithPlatform("AWS")
+				if err != nil {
+					return fmt.Errorf("backup generation failed: %w", err)
+				}
+				return o.renderBackup(backup)
+			}
+			return fmt.Errorf("failed to create kubernetes client: %w", err)
+		}
+	}
+
+	var platform string
+	if o.Client != nil {
+		// Step 1: Validate HostedCluster exists and get platform
+		o.Log.Info("Validating HostedCluster...")
+		detectedPlatform, err := validateAndGetHostedClusterPlatform(ctx, o.Client, o.HCName, o.HCNamespace)
+		if err != nil {
+			if o.Render {
+				o.Log.Info("Warning: HostedCluster validation failed, using default platform (AWS)", "error", err.Error())
+				platform = "AWS"
+			} else {
+				return fmt.Errorf("HostedCluster validation failed: %w", err)
+			}
+		} else {
+			platform = detectedPlatform
+		}
+
+		if !o.Render {
+			// Step 2: Validate OADP components (only in non-render mode)
+			o.Log.Info("Validating OADP installation...")
+			if err := o.validateOADPInstallation(ctx); err != nil {
+				return fmt.Errorf("OADP validation failed: %w", err)
+			}
+
+			// Step 3: Verify DPA CR exists (only in non-render mode)
+			o.Log.Info("Verifying DataProtectionApplication resource...")
+			if err := o.verifyDPAExists(ctx); err != nil {
+				return fmt.Errorf("DPA verification failed: %w", err)
+			}
+		} else {
+			// In render mode, run optional validations
+			o.Log.Info("Validating OADP installation...")
+			if err := o.validateOADPInstallation(ctx); err != nil {
+				o.Log.Info("Warning: OADP validation failed, but continuing with render", "error", err.Error())
+			} else {
+				o.Log.Info("Verifying DataProtectionApplication resource...")
+				if err := o.verifyDPAExists(ctx); err != nil {
+					o.Log.Info("Warning: DPA verification failed, but continuing with render", "error", err.Error())
+				}
+			}
+		}
+	} else {
+		// This shouldn't happen but just in case
+		platform = "AWS"
+	}
+
+	// Step 4: Generate backup object with detected platform
+	backup, backupName, err := o.generateBackupObjectWithPlatform(platform)
+	if err != nil {
+		return fmt.Errorf("backup generation failed: %w", err)
+	}
+
+	if o.Render {
+		// Render mode: output YAML to STDOUT
+		err := o.renderBackup(backup)
+		if err != nil {
+			return err
+		}
+		// Ensure proper newline after render for terminal prompt
+		fmt.Fprintln(os.Stderr, "")
+		return nil
+	} else {
+		// Normal mode: create the backup
+		o.Log.Info("Creating backup...")
+		if err := o.Client.Create(ctx, backup); err != nil {
+			return fmt.Errorf("failed to create backup resource: %w", err)
+		}
+		o.Log.Info("Backup created successfully", "name", backupName, "namespace", o.OADPNamespace, "platform", platform)
+	}
+
+	return nil
+}
+
+func (o *CreateOptions) validateOADPInstallation(ctx context.Context) error {
+	// Check if OADP operator deployment exists and is ready
+	return validateOADPComponents(ctx, o.Client, o.OADPNamespace)
+}
+
+func (o *CreateOptions) verifyDPAExists(ctx context.Context) error {
+	// Check if DataProtectionApplication CR exists
+	return verifyDPAStatus(ctx, o.Client, o.OADPNamespace)
+}
+
+// randomStringGenerator is a function type for generating random strings
+type randomStringGenerator func(int) string
+
+// generateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+func generateBackupName(hcName, hcNamespace string, randomGen randomStringGenerator) string {
+	randomSuffix := randomGen(6)
+	return fmt.Sprintf("%s-%s-%s", hcName, hcNamespace, randomSuffix)
+}
+
+func (o *CreateOptions) generateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
+	// Generate backup name with random suffix
+	backupName := generateBackupName(o.HCName, o.HCNamespace, utilrand.String)
+
+	// Determine which resources to include
+	var includedResources []string
+	if len(o.IncludedResources) > 0 {
+		// Use custom resources provided by user
+		includedResources = o.IncludedResources
+	} else {
+		// Use default resources based on platform
+		includedResources = getDefaultResourcesForPlatform(platform)
+	}
+
+	// Create backup object using unstructured to avoid Velero dependency
+	backup := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "velero.io/v1",
+			"kind":       "Backup",
+			"metadata": map[string]interface{}{
+				"name":      backupName,
+				"namespace": o.OADPNamespace,
+				"labels": map[string]interface{}{
+					"velero.io/storage-location": o.StorageLocation,
+				},
+			},
+			"spec": map[string]interface{}{
+				"includedNamespaces": []string{
+					o.HCNamespace,
+					fmt.Sprintf("%s-%s", o.HCNamespace, o.HCName),
+				},
+				"includedResources":        includedResources,
+				"storageLocation":          o.StorageLocation,
+				"ttl":                      fmt.Sprintf("%s", o.TTL),
+				"snapshotMoveData":         o.SnapshotMoveData,
+				"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
+				"dataMover":                "velero",
+				"snapshotVolumes":          true,
+			},
+		},
+	}
+
+	return backup, backupName, nil
+}
+
+// getDefaultResourcesForPlatform returns the default resource list based on the platform
+func getDefaultResourcesForPlatform(platform string) []string {
+	// Get platform-specific resources, default to AWS if platform is unknown
+	platformResources, exists := platformResourceMap[strings.ToUpper(platform)]
+	if !exists {
+		platformResources = awsResources
+	}
+
+	// Combine base and platform-specific resources
+	result := make([]string, len(baseResources)+len(platformResources))
+	copy(result, baseResources)
+	copy(result[len(baseResources):], platformResources)
+
+	return result
+}
+
+func (o *CreateOptions) renderBackup(backup *unstructured.Unstructured) error {
+	// Convert to YAML
+	yamlBytes, err := yaml.Marshal(backup.Object)
+	if err != nil {
+		return fmt.Errorf("failed to marshal backup to YAML: %w", err)
+	}
+
+	// Output to STDOUT
+	_, err = os.Stdout.WriteString("\n---\n")
+	if err != nil {
+		return fmt.Errorf("failed to write trailing newline to stdout: %w", err)
+	}
+	_, err = os.Stdout.Write(yamlBytes)
+	if err != nil {
+		return fmt.Errorf("failed to write YAML to stdout: %w", err)
+	}
+	return nil
+}

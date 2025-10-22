@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/cmd/infra"
 	"github.com/openshift/hypershift/cmd/kubeconfig"
 	"github.com/openshift/hypershift/cmd/nodepool"
+	"github.com/openshift/hypershift/cmd/oadp"
 
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,7 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	cmd.AddCommand(oadp.NewCreateBackupCommand())
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(infra.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateIAMCommand())

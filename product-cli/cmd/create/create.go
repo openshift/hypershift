@@ -1,6 +1,7 @@
 package create
 
 import (
+	"github.com/openshift/hypershift/cmd/oadp"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster"
 	"github.com/openshift/hypershift/product-cli/cmd/kubeconfig"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool"
@@ -15,6 +16,7 @@ func NewCommand() *cobra.Command {
 		SilenceUsage: true,
 	}
 
+	cmd.AddCommand(oadp.NewCreateBackupCommand())
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
 	cmd.AddCommand(nodepool.NewCreateCommand())
