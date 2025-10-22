@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/oadp"
 
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -98,7 +99,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 				Build()
 
 			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
-			err := verifyDPAStatus(ctx, fakeClient, tt.namespace)
+			err := oadp.VerifyDPAStatus(ctx, fakeClient, tt.namespace)
 
 			if tt.wantErr {
 				if err == nil {
@@ -187,7 +188,7 @@ func TestValidateOADPComponents(t *testing.T) {
 				Build()
 
 			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
-			err := validateOADPComponents(ctx, fakeClient, tt.namespace)
+			err := oadp.ValidateOADPComponents(ctx, fakeClient, tt.namespace)
 
 			if tt.wantErr {
 				if err == nil {
@@ -263,7 +264,7 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 				Build()
 
 			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log)
-			err := checkDPAHypershiftPlugin(ctx, fakeClient, tt.namespace)
+			err := oadp.CheckDPAHypershiftPlugin(ctx, fakeClient, tt.namespace)
 
 			if tt.wantErr {
 				if err == nil {
@@ -360,7 +361,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 				Build()
 
 			ctx := context.Background()
-			got, err := validateAndGetHostedClusterPlatform(ctx, fakeClient, tt.hcName, tt.hcNamespace)
+			got, err := oadp.ValidateAndGetHostedClusterPlatform(ctx, fakeClient, tt.hcName, tt.hcNamespace)
 
 			if tt.wantErr {
 				if err == nil {
