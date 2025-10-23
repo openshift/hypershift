@@ -139,7 +139,11 @@ control-plane-pki-operator:
 
 .PHONY: hypershift
 hypershift:
-	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift .
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+
+.PHONY: hypershift-no-cgo
+hypershift-no-cgo:
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift-no-cgo .
 
 .PHONY: product-cli
 product-cli:
