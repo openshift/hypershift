@@ -189,7 +189,7 @@ func NewKonnectivityDialer(opts Options) (ProxyDialer, error) {
 		resolveFromGuestCluster:      opts.ResolveFromGuestClusterDNS,
 		resolveFromManagementCluster: opts.ResolveFromManagementClusterDNS,
 		mustResolve:                  opts.ResolveBeforeDial,
-		dnsFallback:                  &proxy.fallbackToMCDNS,
+		konnectivityHealth:           newKonnectivityHealth(),
 		log:                          opts.Log,
 		isCloudAPI:                   proxy.IsCloudAPI,
 	}
@@ -213,13 +213,6 @@ type konnectivityProxy struct {
 	resolveBeforeDial               bool
 
 	proxyResolver
-
-	// fallbackToMCDNS is a synced boolean that keeps track
-	// of whether to fallback to the management cluster's DNS
-	// (and dial directly).
-	// It is initially false, but if lookup through the guest
-	// fails, then it's set to true.
-	fallbackToMCDNS syncBool
 
 	tlsConfigOnce sync.Once
 	tlsConfig     *tls.Config
@@ -258,22 +251,26 @@ func (p *konnectivityProxy) getTLSConfig() *tls.Config {
 // proxy.Dialer interface.
 func (p *konnectivityProxy) DialContext(ctx context.Context, network string, requestAddress string) (net.Conn, error) {
 	log := p.log.WithName("konnectivityProxy.DialContext")
-	log.V(4).Info("Dial called", "network", network, "requestAddress", requestAddress)
+	log.V(1).Info("Dial called", "network", network, "requestAddress", requestAddress)
 	requestHost, requestPort, err := net.SplitHostPort(requestAddress)
 	if err != nil {
 		return nil, fmt.Errorf("invalid address (%s): %w", requestAddress, err)
 	}
-	log.V(4).Info("Host and port determined", "requestHost", requestHost, "requestPort", requestPort)
+	log.V(1).Info("Host and port determined", "requestHost", requestHost, "requestPort", requestPort)
 	// return a dial direct function which respects any proxy environment settings
 	if p.IsCloudAPI(requestHost) {
-		p.log.V(4).Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
+		p.log.Info("Host name is cloud API, dialing through mgmt cluster proxy if present")
 		return p.dialDirectWithProxy(network, requestAddress)
 	}
 
 	// return a dial direct function ignoring any proxy environment settings
-	shouldDNSFallback := p.fallbackToMCDNS.get()
-	if shouldDNSFallback && p.resolveFromManagementClusterDNS {
-		log.V(4).Info("Should DNS fallback is set to true and resolve from management cluster DNS is true, dialing direct")
+	// Check if konnectivity is unhealthy (based on DNS resolution failures)
+	// IMPORTANT: Never bypass konnectivity for DNS connections (port 53), as we need to
+	// attempt DNS resolution through konnectivity to check if it has recovered.
+	// The DNS server is in the guest cluster and unreachable from management cluster.
+	isDNSConnection := requestPort == "53"
+	if !isDNSConnection && !p.konnectivityHealth.isHealthy() && p.resolveFromManagementClusterDNS {
+		log.Info("Konnectivity is unhealthy, dialing direct via management cluster")
 		return p.dialDirectWithoutProxy(ctx, network, requestAddress)
 	}
 
@@ -282,52 +279,65 @@ func (p *konnectivityProxy) DialContext(ctx context.Context, network string, req
 
 	// connect to the konnectivity server address and get a TLS connection
 	konnectivityServerAddress := net.JoinHostPort(p.konnectivityHost, fmt.Sprintf("%d", p.konnectivityPort))
-	log.V(4).Info("Dialing konnectivity server", "address", konnectivityServerAddress)
-	konnectivityConnection, err := tls.Dial("tcp", konnectivityServerAddress, tlsConfig)
+	log.V(1).Info("Dialing konnectivity server", "address", konnectivityServerAddress)
+	tlsDialer := &tls.Dialer{
+		NetDialer: &net.Dialer{Timeout: 60 * time.Second},
+		Config:    tlsConfig,
+	}
+	konnectivityConnection, err := tlsDialer.DialContext(ctx, "tcp", konnectivityServerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("dialing proxy %q failed: %v", konnectivityServerAddress, err)
 	}
 
+	// Bound CONNECT handshake I/O to avoid indefinite stalls and clear on success.
+	_ = konnectivityConnection.SetDeadline(time.Now().Add(60 * time.Second))
+	defer func() { _ = konnectivityConnection.SetDeadline(time.Time{}) }()
+
 	if p.resolveBeforeDial && !p.disableResolver && !isIP(requestHost) {
-		log.V(4).Info("Host name must be resolved before dialing", "host", requestHost)
+		log.Info("Host name must be resolved before dialing", "host", requestHost)
 		_, ip, err := p.Resolve(ctx, requestHost)
 		if err != nil {
+			_ = konnectivityConnection.Close()
 			return nil, fmt.Errorf("failed to resolve name %s: %w", requestHost, err)
 		}
-		p.log.V(4).Info("Host name resolved", "ip", ip.String())
+		p.log.Info("Host name resolved", "ip", ip.String())
 		requestAddress = net.JoinHostPort(ip.String(), requestPort)
 	}
 
 	// The CONNECT command sent to the Konnectivity server opens a TCP connection
 	// to the request host via the konnectivity tunnel.
 	connectString := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", requestAddress, requestHost)
-	log.V(4).Info("Sending connect string to konnectivity server", "connectString", connectString)
+	log.V(1).Info("Sending CONNECT to konnectivity server", "target", requestAddress)
 	_, err = fmt.Fprintf(konnectivityConnection, "%s", connectString)
 	if err != nil {
-		log.V(4).Error(err, "Failed to write string to konnectivity server connection")
+		log.V(1).Error(err, "Failed to write string to konnectivity server connection")
+		_ = konnectivityConnection.Close()
 		return nil, err
 	}
 
 	// read HTTP response and return the connection
 	br := bufio.NewReader(konnectivityConnection)
-	p.log.V(4).Info("Reading response from konnectivity server")
+	log.V(1).Info("Reading response from konnectivity server")
 	res, err := http.ReadResponse(br, nil)
 	if err != nil {
+		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("reading HTTP response from CONNECT to %s via proxy %s failed: %v",
 			requestAddress, konnectivityServerAddress, err)
 	}
 	if res.StatusCode != 200 {
-		log.V(4).Info("Status code was not 200", "statusCode", res.StatusCode)
+		log.Info("Status code was not 200", "statusCode", res.StatusCode)
+		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("proxy error from %s while dialing %s: %v", konnectivityServerAddress, requestAddress, res.Status)
 	}
 	// It's safe to discard the bufio.Reader here and return the original TCP conn directly because we only use this
 	// for TLS. In TLS, the client speaks first, so we know there's no unbuffered data, but we can double-check.
 	if br.Buffered() > 0 {
-		log.V(4).Info("The response contained buffered data, none expected")
+		log.Info("The response contained buffered data, none expected")
+		_ = konnectivityConnection.Close()
 		return nil, fmt.Errorf("unexpected %d bytes of buffered data from CONNECT proxy %q",
 			br.Buffered(), konnectivityServerAddress)
 	}
-	log.V(4).Info("Successfully created connection through konnectivity")
+	log.V(1).Info("Successfully created connection through konnectivity")
 	return konnectivityConnection, nil
 }
 
@@ -340,7 +350,6 @@ func (p *konnectivityProxy) dialDirectWithoutProxy(ctx context.Context, network,
 	if err != nil {
 		return nil, err
 	}
-	p.fallbackToMCDNS.set(false)
 	return connection, nil
 }
 
@@ -362,21 +371,82 @@ func (p *konnectivityProxy) dialDirectWithProxy(network, addr string) (net.Conn,
 	return p.httpDialer.Dial(network, addr)
 }
 
-type syncBool struct {
-	value bool
-	mutex sync.RWMutex
+// konnectivityHealth tracks the health of the konnectivity tunnel based on DNS resolution success/failure.
+// DNS lookup through konnectivity is used as a health indicator - if it fails, it typically means
+// konnectivity is down (usually because there are no workers in the data plane).
+type konnectivityHealth struct {
+	fallbackToMC    bool          // Whether to fallback to management cluster DNS resolution and direct dialer
+	lastFailureTime time.Time     // Time of last DNS resolution failure
+	lastRetryTime   time.Time     // Time of last DNS resolution retry
+	retryInterval   time.Duration // Interval between DNS resolution retries
+	activeRetry     bool          // Whether a retry is currently in progress, prevents multiple simultaneous retries
+	mutex           sync.RWMutex  // Mutex to protect the health state
 }
 
-func (b *syncBool) get() bool {
-	b.mutex.RLock()
-	defer b.mutex.RUnlock()
-	return b.value
+func newKonnectivityHealth() *konnectivityHealth {
+	return &konnectivityHealth{
+		retryInterval: 30 * time.Second, // Retry every 30s
+	}
 }
 
-func (f *syncBool) set(valueToSet bool) {
-	f.mutex.Lock()
-	defer f.mutex.Unlock()
-	f.value = valueToSet
+// beginRetry determines if a retry attempt should proceed.
+// Returns true if the caller should attempt guest DNS resolution.
+// Returns false if we're in fallback mode and either:
+// - Another goroutine is already retrying, or
+// - Not enough time has passed since the last retry
+func (kh *konnectivityHealth) beginRetry() bool {
+	kh.mutex.Lock()
+	defer kh.mutex.Unlock()
+
+	if !kh.fallbackToMC {
+		return true // Not in fallback, proceed normally
+	}
+
+	if kh.activeRetry {
+		return false // Another goroutine is already retrying
+	}
+
+	if time.Since(kh.lastRetryTime) < kh.retryInterval {
+		return false // Too soon to retry
+	}
+
+	kh.activeRetry = true
+	kh.lastRetryTime = time.Now()
+	return true
+}
+
+// endRetry clears the in-progress retry flag regardless of outcome.
+func (kh *konnectivityHealth) endRetry() {
+	kh.mutex.Lock()
+	kh.activeRetry = false
+	kh.mutex.Unlock()
+}
+
+// markSuccess records that guest DNS succeeded (konnectivity is healthy)
+func (kh *konnectivityHealth) markSuccess() {
+	kh.mutex.Lock()
+	defer kh.mutex.Unlock()
+	kh.fallbackToMC = false
+	kh.activeRetry = false
+}
+
+// markFailure records that guest DNS failed (konnectivity is down)
+func (kh *konnectivityHealth) markFailure() {
+	kh.mutex.Lock()
+	defer kh.mutex.Unlock()
+	kh.fallbackToMC = true
+	kh.activeRetry = false
+	kh.lastFailureTime = time.Now()
+	if kh.lastRetryTime.IsZero() {
+		kh.lastRetryTime = time.Now()
+	}
+}
+
+// isHealthy returns whether konnectivity is considered healthy
+func (kh *konnectivityHealth) isHealthy() bool {
+	kh.mutex.RLock()
+	defer kh.mutex.RUnlock()
+	return !kh.fallbackToMC
 }
 
 // IsCloudAPI is a hardcoded list of domains that should not be routed through Konnectivity but be reached
@@ -397,16 +467,16 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 		// to true.
 		return false
 	}
-	log.V(4).Info("Determining whether host is cloud API", "host", host)
+	log.V(1).Info("Determining whether host is cloud API", "host", host)
 	if p.excludeCloudHosts.Has(host) {
-		log.V(4).Info("Host is in the list of exclude hosts, returnin false")
+		log.V(1).Info("Host is in the list of exclude hosts, returning false")
 		return false
 	}
 	if strings.HasSuffix(host, ".amazonaws.com") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
-		strings.HasSuffix(host, "azure.com") ||
-		strings.HasSuffix(host, "cloud.ibm.com") {
-		log.V(4).Info("Host has one of the cloud API suffixes, returning true")
+		strings.HasSuffix(host, ".azure.com") ||
+		strings.HasSuffix(host, ".cloud.ibm.com") {
+		log.V(1).Info("Host has one of the cloud API suffixes, returning true")
 		return true
 	}
 	return false
