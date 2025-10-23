@@ -86,7 +86,7 @@ type proxyResolver struct {
 	resolveFromGuestCluster      bool
 	resolveFromManagementCluster bool
 	mustResolve                  bool
-	dnsFallback                  *syncBool
+	konnectivityHealth           *konnectivityHealth
 	guestClusterResolver         *guestClusterResolver
 	log                          logr.Logger
 	isCloudAPI                   func(string) bool
@@ -105,20 +105,56 @@ func (d proxyResolver) Resolve(ctx context.Context, name string) (context.Contex
 			return socks5.DNSResolver{}.Resolve(ctx, name)
 		}
 
-		l.Info("looking up address from guest cluster cluster-dns")
+		// Check if we should attempt guest cluster DNS resolution
+		// This implements retry logic with debouncing to avoid multiple simultaneous retries
+		if !d.konnectivityHealth.beginRetry() {
+			// In fallback mode and either another retry is in progress or too soon to retry
+			if d.resolveFromManagementCluster {
+				l.Info("Using management cluster resolution (konnectivity in fallback mode)")
+				return d.defaultResolve(ctx, name)
+			}
+			return ctx, nil, fmt.Errorf("konnectivity unavailable, cannot resolve %s", name)
+		}
+
+		// Always clear retry-in-progress regardless of outcome.
+		defer d.konnectivityHealth.endRetry()
+
+		l.Info("attempting to resolve address from guest cluster cluster-dns")
 		address, err := d.guestClusterResolver.resolve(ctx, name)
 		if err != nil {
 			l.Error(err, "failed to look up address from guest cluster")
 
 			if d.resolveFromManagementCluster {
-				l.Info("Fallback to management cluster resolution")
-				d.dnsFallback.set(true)
-				return d.defaultResolve(ctx, name)
+				l.Info("Attempting management cluster resolution to determine if konnectivity is down")
+
+				// Use the standard DNS resolver to actually resolve the name via management cluster DNS
+				// We can't use defaultResolve because it returns nil,nil for SOCKS5 proxy
+				mgmtCtx, mgmtIP, mgmtErr := socks5.DNSResolver{}.Resolve(ctx, name)
+
+				// Only mark konnectivity as unhealthy if management cluster resolution succeeds
+				// If management cluster also fails, it's likely a legitimate DNS failure (name doesn't exist)
+				// rather than konnectivity being down
+				if mgmtErr == nil && mgmtIP != nil {
+					l.Info("Management cluster resolution succeeded - marking konnectivity as unhealthy")
+					d.konnectivityHealth.markFailure()
+				} else {
+					l.Info("Management cluster resolution also failed - likely legitimate DNS failure, not marking konnectivity as unhealthy")
+				}
+
+				// Return the result from management cluster resolution
+				// If mustResolve is false (SOCKS5), return nil to let the proxy use system resolver
+				// If mustResolve is true (HTTPS), return the actual resolved IP
+				if d.mustResolve {
+					return mgmtCtx, mgmtIP, mgmtErr
+				}
+				return ctx, nil, nil
 			}
 
 			return ctx, nil, fmt.Errorf("failed to look up name %s from guest cluster cluster-dns: %w", name, err)
 		}
 
+		// DNS resolution succeeded - konnectivity is healthy
+		d.konnectivityHealth.markSuccess()
 		l.WithValues("address", address.String()).Info("Successfully looked up address from guest cluster")
 		return ctx, address, nil
 	}
