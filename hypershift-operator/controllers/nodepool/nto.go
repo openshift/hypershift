@@ -523,7 +523,24 @@ func (r *NodePoolReconciler) ntoReconcile(ctx context.Context, nodePool *hyperv1
 			return err
 		}
 	} else {
+		existingPerformanceProfileConfigMapList := &corev1.ConfigMapList{}
+		if err := r.List(ctx, existingPerformanceProfileConfigMapList, &client.ListOptions{
+			Namespace: controlPlaneNamespace,
+			LabelSelector: labels.SelectorFromValidatedSet(labels.Set{
+				PerformanceProfileConfigMapLabel: "true",
+				hyperv1.NodePoolLabel:            nodePool.Name}),
+		}); err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
 		performanceProfileConfigMap := PerformanceProfileConfigMap(controlPlaneNamespace, performanceProfileConfigMapName, nodePool.Name)
+		for i := range existingPerformanceProfileConfigMapList.Items {
+			ppConfigMap := &existingPerformanceProfileConfigMapList.Items[i]
+			if ppConfigMap.Name != performanceProfileConfigMap.Name {
+				if _, err := supportutil.DeleteIfNeeded(ctx, r.Client, ppConfigMap); err != nil {
+					return fmt.Errorf("failed to delete performanceProfile ConfigMap: %w", err)
+				}
+			}
+		}
 		result, err := r.CreateOrUpdate(ctx, r.Client, performanceProfileConfigMap, func() error {
 			return reconcilePerformanceProfileConfigMap(performanceProfileConfigMap, nodePool, performanceProfileConfig)
 		})
