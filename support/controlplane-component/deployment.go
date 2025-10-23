@@ -36,7 +36,13 @@ type WorkloadProvider[T client.Object] interface {
 	IsReady(object T) (status metav1.ConditionStatus, reason string, message string)
 }
 
+type WorkloadProviderWrapper[T client.Object] interface {
+	Wrap(WorkloadProvider[T]) WorkloadProvider[T]
+}
+
 var _ WorkloadProvider[*appsv1.Deployment] = &deploymentProvider{}
+var _ WorkloadProvider[*appsv1.Deployment] = &WrappedDeploymentProvider{}
+var _ WorkloadProviderWrapper[*appsv1.Deployment] = &WrappedDeploymentProvider{}
 
 type deploymentProvider struct {
 }
@@ -122,6 +128,24 @@ func (d *deploymentProvider) IsReady(object *appsv1.Deployment) (status metav1.C
 	}
 
 	return
+}
+
+type WrappedDeploymentProvider struct {
+	deployment *appsv1.Deployment
+	WorkloadProvider[*appsv1.Deployment]
+}
+
+func NewWrappedDeploymentProvider(deployment *appsv1.Deployment) *WrappedDeploymentProvider {
+	return &WrappedDeploymentProvider{deployment: deployment}
+}
+
+func (d *WrappedDeploymentProvider) LoadManifest(_ string) (*appsv1.Deployment, error) {
+	return d.deployment, nil
+}
+
+func (d *WrappedDeploymentProvider) Wrap(delegate WorkloadProvider[*appsv1.Deployment]) WorkloadProvider[*appsv1.Deployment] {
+	d.WorkloadProvider = delegate
+	return d
 }
 
 func findDeploymentCondition(conditions []appsv1.DeploymentCondition, conditionType appsv1.DeploymentConditionType) *appsv1.DeploymentCondition {

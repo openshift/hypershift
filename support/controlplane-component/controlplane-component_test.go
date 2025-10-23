@@ -272,6 +272,75 @@ func TestReconcile(t *testing.T) {
 	}
 }
 
+type testWrappedDeploymentProvider struct {
+	WorkloadProvider[*appsv1.Deployment]
+}
+
+func (d *testWrappedDeploymentProvider) LoadManifest(_ string) (*appsv1.Deployment, error) {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "newComponent",
+		},
+	}, nil
+}
+
+func (d *testWrappedDeploymentProvider) Wrap(delegate WorkloadProvider[*appsv1.Deployment]) WorkloadProvider[*appsv1.Deployment] {
+	d.WorkloadProvider = delegate
+	return d
+}
+
+func TestWithWrappedWorkloadProvider(t *testing.T) {
+	g := NewWithT(t)
+
+	builder := NewDeploymentComponent(testComponentName, &testComponent{})
+	builder.WithWrappedWorkloadProvider(&testWrappedDeploymentProvider{})
+	wrappedTarget := builder.Build()
+
+	target, ok := wrappedTarget.(*controlPlaneWorkload[*appsv1.Deployment])
+	g.Expect(ok).To(BeTrue())
+	loadedManifest, err := target.workloadProvider.LoadManifest("nonExistingManifest")
+	g.Expect(err).NotTo(HaveOccurred())
+
+	g.Expect(loadedManifest).To(Equal(&appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "newComponent",
+		},
+	}))
+}
+
+type testControlPlaneWorkloadRenderer[T client.Object] interface {
+	Render(cpContext ControlPlaneContext) (T, error)
+}
+
+func TestRenderWorkload(t *testing.T) {
+	g := NewWithT(t)
+
+	builder := NewDeploymentComponent(testComponentName, &testComponent{})
+	builder.WithWrappedWorkloadProvider(&testWrappedDeploymentProvider{})
+	wrappedTarget := builder.Build()
+
+	target, ok := wrappedTarget.(testControlPlaneWorkloadRenderer[*appsv1.Deployment])
+	g.Expect(ok).To(BeTrue())
+
+	scheme := runtime.NewScheme()
+	g.Expect(appsv1.AddToScheme(scheme)).NotTo(HaveOccurred())
+	cpContext := ControlPlaneContext{
+		Context: t.Context(),
+		HCP:     &hyperv1.HostedControlPlane{},
+		Client:  fake.NewClientBuilder().WithScheme(scheme).WithObjects().Build(),
+	}
+
+	actualDeployment, err := target.Render(cpContext)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(actualDeployment).ToNot(Equal(
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "newComponent",
+			},
+		},
+	))
+}
+
 func componentsFakeObjects() ([]client.Object, error) {
 	// we need this to exist for components to reconcile
 	fakeComponent := &hyperv1.ControlPlaneComponent{

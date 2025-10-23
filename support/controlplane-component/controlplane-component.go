@@ -31,6 +31,10 @@ type ControlPlaneComponent interface {
 	Reconcile(cpContext ControlPlaneContext) error
 }
 
+type ControlPlaneComponentRenderer[T client.Object] interface {
+	Render(cpContext ControlPlaneContext) (T, error)
+}
+
 type ControlPlaneContext struct {
 	context.Context
 
@@ -184,6 +188,10 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 	return reconcilationError
 }
 
+func (c *controlPlaneWorkload[T]) Render(cpContext ControlPlaneContext) (T, error) {
+	return c.renderWorkloadInternal(cpContext)
+}
+
 func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	workloadObj := c.workloadProvider.NewObject()
 	// make sure that the Deployment/Statefulset name matches the component name.
@@ -283,20 +291,30 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 }
 
 func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContext) error {
+	workloadObj, err := c.renderWorkloadInternal(cpContext)
+	if err != nil {
+		return err
+	}
+	_, err = cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj)
+	return err
+}
+
+func (c *controlPlaneWorkload[T]) renderWorkloadInternal(cpContext ControlPlaneContext) (T, error) {
 	workloadObj, err := c.workloadProvider.LoadManifest(c.Name())
 	if err != nil {
-		return fmt.Errorf("failed loading workload manifest: %v", err)
+		return workloadObj, fmt.Errorf("failed loading workload manifest: %v", err)
 	}
+
+	oldWorkloadObj := c.workloadProvider.NewObject()
+	if err = cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(workloadObj), oldWorkloadObj); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return workloadObj, fmt.Errorf("failed to get old workload object: %v", err)
+		}
+	}
+
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
 	workloadObj.SetNamespace(cpContext.HCP.Namespace)
-
-	oldWorkloadObj := c.workloadProvider.NewObject()
-	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(workloadObj), oldWorkloadObj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get old workload object: %v", err)
-		}
-	}
 
 	if !cpContext.OmitOwnerReference {
 		ownerRef := config.OwnerRefFrom(cpContext.HCP)
@@ -304,8 +322,8 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 	}
 
 	if c.adapt != nil {
-		if err := c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
-			return err
+		if err = c.adapt(cpContext.workloadContext(), workloadObj); err != nil {
+			return workloadObj, err
 		}
 	}
 
@@ -316,12 +334,6 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		existingResources[container.Name] = container.Resources
 	}
 
-	if err := c.setDefaultOptions(cpContext, workloadObj, existingResources); err != nil {
-		return err
-	}
-
-	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj); err != nil {
-		return err
-	}
-	return nil
+	err = c.setDefaultOptions(cpContext, workloadObj, existingResources)
+	return workloadObj, err
 }
