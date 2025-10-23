@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -40,10 +39,7 @@ func DumpHostedCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedClus
 
 	var allErrors []error
 	findKubeObjectUpdateLoops := func(filename string, content []byte) {
-		// TODO: currently we need the "strings.Contains" workaround to let the ExternalOIDCWithUIDAndExtraClaimMappings jobs not fail,
-		// to promote the 4.20 featuregate ExternalOIDCWithUIDAndExtraClaimMappings to GA.
-		// Once https://issues.redhat.com/browse/OCPBUGS-60457 is fixed, remove the "strings.Contains" condition
-		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) && !strings.Contains(t.Name(), "TestExternalOIDC") {
+		if bytes.Contains(content, []byte(upsert.LoopDetectorWarningMessage)) {
 			allErrors = append(allErrors, fmt.Errorf("found %s messages in file %s", upsert.LoopDetectorWarningMessage, filename))
 		}
 	}
