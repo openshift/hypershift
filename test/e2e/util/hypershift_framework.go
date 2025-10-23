@@ -107,9 +107,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	h.before(hostedCluster, opts, platform)
 
 	if h.test != nil && !h.Failed() {
-		h.Run("Main", func(t *testing.T) {
-			h.test(t, NewWithT(t), h.client, hostedCluster)
-		})
+		h.test(h.T, NewWithT(h.T), h.client, hostedCluster)
 	}
 
 	h.after(hostedCluster, platform)
