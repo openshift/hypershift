@@ -1789,3 +1789,21 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 	}
 
 }
+
+func TestCreatePublicAndPrivateClusterNoExternalDNS(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)
+	clusterOpts.ExternalDNSDomain = ""
+
+	e2eutil.NewHypershiftTest(t, ctx, nil).
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "public-and-private-no-external-dns", globalOpts.ServiceAccountSigningKey)
+}
