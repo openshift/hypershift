@@ -81,6 +81,11 @@ func (b *controlPlaneWorkloadBuilder[T]) WithDependencies(dependencies ...string
 	return b
 }
 
+func (b *controlPlaneWorkloadBuilder[T]) WithWrappedWorkloadProvider(workloadProviderWrapper WorkloadProviderWrapper[T]) *controlPlaneWorkloadBuilder[T] {
+	b.workload.workloadProvider = workloadProviderWrapper.Wrap(b.workload.workloadProvider)
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) InjectKonnectivityContainer(opts KonnectivityContainerOptions) *controlPlaneWorkloadBuilder[T] {
 	b.workload.konnectivityContainerOpts = &opts
 	return b
