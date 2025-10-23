@@ -130,10 +130,12 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
 			}
-		}
 
-		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
-			ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
+			// The following validation is here since TestHAEtcdChaos runs as NonePlatform and it's broken.
+			// TODO(ahmed): when OCPBUGS-61291 is fixed, we should move this validation outside of this if block.
+			if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
+				ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
+			}
 		}
 	})
 }
@@ -158,6 +160,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
+
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
 		}
@@ -275,6 +278,32 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	err := h.client.Create(h.ctx, namespace)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create namespace")
 
+	if platform == hyperv1.AWSPlatform {
+		originalBeforeApply := opts.BeforeApply
+		opts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+
+			switch v := o.(type) {
+			case *hyperv1.HostedCluster:
+				if v.Spec.Configuration == nil {
+					v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
+				}
+				v.Spec.Configuration.Ingress = &configv1.IngressSpec{
+					LoadBalancer: configv1.LoadBalancer{
+						Platform: configv1.IngressPlatformSpec{
+							Type: configv1.AWSPlatformType,
+							AWS: &configv1.AWSIngressSpec{
+								Type: configv1.NLB,
+							},
+						},
+					},
+				}
+			}
+		}
+	}
+
 	// create serviceAccount signing key secret
 	if len(serviceAccountSigningKey) > 0 {
 		serviceAccountSigningKeySecret := &corev1.Secret{
@@ -290,37 +319,6 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 		err = h.client.Create(h.ctx, serviceAccountSigningKeySecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create serviceAccountSigningKeySecret")
 
-		// create external oidc secret and configmap
-		if opts.ExtOIDCConfig != nil {
-			consoleClientSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      opts.ExtOIDCConfig.ConsoleClientSecretName,
-					Namespace: namespace.Name,
-				},
-				Type: corev1.SecretTypeOpaque,
-				StringData: map[string]string{
-					"clientSecret": opts.ExtOIDCConfig.ConsoleClientSecretValue,
-				},
-			}
-			err := h.client.Create(h.ctx, consoleClientSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
-
-			caData, err := os.ReadFile(opts.ExtOIDCConfig.IssuerCABundleFile)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
-
-			oidcCAConfigmap := &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      opts.ExtOIDCConfig.IssuerCAConfigmapName,
-					Namespace: namespace.Name,
-				},
-				Data: map[string]string{
-					"ca-bundle.crt": string(caData),
-				},
-			}
-			err = h.client.Create(h.ctx, oidcCAConfigmap)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
-		}
-
 		originalBeforeApply := opts.BeforeApply
 		opts.BeforeApply = func(o crclient.Object) {
 			if originalBeforeApply != nil {
@@ -332,22 +330,48 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 				v.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
 					Name: serviceAccountSigningKeySecret.Name,
 				}
-				if platform == hyperv1.AWSPlatform {
-					if v.Spec.Configuration == nil {
-						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}
-					}
-					v.Spec.Configuration.Ingress = &configv1.IngressSpec{
-						LoadBalancer: configv1.LoadBalancer{
-							Platform: configv1.IngressPlatformSpec{
-								Type: configv1.AWSPlatformType,
-								AWS: &configv1.AWSIngressSpec{
-									Type: configv1.NLB,
-								},
-							},
-						},
-					}
-				}
+			}
+		}
+	}
 
+	// create external oidc secret and configmap
+	if opts.ExtOIDCConfig != nil {
+		consoleClientSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      opts.ExtOIDCConfig.ConsoleClientSecretName,
+				Namespace: namespace.Name,
+			},
+			Type: corev1.SecretTypeOpaque,
+			StringData: map[string]string{
+				"clientSecret": opts.ExtOIDCConfig.ConsoleClientSecretValue,
+			},
+		}
+		err := h.client.Create(h.ctx, consoleClientSecret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc secret")
+
+		caData, err := os.ReadFile(opts.ExtOIDCConfig.IssuerCABundleFile)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to read external oidc issuer ca bundle file")
+
+		oidcCAConfigmap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      opts.ExtOIDCConfig.IssuerCAConfigmapName,
+				Namespace: namespace.Name,
+			},
+			Data: map[string]string{
+				"ca-bundle.crt": string(caData),
+			},
+		}
+		err = h.client.Create(h.ctx, oidcCAConfigmap)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create external oidc issuer ca configmap")
+
+		originalBeforeApply := opts.BeforeApply
+		opts.BeforeApply = func(o crclient.Object) {
+			if originalBeforeApply != nil {
+				originalBeforeApply(o)
+			}
+
+			switch v := o.(type) {
+			case *hyperv1.HostedCluster:
 				if opts.ExtOIDCConfig != nil {
 					if v.Spec.Configuration == nil {
 						v.Spec.Configuration = &hyperv1.ClusterConfiguration{}

@@ -3028,7 +3028,10 @@ ManagedIdentity
 <a href="#hypershift.openshift.io/v1beta1.AzureVMImage">AzureVMImage</a>)
 </p>
 <p>
-<p>AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.</p>
+<p>AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.
+This struct supports two usage patterns:
+1. Specify only imageGeneration to use marketplace defaults from the release payload (HyperShift will select the appropriate image)
+2. Specify publisher, offer, sku, and version to use an explicit marketplace image (with optional imageGeneration)</p>
 </p>
 <table>
 <thead>
@@ -3040,12 +3043,32 @@ ManagedIdentity
 <tbody>
 <tr>
 <td>
+<code>imageGeneration</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVMImageGeneration">
+AzureVMImageGeneration
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+from the release payload metadata when publisher, offer, sku, and version are not explicitly provided.
+It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+encoded into the SKU field that CAPZ uses.
+Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>publisher</code></br>
 <em>
 string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>publisher is the name of the organization that created the image.
 It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
 It must start with a lowercase letter or a number.
@@ -3060,6 +3083,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>offer specifies the name of a group of related images created by the publisher.
 TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
 </td>
@@ -3072,6 +3096,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>sku specifies an instance of an offer, such as a major release of a distribution.
 For example, 22<em>04-lts-gen2, 8-lvm-gen2.
 The value must consist only of lowercase letters, numbers, and hyphens (-) and underscores (</em>).
@@ -3086,6 +3111,7 @@ string
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>version specifies the version of an image sku. The allowed formats are Major.Minor.Build or &lsquo;latest&rsquo;. Major,
 Minor, and Build are decimal numbers, e.g. &lsquo;1.2.0&rsquo;. Specify &lsquo;latest&rsquo; to use the latest version of an image available at
 deployment time. Even if you use &lsquo;latest&rsquo;, the VM image will not automatically update after deploy time even if a
@@ -3540,7 +3566,11 @@ AzureVMImageType
 Valid values are &ldquo;ImageID&rdquo; and &ldquo;AzureMarketplace&rdquo;.
 ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
 AzureMarketplace means the VM will boot from an Azure Marketplace image.
-Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.</p>
+Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
+When Type is &ldquo;AzureMarketplace&rdquo;, you can either:
+1. Specify only imageGeneration to use marketplace defaults from the release payload
+2. Specify publisher, offer, sku, and version to use an explicit marketplace image
+3. Specify all fields (imageGeneration along with publisher, offer, sku, version)</p>
 </td>
 </tr>
 <tr>
@@ -3571,6 +3601,29 @@ AzureMarketplaceImage
 </td>
 </tr>
 </tbody>
+</table>
+###AzureVMImageGeneration { #hypershift.openshift.io/v1beta1.AzureVMImageGeneration }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureMarketplaceImage">AzureMarketplaceImage</a>)
+</p>
+<p>
+<p>AzureVMImageGeneration represents the Hyper-V generation of an Azure VM image.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Gen1&#34;</p></td>
+<td><p>Gen1 represents Hyper-V Generation 1 VMs</p>
+</td>
+</tr><tr><td><p>&#34;Gen2&#34;</p></td>
+<td><p>Gen2 represents Hyper-V Generation 2 VMs</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureVMImageType { #hypershift.openshift.io/v1beta1.AzureVMImageType }
 <p>
@@ -5621,6 +5674,57 @@ contain all of the given tags will be excluded from the result.</p>
 <em>(Optional)</em>
 <p>notTagsAny is a list of tags to filter by. If specified, resources
 which contain any of the given tags will be excluded from the result.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPPlatformSpec { #hypershift.openshift.io/v1beta1.GCPPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>GCPPlatformSpec specifies configuration for clusters running on Google Cloud Platform.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>project</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>project is the GCP project ID.
+A valid project ID must satisfy the following rules:
+length: Must be between 6 and 30 characters, inclusive
+characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
+start and end: Must begin with a lowercase letter and must not end with a hyphen
+valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the GCP region in which the cluster resides.
+A valid region must satisfy the following rules:
+format: Must be in the form <code>&lt;letters&gt;-&lt;lettersOrDigits&gt;&lt;digit&gt;</code>
+characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and a single hyphen (<code>-</code>) separator
+valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;
+region must not include zone suffixes (e.g., &ldquo;-a&rdquo;).
+For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
 </td>
 </tr>
 </tbody>
@@ -10649,6 +10753,20 @@ OpenStackPlatformSpec
 <p>openstack specifies configuration for clusters running on OpenStack.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>gcp</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">
+GCPPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gcp specifies configuration for clusters running on Google Cloud Platform.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
@@ -10709,6 +10827,9 @@ AWSPlatformStatus
 </td>
 </tr><tr><td><p>&#34;Azure&#34;</p></td>
 <td><p>AzurePlatform represents Azure infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;GCP&#34;</p></td>
+<td><p>GCPPlatform represents Google Cloud Platform infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;IBMCloud&#34;</p></td>
 <td><p>IBMCloudPlatform represents IBM Cloud infrastructure.</p>
