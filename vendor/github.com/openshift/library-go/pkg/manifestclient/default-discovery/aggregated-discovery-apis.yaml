@@ -1,0 +1,5720 @@
+apiVersion: apidiscovery.k8s.io/v2
+items:
+- metadata:
+    creationTimestamp: null
+    name: apiregistration.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - api-extensions
+      resource: apiservices
+      responseKind:
+        group: ""
+        kind: APIService
+        version: ""
+      scope: Cluster
+      singularResource: apiservice
+      subresources:
+      - responseKind:
+          group: ""
+          kind: APIService
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: apps
+  versions:
+  - freshness: Current
+    resources:
+    - resource: controllerrevisions
+      responseKind:
+        group: ""
+        kind: ControllerRevision
+        version: ""
+      scope: Namespaced
+      singularResource: controllerrevision
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: daemonsets
+      responseKind:
+        group: ""
+        kind: DaemonSet
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - ds
+      singularResource: daemonset
+      subresources:
+      - responseKind:
+          group: ""
+          kind: DaemonSet
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: deployments
+      responseKind:
+        group: ""
+        kind: Deployment
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - deploy
+      singularResource: deployment
+      subresources:
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: Deployment
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: replicasets
+      responseKind:
+        group: ""
+        kind: ReplicaSet
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - rs
+      singularResource: replicaset
+      subresources:
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: ReplicaSet
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: statefulsets
+      responseKind:
+        group: ""
+        kind: StatefulSet
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - sts
+      singularResource: statefulset
+      subresources:
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: StatefulSet
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: events.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: events
+      responseKind:
+        group: ""
+        kind: Event
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - ev
+      singularResource: event
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: authentication.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: selfsubjectreviews
+      responseKind:
+        group: ""
+        kind: SelfSubjectReview
+        version: ""
+      scope: Cluster
+      singularResource: selfsubjectreview
+      verbs:
+      - create
+    - resource: tokenreviews
+      responseKind:
+        group: ""
+        kind: TokenReview
+        version: ""
+      scope: Cluster
+      singularResource: tokenreview
+      verbs:
+      - create
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: authorization.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: localsubjectaccessreviews
+      responseKind:
+        group: ""
+        kind: LocalSubjectAccessReview
+        version: ""
+      scope: Namespaced
+      singularResource: localsubjectaccessreview
+      verbs:
+      - create
+    - resource: selfsubjectaccessreviews
+      responseKind:
+        group: ""
+        kind: SelfSubjectAccessReview
+        version: ""
+      scope: Cluster
+      singularResource: selfsubjectaccessreview
+      verbs:
+      - create
+    - resource: selfsubjectrulesreviews
+      responseKind:
+        group: ""
+        kind: SelfSubjectRulesReview
+        version: ""
+      scope: Cluster
+      singularResource: selfsubjectrulesreview
+      verbs:
+      - create
+    - resource: subjectaccessreviews
+      responseKind:
+        group: ""
+        kind: SubjectAccessReview
+        version: ""
+      scope: Cluster
+      singularResource: subjectaccessreview
+      verbs:
+      - create
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: autoscaling
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: horizontalpodautoscalers
+      responseKind:
+        group: ""
+        kind: HorizontalPodAutoscaler
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - hpa
+      singularResource: horizontalpodautoscaler
+      subresources:
+      - responseKind:
+          group: ""
+          kind: HorizontalPodAutoscaler
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v2
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: horizontalpodautoscalers
+      responseKind:
+        group: ""
+        kind: HorizontalPodAutoscaler
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - hpa
+      singularResource: horizontalpodautoscaler
+      subresources:
+      - responseKind:
+          group: ""
+          kind: HorizontalPodAutoscaler
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: batch
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: cronjobs
+      responseKind:
+        group: ""
+        kind: CronJob
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - cj
+      singularResource: cronjob
+      subresources:
+      - responseKind:
+          group: ""
+          kind: CronJob
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: jobs
+      responseKind:
+        group: ""
+        kind: Job
+        version: ""
+      scope: Namespaced
+      singularResource: job
+      subresources:
+      - responseKind:
+          group: ""
+          kind: Job
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: certificates.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: certificatesigningrequests
+      responseKind:
+        group: ""
+        kind: CertificateSigningRequest
+        version: ""
+      scope: Cluster
+      shortNames:
+      - csr
+      singularResource: certificatesigningrequest
+      subresources:
+      - responseKind:
+          group: ""
+          kind: CertificateSigningRequest
+          version: ""
+        subresource: approval
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: CertificateSigningRequest
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: networking.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: ingressclasses
+      responseKind:
+        group: ""
+        kind: IngressClass
+        version: ""
+      scope: Cluster
+      singularResource: ingressclass
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: ingresses
+      responseKind:
+        group: ""
+        kind: Ingress
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - ing
+      singularResource: ingress
+      subresources:
+      - responseKind:
+          group: ""
+          kind: Ingress
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: networkpolicies
+      responseKind:
+        group: ""
+        kind: NetworkPolicy
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - netpol
+      singularResource: networkpolicy
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: policy
+  versions:
+  - freshness: Current
+    resources:
+    - resource: poddisruptionbudgets
+      responseKind:
+        group: ""
+        kind: PodDisruptionBudget
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - pdb
+      singularResource: poddisruptionbudget
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PodDisruptionBudget
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: rbac.authorization.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: clusterrolebindings
+      responseKind:
+        group: ""
+        kind: ClusterRoleBinding
+        version: ""
+      scope: Cluster
+      singularResource: clusterrolebinding
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: clusterroles
+      responseKind:
+        group: ""
+        kind: ClusterRole
+        version: ""
+      scope: Cluster
+      singularResource: clusterrole
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: rolebindings
+      responseKind:
+        group: ""
+        kind: RoleBinding
+        version: ""
+      scope: Namespaced
+      singularResource: rolebinding
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: roles
+      responseKind:
+        group: ""
+        kind: Role
+        version: ""
+      scope: Namespaced
+      singularResource: role
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: storage.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: csidrivers
+      responseKind:
+        group: ""
+        kind: CSIDriver
+        version: ""
+      scope: Cluster
+      singularResource: csidriver
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: csinodes
+      responseKind:
+        group: ""
+        kind: CSINode
+        version: ""
+      scope: Cluster
+      singularResource: csinode
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: csistoragecapacities
+      responseKind:
+        group: ""
+        kind: CSIStorageCapacity
+        version: ""
+      scope: Namespaced
+      singularResource: csistoragecapacity
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: storageclasses
+      responseKind:
+        group: ""
+        kind: StorageClass
+        version: ""
+      scope: Cluster
+      shortNames:
+      - sc
+      singularResource: storageclass
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: volumeattachments
+      responseKind:
+        group: ""
+        kind: VolumeAttachment
+        version: ""
+      scope: Cluster
+      singularResource: volumeattachment
+      subresources:
+      - responseKind:
+          group: ""
+          kind: VolumeAttachment
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: admissionregistration.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - api-extensions
+      resource: mutatingwebhookconfigurations
+      responseKind:
+        group: ""
+        kind: MutatingWebhookConfiguration
+        version: ""
+      scope: Cluster
+      singularResource: mutatingwebhookconfiguration
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - api-extensions
+      resource: validatingadmissionpolicies
+      responseKind:
+        group: ""
+        kind: ValidatingAdmissionPolicy
+        version: ""
+      scope: Cluster
+      singularResource: validatingadmissionpolicy
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ValidatingAdmissionPolicy
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - api-extensions
+      resource: validatingadmissionpolicybindings
+      responseKind:
+        group: ""
+        kind: ValidatingAdmissionPolicyBinding
+        version: ""
+      scope: Cluster
+      singularResource: validatingadmissionpolicybinding
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - api-extensions
+      resource: validatingwebhookconfigurations
+      responseKind:
+        group: ""
+        kind: ValidatingWebhookConfiguration
+        version: ""
+      scope: Cluster
+      singularResource: validatingwebhookconfiguration
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - categories:
+      - api-extensions
+      resource: validatingadmissionpolicies
+      responseKind:
+        group: ""
+        kind: ValidatingAdmissionPolicy
+        version: ""
+      scope: Cluster
+      singularResource: validatingadmissionpolicy
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ValidatingAdmissionPolicy
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - api-extensions
+      resource: validatingadmissionpolicybindings
+      responseKind:
+        group: ""
+        kind: ValidatingAdmissionPolicyBinding
+        version: ""
+      scope: Cluster
+      singularResource: validatingadmissionpolicybinding
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1beta1
+- metadata:
+    creationTimestamp: null
+    name: apiextensions.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - api-extensions
+      resource: customresourcedefinitions
+      responseKind:
+        group: ""
+        kind: CustomResourceDefinition
+        version: ""
+      scope: Cluster
+      shortNames:
+      - crd
+      - crds
+      singularResource: customresourcedefinition
+      subresources:
+      - responseKind:
+          group: ""
+          kind: CustomResourceDefinition
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: scheduling.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: priorityclasses
+      responseKind:
+        group: ""
+        kind: PriorityClass
+        version: ""
+      scope: Cluster
+      shortNames:
+      - pc
+      singularResource: priorityclass
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: coordination.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: leases
+      responseKind:
+        group: ""
+        kind: Lease
+        version: ""
+      scope: Namespaced
+      singularResource: lease
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: node.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: runtimeclasses
+      responseKind:
+        group: ""
+        kind: RuntimeClass
+        version: ""
+      scope: Cluster
+      singularResource: runtimeclass
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: discovery.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: endpointslices
+      responseKind:
+        group: ""
+        kind: EndpointSlice
+        version: ""
+      scope: Namespaced
+      singularResource: endpointslice
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: flowcontrol.apiserver.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: flowschemas
+      responseKind:
+        group: ""
+        kind: FlowSchema
+        version: ""
+      scope: Cluster
+      singularResource: flowschema
+      subresources:
+      - responseKind:
+          group: ""
+          kind: FlowSchema
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: prioritylevelconfigurations
+      responseKind:
+        group: ""
+        kind: PriorityLevelConfiguration
+        version: ""
+      scope: Cluster
+      singularResource: prioritylevelconfiguration
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PriorityLevelConfiguration
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: flowschemas
+      responseKind:
+        group: ""
+        kind: FlowSchema
+        version: ""
+      scope: Cluster
+      singularResource: flowschema
+      subresources:
+      - responseKind:
+          group: ""
+          kind: FlowSchema
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: prioritylevelconfigurations
+      responseKind:
+        group: ""
+        kind: PriorityLevelConfiguration
+        version: ""
+      scope: Cluster
+      singularResource: prioritylevelconfiguration
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PriorityLevelConfiguration
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1beta3
+- metadata:
+    creationTimestamp: null
+    name: apps.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: deploymentconfigs
+      responseKind:
+        group: ""
+        kind: DeploymentConfig
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - dc
+      singularResource: deploymentconfig
+      subresources:
+      - responseKind:
+          group: ""
+          kind: DeploymentRequest
+          version: ""
+        subresource: instantiate
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: DeploymentLog
+          version: ""
+        subresource: log
+        verbs:
+        - get
+      - responseKind:
+          group: ""
+          kind: DeploymentConfigRollback
+          version: ""
+        subresource: rollback
+        verbs:
+        - create
+      - responseKind:
+          group: extensions
+          kind: Scale
+          version: v1beta1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: DeploymentConfig
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: authorization.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: clusterrolebindings
+      responseKind:
+        group: ""
+        kind: ClusterRoleBinding
+        version: ""
+      scope: Cluster
+      singularResource: clusterrolebinding
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    - resource: clusterroles
+      responseKind:
+        group: ""
+        kind: ClusterRole
+        version: ""
+      scope: Cluster
+      singularResource: clusterrole
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    - resource: localresourceaccessreviews
+      responseKind:
+        group: ""
+        kind: LocalResourceAccessReview
+        version: ""
+      scope: Namespaced
+      singularResource: localresourceaccessreview
+      verbs:
+      - create
+    - resource: localsubjectaccessreviews
+      responseKind:
+        group: ""
+        kind: LocalSubjectAccessReview
+        version: ""
+      scope: Namespaced
+      singularResource: localsubjectaccessreview
+      verbs:
+      - create
+    - resource: resourceaccessreviews
+      responseKind:
+        group: ""
+        kind: ResourceAccessReview
+        version: ""
+      scope: Cluster
+      singularResource: localresourceaccessreview
+      verbs:
+      - create
+    - resource: rolebindingrestrictions
+      responseKind:
+        group: ""
+        kind: RoleBindingRestriction
+        version: ""
+      scope: Namespaced
+      singularResource: rolebindingrestriction
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: rolebindings
+      responseKind:
+        group: ""
+        kind: RoleBinding
+        version: ""
+      scope: Namespaced
+      singularResource: rolebinding
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    - resource: roles
+      responseKind:
+        group: ""
+        kind: Role
+        version: ""
+      scope: Namespaced
+      singularResource: role
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    - resource: selfsubjectrulesreviews
+      responseKind:
+        group: ""
+        kind: SelfSubjectRulesReview
+        version: ""
+      scope: Namespaced
+      singularResource: selfsubjectrulesreview
+      verbs:
+      - create
+    - resource: subjectaccessreviews
+      responseKind:
+        group: ""
+        kind: SubjectAccessReview
+        version: ""
+      scope: Cluster
+      singularResource: subjectaccessreview
+      verbs:
+      - create
+    - resource: subjectrulesreviews
+      responseKind:
+        group: ""
+        kind: SubjectRulesReview
+        version: ""
+      scope: Namespaced
+      singularResource: subjectrulesreview
+      verbs:
+      - create
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: build.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: buildconfigs
+      responseKind:
+        group: ""
+        kind: BuildConfig
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - bc
+      singularResource: buildconfig
+      subresources:
+      - responseKind:
+          group: ""
+          kind: BuildRequest
+          version: ""
+        subresource: instantiate
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: BinaryBuildRequestOptions
+          version: ""
+        subresource: instantiatebinary
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: Build
+          version: ""
+        subresource: webhooks
+        verbs:
+        - create
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: builds
+      responseKind:
+        group: ""
+        kind: Build
+        version: ""
+      scope: Namespaced
+      singularResource: build
+      subresources:
+      - responseKind:
+          group: ""
+          kind: BuildRequest
+          version: ""
+        subresource: clone
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: Build
+          version: ""
+        subresource: details
+        verbs:
+        - update
+      - responseKind:
+          group: ""
+          kind: BuildLog
+          version: ""
+        subresource: log
+        verbs:
+        - get
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: image.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: images
+      responseKind:
+        group: ""
+        kind: Image
+        version: ""
+      scope: Cluster
+      singularResource: image
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: imagesignatures
+      responseKind:
+        group: ""
+        kind: ImageSignature
+        version: ""
+      scope: Cluster
+      singularResource: imagesignature
+      verbs:
+      - create
+      - delete
+    - resource: imagestreamimages
+      responseKind:
+        group: ""
+        kind: ImageStreamImage
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - isimage
+      singularResource: imagestreamimage
+      verbs:
+      - get
+    - resource: imagestreamimports
+      responseKind:
+        group: ""
+        kind: ImageStreamImport
+        version: ""
+      scope: Namespaced
+      singularResource: imagestreamimport
+      verbs:
+      - create
+    - resource: imagestreammappings
+      responseKind:
+        group: ""
+        kind: ImageStreamMapping
+        version: ""
+      scope: Namespaced
+      singularResource: imagestreammapping
+      verbs:
+      - create
+    - categories:
+      - all
+      resource: imagestreams
+      responseKind:
+        group: ""
+        kind: ImageStream
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - is
+      singularResource: imagestream
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ImageStreamLayers
+          version: ""
+        subresource: layers
+        verbs:
+        - get
+      - responseKind:
+          group: ""
+          kind: SecretList
+          version: ""
+        subresource: secrets
+        verbs:
+        - get
+      - responseKind:
+          group: ""
+          kind: ImageStream
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: imagestreamtags
+      responseKind:
+        group: ""
+        kind: ImageStreamTag
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - istag
+      singularResource: imagestreamtag
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    - resource: imagetags
+      responseKind:
+        group: ""
+        kind: ImageTag
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - itag
+      singularResource: imagetag
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: oauth.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: oauthaccesstokens
+      responseKind:
+        group: ""
+        kind: OAuthAccessToken
+        version: ""
+      scope: Cluster
+      singularResource: oauthaccesstoken
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: oauthauthorizetokens
+      responseKind:
+        group: ""
+        kind: OAuthAuthorizeToken
+        version: ""
+      scope: Cluster
+      singularResource: oauthauthorizetoken
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: oauthclientauthorizations
+      responseKind:
+        group: ""
+        kind: OAuthClientAuthorization
+        version: ""
+      scope: Cluster
+      singularResource: oauthclientauthorization
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: oauthclients
+      responseKind:
+        group: ""
+        kind: OAuthClient
+        version: ""
+      scope: Cluster
+      singularResource: oauthclient
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: tokenreviews
+      responseKind:
+        group: authentication.k8s.io
+        kind: TokenReview
+        version: v1
+      scope: Cluster
+      singularResource: tokenreview
+      verbs:
+      - create
+    - resource: useroauthaccesstokens
+      responseKind:
+        group: ""
+        kind: UserOAuthAccessToken
+        version: ""
+      scope: Cluster
+      singularResource: useroauthaccesstoken
+      verbs:
+      - delete
+      - get
+      - list
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: project.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: projectrequests
+      responseKind:
+        group: ""
+        kind: ProjectRequest
+        version: ""
+      scope: Cluster
+      singularResource: projectrequest
+      verbs:
+      - create
+      - list
+    - resource: projects
+      responseKind:
+        group: ""
+        kind: Project
+        version: ""
+      scope: Cluster
+      singularResource: project
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: quota.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: appliedclusterresourcequotas
+      responseKind:
+        group: ""
+        kind: AppliedClusterResourceQuota
+        version: ""
+      scope: Namespaced
+      singularResource: appliedclusterresourcequota
+      verbs:
+      - get
+      - list
+    - resource: clusterresourcequotas
+      responseKind:
+        group: ""
+        kind: ClusterResourceQuota
+        version: ""
+      scope: Cluster
+      shortNames:
+      - clusterquota
+      singularResource: clusterresourcequota
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ClusterResourceQuota
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: route.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - all
+      resource: routes
+      responseKind:
+        group: ""
+        kind: Route
+        version: ""
+      scope: Namespaced
+      singularResource: route
+      subresources:
+      - responseKind:
+          group: ""
+          kind: Route
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: security.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: podsecuritypolicyreviews
+      responseKind:
+        group: ""
+        kind: PodSecurityPolicyReview
+        version: ""
+      scope: Namespaced
+      singularResource: podsecuritypolicyreview
+      verbs:
+      - create
+    - resource: podsecuritypolicyselfsubjectreviews
+      responseKind:
+        group: ""
+        kind: PodSecurityPolicySelfSubjectReview
+        version: ""
+      scope: Namespaced
+      singularResource: podsecuritypolicyselfsubjectreview
+      verbs:
+      - create
+    - resource: podsecuritypolicysubjectreviews
+      responseKind:
+        group: ""
+        kind: PodSecurityPolicySubjectReview
+        version: ""
+      scope: Namespaced
+      singularResource: podsecuritypolicysubjectreview
+      verbs:
+      - create
+    - resource: rangeallocations
+      responseKind:
+        group: ""
+        kind: RangeAllocation
+        version: ""
+      scope: Cluster
+      singularResource: rangeallocation
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: securitycontextconstraints
+      responseKind:
+        group: ""
+        kind: SecurityContextConstraints
+        version: ""
+      scope: Cluster
+      shortNames:
+      - scc
+      singularResource: securitycontextconstraint
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: template.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: brokertemplateinstances
+      responseKind:
+        group: ""
+        kind: BrokerTemplateInstance
+        version: ""
+      scope: Cluster
+      singularResource: brokertemplateinstance
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: processedtemplates
+      responseKind:
+        group: ""
+        kind: Template
+        version: ""
+      scope: Namespaced
+      singularResource: processedtemplate
+      verbs:
+      - create
+    - resource: templateinstances
+      responseKind:
+        group: ""
+        kind: TemplateInstance
+        version: ""
+      scope: Namespaced
+      singularResource: templateinstance
+      subresources:
+      - responseKind:
+          group: ""
+          kind: TemplateInstance
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: templates
+      responseKind:
+        group: ""
+        kind: Template
+        version: ""
+      scope: Namespaced
+      singularResource: template
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: user.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: groups
+      responseKind:
+        group: ""
+        kind: Group
+        version: ""
+      scope: Cluster
+      singularResource: group
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: identities
+      responseKind:
+        group: ""
+        kind: Identity
+        version: ""
+      scope: Cluster
+      singularResource: identity
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: useridentitymappings
+      responseKind:
+        group: ""
+        kind: UserIdentityMapping
+        version: ""
+      scope: Cluster
+      singularResource: useridentitymapping
+      verbs:
+      - create
+      - delete
+      - get
+      - patch
+      - update
+    - resource: users
+      responseKind:
+        group: ""
+        kind: User
+        version: ""
+      scope: Cluster
+      singularResource: user
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: packages.operators.coreos.com
+  versions:
+  - freshness: Current
+    resources:
+    - resource: packagemanifests
+      responseKind:
+        group: ""
+        kind: PackageManifest
+        version: ""
+      scope: Namespaced
+      singularResource: packagemanifest
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PackageManifest
+          version: ""
+        subresource: icon
+        verbs:
+        - get
+      verbs:
+      - get
+      - list
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: apiserver.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: apirequestcounts
+      responseKind:
+        group: apiserver.openshift.io
+        kind: APIRequestCount
+        version: v1
+      scope: Cluster
+      singularResource: apirequestcount
+      subresources:
+      - responseKind:
+          group: apiserver.openshift.io
+          kind: APIRequestCount
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: autoscaling.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: clusterautoscalers
+      responseKind:
+        group: autoscaling.openshift.io
+        kind: ClusterAutoscaler
+        version: v1
+      scope: Cluster
+      shortNames:
+      - ca
+      singularResource: clusterautoscaler
+      subresources:
+      - responseKind:
+          group: autoscaling.openshift.io
+          kind: ClusterAutoscaler
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: machineautoscalers
+      responseKind:
+        group: autoscaling.openshift.io
+        kind: MachineAutoscaler
+        version: v1beta1
+      scope: Namespaced
+      shortNames:
+      - ma
+      singularResource: machineautoscaler
+      subresources:
+      - responseKind:
+          group: autoscaling.openshift.io
+          kind: MachineAutoscaler
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+- metadata:
+    creationTimestamp: null
+    name: autoscalinge2e.example.com
+  versions:
+  - freshness: Current
+    resources:
+    - resource: testcrds
+      responseKind:
+        group: autoscalinge2e.example.com
+        kind: TestCRD
+        version: v1
+      scope: Namespaced
+      singularResource: testcrd
+      subresources:
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: cloudcredential.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: credentialsrequests
+      responseKind:
+        group: cloudcredential.openshift.io
+        kind: CredentialsRequest
+        version: v1
+      scope: Namespaced
+      singularResource: credentialsrequest
+      subresources:
+      - responseKind:
+          group: cloudcredential.openshift.io
+          kind: CredentialsRequest
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: config.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: apiservers
+      responseKind:
+        group: config.openshift.io
+        kind: APIServer
+        version: v1
+      scope: Cluster
+      singularResource: apiserver
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: APIServer
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: authentications
+      responseKind:
+        group: config.openshift.io
+        kind: Authentication
+        version: v1
+      scope: Cluster
+      singularResource: authentication
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Authentication
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: builds
+      responseKind:
+        group: config.openshift.io
+        kind: Build
+        version: v1
+      scope: Cluster
+      singularResource: build
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Build
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: clusteroperators
+      responseKind:
+        group: config.openshift.io
+        kind: ClusterOperator
+        version: v1
+      scope: Cluster
+      shortNames:
+      - co
+      singularResource: clusteroperator
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: ClusterOperator
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: clusterversions
+      responseKind:
+        group: config.openshift.io
+        kind: ClusterVersion
+        version: v1
+      scope: Cluster
+      singularResource: clusterversion
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: ClusterVersion
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consoles
+      responseKind:
+        group: config.openshift.io
+        kind: Console
+        version: v1
+      scope: Cluster
+      singularResource: console
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Console
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: dnses
+      responseKind:
+        group: config.openshift.io
+        kind: DNS
+        version: v1
+      scope: Cluster
+      singularResource: dns
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: DNS
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: featuregates
+      responseKind:
+        group: config.openshift.io
+        kind: FeatureGate
+        version: v1
+      scope: Cluster
+      singularResource: featuregate
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: FeatureGate
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: imagecontentpolicies
+      responseKind:
+        group: config.openshift.io
+        kind: ImageContentPolicy
+        version: v1
+      scope: Cluster
+      singularResource: imagecontentpolicy
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: ImageContentPolicy
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: imagedigestmirrorsets
+      responseKind:
+        group: config.openshift.io
+        kind: ImageDigestMirrorSet
+        version: v1
+      scope: Cluster
+      shortNames:
+      - idms
+      singularResource: imagedigestmirrorset
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: ImageDigestMirrorSet
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: images
+      responseKind:
+        group: config.openshift.io
+        kind: Image
+        version: v1
+      scope: Cluster
+      singularResource: image
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Image
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: imagetagmirrorsets
+      responseKind:
+        group: config.openshift.io
+        kind: ImageTagMirrorSet
+        version: v1
+      scope: Cluster
+      shortNames:
+      - itms
+      singularResource: imagetagmirrorset
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: ImageTagMirrorSet
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: infrastructures
+      responseKind:
+        group: config.openshift.io
+        kind: Infrastructure
+        version: v1
+      scope: Cluster
+      singularResource: infrastructure
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Infrastructure
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: ingresses
+      responseKind:
+        group: config.openshift.io
+        kind: Ingress
+        version: v1
+      scope: Cluster
+      singularResource: ingress
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Ingress
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: networks
+      responseKind:
+        group: config.openshift.io
+        kind: Network
+        version: v1
+      scope: Cluster
+      singularResource: network
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: nodes
+      responseKind:
+        group: config.openshift.io
+        kind: Node
+        version: v1
+      scope: Cluster
+      singularResource: node
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Node
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: oauths
+      responseKind:
+        group: config.openshift.io
+        kind: OAuth
+        version: v1
+      scope: Cluster
+      singularResource: oauth
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: OAuth
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: operatorhubs
+      responseKind:
+        group: config.openshift.io
+        kind: OperatorHub
+        version: v1
+      scope: Cluster
+      singularResource: operatorhub
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: OperatorHub
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: projects
+      responseKind:
+        group: config.openshift.io
+        kind: Project
+        version: v1
+      scope: Cluster
+      singularResource: project
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Project
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: proxies
+      responseKind:
+        group: config.openshift.io
+        kind: Proxy
+        version: v1
+      scope: Cluster
+      singularResource: proxy
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Proxy
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: schedulers
+      responseKind:
+        group: config.openshift.io
+        kind: Scheduler
+        version: v1
+      scope: Cluster
+      singularResource: scheduler
+      subresources:
+      - responseKind:
+          group: config.openshift.io
+          kind: Scheduler
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: console.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: consoleclidownloads
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleCLIDownload
+        version: v1
+      scope: Cluster
+      singularResource: consoleclidownload
+      subresources:
+      - responseKind:
+          group: console.openshift.io
+          kind: ConsoleCLIDownload
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consoleexternalloglinks
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleExternalLogLink
+        version: v1
+      scope: Cluster
+      singularResource: consoleexternalloglink
+      subresources:
+      - responseKind:
+          group: console.openshift.io
+          kind: ConsoleExternalLogLink
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consolelinks
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleLink
+        version: v1
+      scope: Cluster
+      singularResource: consolelink
+      subresources:
+      - responseKind:
+          group: console.openshift.io
+          kind: ConsoleLink
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consolenotifications
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleNotification
+        version: v1
+      scope: Cluster
+      singularResource: consolenotification
+      subresources:
+      - responseKind:
+          group: console.openshift.io
+          kind: ConsoleNotification
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consoleplugins
+      responseKind:
+        group: console.openshift.io
+        kind: ConsolePlugin
+        version: v1
+      scope: Cluster
+      singularResource: consoleplugin
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consolequickstarts
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleQuickStart
+        version: v1
+      scope: Cluster
+      singularResource: consolequickstart
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consolesamples
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleSample
+        version: v1
+      scope: Cluster
+      singularResource: consolesample
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consoleyamlsamples
+      responseKind:
+        group: console.openshift.io
+        kind: ConsoleYAMLSample
+        version: v1
+      scope: Cluster
+      singularResource: consoleyamlsample
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: consoleplugins
+      responseKind:
+        group: console.openshift.io
+        kind: ConsolePlugin
+        version: v1alpha1
+      scope: Cluster
+      singularResource: consoleplugin
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: controlplane.operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: podnetworkconnectivitychecks
+      responseKind:
+        group: controlplane.operator.openshift.io
+        kind: PodNetworkConnectivityCheck
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: podnetworkconnectivitycheck
+      subresources:
+      - responseKind:
+          group: controlplane.operator.openshift.io
+          kind: PodNetworkConnectivityCheck
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: helm.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: helmchartrepositories
+      responseKind:
+        group: helm.openshift.io
+        kind: HelmChartRepository
+        version: v1beta1
+      scope: Cluster
+      singularResource: helmchartrepository
+      subresources:
+      - responseKind:
+          group: helm.openshift.io
+          kind: HelmChartRepository
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: projecthelmchartrepositories
+      responseKind:
+        group: helm.openshift.io
+        kind: ProjectHelmChartRepository
+        version: v1beta1
+      scope: Namespaced
+      singularResource: projecthelmchartrepository
+      subresources:
+      - responseKind:
+          group: helm.openshift.io
+          kind: ProjectHelmChartRepository
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+- metadata:
+    creationTimestamp: null
+    name: imageregistry.operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: configs
+      responseKind:
+        group: imageregistry.operator.openshift.io
+        kind: Config
+        version: v1
+      scope: Cluster
+      singularResource: config
+      subresources:
+      - responseKind:
+          group: imageregistry.operator.openshift.io
+          kind: Config
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: imagepruners
+      responseKind:
+        group: imageregistry.operator.openshift.io
+        kind: ImagePruner
+        version: v1
+      scope: Cluster
+      singularResource: imagepruner
+      subresources:
+      - responseKind:
+          group: imageregistry.operator.openshift.io
+          kind: ImagePruner
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: infrastructure.cluster.x-k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - cluster-api
+      resource: metal3remediations
+      responseKind:
+        group: infrastructure.cluster.x-k8s.io
+        kind: Metal3Remediation
+        version: v1beta1
+      scope: Namespaced
+      shortNames:
+      - m3r
+      - m3remediation
+      singularResource: metal3remediation
+      subresources:
+      - responseKind:
+          group: infrastructure.cluster.x-k8s.io
+          kind: Metal3Remediation
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - cluster-api
+      resource: metal3remediationtemplates
+      responseKind:
+        group: infrastructure.cluster.x-k8s.io
+        kind: Metal3RemediationTemplate
+        version: v1beta1
+      scope: Namespaced
+      shortNames:
+      - m3rt
+      - m3remediationtemplate
+      - m3remediationtemplates
+      - metal3rt
+      - metal3remediationtemplate
+      singularResource: metal3remediationtemplate
+      subresources:
+      - responseKind:
+          group: infrastructure.cluster.x-k8s.io
+          kind: Metal3RemediationTemplate
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+  - freshness: Current
+    resources:
+    - categories:
+      - cluster-api
+      resource: metal3remediations
+      responseKind:
+        group: infrastructure.cluster.x-k8s.io
+        kind: Metal3Remediation
+        version: v1alpha5
+      scope: Namespaced
+      shortNames:
+      - m3r
+      - m3remediation
+      singularResource: metal3remediation
+      subresources:
+      - responseKind:
+          group: infrastructure.cluster.x-k8s.io
+          kind: Metal3Remediation
+          version: v1alpha5
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - cluster-api
+      resource: metal3remediationtemplates
+      responseKind:
+        group: infrastructure.cluster.x-k8s.io
+        kind: Metal3RemediationTemplate
+        version: v1alpha5
+      scope: Namespaced
+      shortNames:
+      - m3rt
+      - m3remediationtemplate
+      - m3remediationtemplates
+      - metal3rt
+      - metal3remediationtemplate
+      singularResource: metal3remediationtemplate
+      subresources:
+      - responseKind:
+          group: infrastructure.cluster.x-k8s.io
+          kind: Metal3RemediationTemplate
+          version: v1alpha5
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha5
+- metadata:
+    creationTimestamp: null
+    name: ingress.operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: dnsrecords
+      responseKind:
+        group: ingress.operator.openshift.io
+        kind: DNSRecord
+        version: v1
+      scope: Namespaced
+      singularResource: dnsrecord
+      subresources:
+      - responseKind:
+          group: ingress.operator.openshift.io
+          kind: DNSRecord
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: ipam.cluster.x-k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - cluster-api
+      resource: ipaddressclaims
+      responseKind:
+        group: ipam.cluster.x-k8s.io
+        kind: IPAddressClaim
+        version: v1beta1
+      scope: Namespaced
+      singularResource: ipaddressclaim
+      subresources:
+      - responseKind:
+          group: ipam.cluster.x-k8s.io
+          kind: IPAddressClaim
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - cluster-api
+      resource: ipaddresses
+      responseKind:
+        group: ipam.cluster.x-k8s.io
+        kind: IPAddress
+        version: v1beta1
+      scope: Namespaced
+      singularResource: ipaddress
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+  - freshness: Current
+    resources:
+    - categories:
+      - cluster-api
+      resource: ipaddressclaims
+      responseKind:
+        group: ipam.cluster.x-k8s.io
+        kind: IPAddressClaim
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: ipaddressclaim
+      subresources:
+      - responseKind:
+          group: ipam.cluster.x-k8s.io
+          kind: IPAddressClaim
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - cluster-api
+      resource: ipaddresses
+      responseKind:
+        group: ipam.cluster.x-k8s.io
+        kind: IPAddress
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: ipaddress
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: k8s.cni.cncf.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: network-attachment-definitions
+      responseKind:
+        group: k8s.cni.cncf.io
+        kind: NetworkAttachmentDefinition
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - net-attach-def
+      singularResource: network-attachment-definition
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: k8s.ovn.org
+  versions:
+  - freshness: Current
+    resources:
+    - resource: adminpolicybasedexternalroutes
+      responseKind:
+        group: k8s.ovn.org
+        kind: AdminPolicyBasedExternalRoute
+        version: v1
+      scope: Cluster
+      shortNames:
+      - apbexternalroute
+      singularResource: adminpolicybasedexternalroute
+      subresources:
+      - responseKind:
+          group: k8s.ovn.org
+          kind: AdminPolicyBasedExternalRoute
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: egressfirewalls
+      responseKind:
+        group: k8s.ovn.org
+        kind: EgressFirewall
+        version: v1
+      scope: Namespaced
+      singularResource: egressfirewall
+      subresources:
+      - responseKind:
+          group: k8s.ovn.org
+          kind: EgressFirewall
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: egressips
+      responseKind:
+        group: k8s.ovn.org
+        kind: EgressIP
+        version: v1
+      scope: Cluster
+      shortNames:
+      - eip
+      singularResource: egressip
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: egressqoses
+      responseKind:
+        group: k8s.ovn.org
+        kind: EgressQoS
+        version: v1
+      scope: Namespaced
+      singularResource: egressqos
+      subresources:
+      - responseKind:
+          group: k8s.ovn.org
+          kind: EgressQoS
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: egressservices
+      responseKind:
+        group: k8s.ovn.org
+        kind: EgressService
+        version: v1
+      scope: Namespaced
+      singularResource: egressservice
+      subresources:
+      - responseKind:
+          group: k8s.ovn.org
+          kind: EgressService
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: machine.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: controlplanemachinesets
+      responseKind:
+        group: machine.openshift.io
+        kind: ControlPlaneMachineSet
+        version: v1
+      scope: Namespaced
+      singularResource: controlplanemachineset
+      subresources:
+      - responseKind:
+          group: machine.openshift.io
+          kind: ControlPlaneMachineSet
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: machinehealthchecks
+      responseKind:
+        group: machine.openshift.io
+        kind: MachineHealthCheck
+        version: v1beta1
+      scope: Namespaced
+      shortNames:
+      - mhc
+      - mhcs
+      singularResource: machinehealthcheck
+      subresources:
+      - responseKind:
+          group: machine.openshift.io
+          kind: MachineHealthCheck
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: machines
+      responseKind:
+        group: machine.openshift.io
+        kind: Machine
+        version: v1beta1
+      scope: Namespaced
+      singularResource: machine
+      subresources:
+      - responseKind:
+          group: machine.openshift.io
+          kind: Machine
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: machinesets
+      responseKind:
+        group: machine.openshift.io
+        kind: MachineSet
+        version: v1beta1
+      scope: Namespaced
+      singularResource: machineset
+      subresources:
+      - responseKind:
+          group: machine.openshift.io
+          kind: MachineSet
+          version: v1beta1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+- metadata:
+    creationTimestamp: null
+    name: machineconfiguration.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: containerruntimeconfigs
+      responseKind:
+        group: machineconfiguration.openshift.io
+        kind: ContainerRuntimeConfig
+        version: v1
+      scope: Cluster
+      shortNames:
+      - ctrcfg
+      singularResource: containerruntimeconfig
+      subresources:
+      - responseKind:
+          group: machineconfiguration.openshift.io
+          kind: ContainerRuntimeConfig
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: controllerconfigs
+      responseKind:
+        group: machineconfiguration.openshift.io
+        kind: ControllerConfig
+        version: v1
+      scope: Cluster
+      singularResource: controllerconfig
+      subresources:
+      - responseKind:
+          group: machineconfiguration.openshift.io
+          kind: ControllerConfig
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: kubeletconfigs
+      responseKind:
+        group: machineconfiguration.openshift.io
+        kind: KubeletConfig
+        version: v1
+      scope: Cluster
+      singularResource: kubeletconfig
+      subresources:
+      - responseKind:
+          group: machineconfiguration.openshift.io
+          kind: KubeletConfig
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: machineconfigpools
+      responseKind:
+        group: machineconfiguration.openshift.io
+        kind: MachineConfigPool
+        version: v1
+      scope: Cluster
+      shortNames:
+      - mcp
+      singularResource: machineconfigpool
+      subresources:
+      - responseKind:
+          group: machineconfiguration.openshift.io
+          kind: MachineConfigPool
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: machineconfigs
+      responseKind:
+        group: machineconfiguration.openshift.io
+        kind: MachineConfig
+        version: v1
+      scope: Cluster
+      shortNames:
+      - mc
+      singularResource: machineconfig
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: metal3.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: baremetalhosts
+      responseKind:
+        group: metal3.io
+        kind: BareMetalHost
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - bmh
+      - bmhost
+      singularResource: baremetalhost
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: BareMetalHost
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: bmceventsubscriptions
+      responseKind:
+        group: metal3.io
+        kind: BMCEventSubscription
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - bes
+      - bmcevent
+      singularResource: bmceventsubscription
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: BMCEventSubscription
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: dataimages
+      responseKind:
+        group: metal3.io
+        kind: DataImage
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: dataimage
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: DataImage
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: firmwareschemas
+      responseKind:
+        group: metal3.io
+        kind: FirmwareSchema
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: firmwareschema
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: hardwaredata
+      responseKind:
+        group: metal3.io
+        kind: HardwareData
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - hd
+      singularResource: hardwaredata
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: hostfirmwarecomponents
+      responseKind:
+        group: metal3.io
+        kind: HostFirmwareComponents
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: hostfirmwarecomponents
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: HostFirmwareComponents
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: hostfirmwaresettings
+      responseKind:
+        group: metal3.io
+        kind: HostFirmwareSettings
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - hfs
+      singularResource: hostfirmwaresettings
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: HostFirmwareSettings
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: hostupdatepolicies
+      responseKind:
+        group: metal3.io
+        kind: HostUpdatePolicy
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: hostupdatepolicy
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: preprovisioningimages
+      responseKind:
+        group: metal3.io
+        kind: PreprovisioningImage
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - ppimg
+      singularResource: preprovisioningimage
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: PreprovisioningImage
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: provisionings
+      responseKind:
+        group: metal3.io
+        kind: Provisioning
+        version: v1alpha1
+      scope: Cluster
+      singularResource: provisioning
+      subresources:
+      - responseKind:
+          group: metal3.io
+          kind: Provisioning
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: migration.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: storagestates
+      responseKind:
+        group: migration.k8s.io
+        kind: StorageState
+        version: v1alpha1
+      scope: Cluster
+      singularResource: storagestate
+      subresources:
+      - responseKind:
+          group: migration.k8s.io
+          kind: StorageState
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: storageversionmigrations
+      responseKind:
+        group: migration.k8s.io
+        kind: StorageVersionMigration
+        version: v1alpha1
+      scope: Cluster
+      singularResource: storageversionmigration
+      subresources:
+      - responseKind:
+          group: migration.k8s.io
+          kind: StorageVersionMigration
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: monitoring.coreos.com
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - prometheus-operator
+      resource: alertmanagers
+      responseKind:
+        group: monitoring.coreos.com
+        kind: Alertmanager
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - am
+      singularResource: alertmanager
+      subresources:
+      - responseKind:
+          group: monitoring.coreos.com
+          kind: Alertmanager
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: podmonitors
+      responseKind:
+        group: monitoring.coreos.com
+        kind: PodMonitor
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - pmon
+      singularResource: podmonitor
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: probes
+      responseKind:
+        group: monitoring.coreos.com
+        kind: Probe
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - prb
+      singularResource: probe
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: prometheuses
+      responseKind:
+        group: monitoring.coreos.com
+        kind: Prometheus
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - prom
+      singularResource: prometheus
+      subresources:
+      - responseKind:
+          group: monitoring.coreos.com
+          kind: Prometheus
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: prometheusrules
+      responseKind:
+        group: monitoring.coreos.com
+        kind: PrometheusRule
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - promrule
+      singularResource: prometheusrule
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: servicemonitors
+      responseKind:
+        group: monitoring.coreos.com
+        kind: ServiceMonitor
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - smon
+      singularResource: servicemonitor
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - prometheus-operator
+      resource: thanosrulers
+      responseKind:
+        group: monitoring.coreos.com
+        kind: ThanosRuler
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - ruler
+      singularResource: thanosruler
+      subresources:
+      - responseKind:
+          group: monitoring.coreos.com
+          kind: ThanosRuler
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - categories:
+      - prometheus-operator
+      resource: alertmanagerconfigs
+      responseKind:
+        group: monitoring.coreos.com
+        kind: AlertmanagerConfig
+        version: v1beta1
+      scope: Namespaced
+      shortNames:
+      - amcfg
+      singularResource: alertmanagerconfig
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1beta1
+  - freshness: Current
+    resources:
+    - categories:
+      - prometheus-operator
+      resource: alertmanagerconfigs
+      responseKind:
+        group: monitoring.coreos.com
+        kind: AlertmanagerConfig
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - amcfg
+      singularResource: alertmanagerconfig
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: monitoring.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: alertingrules
+      responseKind:
+        group: monitoring.openshift.io
+        kind: AlertingRule
+        version: v1
+      scope: Namespaced
+      singularResource: alertingrule
+      subresources:
+      - responseKind:
+          group: monitoring.openshift.io
+          kind: AlertingRule
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: alertrelabelconfigs
+      responseKind:
+        group: monitoring.openshift.io
+        kind: AlertRelabelConfig
+        version: v1
+      scope: Namespaced
+      singularResource: alertrelabelconfig
+      subresources:
+      - responseKind:
+          group: monitoring.openshift.io
+          kind: AlertRelabelConfig
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: network.operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: egressrouters
+      responseKind:
+        group: network.operator.openshift.io
+        kind: EgressRouter
+        version: v1
+      scope: Namespaced
+      singularResource: egressrouter
+      subresources:
+      - responseKind:
+          group: network.operator.openshift.io
+          kind: EgressRouter
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: operatorpkis
+      responseKind:
+        group: network.operator.openshift.io
+        kind: OperatorPKI
+        version: v1
+      scope: Namespaced
+      singularResource: operatorpki
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: authentications
+      responseKind:
+        group: operator.openshift.io
+        kind: Authentication
+        version: v1
+      scope: Cluster
+      singularResource: authentication
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: Authentication
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: cloudcredentials
+      responseKind:
+        group: operator.openshift.io
+        kind: CloudCredential
+        version: v1
+      scope: Cluster
+      singularResource: cloudcredential
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: CloudCredential
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: clustercsidrivers
+      responseKind:
+        group: operator.openshift.io
+        kind: ClusterCSIDriver
+        version: v1
+      scope: Cluster
+      singularResource: clustercsidriver
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: ClusterCSIDriver
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: configs
+      responseKind:
+        group: operator.openshift.io
+        kind: Config
+        version: v1
+      scope: Cluster
+      singularResource: config
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: Config
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: consoles
+      responseKind:
+        group: operator.openshift.io
+        kind: Console
+        version: v1
+      scope: Cluster
+      singularResource: console
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: Console
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: csisnapshotcontrollers
+      responseKind:
+        group: operator.openshift.io
+        kind: CSISnapshotController
+        version: v1
+      scope: Cluster
+      singularResource: csisnapshotcontroller
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: CSISnapshotController
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: dnses
+      responseKind:
+        group: operator.openshift.io
+        kind: DNS
+        version: v1
+      scope: Cluster
+      singularResource: dns
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: DNS
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: etcds
+      responseKind:
+        group: operator.openshift.io
+        kind: Etcd
+        version: v1
+      scope: Cluster
+      singularResource: etcd
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: Etcd
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: ingresscontrollers
+      responseKind:
+        group: operator.openshift.io
+        kind: IngressController
+        version: v1
+      scope: Namespaced
+      singularResource: ingresscontroller
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: IngressController
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: insightsoperators
+      responseKind:
+        group: operator.openshift.io
+        kind: InsightsOperator
+        version: v1
+      scope: Cluster
+      singularResource: insightsoperator
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: InsightsOperator
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: kubeapiservers
+      responseKind:
+        group: operator.openshift.io
+        kind: KubeAPIServer
+        version: v1
+      scope: Cluster
+      singularResource: kubeapiserver
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: KubeAPIServer
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: kubecontrollermanagers
+      responseKind:
+        group: operator.openshift.io
+        kind: KubeControllerManager
+        version: v1
+      scope: Cluster
+      singularResource: kubecontrollermanager
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: KubeControllerManager
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: kubeschedulers
+      responseKind:
+        group: operator.openshift.io
+        kind: KubeScheduler
+        version: v1
+      scope: Cluster
+      singularResource: kubescheduler
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: KubeScheduler
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: kubestorageversionmigrators
+      responseKind:
+        group: operator.openshift.io
+        kind: KubeStorageVersionMigrator
+        version: v1
+      scope: Cluster
+      singularResource: kubestorageversionmigrator
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: KubeStorageVersionMigrator
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: machineconfigurations
+      responseKind:
+        group: operator.openshift.io
+        kind: MachineConfiguration
+        version: v1
+      scope: Cluster
+      singularResource: machineconfiguration
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: MachineConfiguration
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: networks
+      responseKind:
+        group: operator.openshift.io
+        kind: Network
+        version: v1
+      scope: Cluster
+      singularResource: network
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: openshiftapiservers
+      responseKind:
+        group: operator.openshift.io
+        kind: OpenShiftAPIServer
+        version: v1
+      scope: Cluster
+      singularResource: openshiftapiserver
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: OpenShiftAPIServer
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - coreoperators
+      resource: openshiftcontrollermanagers
+      responseKind:
+        group: operator.openshift.io
+        kind: OpenShiftControllerManager
+        version: v1
+      scope: Cluster
+      singularResource: openshiftcontrollermanager
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: OpenShiftControllerManager
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: servicecas
+      responseKind:
+        group: operator.openshift.io
+        kind: ServiceCA
+        version: v1
+      scope: Cluster
+      singularResource: serviceca
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: ServiceCA
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: storages
+      responseKind:
+        group: operator.openshift.io
+        kind: Storage
+        version: v1
+      scope: Cluster
+      singularResource: storage
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: Storage
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: imagecontentsourcepolicies
+      responseKind:
+        group: operator.openshift.io
+        kind: ImageContentSourcePolicy
+        version: v1alpha1
+      scope: Cluster
+      singularResource: imagecontentsourcepolicy
+      subresources:
+      - responseKind:
+          group: operator.openshift.io
+          kind: ImageContentSourcePolicy
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: operators.coreos.com
+  versions:
+  - freshness: Current
+    resources:
+    - categories:
+      - olm
+      resource: operatorconditions
+      responseKind:
+        group: operators.coreos.com
+        kind: OperatorCondition
+        version: v2
+      scope: Namespaced
+      shortNames:
+      - condition
+      singularResource: operatorcondition
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: OperatorCondition
+          version: v2
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v2
+  - freshness: Current
+    resources:
+    - categories:
+      - olm
+      resource: olmconfigs
+      responseKind:
+        group: operators.coreos.com
+        kind: OLMConfig
+        version: v1
+      scope: Cluster
+      singularResource: olmconfig
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: OLMConfig
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: operatorconditions
+      responseKind:
+        group: operators.coreos.com
+        kind: OperatorCondition
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - condition
+      singularResource: operatorcondition
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: OperatorCondition
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: operatorgroups
+      responseKind:
+        group: operators.coreos.com
+        kind: OperatorGroup
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - og
+      singularResource: operatorgroup
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: OperatorGroup
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: operators
+      responseKind:
+        group: operators.coreos.com
+        kind: Operator
+        version: v1
+      scope: Cluster
+      singularResource: operator
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: Operator
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - categories:
+      - olm
+      resource: operatorgroups
+      responseKind:
+        group: operators.coreos.com
+        kind: OperatorGroup
+        version: v1alpha2
+      scope: Namespaced
+      shortNames:
+      - og
+      singularResource: operatorgroup
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: OperatorGroup
+          version: v1alpha2
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha2
+  - freshness: Current
+    resources:
+    - categories:
+      - olm
+      resource: catalogsources
+      responseKind:
+        group: operators.coreos.com
+        kind: CatalogSource
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - catsrc
+      singularResource: catalogsource
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: CatalogSource
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: clusterserviceversions
+      responseKind:
+        group: operators.coreos.com
+        kind: ClusterServiceVersion
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - csv
+      - csvs
+      singularResource: clusterserviceversion
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: ClusterServiceVersion
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: installplans
+      responseKind:
+        group: operators.coreos.com
+        kind: InstallPlan
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - ip
+      singularResource: installplan
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: InstallPlan
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - categories:
+      - olm
+      resource: subscriptions
+      responseKind:
+        group: operators.coreos.com
+        kind: Subscription
+        version: v1alpha1
+      scope: Namespaced
+      shortNames:
+      - sub
+      - subs
+      singularResource: subscription
+      subresources:
+      - responseKind:
+          group: operators.coreos.com
+          kind: Subscription
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: performance.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: performanceprofiles
+      responseKind:
+        group: performance.openshift.io
+        kind: PerformanceProfile
+        version: v2
+      scope: Cluster
+      singularResource: performanceprofile
+      subresources:
+      - responseKind:
+          group: performance.openshift.io
+          kind: PerformanceProfile
+          version: v2
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v2
+  - freshness: Current
+    resources:
+    - resource: performanceprofiles
+      responseKind:
+        group: performance.openshift.io
+        kind: PerformanceProfile
+        version: v1
+      scope: Cluster
+      singularResource: performanceprofile
+      subresources:
+      - responseKind:
+          group: performance.openshift.io
+          kind: PerformanceProfile
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+  - freshness: Current
+    resources:
+    - resource: performanceprofiles
+      responseKind:
+        group: performance.openshift.io
+        kind: PerformanceProfile
+        version: v1alpha1
+      scope: Cluster
+      singularResource: performanceprofile
+      subresources:
+      - responseKind:
+          group: performance.openshift.io
+          kind: PerformanceProfile
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: policy.networking.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: adminnetworkpolicies
+      responseKind:
+        group: policy.networking.k8s.io
+        kind: AdminNetworkPolicy
+        version: v1alpha1
+      scope: Cluster
+      shortNames:
+      - anp
+      singularResource: adminnetworkpolicy
+      subresources:
+      - responseKind:
+          group: policy.networking.k8s.io
+          kind: AdminNetworkPolicy
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: baselineadminnetworkpolicies
+      responseKind:
+        group: policy.networking.k8s.io
+        kind: BaselineAdminNetworkPolicy
+        version: v1alpha1
+      scope: Cluster
+      shortNames:
+      - banp
+      singularResource: baselineadminnetworkpolicy
+      subresources:
+      - responseKind:
+          group: policy.networking.k8s.io
+          kind: BaselineAdminNetworkPolicy
+          version: v1alpha1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: samples.operator.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: configs
+      responseKind:
+        group: samples.operator.openshift.io
+        kind: Config
+        version: v1
+      scope: Cluster
+      singularResource: config
+      subresources:
+      - responseKind:
+          group: samples.operator.openshift.io
+          kind: Config
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: security.internal.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: rangeallocations
+      responseKind:
+        group: security.internal.openshift.io
+        kind: RangeAllocation
+        version: v1
+      scope: Cluster
+      singularResource: rangeallocation
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: snapshot.storage.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: volumesnapshotclasses
+      responseKind:
+        group: snapshot.storage.k8s.io
+        kind: VolumeSnapshotClass
+        version: v1
+      scope: Cluster
+      shortNames:
+      - vsclass
+      - vsclasses
+      singularResource: volumesnapshotclass
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: volumesnapshotcontents
+      responseKind:
+        group: snapshot.storage.k8s.io
+        kind: VolumeSnapshotContent
+        version: v1
+      scope: Cluster
+      shortNames:
+      - vsc
+      - vscs
+      singularResource: volumesnapshotcontent
+      subresources:
+      - responseKind:
+          group: snapshot.storage.k8s.io
+          kind: VolumeSnapshotContent
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: volumesnapshots
+      responseKind:
+        group: snapshot.storage.k8s.io
+        kind: VolumeSnapshot
+        version: v1
+      scope: Namespaced
+      shortNames:
+      - vs
+      singularResource: volumesnapshot
+      subresources:
+      - responseKind:
+          group: snapshot.storage.k8s.io
+          kind: VolumeSnapshot
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: tuned.openshift.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: profiles
+      responseKind:
+        group: tuned.openshift.io
+        kind: Profile
+        version: v1
+      scope: Namespaced
+      singularResource: profile
+      subresources:
+      - responseKind:
+          group: tuned.openshift.io
+          kind: Profile
+          version: v1
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: tuneds
+      responseKind:
+        group: tuned.openshift.io
+        kind: Tuned
+        version: v1
+      scope: Namespaced
+      singularResource: tuned
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1
+- metadata:
+    creationTimestamp: null
+    name: whereabouts.cni.cncf.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: ippools
+      responseKind:
+        group: whereabouts.cni.cncf.io
+        kind: IPPool
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: ippool
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    - resource: overlappingrangeipreservations
+      responseKind:
+        group: whereabouts.cni.cncf.io
+        kind: OverlappingRangeIPReservation
+        version: v1alpha1
+      scope: Namespaced
+      singularResource: overlappingrangeipreservation
+      verbs:
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - create
+      - update
+      - watch
+    version: v1alpha1
+- metadata:
+    creationTimestamp: null
+    name: metrics.k8s.io
+  versions:
+  - freshness: Current
+    resources:
+    - resource: nodes
+      responseKind:
+        group: ""
+        kind: NodeMetrics
+        version: ""
+      scope: Cluster
+      singularResource: ""
+      verbs:
+      - get
+      - list
+    - resource: pods
+      responseKind:
+        group: ""
+        kind: PodMetrics
+        version: ""
+      scope: Namespaced
+      singularResource: ""
+      verbs:
+      - get
+      - list
+    version: v1beta1
+kind: APIGroupDiscoveryList
+metadata: {}
