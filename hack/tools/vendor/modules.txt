@@ -196,8 +196,8 @@ github.com/cenkalti/backoff/v4
 # github.com/cespare/xxhash/v2 v2.3.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/charithe/durationcheck v0.0.10
-## explicit; go 1.14
+# github.com/charithe/durationcheck v0.0.11
+## explicit; go 1.16
 github.com/charithe/durationcheck
 # github.com/chavacava/garif v0.1.0
 ## explicit; go 1.16
