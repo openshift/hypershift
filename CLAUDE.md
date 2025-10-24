@@ -1,6 +1,8 @@
 # HyperShift Claude Code Configuration
 
-This repository includes Claude Code configuration for enhanced development assistance.
+This repository includes Claude Code specific configuration for enhanced development assistance.
+
+Please also refer to @AGENTS.md for guidance to all AI agents when working with code in this repository.
 
 ## Documentation
 
