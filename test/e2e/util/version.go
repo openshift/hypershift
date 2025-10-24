@@ -77,6 +77,22 @@ func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster)
 	}
 }
 
+func IsCPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster) bool {
+	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
+		t.Logf("Desired version is not set on the HostedCluster using latestReleaseImage: %s", releaseVersion)
+		if !IsGreaterThanOrEqualTo(version) {
+			t.Logf("Version %s is not greater than or equal to %s", releaseVersion, version)
+			return false
+		}
+		return true
+	}
+	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
+	if cpoVersion.LT(version) {
+		return false
+	}
+	return true
+}
+
 func IsLessThan(version semver.Version) bool {
 	return releaseVersion.LT(version)
 }

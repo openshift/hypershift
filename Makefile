@@ -411,3 +411,7 @@ $(GITLINT): $(TOOLS_DIR)/go.mod
 	pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
 	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
 	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;
+
+.PHONY: junit-post-process
+junit-post-process:
+	$(GO_BUILD_RECIPE) -tags=tools -o ./bin/junit-post-process $(TOOLS_DIR)/junit-post-process/main.go
