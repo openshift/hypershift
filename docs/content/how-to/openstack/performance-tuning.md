@@ -137,5 +137,5 @@ For every node that was deployed by the Nodepool, label it with the following co
 oc label node "${WORKER_NODE}" feature.node.kubernetes.io/network-sriov.capable="true"
 ```
 
-The operator can now be installed in the guest cluster by following the [SR-IOV Network Operator documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html-single/networking/index#installing-sr-iov-operator_installing-sriov-operator).
+The operator can now be installed in the guest cluster by following the [SR-IOV Network Operator documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.20/html/networking_operators/sr-iov-operator).
 The rest of the operations in order to get the workload running with high performances are the same as on a Standalone OCP cluster.
