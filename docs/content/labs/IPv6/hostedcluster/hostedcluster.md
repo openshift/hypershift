@@ -110,19 +110,23 @@ kind: HostedCluster
 metadata:
   name: hosted-ipv6
   namespace: clusters
-  annotations:
-    hypershift.openshift.io/control-plane-operator-image: registry.ocp-edge-cluster-0.qe.lab.redhat.com:5005/openshift/release@sha256:31149e3e5f8c5e5b5b100ff2d89975cf5f7a73801b2c06c639bf6648766117f8
 spec:
+  configuration:
+    operatorhub:
+      disableAllDefaultSources: true
   additionalTrustBundle:
     name: "user-ca-bundle"
   olmCatalogPlacement: guest
   imageContentSources:
   - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release
+    - registry.<dns.base.domain.name>:5000/openshift/release
   - source: quay.io/openshift-release-dev/ocp-release
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release-images
+    - registry.<dns.base.domain.name>:5000/openshift/release-images
+  - source: registry.redhat.io/multicluster-engine
+    mirrors:
+    - registry.<dns.base.domain.name>:5000/openshift/multicluster-engine
   - mirrors:
   ...
   ...
