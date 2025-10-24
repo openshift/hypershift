@@ -105,10 +105,12 @@ spec:
                     minimum: 1
                     type: integer
                   min:
-                    description: min is the minimum number of nodes to maintain in
-                      the pool. Must be >= 1 and <= .Max.
+                    description: |-
+                      min is the minimum number of nodes to maintain in the pool.
+                      Can be set to 0 for scale-from-zero.
+                      Must be >= 0 and <= .Max.
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                 required:
                 - max
@@ -1446,6 +1448,9 @@ spec:
                 || has(self.platform.agent) || self.platform.type == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'
+            - message: Scale-from-zero (autoScaling.min=0) is currently only supported
+                for AWS platform
+              rule: '!has(self.autoScaling) || self.autoScaling.min > 0 || has(self.platform.aws)'
           status:
             description: status is the latest observed status of the NodePool.
             properties:
