@@ -82,6 +82,8 @@ const (
 
 	controlPlaneOperatorCreatesDefaultAWSSecurityGroup = "io.openshift.hypershift.control-plane-operator-creates-aws-sg"
 
+	controlPlaneOperatorSupportsAWSAutoscalingFromZeroLabel = "io.openshift.hypershift.control-plane-operator-supports-aws-autoscaling-from-zero"
+
 	labelManagedPrefix = "managed.hypershift.openshift.io"
 	// NTOMirroredConfigLabel added to objects that were mirrored from the node pool namespace into the HCP namespace
 	NTOMirroredConfigLabel = "hypershift.openshift.io/mirrored-config"
@@ -104,8 +106,9 @@ type NotReadyError struct {
 }
 
 type CPOCapabilities struct {
-	DecompressAndDecodeConfig     bool
-	CreateDefaultAWSSecurityGroup bool
+	DecompressAndDecodeConfig      bool
+	CreateDefaultAWSSecurityGroup  bool
+	SupportsAWSAutoscalingFromZero bool
 }
 
 var (
@@ -932,6 +935,7 @@ func (r *NodePoolReconciler) detectCPOCapabilities(ctx context.Context, hostedCl
 	result := &CPOCapabilities{}
 	_, result.DecompressAndDecodeConfig = imageLabels[controlPlaneOperatorManagesDecompressAndDecodeConfig]
 	_, result.CreateDefaultAWSSecurityGroup = imageLabels[controlPlaneOperatorCreatesDefaultAWSSecurityGroup]
+	_, result.SupportsAWSAutoscalingFromZero = imageLabels[controlPlaneOperatorSupportsAWSAutoscalingFromZeroLabel]
 
 	return result, nil
 }

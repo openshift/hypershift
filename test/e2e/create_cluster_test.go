@@ -2315,6 +2315,14 @@ func TestOnCreateAPIUX(t *testing.T) {
 							np.Spec.Platform.AWS = nil
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 								VMSize: "Standard_D4s_v4",
+								Image: hyperv1.AzureVMImage{
+									Type:             hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
 							}
 						},
 						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
@@ -2368,6 +2376,14 @@ func TestOnCreateAPIUX(t *testing.T) {
 							np.Spec.Platform.AWS = nil
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
 								VMSize: "Standard_D4s_v4",
+								Image: hyperv1.AzureVMImage{
+									Type:             hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
 							}
 						},
 						expectedErrorSubstring: "",
