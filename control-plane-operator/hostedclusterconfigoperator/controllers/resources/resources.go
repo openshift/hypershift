@@ -34,6 +34,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/olm"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/rbac"
+	dr "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/recovery"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/registry"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/storage"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
@@ -742,6 +743,49 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
 	}
+
+	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
+	if _, exists := hcp.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; exists {
+		var (
+			finished bool
+			err      error
+		)
+		condition := &metav1.Condition{
+			Type:   string(hyperv1.HostedClusterRestoredFromBackup),
+			Reason: hyperv1.RecoveryFinishedReason,
+		}
+
+		finished, err = r.reconcileRestoredCluster(ctx, hcp)
+		if err != nil {
+			log.Error(err, "failed to reconcile hosted cluster recovery")
+			return ctrl.Result{}, errors.NewAggregate(append(errs, err))
+		}
+
+		if !finished {
+			log.Info("hosted cluster recovery not finished yet")
+			condition.Status = metav1.ConditionFalse
+			condition.Message = "Hosted cluster recovery not finished yet"
+			meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+			log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
+			if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+			}
+			log.Info("successfully updated hcp status with recovery not finished condition")
+
+			return ctrl.Result{RequeueAfter: 120 * time.Second}, nil
+		}
+
+		log.Info("hosted cluster recovery finished")
+		condition.Status = metav1.ConditionTrue
+		condition.Message = "Hosted cluster recovery finished"
+		meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+		log.Info("setting condition", "type", condition.Type, "status", condition.Status, "message", condition.Message)
+		if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update status on hcp for hosted cluster recovery: %w. Condition error message: %v", err, condition.Message)
+		}
+		log.Info("successfully updated hcp status with recovery finished condition")
+	}
+
 	return ctrl.Result{}, errors.NewAggregate(errs)
 }
 
@@ -2145,6 +2189,27 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	}
 
 	return remaining, errors.NewAggregate(errs)
+}
+
+func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	var (
+		errs     []error
+		finished bool
+		err      error
+	)
+
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Ensuring monitoring stack is properly working after hosted cluster restoration")
+	if finished, err = dr.RecoverMonitoringStack(ctx, hcp, r.uncachedClient); err != nil {
+		return false, errors.NewAggregate(append(errs, err))
+	}
+
+	if finished {
+		log.Info("Monitoring stack is properly working after hosted cluster restoration")
+		return true, nil
+	}
+
+	return false, nil
 }
 
 func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) error {
