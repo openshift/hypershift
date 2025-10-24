@@ -8,6 +8,7 @@ RUN make build
 
 FROM registry.redhat.io/rhel9-4-els/rhel:9.4
 COPY --from=builder /hypershift/bin/hypershift \
+                    /hypershift/bin/hypershift-no-cgo \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/control-plane-operator \
@@ -26,7 +27,7 @@ LABEL name="multicluster-engine/hypershift-operator"
 LABEL description="HyperShift Operator is an operator to manage the lifecycle of Hosted Clusters"
 LABEL summary="HyperShift Operator"
 LABEL url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-rhel8-operator/"
-LABEL version=4.16
+LABEL version=4.18
 LABEL com.redhat.component="multicluster-engine-hypershift-operator"
 LABEL io.k8s.description="HyperShift Operator"
 LABEL io.k8s.display-name="hypershift-operator"
