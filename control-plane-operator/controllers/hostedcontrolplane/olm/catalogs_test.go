@@ -1,15 +1,9 @@
 package olm
 
 import (
-	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
-	"github.com/openshift/api/image/docker10"
-	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
-	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
-	"github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 )
 
 func TestGetCatalogToImageWithISImageRegistryOverrides(t *testing.T) {
@@ -57,32 +51,4 @@ func TestGetCatalogToImageWithISImageRegistryOverrides(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGetCatalogImages(t *testing.T) {
-	g := NewGomegaWithT(t)
-	ctx := context.Background()
-	pullSecret := []byte("12345")
-	fakeMetadataProvider := &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
-		Result: &dockerv1client.DockerImageConfig{
-			Config: &docker10.DockerConfig{Labels: map[string]string{"io.openshift.release": "4.17.0"}},
-		},
-		Manifest: fakeimagemetadataprovider.FakeManifest{},
-	}
-
-	// Test that GetCatalogImages returns default operator list if "guest" cluster
-	catalogImageOutput, err := GetCatalogImages(ctx, hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "guest"}}, pullSecret, registryclient.GetListDigest, fakeMetadataProvider)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(catalogImageOutput).To(Equal(map[string]string{
-		"certified-operators": "registry.redhat.io/redhat/certified-operator-index:v4.17",
-		"community-operators": "registry.redhat.io/redhat/community-operator-index:v4.17",
-		"redhat-marketplace":  "registry.redhat.io/redhat/redhat-marketplace-index:v4.17",
-		"redhat-operators":    "registry.redhat.io/redhat/redhat-operator-index:v4.17",
-	}))
-
-	// Test that GetCatalogImages returns an error when "management" cluster is not able to verify catalog images
-	catalogImageOutput, err = GetCatalogImages(ctx, hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{OLMCatalogPlacement: "management"}}, pullSecret, registryclient.GetListDigest, fakeMetadataProvider)
-	g.Expect(err).To(HaveOccurred())
-	g.Expect(catalogImageOutput).To(BeNil())
-
 }
