@@ -35,8 +35,20 @@ func NewComponent() component.ControlPlaneComponent {
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(isNodeTuningCapabilityEnabled).
 		WithManifestAdapter(
+			"service.yaml",
+			component.WithPredicate(func(cpContext component.WorkloadContext) bool {
+				// Remove this resource until we support authn NTO metrics
+				// https://issues.redhat.com/browse/OCPBUGS-55399
+				return false
+			}),
+		).
+		WithManifestAdapter(
 			"servicemonitor.yaml",
-			component.WithAdaptFunction(adaptServiceMonitor),
+			component.WithPredicate(func(cpContext component.WorkloadContext) bool {
+				// Remove this resource until we support authn NTO metrics
+				// https://issues.redhat.com/browse/OCPBUGS-55399
+				return false
+			}),
 		).
 		WithDependencies(oapiv2.ComponentName).
 		Build()
