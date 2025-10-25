@@ -136,7 +136,10 @@ func allGenerators() []generation.Generator {
 		newCompatibilityGenerator(),
 		newDeepcopyGenerator(),
 		newSwaggerDocsGenerator(),
+		// The empty partial schema, schema patch and manifest merge must run in order.
+		newEmptyPartialSchemaGenerator(),
 		newSchemaPatchGenerator(),
+		newCRDManifestMerger(),
 	}
 }
 
@@ -144,7 +147,12 @@ func allGenerators() []generation.Generator {
 // the root command is executed with the --verify flag.
 func allVerifiers() []generation.Generator {
 	return []generation.Generator{
-		newSchemaCheckGenerator(),
+		// Schema checker and crdify are invoked separately as we can override these
+		// depending on circumstances.
+		// All generators/verifiers that are part of codegen and executed with a bare
+		// codegen invocation must be absolutely required/not overrideable.
+		// newSchemaCheckGenerator(),
+		// newCrdifyGenerator(),
 	}
 }
 
