@@ -135,7 +135,7 @@ type ControlPlaneMachineSetTemplate struct {
 	// Currently, the only valid value is machines_v1beta1_machine_openshift_io.
 	// +unionDiscriminator
 	// +required
-	MachineType ControlPlaneMachineSetMachineType `json:"machineType,omitempty"`
+	MachineType ControlPlaneMachineSetMachineType `json:"machineType"`
 
 	// OpenShiftMachineV1Beta1Machine defines the template for creating Machines
 	// from the v1beta1.machine.openshift.io API group.
@@ -174,7 +174,7 @@ type OpenShiftMachineV1Beta1MachineTemplate struct {
 	// The ProviderSpec within contains platform specific details
 	// for creating the Control Plane Machines.
 	// The ProviderSe should be complete apart from the platform specific
-	// failure domain field. This will be overriden when the Machines
+	// failure domain field. This will be overridden when the Machines
 	// are created based on the FailureDomains field.
 	// +required
 	Spec machinev1beta1.MachineSpec `json:"spec"`
@@ -286,7 +286,6 @@ type FailureDomains struct {
 	VSphere []VSphereFailureDomain `json:"vsphere,omitempty"`
 
 	// openstack configures failure domain information for the OpenStack platform.
-	// +optional
 	//
 	// + ---
 	// + Unlike other platforms, OpenStack failure domains can be empty.
