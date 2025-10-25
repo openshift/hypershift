@@ -205,6 +205,10 @@ github.com/chavacava/garif
 # github.com/ckaznocha/intrange v0.3.0
 ## explicit; go 1.22
 github.com/ckaznocha/intrange
+# github.com/clipperhouse/uax29/v2 v2.2.0
+## explicit; go 1.18
+github.com/clipperhouse/uax29/v2/graphemes
+github.com/clipperhouse/uax29/v2/internal/iterators
 # github.com/cloudflare/circl v1.3.7
 ## explicit; go 1.19
 github.com/cloudflare/circl/dh/x25519
@@ -869,8 +873,8 @@ github.com/mattn/go-colorable
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
-# github.com/mattn/go-runewidth v0.0.16
-## explicit; go 1.9
+# github.com/mattn/go-runewidth v0.0.19
+## explicit; go 1.20
 github.com/mattn/go-runewidth
 # github.com/mgechev/revive v1.7.0
 ## explicit; go 1.22.1
@@ -1038,9 +1042,6 @@ github.com/quasilyte/stdinfo
 # github.com/raeperd/recvcheck v0.2.0
 ## explicit; go 1.22.0
 github.com/raeperd/recvcheck
-# github.com/rivo/uniseg v0.4.7
-## explicit; go 1.18
-github.com/rivo/uniseg
 # github.com/rogpeppe/go-internal v1.14.1
 ## explicit; go 1.23
 github.com/rogpeppe/go-internal/diff
