@@ -8,7 +8,7 @@ HyperShift is a middleware for hosting OpenShift control planes at scale. It pro
 
 ### Core Components
 - **hypershift-operator**: Main operator managing HostedCluster and NodePool resources
-- **control-plane-operator**: Manages control plane components for hosted clusters  
+- **control-plane-operator**: Manages control plane components for hosted clusters
 - **control-plane-pki-operator**: Handles PKI and certificate management
 - **karpenter-operator**: Manages Karpenter resources for auto-scaling
 - **ignition-server**: Serves ignition configs for node bootstrapping
@@ -75,6 +75,33 @@ bin/hypershift-operator run          # Run operator locally
 
 ## Testing Strategy
 
+### E2E Test Ginkgo Migration In Progress
+
+**Status**: E2E tests in `test/e2e` are migrating from native Go testing to Ginkgo v2 + Gomega, file-by-file.
+
+**Key information**:
+- Suite file created: `test/e2e/e2e_suite_test.go`
+- Migration guide: `docs/ginkgo-migration-guide.md`
+- Check progress table to see which files are migrated
+- For migrated files: Use Ginkgo patterns
+- For non-migrated files: Use native Go testing (temporary)
+
+**To migrate files**: Use the `ginkgo-migration-sme` agent by asking: "Claude, migrate [filename] to Ginkgo"
+
+See `.claude/agents/ginkgo-migration-sme.md` for details.
+
+#### Maintaining the Progress Table
+
+**IMPORTANT for all agents working with E2E tests during migration**:
+
+When performing E2E test migration or modifying E2E test files:
+1. **After migrating a test file**: Update the progress table in `docs/ginkgo-migration-guide.md` to mark the file as completed with date and any relevant notes
+2. **If adding a new E2E test file**: Check if it meets the eligibility criteria (see Migration Plan section in the guide). If it does, add it to the progress table in alphabetical order
+3. **If renaming an E2E test file**: Update the filename in the progress table accordingly
+4. **If deleting an E2E test file**: Remove it from the progress table
+
+File eligibility criteria are documented in the "Migration Plan" section of `docs/ginkgo-migration-guide.md`.
+
 ### Unit Tests
 - Located throughout the codebase alongside source files
 - Use race detection and parallel execution
@@ -85,6 +112,7 @@ bin/hypershift-operator run          # Run operator locally
 - Platform-specific tests for cluster lifecycle
 - Nodepool management and upgrade scenarios
 - Karpenter integration tests
+- **Currently migrating to Ginkgo** - see `docs/ginkgo-migration-guide.md`
 
 ### Integration Tests
 - Located in `test/integration/`

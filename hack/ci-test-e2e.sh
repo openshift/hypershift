@@ -22,6 +22,19 @@ generate_junit() {
 }
 trap generate_junit EXIT
 
-bin/test-e2e "$@"| tee /tmp/test_out &
+# Filter out incompatible parallel flags for ginkgo
+filtered_args=()
+for arg in "$@"; do
+  case "$arg" in
+    -test.parallel=*|--test.parallel=*)
+      # Skip parallel flags
+      ;;
+    *)
+      filtered_args+=("$arg")
+      ;;
+  esac
+done
+
+bin/test-e2e "${filtered_args[@]}"| tee /tmp/test_out &
 
 wait $!
