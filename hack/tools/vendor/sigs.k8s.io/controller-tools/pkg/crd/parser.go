@@ -21,6 +21,7 @@ import (
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"sigs.k8s.io/controller-tools/pkg/internal/crd"
 	"sigs.k8s.io/controller-tools/pkg/loader"
 	"sigs.k8s.io/controller-tools/pkg/markers"
 )
@@ -132,17 +133,8 @@ func (p *Parser) indexTypes(pkg *loader.Package) {
 		if skipPkg := pkgMarkers.Get("kubebuilder:skip"); skipPkg != nil {
 			return
 		}
-		if nameVal := pkgMarkers.Get("groupName"); nameVal != nil {
-			versionVal := pkg.Name // a reasonable guess
-			if versionMarker := pkgMarkers.Get("versionName"); versionMarker != nil {
-				versionVal = versionMarker.(string)
-			}
 
-			p.GroupVersions[pkg] = schema.GroupVersion{
-				Version: versionVal,
-				Group:   nameVal.(string),
-			}
-		}
+		p.GroupVersions[pkg] = crd.GroupVersionForPackage(pkgMarkers, pkg)
 	}
 
 	if err := markers.EachType(p.Collector, pkg, func(info *markers.TypeInfo) {
@@ -180,7 +172,12 @@ func (p *Parser) NeedSchemaFor(typ TypeIdent) {
 	// avoid tripping recursive schemata, like ManagedFields, by adding an empty WIP schema
 	p.Schemata[typ] = apiext.JSONSchemaProps{}
 
-	schemaCtx := newSchemaContext(typ.Package, p, p.AllowDangerousTypes, p.IgnoreUnexportedFields)
+	schemaCtx := newSchemaContext(typ.Package, p, func(typ TypeIdent) *apiext.JSONSchemaProps {
+		p.NeedSchemaFor(typ)
+
+		props := p.Schemata[typ]
+		return &props
+	}, p.AllowDangerousTypes, p.IgnoreUnexportedFields)
 	ctxForInfo := schemaCtx.ForInfo(info)
 
 	pkgMarkers, err := markers.PackageMarkers(p.Collector, typ.Package)
