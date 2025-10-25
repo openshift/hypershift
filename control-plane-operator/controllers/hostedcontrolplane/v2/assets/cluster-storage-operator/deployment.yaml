@@ -43,10 +43,6 @@ spec:
           value: quay.io/openshift/origin-openstack-cinder-csi-driver-operator:latest
         - name: OPENSTACK_CINDER_DRIVER_IMAGE
           value: quay.io/openshift/origin-openstack-cinder-csi-driver:latest
-        - name: OVIRT_DRIVER_OPERATOR_IMAGE
-          value: quay.io/openshift/origin-ovirt-csi-driver-operator:latest
-        - name: OVIRT_DRIVER_IMAGE
-          value: quay.io/openshift/origin-ovirt-csi-driver:latest
         - name: MANILA_DRIVER_OPERATOR_IMAGE
           value: quay.io/openshift/origin-csi-driver-manila-operator:latest
         - name: MANILA_DRIVER_IMAGE
