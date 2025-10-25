@@ -65,6 +65,7 @@ require (
 	github.com/spf13/pflag v1.0.7
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
+	github.com/vmware-tanzu/velero v1.14.0
 	go.etcd.io/etcd/api/v3 v3.5.20
 	go.etcd.io/etcd/client/pkg/v3 v3.5.20
 	go.etcd.io/etcd/client/v3 v3.5.20
