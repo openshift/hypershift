@@ -3,12 +3,11 @@ package generation
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -127,8 +126,7 @@ func newAPIGroupsContext(baseDir string, requiredGroupVersions []string) ([]APIG
 // loadPackagesFromDir walks through a list of directories and looks for those
 // that look like Go packages.
 func loadPackagesFromDir(baseDir string) (map[string]*packages.Package, error) {
-	outPkgs := make(map[string]*packages.Package)
-
+	var loadDirs []string
 	if err := filepath.WalkDir(baseDir, func(path string, dirEntry fs.DirEntry, _ error) error {
 		if !dirEntry.IsDir() {
 			// We only care about directories.
@@ -140,32 +138,38 @@ func loadPackagesFromDir(baseDir string) (map[string]*packages.Package, error) {
 			return filepath.SkipDir
 		}
 
-		cfg := &packages.Config{
-			Dir:  path,
-			Logf: klog.V(4).Infof,
-		}
-
-		pkgs, err := packages.Load(cfg)
-		if err != nil {
-			return fmt.Errorf("could not load package at path %s: %w", path, err)
-		}
-
-		if len(pkgs) != 1 {
-			return fmt.Errorf("unexpected number of go packages found for path %s: %d", path, len(pkgs))
-		}
-
-		if len(pkgs[0].GoFiles) == 0 {
-			// No go files means there's nothing parse, skip this directory but continue to subfolders.
-			return nil
-		}
-
-		outPkgs[path] = pkgs[0]
-
-		klog.V(3).Infof("Found directory: %s and package: %+v", path, pkgs[0])
+		loadDirs = append(loadDirs, path)
 
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("could not walk directory %s: %w", baseDir, err)
+	}
+
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax,
+		Logf: klog.V(4).Infof,
+	}
+
+	pkgs, err := packages.Load(cfg, loadDirs...)
+	if err != nil {
+		return nil, fmt.Errorf("could not load packages from dirs %s: %w", strings.Join(loadDirs, ", "), err)
+	}
+
+	outPkgs := make(map[string]*packages.Package, len(pkgs))
+	for _, pkg := range pkgs {
+		if pkg.Dir == "" {
+			klog.V(3).Infof("skipping package with no directory: %s", pkg.Name)
+			continue
+		}
+
+		if len(pkg.GoFiles) == 0 {
+			klog.V(3).Infof("skipping package with no go files: %s", pkg.Name)
+			continue
+		}
+
+		outPkgs[pkg.Dir] = pkg
+
+		klog.V(3).Infof("Found package %s in directory %s", pkg.Name, pkg.Dir)
 	}
 
 	return outPkgs, nil
@@ -181,16 +185,9 @@ func findAPIGroups(goPackages map[string]*packages.Package, desiredGroupVersions
 	desired := sets.NewString(desiredGroupVersions...)
 
 	for pkgPath, pkg := range goPackages {
-		fileSet := token.NewFileSet()
-
-		pkgs, err := parser.ParseDir(fileSet, pkgPath, nil, parser.ParseComments)
-		if err != nil {
-			return nil, fmt.Errorf("could not parse directory for package %s: %+v", pkgPath, pkgs)
-		}
-
-		for _, p := range pkgs {
+		for _, file := range pkg.Syntax {
 			gvv := &groupVersionVisitor{}
-			ast.Walk(gvv, p)
+			ast.Walk(gvv, file)
 
 			// If a group was found and either the desired list is empty or contains this group version,
 			// add it to the output.
@@ -203,7 +200,7 @@ func findAPIGroups(goPackages map[string]*packages.Package, desiredGroupVersions
 					Name:        version,
 					Path:        pkgPath,
 					PackagePath: pkg.PkgPath,
-					PackageName: p.Name,
+					PackageName: pkg.Name,
 				})
 			} else {
 				klog.V(3).Infof("No GroupVersion found in path %s", pkgPath)

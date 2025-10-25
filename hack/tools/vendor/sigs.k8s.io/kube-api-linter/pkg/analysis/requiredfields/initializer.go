@@ -16,30 +16,83 @@ limitations under the License.
 package requiredfields
 
 import (
+	"fmt"
+
 	"golang.org/x/tools/go/analysis"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/initializer"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/registry"
 )
+
+func init() {
+	registry.DefaultRegistry().RegisterLinter(Initializer())
+}
 
 // Initializer returns the AnalyzerInitializer for this
 // Analyzer so that it can be added to the registry.
-func Initializer() initializer {
-	return initializer{}
+func Initializer() initializer.AnalyzerInitializer {
+	return initializer.NewConfigurableInitializer(
+		name,
+		initAnalyzer,
+		true,
+		validateConfig,
+	)
 }
 
-// intializer implements the AnalyzerInitializer interface.
-type initializer struct{}
-
-// Name returns the name of the Analyzer.
-func (initializer) Name() string {
-	return name
+func initAnalyzer(rfc *RequiredFieldsConfig) (*analysis.Analyzer, error) {
+	return newAnalyzer(rfc), nil
 }
 
-// Init returns the intialized Analyzer.
-func (initializer) Init(cfg config.LintersConfig) (*analysis.Analyzer, error) {
-	return newAnalyzer(cfg.RequiredFields), nil
+// validateConfig validates the configuration in the config.RequiredFieldsConfig struct.
+func validateConfig(rfc *RequiredFieldsConfig, fldPath *field.Path) field.ErrorList {
+	if rfc == nil {
+		return field.ErrorList{}
+	}
+
+	fieldErrors := field.ErrorList{}
+
+	fieldErrors = append(fieldErrors, validateRequiredFieldsPointers(rfc.Pointers, fldPath.Child("pointers"))...)
+	fieldErrors = append(fieldErrors, validateRequiredFieldsOmitEmpty(rfc.OmitEmpty, fldPath.Child("omitempty"))...)
+	fieldErrors = append(fieldErrors, validateRequiredFieldsOmitZero(rfc.OmitZero, fldPath.Child("omitzero"))...)
+
+	return fieldErrors
 }
 
-// Default determines whether this Analyzer is on by default, or not.
-func (initializer) Default() bool {
-	return true
+// validateRequiredFieldsPointers is used to validate the configuration in the config.RequiredFieldsPointers struct.
+func validateRequiredFieldsPointers(rfc RequiredFieldsPointers, fldPath *field.Path) field.ErrorList {
+	fieldErrors := field.ErrorList{}
+
+	switch rfc.Policy {
+	case "", RequiredFieldsPointerPolicySuggestFix, RequiredFieldsPointerPolicyWarn:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("policy"), rfc.Policy, fmt.Sprintf("invalid value, must be one of %q, %q or omitted", RequiredFieldsPointerPolicySuggestFix, RequiredFieldsPointerPolicyWarn)))
+	}
+
+	return fieldErrors
+}
+
+// validateOptionFieldsOmitEmpty is used to validate the configuration in the config.OptionalFieldsOmitEmpty struct.
+func validateRequiredFieldsOmitEmpty(rfc RequiredFieldsOmitEmpty, fldPath *field.Path) field.ErrorList {
+	fieldErrors := field.ErrorList{}
+
+	switch rfc.Policy {
+	case "", RequiredFieldsOmitEmptyPolicyIgnore, RequiredFieldsOmitEmptyPolicyWarn, RequiredFieldsOmitEmptyPolicySuggestFix:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("policy"), rfc.Policy, fmt.Sprintf("invalid value, must be one of %q, %q, %q or omitted", RequiredFieldsOmitEmptyPolicyIgnore, RequiredFieldsOmitEmptyPolicyWarn, RequiredFieldsOmitEmptyPolicySuggestFix)))
+	}
+
+	return fieldErrors
+}
+
+// validateRequiredFieldsOmitZero is used to validate the configuration in the config.RequiredFieldsOmitZero struct.
+func validateRequiredFieldsOmitZero(rfc RequiredFieldsOmitZero, fldPath *field.Path) field.ErrorList {
+	fieldErrors := field.ErrorList{}
+
+	switch rfc.Policy {
+	case "", RequiredFieldsOmitZeroPolicySuggestFix, RequiredFieldsOmitZeroPolicyWarn, RequiredFieldsOmitZeroPolicyForbid:
+	default:
+		fieldErrors = append(fieldErrors, field.Invalid(fldPath.Child("policy"), rfc.Policy, fmt.Sprintf("invalid value, must be one of %q, %q, %q or omitted", RequiredFieldsOmitZeroPolicySuggestFix, RequiredFieldsOmitZeroPolicyWarn, RequiredFieldsOmitZeroPolicyForbid)))
+	}
+
+	return fieldErrors
 }

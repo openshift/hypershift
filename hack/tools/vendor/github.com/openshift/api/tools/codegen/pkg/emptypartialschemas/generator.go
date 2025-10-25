@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
-	"github.com/openshift/api/tools/codegen/pkg/utils"
-	"k8s.io/gengo/args"
+	"k8s.io/gengo/v2"
+	"k8s.io/gengo/v2/generator"
 	"k8s.io/klog/v2"
 )
 
@@ -27,9 +27,9 @@ type Options struct {
 	Verify bool
 }
 
-// generator implements the generation.Generator interface.
+// emptyPartialSchemasGenerator implements the generation.Generator interface.
 // It is designed to generate empty-partial-schemas function for a particular API group.
-type generator struct {
+type emptyPartialSchemasGenerator struct {
 	disabled           bool
 	outputBaseFileName string
 	verify             bool
@@ -42,7 +42,7 @@ func NewGenerator(opts Options) generation.Generator {
 		outputFileBaseName = opts.OutputFileBaseName
 	}
 
-	return &generator{
+	return &emptyPartialSchemasGenerator{
 		disabled:           opts.Disabled,
 		outputBaseFileName: outputFileBaseName,
 		verify:             opts.Verify,
@@ -51,7 +51,7 @@ func NewGenerator(opts Options) generation.Generator {
 
 // ApplyConfig creates returns a new generator based on the configuration passed.
 // If the empty-partial-schemas configuration is empty, the existing generation is returned.
-func (g *generator) ApplyConfig(config *generation.Config) generation.Generator {
+func (g *emptyPartialSchemasGenerator) ApplyConfig(config *generation.Config) generation.Generator {
 	if config == nil || config.EmptyPartialSchema == nil {
 		return g
 	}
@@ -64,12 +64,12 @@ func (g *generator) ApplyConfig(config *generation.Config) generation.Generator 
 }
 
 // Name returns the name of the generator.
-func (g *generator) Name() string {
+func (g *emptyPartialSchemasGenerator) Name() string {
 	return "partial-crd-manifests"
 }
 
 // GenGroup runs the empty-partial-schemas generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
+func (g *emptyPartialSchemasGenerator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping %q generation for %s", g.Name(), groupCtx.Name)
 		return nil, nil
@@ -92,7 +92,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 }
 
 // generatePartialSchemaFiles generates the DeepCopy functions for the given API package paths.
-func (g *generator) generatePartialSchemaFiles(path, packagePath string, verify bool) error {
+func (g *emptyPartialSchemasGenerator) generatePartialSchemaFiles(path, packagePath string, verify bool) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -107,30 +107,23 @@ func (g *generator) generatePartialSchemaFiles(path, packagePath string, verify 
 	// by the generator.
 	inputPath = fmt.Sprintf(".%s%s", string(os.PathSeparator), inputPath)
 
-	pathPrefix, err := utils.GetPathPrefix(wd, inputPath, packagePath)
-	if err != nil {
-		return fmt.Errorf("failed to get path prefix: %w", err)
-	}
-
-	arguments := args.GeneratorArgs{
-		InputDirs:                  []string{inputPath},
-		OutputFileBaseName:         g.outputBaseFileName,
-		TrimPathPrefix:             pathPrefix,
-		GeneratedBuildTag:          "",
-		GeneratedByCommentTemplate: "",
-		GoHeaderFilePath:           "",
-		VerifyOnly:                 verify,
-	}
-
-	// we do this so that we can store the results of the generator traversal to make decisions about the expected content
-	// of the partial schema directory.
-	gengoGeneratorResults := generatorResultGatherer{
+	// Create result gatherer to collect CRD information during generation
+	gengoGeneratorResults := &generatorResultGatherer{
 		crdNamesToFeatureGates: map[string]*CRDInfo{},
+		boundingDirs:           []string{inputPath},
+		outputFileBaseName:     g.outputBaseFileName,
 	}
-	if err := arguments.Execute(
+
+	myTargets := func(context *generator.Context) []generator.Target {
+		return gengoGeneratorResults.GetTargets(context)
+	}
+
+	if err := gengo.Execute(
 		NameSystems(),
 		DefaultNameSystem(),
-		gengoGeneratorResults.Packages,
+		myTargets,
+		gengo.StdBuildTag,
+		[]string{inputPath},
 	); err != nil {
 		return fmt.Errorf("error executing %v generator: %w", g.Name(), err)
 	}
