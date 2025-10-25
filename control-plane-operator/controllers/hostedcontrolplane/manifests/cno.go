@@ -12,6 +12,7 @@ import (
 const clusterNetworkOperator = "cluster-network-operator"
 const multusAdmissionController = "multus-admission-controller"
 const networkNodeIdentity = "network-node-identity"
+const ovnKubeControlPlane = "ovnkube-control-plane"
 
 func ClusterNetworkOperatorDeployment(ns string) *appsv1.Deployment {
 	return &appsv1.Deployment{
@@ -63,6 +64,15 @@ func NetworkNodeIdentityDeployment(namespace string) *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
 			Name:      networkNodeIdentity,
+		},
+	}
+}
+
+func OVNKubeControlPlaneDeployment(namespace string) *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      ovnKubeControlPlane,
 		},
 	}
 }
