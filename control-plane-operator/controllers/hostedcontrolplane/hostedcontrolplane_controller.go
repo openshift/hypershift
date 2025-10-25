@@ -2344,6 +2344,12 @@ func (r *HostedControlPlaneReconciler) cleanupClusterNetworkOperatorResources(ct
 		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, networkNodeIdentityDeployment, restartAnnotation); err != nil {
 			return fmt.Errorf("failed to restart network node identity: %w", err)
 		}
+
+		// CNO manages overall ovnkube-control-plane deployment. CPO manages restarts.  Note that cnov2.SetRestartAnnotationAndPatch just returns err == nil if the deployment isn't found (so if OVN isn't being used)
+		ovnKubeControlPlaneDeployment := manifests.OVNKubeControlPlaneDeployment(hcp.Namespace)
+		if err := cnov2.SetRestartAnnotationAndPatch(ctx, r.Client, ovnKubeControlPlaneDeployment, restartAnnotation); err != nil {
+			return fmt.Errorf("failed to restart ovnkube-control-plane: %w", err)
+		}
 	}
 
 	// Clean up ovnkube-sbdb Route if exists
