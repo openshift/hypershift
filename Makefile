@@ -69,7 +69,7 @@ update: api-deps workspace-sync deps api api-docs clients
 $(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
 	# Hack to install kuibe api linter plugin until https://github.com/kubernetes-sigs/kube-api-linter/pull/78 is merged
 	@echo 'package main; import (_ "sigs.k8s.io/kube-api-linter")' > hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/cmd/golangci-lint
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/cmd/golangci-lint
 	git checkout hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
 
 .PHONY: lint
@@ -91,25 +91,25 @@ verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
 
 $(CODE_GEN): $(TOOLS_DIR)/go.mod # Build code-gen from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
 
 
 $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
 
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
 $(MOCKGEN): ${TOOLS_DIR}/go.mod
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
 
 #.PHONY: generate
 generate: $(MOCKGEN)
-	GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go generate ./...
+	$(GO) generate ./...
 
 # Compile all tests
 .PHONY: tests
@@ -248,11 +248,11 @@ clients: delegating_client
 
 .PHONY: release
 release:
-	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
+	$(GO) run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
 
 .PHONY: delegating_client
 delegating_client:
-	go run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
+	$(GO) run ./cmd/infra/aws/delegatingclientgenerator/main.go > ./cmd/infra/aws/delegating_client.txt
 	mv ./cmd/infra/aws/delegating_client.txt ./cmd/infra/aws/delegating_client.go
 	$(GO) fmt ./cmd/infra/aws/delegating_client.go
 
@@ -270,7 +270,7 @@ test: generate
 e2e:
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
 
 # Run go fmt against code
 .PHONY: fmt
