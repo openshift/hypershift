@@ -125,6 +125,8 @@ This is a Go 1.24+ project using:
 
 The project uses vendoring (`go mod vendor`) and includes workspace configuration in `hack/workspace/`.
 
+After updating dependencies, run `make update` to regenerate all necessary files and ensure everything is in sync.
+
 ## Common Gotchas
 
 - Always run `make api` after modifying types in the `api/` package
@@ -142,7 +144,7 @@ in this project.
 - gitlint can be run by using this command `make run-gitlint`
 - Ensure all commit messages pass gitlint validation
 - Common gitlint rules to follow:
-    - Conventional commit format
-    - Proper line length limits
-    - Required footers
-    - No trailing whitespace
+  - Conventional commit format
+  - Proper line length limits
+  - Required footers
+  - No trailing whitespace
