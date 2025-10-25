@@ -22,6 +22,9 @@ updates:
       ibm-github-dependencies:
         patterns:
           - "github.com/IBM*"
+      onsi-github-dependencies:
+        patterns:
+          - "github.com/onsi*"
       github-dependencies:
         patterns:
           - "github*"
@@ -72,6 +75,9 @@ updates:
       - "area/ci-tooling"
       - "ok-to-test"
     groups:
+      onsi-github-dependencies:
+        patterns:
+          - "github.com/onsi*"
       github-dependencies:
         patterns:
           - "github*"
