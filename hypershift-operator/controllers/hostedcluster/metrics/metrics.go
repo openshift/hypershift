@@ -78,7 +78,7 @@ const (
 	proxyCAExpiryTimestampMetricHelp = "Shows the earliest timestamp when a certificate in the configured CA will expire."
 
 	InvalidAwsCredsMetricName = "hypershift_cluster_invalid_aws_creds"
-	invalidAwsCredsMetricHelp = "Indicates if the given HostedCluster has valid AWS credentials or not"
+	invalidAwsCredsMetricHelp = "AWS credential status for the HostedCluster: 0=valid, 1=invalid, 2=unknown"
 
 	DeletingDurationMetricName = "hypershift_cluster_deleting_duration_seconds"
 	deletingDurationMetricHelp = "Time in seconds it is taking to delete the HostedCluster since the beginning of the delete. " +
@@ -563,10 +563,9 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 			// invalidAwsCredsMetric
 			{
-				invalidAwsCredsValue := 0.0
-				if !platformaws.ValidCredentials(hcluster) {
-					invalidAwsCredsValue = 1.0
-				}
+				// Use detailed credential status: 0=valid, 1=invalid, 2=unknown
+				credStatus := platformaws.GetCredentialStatus(hcluster)
+				invalidAwsCredsValue := float64(credStatus)
 
 				ch <- prometheus.MustNewConstMetric(
 					invalidAwsCredsMetricDesc,
