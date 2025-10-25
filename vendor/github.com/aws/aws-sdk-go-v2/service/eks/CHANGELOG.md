@@ -1,3 +1,82 @@
+# v1.73.3 (2025-09-10)
+
+* No change notes available for this release.
+
+# v1.73.2 (2025-09-08)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.73.1 (2025-08-29)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.73.0 (2025-08-27)
+
+* **Feature**: Add support for on-demand refresh of EKS cluster insights
+* **Dependency Update**: Update to smithy-go v1.23.0.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.72.0 (2025-08-25)
+
+* **Feature**: Remove incorrect endpoint tests
+
+# v1.71.1 (2025-08-21)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.71.0 (2025-08-20)
+
+* **Feature**: EKS Add-ons Custom Namespace Support
+* **Bug Fix**: Remove unused deserialization code.
+
+# v1.70.0 (2025-08-11)
+
+* **Feature**: Add support for configuring per-service Options via callback on global config.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.69.0 (2025-08-05)
+
+* **Feature**: Add support for deletion protection on EKS clusters
+
+# v1.68.0 (2025-08-04)
+
+* **Feature**: Support configurable auth scheme preferences in service clients via AWS_AUTH_SCHEME_PREFERENCE in the environment, auth_scheme_preference in the config file, and through in-code settings on LoadDefaultConfig and client constructor methods.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.67.1 (2025-07-30)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.67.0 (2025-07-28)
+
+* **Feature**: Add support for HTTP interceptors.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.66.2 (2025-07-19)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.66.1 (2025-06-17)
+
+* **Dependency Update**: Update to smithy-go v1.22.4.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.66.0 (2025-06-11)
+
+* **Feature**: Release for EKS Pod Identity Cross Account feature and disableSessionTags flag.
+
+# v1.65.2 (2025-06-10)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.65.1 (2025-06-06)
+
+* No change notes available for this release.
+
+# v1.65.0 (2025-06-02)
+
+* **Feature**: Add support for filtering ListInsights API calls on MISCONFIGURATION insight category
+
 # v1.64.0 (2025-04-16)
 
 * **Feature**: Added support for new AL2023 ARM64 NVIDIA AMIs to the supported AMITypes.
