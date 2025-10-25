@@ -111,16 +111,22 @@ metadata:
   name: hosted-dual
   namespace: clusters
 spec:
+  configuration:
+    operatorhub:
+      disableAllDefaultSources: true
   additionalTrustBundle:
     name: "user-ca-bundle"
   olmCatalogPlacement: guest
   imageContentSources:
   - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release
+    - registry.<dns.base.domain.name>:5000/openshift/release
   - source: quay.io/openshift-release-dev/ocp-release
     mirrors:
-    - registry.hypershiftbm.lab:5000/openshift/release-images
+    - registry.<dns.base.domain.name>:5000/openshift/release-images
+  - source: registry.redhat.io/multicluster-engine
+    mirrors:
+    - registry.<dns.base.domain.name>:5000/openshift/multicluster-engine
   - mirrors:
   ...
   ...
@@ -195,6 +201,17 @@ status:
 !!! note
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
+
+!!! note
+
+    If your Hosted Cluster is intended for a disconnected environment, consider disabling the default OLM sources to define custom ones according to your requirements:
+    ```
+    spec:
+      configuration:
+        operatorhub:
+          disableAllDefaultSources: true
+    ```
+
 
 As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
 
