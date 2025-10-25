@@ -1,5 +1,9 @@
 package v1beta1
 
+import (
+	operatorv1 "github.com/openshift/api/operator/v1"
+)
+
 // +kubebuilder:validation:Enum="";Normal;Debug;Trace;TraceAll
 type LogLevel string
 
@@ -102,4 +106,35 @@ type OVNIPv4Config struct {
 	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{1,3}\\\\..*') && int(self.split('/')[0].split('.')[0]) > 0", message="first IP address octet must not be 0"
 	// +optional
 	InternalJoinSubnet string `json:"internalJoinSubnet,omitempty"`
+}
+
+// IngressOperatorSpec is the specification of the desired behavior of the Ingress Operator.
+type IngressOperatorSpec struct {
+	// endpointPublishingStrategy is used to publish the default ingress controller endpoints.
+	//
+	// The endpoint publishing strategy is determined by the following precedence order:
+	// 1. User-specified endpointPublishingStrategy (highest priority) - if this field is set,
+	//    it takes precedence over all other configuration methods
+	// 2. Platform-specific defaults with annotation overrides - if no user strategy is set,
+	//    the platform type determines the default strategy, which can be further modified by:
+	//    - hypershift.openshift.io/private-ingress-controller annotation (sets PrivateStrategyType)
+	//    - hypershift.openshift.io/ingress-controller-load-balancer-scope annotation (sets LoadBalancerScope)
+	// 3. Generic LoadBalancer fallback - if the platform is not recognized, defaults to
+	//    LoadBalancerService with External scope
+	//
+	// Platform-specific defaults when endpointPublishingStrategy is not set:
+	// - AWS: LoadBalancerService with External scope (or NLB if configured)
+	// - Azure, GCP: LoadBalancerService with External scope
+	// - IBMCloud: LoadBalancerService with External scope (or NodePort for UPI)
+	// - None: HostNetwork
+	// - KubeVirt: NodePortService
+	// - OpenStack: LoadBalancerService with External scope and optional FloatingIP
+	// - Other platforms: LoadBalancerService with External scope
+	//
+	// See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
+	// https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go
+	// +optional
+	// +kubebuilder:pruning:PreserveUnknownFields
+	// +kubebuilder:validation:Type=object
+	EndpointPublishingStrategy *operatorv1.EndpointPublishingStrategy `json:"endpointPublishingStrategy,omitempty"`
 }
