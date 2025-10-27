@@ -43,6 +43,12 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 		}
 	}
 
+	annotations := make(map[string]string, len(params.AdditionalAnnotations)+1)
+	for k, v := range params.AdditionalAnnotations {
+		annotations[k] = v
+	}
+	annotations["openshift.io/required-scc"] = "restricted-v2"
+
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
@@ -50,7 +56,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 		Template: corev1.PodTemplateSpec{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels:      labels,
-				Annotations: params.AdditionalAnnotations,
+				Annotations: annotations,
 			},
 			Spec: corev1.PodSpec{
 				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
