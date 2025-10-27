@@ -43,6 +43,13 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 		}
 	}
 
+	// Determine HostNetwork setting based on platform
+	useHostNetwork := true
+	// IBMCloud requires HostNetwork to be false
+	if platform.Type == hyperv1.IBMCloudPlatform {
+		useHostNetwork = false
+	}
+
 	daemonset.Spec = appsv1.DaemonSetSpec{
 		Selector: &metav1.LabelSelector{
 			MatchLabels: labels,
@@ -55,13 +62,13 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 			Spec: corev1.PodSpec{
 				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
 				DNSPolicy:                    corev1.DNSDefault,
-				HostNetwork:                  true,
+				HostNetwork:                  useHostNetwork,
 				AutomountServiceAccountToken: ptr.To(false),
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: ptr.To[int64](1000),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(params.Image, params.ExternalAddress, params.ExternalPort, proxy)),
+					util.BuildContainer(konnectivityAgentContainer(), buildKonnectivityWorkerAgentContainer(params.Image, params.ExternalAddress, params.ExternalPort, proxy, useHostNetwork)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(konnectivityVolumeAgentCerts(), buildKonnectivityVolumeWorkerAgentCerts),
@@ -80,9 +87,8 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 			},
 		},
 	}
-	// IBMCloud requires the following settings
+	// IBMCloud UPI requires DNSClusterFirst
 	if platform.Type == hyperv1.IBMCloudPlatform {
-		daemonset.Spec.Template.Spec.HostNetwork = false
 		if platform.IBMCloud != nil && platform.IBMCloud.ProviderType == configv1.IBMCloudProviderTypeUPI {
 			daemonset.Spec.Template.Spec.DNSPolicy = corev1.DNSClusterFirst
 		}
@@ -108,10 +114,19 @@ func konnectivityVolumeCACert() *corev1.Volume {
 	}
 }
 
-func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy configv1.ProxyStatus) func(c *corev1.Container) {
+func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy configv1.ProxyStatus, useHostNetwork bool) func(c *corev1.Container) {
 	cpath := func(volume, file string) string {
 		return path.Join(volumeMounts.Path(konnectivityAgentContainer().Name, volume), file)
 	}
+
+	// Determine health server host based on network mode
+	// When HostNetwork is true, bind to localhost to prevent external exposure
+	// When HostNetwork is false, bind to all interfaces so kubelet can reach via pod IP
+	healthServerHost := "127.0.0.1"
+	if !useHostNetwork {
+		healthServerHost = "0.0.0.0"
+	}
+
 	return func(c *corev1.Container) {
 		c.Image = image
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -130,6 +145,8 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 			host,
 			"--proxy-server-port",
 			fmt.Sprint(port),
+			"--health-server-host",
+			healthServerHost,
 			"--health-server-port",
 			fmt.Sprint(healthPort),
 			"--agent-identifiers=default-route=true",
@@ -174,9 +191,19 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 				corev1.ResourceCPU:    resource.MustParse("40m"),
 			},
 		}
+
+		// Determine probe host based on network mode
+		// When HostNetwork is true, set Host to 127.0.0.1 so kubelet contacts host's localhost
+		// When HostNetwork is false, omit Host so it defaults to pod IP for kubelet to reach
+		var probeHost string
+		if useHostNetwork {
+			probeHost = "127.0.0.1"
+		}
+
 		c.LivenessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
+					Host:   probeHost,
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
 					Path:   "healthz",
@@ -190,6 +217,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 		c.ReadinessProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
+					Host:   probeHost,
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
 					Path:   "readyz",
@@ -203,6 +231,7 @@ func buildKonnectivityWorkerAgentContainer(image, host string, port int32, proxy
 		c.StartupProbe = &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
 				HTTPGet: &corev1.HTTPGetAction{
+					Host:   probeHost,
 					Scheme: corev1.URISchemeHTTP,
 					Port:   intstr.FromInt(int(healthPort)),
 					Path:   "healthz",
