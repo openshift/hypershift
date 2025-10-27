@@ -76,6 +76,7 @@ func NewCommand() *cobra.Command {
 	flags.StringVar(&operator.GuestClusterKubeconfigPath, "guest-cluster-kubeconfig", operator.GuestClusterKubeconfigPath, "path to kubeconfig file for the guest cluster.")
 
 	cmd.AddCommand(NewTransformDeploymentCommand())
+	cmd.AddCommand(NewHTTPProxyCommand())
 
 	return cmd
 }
