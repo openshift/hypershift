@@ -48,7 +48,7 @@ all: build e2e tests
 
 pre-commit: all verify test
 
-build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli
+build: hypershift-operator control-plane-operator control-plane-pki-operator hypershift product-cli hypershift-no-cgo
 
 .PHONY: update
 update: workspace-sync api-deps api api-docs deps clients
@@ -94,7 +94,11 @@ control-plane-pki-operator:
 
 .PHONY: hypershift
 hypershift:
-	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift .
+	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/hypershift .
+
+.PHONY: hypershift-no-cgo
+hypershift-no-cgo:
+	$(GO_CLI_RECIPE) -o $(OUT_DIR)/hypershift-no-cgo .
 
 .PHONY: product-cli
 product-cli:
