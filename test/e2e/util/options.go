@@ -116,6 +116,7 @@ type ConfigurableClusterOptions struct {
 	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
+	AzureWorkloadIdentitiesFile           string
 	AzureEncryptionKeyID                  string
 	AzureKMSUserAssignedCredsSecretName   string
 	OpenStackCredentialsFile              string
@@ -346,6 +347,10 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 
 	if o.ConfigurableClusterOptions.AzureManagedIdentitiesFile != "" {
 		opts.ManagedIdentitiesFile = o.ConfigurableClusterOptions.AzureManagedIdentitiesFile
+	}
+
+	if o.ConfigurableClusterOptions.AzureWorkloadIdentitiesFile != "" {
+		opts.WorkloadIdentitiesFile = o.ConfigurableClusterOptions.AzureWorkloadIdentitiesFile
 	}
 
 	if opts.ManagedIdentitiesFile != "" {
