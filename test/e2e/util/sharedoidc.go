@@ -68,7 +68,7 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 	}
 
 	// create openid configuration
-	params := oidc.ODICGeneratorParams{
+	params := oidc.OIDCGeneratorParams{
 		IssuerURL: issuerURL,
 		PubKey:    publicKeyBytes,
 	}
