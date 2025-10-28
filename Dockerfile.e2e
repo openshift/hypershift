@@ -14,7 +14,8 @@ WORKDIR /hypershift
 
 RUN mkdir -p /hypershift/bin /hypershift/hack
 COPY --from=builder /hypershift/bin/test-e2e /hypershift/bin/test-e2e
-COPY --from=builder /hypershift/bin/test-setup /hypershift//bin/test-setup
+COPY --from=builder /hypershift/bin/test-setup /hypershift/bin/test-setup
+COPY --from=builder /hypershift/bin/test-e2e-v2 /hypershift/bin/test-e2e-v2
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
 
 RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
