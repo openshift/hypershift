@@ -4480,6 +4480,32 @@ spec:
                 required:
                 - spec
                 type: object
+              virtualMachinePool:
+                description: |-
+                  VirtualMachinePool defines a pool of pre-configured virtual machines with specific names and cloud-init configs.
+                  When specified, the controller will use VMs from this pool for scaling operations instead of generating new ones.
+                items:
+                  description: VirtualMachinePoolEntry defines a single virtual machine
+                    entry in the pool with a specific name and cloud-init configuration.
+                  properties:
+                    cloudInitNetworkData:
+                      description: |-
+                        CloudInitNetworkData contains the cloud-init network data configuration for this specific VM.
+                        This data will be used to customize the network configuration of the VM during boot.
+                      type: string
+                    name:
+                      description: |-
+                        Name specifies the desired name for this virtual machine.
+                        This name will be used as the VM name when creating the virtual machine.
+                      maxLength: 253
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                type: array
             required:
             - template
             type: object
