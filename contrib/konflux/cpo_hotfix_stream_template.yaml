@@ -1,7 +1,7 @@
 apiVersion: projctl.konflux.dev/v1beta1
 kind: ProjectDevelopmentStreamTemplate
 metadata:
-  name: hypershift-ho-template
+  name: hypershift-cpo-hotfix-template
 spec:
   project: crt-redhat-acm-tenant
   variables:
@@ -15,9 +15,9 @@ spec:
   - apiVersion: appstudio.redhat.com/v1alpha1
     kind: Application
     metadata:
-      name: hypershift-operator-hotfix-{{.versionName}}"
+      name: hypershift-cpo-hotfix-{{.versionName}}
     spec:
-      displayName: "hypershift-operator-hotfix-{{.versionName}}"
+      displayName: "hypershift-cpo-hotfix-{{.versionName}}"
 
   - apiVersion: appstudio.redhat.com/v1alpha1
     kind: Component
@@ -28,30 +28,30 @@ spec:
         git-provider: github
         git-provider-url: https://github.com
         mintmaker.appstudio.redhat.com/disabled: "true"
-      name: hypershift-operator-hotfix-{{.versionName}}
+      name: hypershift-cpo-hotfix-{{.versionName}}
     spec:
-      application: "hypershift-operator-hotfix-{{.versionName}}"
-      componentName: "hypershift-operator-hotfix-{{.versionName}}"
-      containerImage: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-{{.versionName}}"
+      application: "hypershift-cpo-hotfix-{{.versionName}}"
+      componentName: "hypershift-cpo-hotfix-{{.versionName}}"
+      containerImage: "quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-{{.versionName}}"
       source:
         git:
           context: ./
-          dockerfileUrl: Containerfile.operator
-          revision: "ho-hotfix-{{.versionName}}"
+          dockerfileUrl: Containerfile.control-plane
+          revision: "hotfix-{{.versionName}}"
           url: https://github.com/openshift/hypershift
 
   - apiVersion: appstudio.redhat.com/v1alpha1
     kind: ImageRepository
     metadata:
-      name: hypershift-operator-hotfix-{{.versionName}}
+      name: hypershift-cpo-hotfix-{{.versionName}}
       labels:
-        appstudio.redhat.com/application: hypershift-operator-hotfix-{{.versionName}}
-        appstudio.redhat.com/component: hypershift-operator-hotfix-{{.versionName}}
+        appstudio.redhat.com/application: hypershift-cpo-hotfix-{{.versionName}}
+        appstudio.redhat.com/component: hypershift-cpo-hotfix-{{.versionName}}
       annotations:
         image-controller.appstudio.redhat.com/update-component-image: 'true'
     spec:
       image:
-        name: crt-redhat-acm-tenant/hypershift-operator-hotfix-{{.versionName}}
+        name: crt-redhat-acm-tenant/control-plane-operator-hotfix-{{.versionName}}
         visibility: public
       notifications:
         - config:
