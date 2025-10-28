@@ -146,19 +146,21 @@ func getAzureMarketplaceMetadata(releaseImage *releaseinfo.ReleaseImage, arch st
 
 	if azureMarketplace.HyperVGen1 != nil {
 		result.NoPurchasePlan.HyperVGen1 = &hyperv1.AzureMarketplaceImage{
-			Publisher: azureMarketplace.HyperVGen1.Publisher,
-			Offer:     azureMarketplace.HyperVGen1.Offer,
-			SKU:       azureMarketplace.HyperVGen1.SKU,
-			Version:   azureMarketplace.HyperVGen1.Version,
+			Publisher:       azureMarketplace.HyperVGen1.Publisher,
+			Offer:           azureMarketplace.HyperVGen1.Offer,
+			SKU:             azureMarketplace.HyperVGen1.SKU,
+			Version:         azureMarketplace.HyperVGen1.Version,
+			ImageGeneration: ptr.To(hyperv1.Gen1),
 		}
 	}
 
 	if azureMarketplace.HyperVGen2 != nil {
 		result.NoPurchasePlan.HyperVGen2 = &hyperv1.AzureMarketplaceImage{
-			Publisher: azureMarketplace.HyperVGen2.Publisher,
-			Offer:     azureMarketplace.HyperVGen2.Offer,
-			SKU:       azureMarketplace.HyperVGen2.SKU,
-			Version:   azureMarketplace.HyperVGen2.Version,
+			Publisher:       azureMarketplace.HyperVGen2.Publisher,
+			Offer:           azureMarketplace.HyperVGen2.Offer,
+			SKU:             azureMarketplace.HyperVGen2.SKU,
+			Version:         azureMarketplace.HyperVGen2.Version,
+			ImageGeneration: ptr.To(hyperv1.Gen2),
 		}
 	}
 
