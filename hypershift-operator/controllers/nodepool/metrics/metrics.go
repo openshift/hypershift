@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/clock"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -203,120 +204,202 @@ func createFailureConditionToNodePoolsCountMap(knownConditionToExpectedStatus ma
 }
 
 const (
-	unexpectedAWSOutputErrorReason          = "unexpected AWS output"
-	failedToCallAWSErrorReason              = "failed to call AWS"
-	unableToMarshalPricingDataErrorReason   = "unable to marshal pricing data"
-	unableToUnMarshalPricingDataErrorReason = "unable to un-marshal pricing data"
-	noErroReason                            = ""
+	noAWSEC2ClientErrorReason                      = "no AWS EC2 client"
+	noAWSPricingClientErrorReason                  = "no AWS Pricing client"
+	unexpectedAWSOutputErrorReason                 = "unexpected AWS output"
+	failedToCallAWSErrorReason                     = "failed to call AWS"
+	unknownInstanceTypeErrorReason                 = "unknown instance type"
+	unableToMarshalPricingDataErrorReason          = "unable to marshal pricing data"
+	unableToUnMarshalPricingDataErrorReason        = "unable to un-marshal pricing data"
+	rosaCPUsInstanceTypesConfigNotFoundErrorReason = "ROSA CPUs instance types ConfigMap not found"
+
+	rosaCPUsInstanceTypeConfigMapName     = "rosa-cpus-instance-types-config"
+	rosaCPUInstanceTypeConfigMapNamespace = "hypershift"
 )
 
-type vCpusDetail struct {
-	vCpusCount            int32
-	vCpusCountErrorReason string // set only if vCpusCount == -1
+// sentinel error values
+var (
+	errNoAWSEC2Client                      = errors.New(noAWSEC2ClientErrorReason)
+	errNoAWSPricingClient                  = errors.New(noAWSPricingClientErrorReason)
+	errUnexpectedAWSOutput                 = errors.New(unexpectedAWSOutputErrorReason)
+	errFailedToCallAWS                     = errors.New(failedToCallAWSErrorReason) // TODO: double check Unwrap
+	errUnknownInstanceType                 = errors.New(unknownInstanceTypeErrorReason)
+	errUnableToMarshalPricingData          = errors.New(unableToMarshalPricingDataErrorReason)
+	errUnableToUnMarshalPricingData        = errors.New(unableToUnMarshalPricingDataErrorReason)
+	errRosaCPUsInstanceTypesConfigNotFound = errors.New(rosaCPUsInstanceTypesConfigNotFoundErrorReason)
+)
+
+func extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName string, pricingClient pricingiface.PricingAPI) (int64, error) {
+	context, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*5))
+	defer cancel()
+	pricingInput := &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []*pricing.Filter{
+			{
+				Type:  aws.String("TERM_MATCH"),
+				Field: aws.String("instanceType"),
+				Value: aws.String(instanceTypeName),
+			},
+		},
+	}
+	pricingResult, err := pricingClient.GetProductsWithContext(context, pricingInput)
+	if err != nil {
+		ctrllog.Log.Error(errors.New(failedToCallAWSErrorReason),
+			fmt.Sprintf(" failed to call AWS to resolve the number of vCpus while querying the following EC2 instance type %s: %v", instanceTypeName, err))
+		return -1, errors.New(failedToCallAWSErrorReason)
+	}
+	if pricingResult == nil || len(pricingResult.PriceList) == 0 {
+		return -1, errors.New(unexpectedAWSOutputErrorReason)
+	}
+	pricingJSON, err := json.Marshal(pricingResult)
+	if err != nil {
+		ctrllog.Log.Error(errors.New(unableToMarshalPricingDataErrorReason),
+			fmt.Sprintf("unable to marshal pricing data for instance %s: %v", instanceTypeName, err))
+		return -1, errors.New(unableToMarshalPricingDataErrorReason)
+	}
+
+	var pricingData PricingDataInstance
+	if err := json.Unmarshal(pricingJSON, &pricingData); err != nil {
+		ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
+			fmt.Sprintf("unable to unmarshal pricing data for instance %s: %v", instanceTypeName, err))
+		return -1, errors.New(unableToUnMarshalPricingDataErrorReason)
+	}
+	for _, pd := range pricingData.PriceList {
+		if pd.Product.Attributes.VCPU != "" {
+			value, err := strconv.ParseInt(pd.Product.Attributes.VCPU, 10, 64)
+			if err != nil {
+				ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
+					fmt.Sprintf("couldn't parse VCPU data for instance %s: %v", instanceTypeName, err))
+				return -1, errors.New(unableToUnMarshalPricingDataErrorReason)
+			}
+			return value, nil
+		}
+	}
+	return -1, errors.New(unknownInstanceTypeErrorReason) // unknown instance type
 }
 
-func extractCPUFromInstanceTypeName(instanceTypeName string, ec2Client ec2iface.EC2API, pricingClient pricingiface.PricingAPI) (int64, string) {
-	// First try to get it through EC2 DescribeInstanceTypes API
+func extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName string, ec2Client ec2iface.EC2API) (int64, error) {
+	if ec2Client == nil {
+		return -1, errors.New(noAWSEC2ClientErrorReason)
+	}
+
 	ec2InstanceTypes, err := ec2Client.DescribeInstanceTypes(&ec2.DescribeInstanceTypesInput{
 		InstanceTypes: []*string{aws.String(instanceTypeName)},
 	})
-	if err == nil {
-		if ec2InstanceTypes != nil && len(ec2InstanceTypes.InstanceTypes) >= 1 && ec2InstanceTypes.InstanceTypes[0].VCpuInfo != nil {
-			return *ec2InstanceTypes.InstanceTypes[0].VCpuInfo.DefaultVCpus, noErroReason
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidInstanceType" {
+			return -1, errors.New(unknownInstanceTypeErrorReason)
 		}
-		ctrllog.Log.Error(errors.New(unexpectedAWSOutputErrorReason),
-			fmt.Sprintf("unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type %s", instanceTypeName))
-		return -1, unexpectedAWSOutputErrorReason
+		return -1, errors.New(failedToCallAWSErrorReason)
+
 	}
-	if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidInstanceType" {
-		// If the instance type is not found, try to get it through Pricing API
-		ctrllog.Log.Info("Can't describe instance type %s, retrieving through pricing APIs", instanceTypeName)
-		pricingResult, err := pricingClient.GetProducts(&pricing.GetProductsInput{
-			ServiceCode: aws.String("AmazonEC2"),
-			Filters: []*pricing.Filter{
-				{
-					Type:  aws.String("TERM_MATCH"),
-					Field: aws.String("instanceType"),
-					Value: aws.String(instanceTypeName),
-				},
-			},
-		})
-		if err == nil && pricingResult != nil && len(pricingResult.PriceList) > 0 {
-			pricingJSON, err := json.Marshal(pricingResult)
-			if err != nil {
-				ctrllog.Log.Error(errors.New(unableToMarshalPricingDataErrorReason),
-					fmt.Sprintf("unable to marshal pricing data for instance %s: %v", instanceTypeName, err))
-				return -1, unableToMarshalPricingDataErrorReason
-			}
-			var pricingData PricingDataInstance
-			if err := json.Unmarshal(pricingJSON, &pricingData); err != nil {
-				ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
-					fmt.Sprintf("unable to unmarshal pricing data for instance %s: %v", instanceTypeName, err))
-				return -1, unableToUnMarshalPricingDataErrorReason
-			}
-			if len(pricingData.PriceList) > 0 && pricingData.PriceList[0].Product.Attributes.VCPU != "" {
-				value, err := strconv.ParseInt(pricingData.PriceList[0].Product.Attributes.VCPU, 10, 64)
-				if err != nil {
-					ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
-						fmt.Sprintf("couldn't parse VCPU data for instance %s: %v", instanceTypeName, err))
-					return -1, unableToUnMarshalPricingDataErrorReason
-				}
-				return value, noErroReason
-			}
-			ctrllog.Log.Error(errors.New(unexpectedAWSOutputErrorReason),
-				fmt.Sprintf("unexpected output for pricing verb 'get-products' while querying the following EC2 instance type: %s", instanceTypeName))
-			return -1, unexpectedAWSOutputErrorReason
-		}
-		ctrllog.Log.Error(errors.New(failedToCallAWSErrorReason),
-			fmt.Sprintf("unexpected output for pricing verb 'get-products' while querying the following EC2 instance type: %s", instanceTypeName))
-		return -1, failedToCallAWSErrorReason
+	if ec2InstanceTypes == nil ||
+		len(ec2InstanceTypes.InstanceTypes) == 0 ||
+		ec2InstanceTypes.InstanceTypes[0].VCpuInfo == nil ||
+		ec2InstanceTypes.InstanceTypes[0].VCpuInfo.DefaultVCpus == nil {
+		return -1, errors.New(unexpectedAWSOutputErrorReason)
 	}
-	ctrllog.Log.Error(errors.New(failedToCallAWSErrorReason),
-		fmt.Sprintf(" failed to call AWS to resolve the number of vCpus while querying the following EC2 instance type %s: %v", instanceTypeName, err))
-	return -1, failedToCallAWSErrorReason
+
+	return *ec2InstanceTypes.InstanceTypes[0].VCpuInfo.DefaultVCpus, nil
 }
 
-func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv1.NodePool, ec2InstanceTypeToResolutionErrorReason *map[string]string) vCpusDetail {
+func extractCPUFromInstanceTypeNameViaConfigMap(instanceTypeName string, client client.Client) (int64, error) {
+	context, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*5))
+	defer cancel()
+	vCPUsIntstanceTypeConfig := &corev1.ConfigMap{}
+	if err := client.Get(context, types.NamespacedName{Name: rosaCPUsInstanceTypeConfigMapName, Namespace: rosaCPUInstanceTypeConfigMapNamespace},
+		vCPUsIntstanceTypeConfig); err != nil {
+		return -1, errors.New(rosaCPUsInstanceTypesConfigNotFoundErrorReason)
+	}
+	if value, ok := vCPUsIntstanceTypeConfig.Data[instanceTypeName]; ok {
+		return strconv.ParseInt(value, 10, 64)
+	}
+	return -1, errors.New(unknownInstanceTypeErrorReason)
+}
+
+func logErr(err error, instanceTypeName string) {
+	if err == nil {
+		return
+	}
+	switch {
+	case errors.Is(err, errNoAWSEC2Client):
+		ctrllog.Log.Error(err, "cannot retrieve the number of vCPUs for instance type "+instanceTypeName+" as the EC2 client used to query AWS API is not properly initialized")
+	case errors.Is(err, errNoAWSPricingClient):
+		ctrllog.Log.Error(err, "cannot retrieve the number of vCPUs for instance type "+instanceTypeName+" as the Pricing client used to query AWS API is not properly initialized")
+	case errors.Is(err, errUnexpectedAWSOutput):
+		ctrllog.Log.Error(err, fmt.Sprintf("unexpected output for EC2 verb 'describe-instance-types' while querying the following EC2 instance type %s", instanceTypeName))
+	case errors.Is(err, errFailedToCallAWS):
+		ctrllog.Log.Error(err, fmt.Sprintf("failed to call AWS to resolve the number of vCpus while querying the following EC2 instance type %s.", instanceTypeName))
+	case errors.Is(err, errUnknownInstanceType):
+		ctrllog.Log.Error(err, fmt.Sprintf("unkwnow error for instance type for instance %s.", instanceTypeName))
+	case errors.Is(err, errUnableToUnMarshalPricingData):
+		ctrllog.Log.Error(err, fmt.Sprintf("unable to unmarshal Pricing API response for instance %s.", instanceTypeName))
+	case errors.Is(err, errUnableToMarshalPricingData):
+		ctrllog.Log.Error(err, fmt.Sprintf("unable to marshal Pricing API response for instance %s.", instanceTypeName))
+	case errors.Is(err, errRosaCPUsInstanceTypesConfigNotFound):
+		ctrllog.Log.Error(err, fmt.Sprintf("unable to retrieve Config Map %s in namespace %s for instance %s",
+			rosaCPUsInstanceTypeConfigMapName, rosaCPUInstanceTypeConfigMapNamespace, instanceTypeName))
+	}
+}
+
+func extractCPUFromInstanceTypeName(instanceTypeName string, ec2Client ec2iface.EC2API, pricingClient pricingiface.PricingAPI, client client.Client) (int64, error) {
+
+	value, err := extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName, ec2Client)
+	if err == nil {
+		return value, nil
+	}
+	logErr(err, instanceTypeName)
+
+	value, err = extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName, pricingClient)
+	if err == nil {
+		return value, nil
+	}
+	logErr(err, instanceTypeName)
+
+	value, err = extractCPUFromInstanceTypeNameViaConfigMap(instanceTypeName, client)
+	if err == nil {
+		return value, nil
+	}
+	logErr(err, instanceTypeName)
+
+	return -1, errUnknownInstanceType
+}
+
+func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv1.NodePool, ec2InstanceTypeToResolutionErrorReason *map[string]string) (int32, error) {
 	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
 		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its platform is not supported (supported platforms: AWS)")
-
-		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: "unsupported platform"}
+		return -1, fmt.Errorf("unsupported platform")
 	}
 
 	if c.ec2Client == nil {
 		errorReason := "no AWS EC2 client"
 		ctrllog.Log.Error(errors.New(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as the client used to query AWS API is not properly initialized")
-
-		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: errorReason}
 	}
 
 	awsPlatform := nodePool.Spec.Platform.AWS
-
 	if awsPlatform == nil {
-		errorReason := "spec.platform.aws missing in node pool"
-		ctrllog.Log.Error(errors.New(errorReason), "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as its specification is inconsistent")
-
-		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: errorReason}
+		err := fmt.Errorf("spec.platform.aws missing in node pool")
+		ctrllog.Log.Error(err, "cannot retrieve the number of vCPUs for "+nodePool.Name+" node pool as its specification is inconsistent")
+		return -1, err
 	}
 
 	ec2InstanceType := awsPlatform.InstanceType
-
 	if unresolvedErrorReason, isUnresolved := (*ec2InstanceTypeToResolutionErrorReason)[ec2InstanceType]; isUnresolved {
-		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: unresolvedErrorReason}
+		return -1, errors.New(unresolvedErrorReason)
 	}
-
+	// trying look-up in the cache
 	if vCpusCountPerNode, isCached := c.ec2InstanceTypeToVCpusCount[ec2InstanceType]; isCached {
-		return vCpusDetail{vCpusCount: vCpusCountPerNode}
+		return vCpusCountPerNode, nil
 	}
 
-	vCpusCount, errorReason := extractCPUFromInstanceTypeName(ec2InstanceType, c.ec2Client, c.pricingClient)
-	if errorReason != noErroReason {
-		(*ec2InstanceTypeToResolutionErrorReason)[ec2InstanceType] = errorReason
-		return vCpusDetail{vCpusCount: -1, vCpusCountErrorReason: errorReason}
+	vCpusCount, err := extractCPUFromInstanceTypeName(ec2InstanceType, c.ec2Client, c.pricingClient, c.Client)
+	if err != nil {
+		return -1, err
 	}
+
 	// in case of no error we cache the value
 	c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = int32(vCpusCount)
-	return vCpusDetail{vCpusCount: int32(vCpusCount)}
+	return int32(vCpusCount), nil
 }
 
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -454,13 +537,12 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 				// vCpusCountByHClusterMetric - aggregation
 				if hclusterData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
-					nodeVCpusDetails := c.retrieveVCpusDetailsPerNode(nodePool, &ec2InstanceTypeToResolutionErrorReason)
-
-					if nodeVCpusDetails.vCpusCountErrorReason == "" {
-						hclusterData.vCpusCount += nodeVCpusDetails.vCpusCount * nodePool.Status.Replicas
-					} else {
+					nodeVCpus, err := c.retrieveVCpusDetailsPerNode(nodePool, &ec2InstanceTypeToResolutionErrorReason)
+					if err != nil {
 						hclusterData.vCpusCount = -1
-						hclusterData.vCpusCountErrorReason = nodeVCpusDetails.vCpusCountErrorReason
+						hclusterData.vCpusCountErrorReason = err.Error()
+					} else {
+						hclusterData.vCpusCount += nodeVCpus * nodePool.Status.Replicas
 					}
 				}
 			}
