@@ -27,7 +27,7 @@ type AWSNodePoolPlatform struct {
 
 	// imageType specifies the type of image to use for node instances.
 	// Valid values are "Linux" or "Windows"
-	// When set to ImageTypeWindows, the controller will automatically populate the AMI field
+	// When set to Windows, the controller will automatically populate the AMI field
 	// with a Windows-compatible AMI based on the region and OpenShift version.
 	// When the AMI field is also set, it will take precedence over automatic selection based
 	// on imageType. Also note that Windows ImageType is only compatible with an Arch of amd64

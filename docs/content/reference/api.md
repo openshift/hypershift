@@ -1491,8 +1491,8 @@ ImageType
 <td>
 <em>(Optional)</em>
 <p>imageType specifies the type of image to use for node instances.
-Valid values are ImageTypeLinux (&ldquo;Linux&rdquo;) or ImageTypeWindows (&ldquo;Windows&rdquo;).
-When set to ImageTypeWindows, the controller will automatically populate the AMI field
+Valid values are &ldquo;Linux&rdquo; or &ldquo;Windows&rdquo;
+When set to Windows, the controller will automatically populate the AMI field
 with a Windows-compatible AMI based on the region and OpenShift version.
 When the AMI field is also set, it will take precedence over automatic selection based
 on imageType. Also note that Windows ImageType is only compatible with an Arch of amd64</p>
