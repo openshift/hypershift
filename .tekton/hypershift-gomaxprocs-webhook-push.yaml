@@ -7,9 +7,12 @@ metadata:
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
-      == "main" && ( "contrib/gomaxprocs-webhook/***".pathChanged() || ".tekton/hypershift-gomaxprocs-webhook-push.yaml".pathChanged()
-      || "Dockerfile".pathChanged() )
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push"
+      && target_branch == "main"
+      && ( "contrib/gomaxprocs-webhook/***".pathChanged()
+           || ".tekton/hypershift-gomaxprocs-webhook-push.yaml".pathChanged()
+           || ".tekton/pipelines/common-operator-build.yaml".pathChanged() )
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp: null
   labels:
