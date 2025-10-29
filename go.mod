@@ -30,6 +30,7 @@ require (
 	github.com/clarketm/json v1.17.1
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf
 	github.com/coreos/ignition/v2 v2.25.1
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/elazarl/goproxy v1.7.2
@@ -163,7 +164,6 @@ require (
 	github.com/coreos/go-systemd/v22 v22.6.0 // indirect
 	github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
@@ -318,3 +318,13 @@ replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+
+// Use Kubernetes v1.32.3's version of k8s.io/utils for compatibility
+replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+
+// replace (
+// 	k8s.io/api => k8s.io/api v0.32.3
+// 	k8s.io/apimachinery => k8s.io/apimachinery v0.32.3
+// 	k8s.io/apiserver => k8s.io/apiserver v0.32.3
+// 	k8s.io/client-go => k8s.io/client-go v0.32.3
+// )

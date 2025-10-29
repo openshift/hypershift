@@ -423,7 +423,8 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
 		awsConfig := awsutil.NewConfig()
 		ec2Client = ec2.New(awsSession, awsConfig)
-		pricingClient = pricing.New(awsSession, awsConfig)
+		pricingAwsConfig := awsutil.NewConfig().WithRegion("us-east-1")
+		pricingClient = pricing.New(awsSession, pricingAwsConfig)
 	}
 
 	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client, pricingClient)
