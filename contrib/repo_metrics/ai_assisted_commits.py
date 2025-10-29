@@ -61,13 +61,16 @@ class RealGitCommandRunner(GitCommandRunner):
             sys.exit(1)
 
 
-def get_commit_hashes(git_runner: GitCommandRunner, since: str = '', max_count: int = 0) -> List[str]:
+def get_commit_hashes(git_runner: GitCommandRunner, since: str = '', until: str = '', max_count: int = 0) -> List[str]:
     """Get all commit hashes since a given date or up to max_count commits."""
     args = ['log']
     if max_count > 0:
         args.extend([f'-{max_count}'])
-    elif since:
-        args.extend([f'--since={since}'])
+    elif since or until:
+        if since:
+            args.extend([f'--since={since}'])
+        if until:
+            args.extend([f'--until={until}'])
     args.append('--pretty=format:%H')
     output = git_runner.run(args)
     return output.split('\n') if output else []
@@ -95,9 +98,9 @@ def get_commit_oneline(git_runner: GitCommandRunner, commit_hash: str) -> str:
     return git_runner.run(['log', '--oneline', '-1', commit_hash])
 
 
-def analyze_commits(git_runner: GitCommandRunner, since: str = '2 weeks ago', max_count: int = 0) -> CommitStats:
+def analyze_commits(git_runner: GitCommandRunner, since: str = '2 weeks ago', until: str = '', max_count: int = 0) -> CommitStats:
     """Analyze commits and return statistics."""
-    commit_hashes = get_commit_hashes(git_runner, since=since, max_count=max_count)
+    commit_hashes = get_commit_hashes(git_runner, since=since, until=until, max_count=max_count)
     total_commits = len(commit_hashes)
 
     merge_commits = 0
@@ -176,6 +179,10 @@ def main() -> None:
         help='Analyze commits since this date (e.g., "2 weeks ago", "2025-01-01")'
     )
     parser.add_argument(
+        '--until',
+        help='Analyze commits until this date (e.g., "1 week ago", "2025-01-15")'
+    )
+    parser.add_argument(
         '-n', '--max-count',
         type=int,
         help='Analyze last N commits'
@@ -184,19 +191,25 @@ def main() -> None:
     args = parser.parse_args()
 
     # Validate arguments
-    if args.since and args.max_count:
-        parser.error("Cannot specify both --since and --max-count")
+    if args.max_count and (args.since or args.until):
+        parser.error("Cannot specify --max-count with --since or --until")
 
-    if not args.since and not args.max_count:
+    if not args.since and not args.max_count and not args.until:
         args.since = '2 weeks ago'
 
     git_runner = RealGitCommandRunner()
-    stats = analyze_commits(git_runner, since=args.since or '', max_count=args.max_count or 0)
+    stats = analyze_commits(git_runner, since=args.since or '', until=args.until or '', max_count=args.max_count or 0)
 
     if args.max_count:
         period = f"last {args.max_count} commits"
+    elif args.since and args.until:
+        period = f"{args.since} to {args.until}"
+    elif args.since:
+        period = f"since {args.since}"
+    elif args.until:
+        period = f"until {args.until}"
     else:
-        period = args.since
+        period = "last 2 weeks"
     print_report(stats, period=period)
 
 
