@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-{{.versionName}}:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -159,7 +159,7 @@ spec:
         - name: name
           value: git-clone-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta:0.1@sha256:bb2f8f1edec47faa08c1929f2ffc6748f3a96af9644e6c40000081c6ff3ec894
+          value: quay.io/konflux-ci/tekton-catalog/task-git-clone-oci-ta:0.1@sha256:8e6a06fcdd13bc3e1733070df3ea98a9498ee7596a60c7386ed4577779d79c42
         - name: kind
           value: task
         resolver: bundles
