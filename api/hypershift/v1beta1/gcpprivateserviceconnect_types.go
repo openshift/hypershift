@@ -55,7 +55,7 @@ type GCPPrivateServiceConnectSpec struct {
 	ConsumerAcceptList []string `json:"consumerAcceptList"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
-	// Auto-populated by the Hypershift Operator
+	// Auto-populated by the HyperShift Operator
 	// +optional
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
@@ -119,7 +119,8 @@ type GCPPrivateServiceConnectStatus struct {
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +openshift:enable:FeatureGate=GCPPlatform
 
-// GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure
+// GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure.
+// This resource is feature-gated behind the GCPPlatform feature gate.
 type GCPPrivateServiceConnect struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the metadata for the GCPPrivateServiceConnect.
