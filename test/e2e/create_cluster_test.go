@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -286,6 +287,49 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.DNS.PublicZoneID = "123"
 							hc.Spec.DNS.PrivateZoneID = "123"
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when GCP project/region validation is applied it should handle formats",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when GCP project ID has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "My-Project",
+								Region:  "us-central1",
+							}
+						},
+						expectedErrorSubstring: "project in body should match",
+					},
+					{
+						name: "when GCP region has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project",
+								Region:  "us-central",
+							}
+						},
+						expectedErrorSubstring: "region in body should match",
+					},
+					{
+						name: "when GCP project and region are valid it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "europe-west2",
+							}
 						},
 						expectedErrorSubstring: "",
 					},
@@ -1428,10 +1472,17 @@ func TestOnCreateAPIUX(t *testing.T) {
 
 		for _, tc := range testCases {
 			for _, v := range tc.validations {
+
 				t.Logf("Running validation %q", v.name)
 				hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
 				defer client.Delete(ctx, hostedCluster)
 				v.mutateInput(hostedCluster)
+
+				// Skip GCP validations outside TechPreviewNoUpgrade
+				if hostedCluster.Spec.Platform.Type == hyperv1.GCPPlatform && os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+					t.Logf("Skipping GCP validation outside TechPreviewNoUpgrade: %s", v.name)
+					continue
+				}
 
 				err = client.Create(ctx, hostedCluster)
 				if v.expectedErrorSubstring != "" {
@@ -1749,6 +1800,165 @@ func TestOnCreateAPIUX(t *testing.T) {
 							}
 						},
 						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when Azure VM image configuration has valid and invalid combinations",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when marketplace is fully populated with imageGeneration set it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher:       "azureopenshift",
+										Offer:           "aro4",
+										SKU:             "aro_417_rhel8_gen2",
+										Version:         "417.94.20240701",
+										ImageGeneration: ptr.To(hyperv1.Gen2),
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when marketplace is fully populated without imageGeneration it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+										SKU:       "aro_417_rhel8_gen2",
+										Version:   "417.94.20240701",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when type is AzureMarketplace with empty marketplace struct and imageGeneration is set it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										ImageGeneration: ptr.To(hyperv1.Gen2),
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when type is AzureMarketplace with empty marketplace struct it should pass (allows defaulting)",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									// AzureMarketplace can be nil or empty - will be defaulted by the controller
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when marketplace has only publisher and offer but not sku and version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
+					},
+					{
+						name: "when marketplace has only sku without publisher, offer, and version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										SKU: "aro_417_rhel8_gen2",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
+					},
+					{
+						name: "when marketplace has publisher, offer, sku but not version it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v3",
+								Image: hyperv1.AzureVMImage{
+									Type: hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+										Publisher: "azureopenshift",
+										Offer:     "aro4",
+										SKU:       "aro_417_rhel8_gen2",
+									},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "publisher, offer, sku and version must either be all set, or all omitted",
 					},
 				},
 			},

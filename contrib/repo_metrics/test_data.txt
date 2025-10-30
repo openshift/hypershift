@@ -1,0 +1,581 @@
+COMMIT_START
+HASH: 4d2eef339cf7544d820f7c2aae6a51467353872f
+PARENTS: 77a72a9ee4e5ae090465f8bdb045239b13285d2f 2dd34e2443c5c276f3aa7e978e77852305caffaa
+SUBJECT: Merge pull request #6923 from jparrill/fix-CNTRLPLANE-1432
+BODY:
+CNTRLPLANE-1432: Make PSA test conditional on OpenShiftPodSecurityAdmission feature gate
+COMMIT_END
+
+COMMIT_START
+HASH: 77a72a9ee4e5ae090465f8bdb045239b13285d2f
+PARENTS: ac5df0be2fb637da97edc250c44f5c6681ae7ec1 9151c2de68a5ca90af2e70d686eff0f148661a2b
+SUBJECT: Merge pull request #6951 from bryan-cox/CNTRLPLANE-1581
+BODY:
+CNTRLPLANE-1581: feat(azure): relax API to make externalDNS optional for self-managed clusters
+COMMIT_END
+
+COMMIT_START
+HASH: ac5df0be2fb637da97edc250c44f5c6681ae7ec1
+PARENTS: 3120e65285c4f1b5f11e70ea0c925a68f9007601 9964d964c1ccbe9eb774f4cf4035b03be448f083
+SUBJECT: Merge pull request #6918 from jparrill/OCPBUGS-62446
+BODY:
+OCPBUGS-62446: fix(hcco): add retry mechanism for HCP retrieval to handle transient connectivity issues
+COMMIT_END
+
+COMMIT_START
+HASH: 3120e65285c4f1b5f11e70ea0c925a68f9007601
+PARENTS: 3fb23c560033093129e871f82bd8c7c7ed42c474 a0be9064008652754b4b56f2083a44fb3493afaa
+SUBJECT: Merge pull request #6957 from bryan-cox/update-jira-solve
+BODY:
+NO-JIRA: docs(jira-solve): require godoc comments and unit tests for new functions
+COMMIT_END
+
+COMMIT_START
+HASH: 3fb23c560033093129e871f82bd8c7c7ed42c474
+PARENTS: 3cafdcddc75b8a818552ced7d080fa255a0b5669 d671bf1c9e99e5ddf0f66551cbfc5a4e27615831
+SUBJECT: Merge pull request #6786 from RomanBednar/OCPBUGS-60637
+BODY:
+OCPBUGS-60637: feat(cpo): add UID security context to CSO deployment
+COMMIT_END
+
+COMMIT_START
+HASH: a0be9064008652754b4b56f2083a44fb3493afaa
+PARENTS: 9bd30b03ced1876370c40a09f51b46bd002f6598
+SUBJECT: docs(jira-solve): require godoc comments and unit tests for new functions
+BODY:
+Add explicit guidance to:
+- Ensure godoc comments are generated for any newly created functions
+- Create unit tests for any newly created functions
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+Assisted-by: GPT-5 (via Cursor)
+
+COMMIT_END
+
+COMMIT_START
+HASH: d671bf1c9e99e5ddf0f66551cbfc5a4e27615831
+PARENTS: 3cafdcddc75b8a818552ced7d080fa255a0b5669
+SUBJECT: feat(cpo): add UID security context to CSO deployment
+BODY:
+CSI operator should respect `RUN_AS_USER` env variable
+to set UID security context on operator and CSI controller
+pods. CSO needs to have this variable set first before
+it can be seen by it's operands.
+
+COMMIT_END
+
+COMMIT_START
+HASH: 3cafdcddc75b8a818552ced7d080fa255a0b5669
+PARENTS: 9bd30b03ced1876370c40a09f51b46bd002f6598 6a78ed2cb3dee0353dde3156dd15ff2ac89873db
+SUBJECT: Merge pull request #6936 from bryan-cox/OCPBUGS-62407
+BODY:
+OCPBUGS-62407: chore(build): update container images to 4.21
+COMMIT_END
+
+COMMIT_START
+HASH: 9151c2de68a5ca90af2e70d686eff0f148661a2b
+PARENTS: 47e2ad3601b5fbb05216f37e28085165e33133a9
+SUBJECT: feat(azure): relax service publishing validation for self-managed clusters
+BODY:
+Remove strict hostname requirements from Azure service publishing validation
+rules to enable more flexible deployment patterns for self-managed clusters.
+
+Changes:
+- Removed APIServer Route + hostname validation entirely, allowing LoadBalancer
+  or NodePort strategies for self-managed Azure clusters
+- Kept Route requirement for OAuthServer, Konnectivity, and Ignition services
+  but removed hostname requirement, allowing use of default mgmt cluster routes
+- Maintains compatibility with existing managed Azure clusters using Routes
+
+This enables self-managed Azure clusters to function without external DNS
+while keeping essential services on Routes that can use the management
+cluster's default route domain.
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+Assisted-by: Claude (via Claude Code)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 9bd30b03ced1876370c40a09f51b46bd002f6598
+PARENTS: 2728a4e2899ee58690e3d4e58b319eb5e78643af 68209a339e9ee0e3fec971ff85abac43dfa74c55
+SUBJECT: Merge pull request #6911 from shiftstack/openstack-reviewers
+BODY:
+NO-JIRA: Add openstack-reviewers, openstack-approvers
+COMMIT_END
+
+COMMIT_START
+HASH: 2728a4e2899ee58690e3d4e58b319eb5e78643af
+PARENTS: 47e2ad3601b5fbb05216f37e28085165e33133a9 89f6fd177553bb4f0a5ca756982046b95ffc245b
+SUBJECT: Merge pull request #6929 from cristianoveiga/GCP-96
+BODY:
+GCP-96: add GCPPlatform feature gate
+COMMIT_END
+
+COMMIT_START
+HASH: 9964d964c1ccbe9eb774f4cf4035b03be448f083
+PARENTS: 47e2ad3601b5fbb05216f37e28085165e33133a9
+SUBJECT: fix(hcco): add retry mechanism for HCP retrieval to handle transient connectivity issues
+BODY:
+The HCCO was failing in E2E tests due to transient
+connectivity issues when trying to retrieve the HostedControlPlane resource.
+The code would immediately panic on any connection failure, causing test
+failures even for temporary network issues.
+
+This change adds a retry mechanism:
+- Retries every 2 seconds for up to 30 seconds
+- Logs retry attempts for better observability
+- Only panics after exhausting all retry attempts
+
+Fixes: OCPBUGS-62446
+
+Assisted-by: 🤖 Claude Code
+Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 47e2ad3601b5fbb05216f37e28085165e33133a9
+PARENTS: e9abaee83955b1e79af19ce53da8e7776c260108 c0c2ecb9aa095a6cbb82c459051cb0efbbb35473
+SUBJECT: Merge pull request #6943 from bryan-cox/fix-spelling
+BODY:
+CNTRLPLANE-1332: docs(readme): correct spelling mistake
+COMMIT_END
+
+COMMIT_START
+HASH: c0c2ecb9aa095a6cbb82c459051cb0efbbb35473
+PARENTS: e9abaee83955b1e79af19ce53da8e7776c260108
+SUBJECT: docs(readme): correct spelling mistake
+BODY:
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: e9abaee83955b1e79af19ce53da8e7776c260108
+PARENTS: 30894b56a816b8551253800968286127fcd6a23c 57c9c062805d1d81df0fcc8d81586bdbf3bd1021
+SUBJECT: Merge pull request #6808 from bryan-cox/CNTRLPLANE-1332
+BODY:
+CNTRLPLANE-1332: docs(azure): add self-managed cluster setup documentation
+COMMIT_END
+
+COMMIT_START
+HASH: 30894b56a816b8551253800968286127fcd6a23c
+PARENTS: 2c3b7c36104cfd67cfeccf5475a1deda2bdaa05a 5d11f042c0aad54dcc0ce0696bc8347ab24752df
+SUBJECT: Merge pull request #6907 from jparrill/fix-OCPBUGS-61245
+BODY:
+OCPBUGS-61245: Fix driver-config ConfigMap content flapping due to random ordering
+COMMIT_END
+
+COMMIT_START
+HASH: 2dd34e2443c5c276f3aa7e978e77852305caffaa
+PARENTS: 2c3b7c36104cfd67cfeccf5475a1deda2bdaa05a
+SUBJECT: fix(e2e): Make PSA test conditional on OpenShiftPodSecurityAdmission feature gate
+BODY:
+This change adds a feature gate check to the EnsurePSANotPrivileged e2e test to skip
+it when the OpenShiftPodSecurityAdmission feature gate is not enabled.
+
+Without this check, the test would fail when PSA is disabled, causing CI issues
+when the feature gate gets disabled in OpenShift releases.
+
+The PSA configuration in the KAS is already dynamically set based on this feature gate
+in control-plane-operator/controllers/hostedcontrolplane/v2/kas/config.go:159-163.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code) via `/jira-solve CNTRLPLANE-1432`
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 2c3b7c36104cfd67cfeccf5475a1deda2bdaa05a
+PARENTS: 3642dc7d15ec408593d967a91956450f8530d3d5 9b6e7c4ec48f0563c3251e51a701a5ca410f5abe
+SUBJECT: Merge pull request #6937 from bryan-cox/improve-jira-solve
+BODY:
+CNTRLPLANE-1545: docs(commands): improve jira-solve command with logical commit organization
+COMMIT_END
+
+COMMIT_START
+HASH: 9b6e7c4ec48f0563c3251e51a701a5ca410f5abe
+PARENTS: 3642dc7d15ec408593d967a91956450f8530d3d5
+SUBJECT: docs(commands): improve jira-solve command with logical commit organization
+BODY:
+Update the jira-solve command to:
+- Add PR description review loop for iterative refinement
+- Break commits into logical components (API, vendor, CLI, operators, etc.)
+- Run make lint-fix after code changes to ensure proper import sorting
+
+These improvements make PRs easier to review and ensure commits follow
+project conventions.
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+
+Assisted-by: Claude Sonnet 4.5 (via Cursor)
+
+COMMIT_END
+
+COMMIT_START
+HASH: 6a78ed2cb3dee0353dde3156dd15ff2ac89873db
+PARENTS: 174ec78293ef1c6d005521db225d9d5015e75b5b
+SUBJECT: chore(build): update development and e2e builder images to 4.21
+BODY:
+Update builder images in Dockerfile, Dockerfile.dev, and Dockerfile.e2e from
+rhel-9-release-golang-1.24-openshift-4.20 to rhel-9-release-golang-1.24-openshift-4.21
+to maintain consistency with the control plane operator image updates.
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+Assisted-by: Claude Sonnet 4.5 (via Cursor)
+
+COMMIT_END
+
+COMMIT_START
+HASH: 174ec78293ef1c6d005521db225d9d5015e75b5b
+PARENTS: db76a89d8506064c9d6fdb306875a1354e4ab2fd
+SUBJECT: chore(build): update ose-hypershift-container image to be consistent with ART for 4.21
+BODY:
+Reconciling with https://github.com/openshift/ocp-build-data/tree/4fbe3fab45239dc4be6f5d9d98a0bf36e0274ec9/images/hypershift.yml
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+Assisted-by: Claude Sonnet 4.5 (via Cursor)
+
+COMMIT_END
+
+COMMIT_START
+HASH: 89f6fd177553bb4f0a5ca756982046b95ffc245b
+PARENTS: 3642dc7d15ec408593d967a91956450f8530d3d5
+SUBJECT: feat(gcp-hcp): adding GCPPlatform feature gate
+BODY:
+Refs GCP-96: Create a feature flag to gate GCP-HCP changes
+
+COMMIT_END
+
+COMMIT_START
+HASH: 3642dc7d15ec408593d967a91956450f8530d3d5
+PARENTS: 2d2fdfa36d919785567604fff9569d108c06b15c df09403396558eb2142e6202685f7c3edb84a1d6
+SUBJECT: Merge pull request #6928 from jparrill/update-konflux-tasks
+BODY:
+NO-JIRA: chore(ci): update Konflux Tekton tasks to latest trusted versions
+COMMIT_END
+
+COMMIT_START
+HASH: df09403396558eb2142e6202685f7c3edb84a1d6
+PARENTS: 7757cbd8255c8e1dcc8bf967f20d3be3d42f3287
+SUBJECT: ci: update Konflux Tekton tasks to latest trusted versions
+BODY:
+Update outdated Konflux Tekton tasks based on enterprise contract
+verification warnings to resolve trusted task violations.
+
+- apply-tags: update to latest 0.2 digest
+- build-image-index: update to latest 0.1 digest
+- buildah-remote-oci-ta: upgrade from 0.4 to 0.5
+- ecosystem-cert-preflight-checks: update to latest 0.2 digest
+- git-clone-oci-ta: update to latest 0.1 digest
+- init: update to latest 0.2 digest
+- prefetch-dependencies-oci-ta: update to latest 0.2 digest
+- push-dockerfile-oci-ta: update to latest 0.1 digest
+- sast-snyk-check-oci-ta: update to latest 0.4 digest
+
+Resolves enterprise contract policy violations for trusted task requirements.
+
+Co-authored-by: Claude AI Assistant <claude@anthropic.com>
+Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 2d2fdfa36d919785567604fff9569d108c06b15c
+PARENTS: 7757cbd8255c8e1dcc8bf967f20d3be3d42f3287 6187f05534162c0cb0d3a8d53b93575851890a37
+SUBJECT: Merge pull request #6909 from shiftstack/OCPBUGS-62328
+BODY:
+OCPBUGS-62328: Add missing svc-kubeconfig mount to CAPO Deployment
+COMMIT_END
+
+COMMIT_START
+HASH: 7757cbd8255c8e1dcc8bf967f20d3be3d42f3287
+PARENTS: 9aa3613fd85a3c78fbad518e6773cf3cbfd6111b facd774e6ca96ef62f3afd1e5aaaa286f3199fce
+SUBJECT: Merge pull request #6908 from clebs/fix-OCPBUGS-62324
+BODY:
+OCPBUGS-62324: Fix test-e2e `annotations` flag parsing
+COMMIT_END
+
+COMMIT_START
+HASH: 9aa3613fd85a3c78fbad518e6773cf3cbfd6111b
+PARENTS: d72c1e3aecf57ac002c7a132798512e6541e6b4a 19ce3a44ed2ae18f5ed5f64aa6fa117a30e925ee
+SUBJECT: Merge pull request #6790 from maxcao13/fix-karpenter-token-cleanup
+BODY:
+AUTOSCALE-322: fix karpenter token secret leak
+COMMIT_END
+
+COMMIT_START
+HASH: d72c1e3aecf57ac002c7a132798512e6541e6b4a
+PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e 87a511cd4ce9db81a5c9816f0ac5774e4ca19b79
+SUBJECT: Merge pull request #6261 from devguyio/cntrlplane-980-idp-status
+BODY:
+CNTRLPLANE-980: feat(api): add hc.status.configuration.authentication status field
+COMMIT_END
+
+COMMIT_START
+HASH: facd774e6ca96ef62f3afd1e5aaaa286f3199fce
+PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
+SUBJECT: fix(test-e2e): Correct parse flag value with 2+ = chars
+BODY:
+Signed-off-by: Borja Clemente <bclement@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 6187f05534162c0cb0d3a8d53b93575851890a37
+PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
+SUBJECT: fix(OCPBUGS-62328): Add missing svc-kubeconfig mount to CAPO Deployment
+BODY:
+This is required since commit b1feaeff9e6.
+
+We also add a termination grace period, which is present on other
+CAPI provider's deployments but not on CAPO's.
+
+Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 87a511cd4ce9db81a5c9816f0ac5774e4ca19b79
+PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
+SUBJECT: feat(hcco): add HCP configuration status
+BODY:
+Signed-off-by: Ahmed Abdalla <aabdelre@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 19ce3a44ed2ae18f5ed5f64aa6fa117a30e925ee
+PARENTS: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
+SUBJECT: fix(autonode): allow karpenter token secret to be cleaned up
+BODY:
+Fixes the bug by setting the nodePoolAnnotationCurrentConfigVersion annotation on the in-memory NodePool object.
+In order to persist the current config version, we slap a new annotation on the HostedCluster which stores the current config.
+In the next loop if the underlying ConfigGenerator.Hash() changes, the secret will be marked outdated.
+
+Signed-off-by: Max Cao <macao@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 0fe7be3e59f44eb701d2a492bdada22838ec8b1e
+PARENTS: ec4bc4402f8a6f423eb5d76f8728b36f3c52bbf2 9b7f07bd6e109c218e89eea1bf5b8efdb5b76dd0
+SUBJECT: Merge pull request #6913 from sjenning/extend-no-node-timeout
+BODY:
+NO-JIRA: fix(e2e): extend ValidateHostedClusterConditions timeout
+COMMIT_END
+
+COMMIT_START
+HASH: 5d11f042c0aad54dcc0ce0696bc8347ab24752df
+PARENTS: ec4bc4402f8a6f423eb5d76f8728b36f3c52bbf2
+SUBJECT: fix(kubevirt): Ensure consistent ordering in driver-config ConfigMap
+BODY:
+The configmap driver-config in the hosted cluster namespace was
+frequently updating with random order of the storage classes, causing
+content to flap between different orderings of the same data.
+
+This was happening because Go's map iteration order is randomized,
+causing the storageSnapshotMapping slice to have different ordering
+each time the adaptConfigMap function was called.
+
+The fix sorts all map keys before iteration to ensure consistent
+ordering of:
+- Storage groups (alphabetical order)
+- Storage classes within each group (alphabetical order)
+- Volume snapshot classes within each group (alphabetical order)
+- The allowList array (alphabetical order)
+
+Also adds comprehensive unit tests to verify the consistent ordering
+behavior and prevent regression.
+
+Fixes: OCPBUGS-61245
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+Signed-off-by: Juan Manuel Parrilla Madrid <jparrill@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: ec4bc4402f8a6f423eb5d76f8728b36f3c52bbf2
+PARENTS: 3b6a0329e8a22066bedc7034035ce5f82f05cfe3 14e2b2684ac3c43f7dc4a0a29db31512cda44f95
+SUBJECT: Merge pull request #6916 from celebdor/KFLUXSPRT-5246
+BODY:
+KFLUXSPRT-5246: update base images from RHEL9 ELS to UBI9 minimal 9.4
+COMMIT_END
+
+COMMIT_START
+HASH: 14e2b2684ac3c43f7dc4a0a29db31512cda44f95
+PARENTS: c747955e4413ca55e8f04d1cedac793e75cf0c2b
+SUBJECT: fix(konflux): Bump the snyk-check-oci-ta task
+BODY:
+The previous task was having issues like:
+
+INFO: Running 'snyk code test'..
+{
+   "result":"ERROR",
+   "timestamp":"2025-09-30T11:12:24+00:00",
+   "note":"Unexpected error: Script errored at command: csgrep --mode=json --strip-path-prefix=\"source/\" > sast_snyk_check_out_all_findings.json.",
+   "namespace":"default",
+   "successes":0,
+   "failures":0,
+   "warnings":0
+}
+
+Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: c747955e4413ca55e8f04d1cedac793e75cf0c2b
+PARENTS: 3b6a0329e8a22066bedc7034035ce5f82f05cfe3
+SUBJECT: fix(konflux): update base images from RHEL9 ELS to UBI9 minimal 9.4
+BODY:
+Update container base images in both Containerfile.control-plane and
+Containerfile.operator from registry.redhat.io RHEL9 ELS images to
+registry.access.redhat.com UBI9 minimal 9.4 for:
+
+* Unauthenticated pulls
+* Smaller sizes
+* Fix Enterprise contract.
+
+Also clean up COPY command formatting in Containerfile.operator for
+better readability.
+
+Fixes: KFLUXSPRT-5246
+
+Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
+Commit-Message-Assisted-by: Claude-3.5-Sonnet (via Cursor)
+
+Signed-off-by: Antoni Segura Puimedon <antoni@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 68209a339e9ee0e3fec971ff85abac43dfa74c55
+PARENTS: 3b6a0329e8a22066bedc7034035ce5f82f05cfe3
+SUBJECT: chore: Add openstack-reviewers, openstack-approvers
+BODY:
+Modelled on kubevirt's approach.
+
+Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: 3b6a0329e8a22066bedc7034035ce5f82f05cfe3
+PARENTS: ccb68acc4b7ae612dcac50a9aa03d3a1af9dc980 5230e258bd4d58462f4fc1bd878397779f3f90d5
+SUBJECT: Merge pull request #6885 from shiftstack/OCPBUGS-62172
+BODY:
+OCPBUGS-62172: Add Manila, Cinder to list of pods allowed readOnlyRootFileSystem=false
+COMMIT_END
+
+COMMIT_START
+HASH: 9b7f07bd6e109c218e89eea1bf5b8efdb5b76dd0
+PARENTS: ccb68acc4b7ae612dcac50a9aa03d3a1af9dc980
+SUBJECT: fix(e2e): extend ValidateHostedClusterConditions timeout
+BODY:
+Extend ValidateHostedClusterConditions timeout when we initially
+have no nodes and don't delay on WaitForImageRollout.
+
+COMMIT_END
+
+COMMIT_START
+HASH: ccb68acc4b7ae612dcac50a9aa03d3a1af9dc980
+PARENTS: bc4b4c8ade63c6ea4d49448bd5a0c79d4d981e53 c2763860cd3df704c1adc2c4b52b2362b7b1b5f8
+SUBJECT: Merge pull request #6754 from heliubj18/support-azure-ext-oidc
+BODY:
+NO-JIRA: fix(test): support external oidc settings on non-aws platform
+COMMIT_END
+
+COMMIT_START
+HASH: bc4b4c8ade63c6ea4d49448bd5a0c79d4d981e53
+PARENTS: db76a89d8506064c9d6fdb306875a1354e4ab2fd 138f51acb091973c17c12f1c022927605aeb8d6e
+SUBJECT: Merge pull request #6901 from enxebre/jira-solve-ensure-pre-commit
+BODY:
+NO-JIRA: chore(ai): ensure jira-solve run make pre-commit
+COMMIT_END
+
+COMMIT_START
+HASH: 138f51acb091973c17c12f1c022927605aeb8d6e
+PARENTS: db76a89d8506064c9d6fdb306875a1354e4ab2fd
+SUBJECT: chore(ai): ensure jira-solve run make pre-commit
+BODY:
+This change the spec to be more prescriptive on running make pre-commit before creating a PR
+
+COMMIT_END
+
+COMMIT_START
+HASH: db76a89d8506064c9d6fdb306875a1354e4ab2fd
+PARENTS: 3d4b66b1b105276256670a6b132ac34050c6e580 ec69613277ec097f214278b14cb7f385e876566a
+SUBJECT: Merge pull request #6898 from enxebre/jira-solve-chore
+BODY:
+NO-JIRA: chore(ai): let jira-solve show the executed command in the PR desc
+COMMIT_END
+
+COMMIT_START
+HASH: 3d4b66b1b105276256670a6b132ac34050c6e580
+PARENTS: c9bc4abba7f3bb213cc38f82d4d9742be8f309b9 b1feaeff9e6d0fb9982f3f96a2b5ecaabde240f4
+SUBJECT: Merge pull request #6860 from jparrill/OCPBUGS-61936
+BODY:
+OCPBUGS-61936: fix(capi-provider): wait for infrastructure resource before startup
+COMMIT_END
+
+COMMIT_START
+HASH: c9bc4abba7f3bb213cc38f82d4d9742be8f309b9
+PARENTS: bf0d5f50c66342e13f0b0db9c55bf4e6547503cf 2c665391859dfee201f74cc5ce8634cf8d395af9
+SUBJECT: Merge pull request #6892 from jparrill/OCPBUGS-62224
+BODY:
+OCPBUGS-62224: fix(e2e): add stabilization wait in GlobalPullSecret test to reduce flakiness
+COMMIT_END
+
+COMMIT_START
+HASH: ec69613277ec097f214278b14cb7f385e876566a
+PARENTS: bf0d5f50c66342e13f0b0db9c55bf4e6547503cf
+SUBJECT: chore(ai): let jira-solve show the executed command in the PR desc
+BODY:
+This lets reviewers see the /jira-solve claude command that triggered execution
+
+COMMIT_END
+
+COMMIT_START
+HASH: 5230e258bd4d58462f4fc1bd878397779f3f90d5
+PARENTS: bf0d5f50c66342e13f0b0db9c55bf4e6547503cf
+SUBJECT: fix(OCPBUGS-62172): Add OpenStack CSIs to list of pods allowed readOnlyRootFileSystem=false
+BODY:
+We also don't universally call the emptyDir mount "tmp-dir" (at least
+the csi-operator and cluster-storage-operator don't do this) so a
+reference to same is removed.
+
+Signed-off-by: Stephen Finucane <stephenfin@redhat.com>
+
+COMMIT_END
+
+COMMIT_START
+HASH: bf0d5f50c66342e13f0b0db9c55bf4e6547503cf
+PARENTS: 2fcd8886250bf989f7a4564198d6d80cdd3b7993 847cb908064f878ce41353a199da1380f5f6378d
+SUBJECT: Merge pull request #6884 from bryan-cox/CNTRLPLANE-1478
+BODY:
+CNTRLPLANE-1478: chore: add AI directory paths to OWNERS file
+COMMIT_END
+
+COMMIT_START
+HASH: 847cb908064f878ce41353a199da1380f5f6378d
+PARENTS: a4dd379dcf122ba652ca8bff443c7a0d573da7b3
+SUBJECT: chore: add AI directory paths to OWNERS file
+BODY:
+Add .claude/ and .cursor/ directory patterns to OWNERS file
+with area/ai label for proper labeling of AI-related changes.
+
+Signed-off-by: Bryan Cox <brcox@redhat.com>
+Assisted-by: Claude (via Cursor)
+
+COMMIT_END

@@ -452,7 +452,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
 // +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
-// +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !self.?operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig.hasValue()", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
+// +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -1158,6 +1158,9 @@ const (
 
 	// OpenStackPlatform represents OpenStack infrastructure.
 	OpenStackPlatform PlatformType = "OpenStack"
+
+	// GCPPlatform represents Google Cloud Platform infrastructure.
+	GCPPlatform PlatformType = "GCP"
 )
 
 // List all PlatformType instances
@@ -1171,6 +1174,7 @@ func PlatformTypes() []PlatformType {
 		AzurePlatform,
 		PowerVSPlatform,
 		OpenStackPlatform,
+		GCPPlatform,
 	}
 }
 
@@ -1183,7 +1187,7 @@ type PlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="Type is immutable"
 	// +immutable
 	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None
-	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack
+	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack;GCPPlatform,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack;GCP
 	// +required
 	Type PlatformType `json:"type"`
 
@@ -1224,6 +1228,13 @@ type PlatformSpec struct {
 	// +optional
 	// +openshift:enable:FeatureGate=OpenStack
 	OpenStack *OpenStackPlatformSpec `json:"openstack,omitempty"`
+
+	// gcp specifies configuration for clusters running on Google Cloud Platform.
+	//
+	// +optional
+	// +immutable
+	// +openshift:enable:FeatureGate=GCPPlatform
+	GCP *GCPPlatformSpec `json:"gcp,omitempty"`
 }
 
 // IBMCloudPlatformSpec defines IBMCloud specific settings for components

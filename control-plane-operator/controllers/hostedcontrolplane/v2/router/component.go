@@ -1,6 +1,7 @@
 package router
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -54,6 +55,9 @@ func NewComponent() component.ControlPlaneComponent {
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
 func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
 	if sharedingress.UseSharedIngress() {
+		return false, nil
+	}
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return false, nil
 	}
 	return util.IsPrivateHCP(cpContext.HCP) || util.IsPublicWithDNS(cpContext.HCP), nil

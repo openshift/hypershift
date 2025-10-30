@@ -17,6 +17,17 @@ const (
 	AzureMarketplace AzureVMImageType = "AzureMarketplace"
 )
 
+// AzureVMImageGeneration represents the Hyper-V generation of an Azure VM image.
+// +kubebuilder:validation:Enum=Gen1;Gen2
+type AzureVMImageGeneration string
+
+const (
+	// Gen1 represents Hyper-V Generation 1 VMs
+	Gen1 AzureVMImageGeneration = "Gen1"
+	// Gen2 represents Hyper-V Generation 2 VMs
+	Gen2 AzureVMImageGeneration = "Gen2"
+)
+
 // AzureNodePoolPlatform is the platform specific configuration for an Azure node pool.
 type AzureNodePoolPlatform struct {
 	// vmSize is the Azure VM instance type to use for the nodes being created in the nodepool.
@@ -102,7 +113,7 @@ type AzureNodePoolPlatform struct {
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
 // +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'ImageID' ?  has(self.imageID) : !has(self.imageID)",message="imageID is required when type is ImageID, and forbidden otherwise"
-// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'AzureMarketplace' ?  has(self.azureMarketplace) : !has(self.azureMarketplace)",message="azureMarketplace is required when type is RequiredMember, and forbidden otherwise"
+// +kubebuilder:validation:XValidation:rule="has(self.type) && self.type == 'AzureMarketplace' ?  true : !has(self.azureMarketplace)",message="azureMarketplace is forbidden when type is not AzureMarketplace"
 // +union
 type AzureVMImage struct {
 	// type is the type of image data that will be provided to the Azure VM.
@@ -110,6 +121,10 @@ type AzureVMImage struct {
 	// ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
 	// AzureMarketplace means the VM will boot from an Azure Marketplace image.
 	// Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
+	// When Type is "AzureMarketplace", you can either:
+	// 1. Specify only imageGeneration to use marketplace defaults from the release payload
+	// 2. Specify publisher, offer, sku, and version to use an explicit marketplace image
+	// 3. Specify all fields (imageGeneration along with publisher, offer, sku, version)
 	//
 	// +required
 	// +unionDiscriminator
@@ -131,8 +146,25 @@ type AzureVMImage struct {
 }
 
 // AzureMarketplaceImage specifies the information needed to create an Azure VM from an Azure Marketplace image.
+// This struct supports two usage patterns:
+// 1. Specify only imageGeneration to use marketplace defaults from the release payload (HyperShift will select the appropriate image)
+// 2. Specify publisher, offer, sku, and version to use an explicit marketplace image (with optional imageGeneration)
 // + This struct replicates the same fields found in CAPZ - https://github.com/kubernetes-sigs/cluster-api-provider-azure/blob/main/api/v1beta1/types.go.
+// +kubebuilder:validation:MinProperties:=1
+// +kubebuilder:validation:XValidation:rule="has(self.imageGeneration) || has(self.publisher) && has(self.offer) && has(self.sku) && has(self.version)",message="must specify imageGeneration or must specify publisher, offer, sku and version"
+// +kubebuilder:validation:XValidation:rule="[has(self.publisher), has(self.offer), has(self.sku), has(self.version)].filter(x, x == true).size() == 0 || [has(self.publisher), has(self.offer), has(self.sku), has(self.version)].filter(x, x == true).size() == 4",message="publisher, offer, sku and version must either be all set, or all omitted"
 type AzureMarketplaceImage struct {
+	// imageGeneration specifies the Hyper-V generation of the Azure Marketplace image to use for the nodes.
+	// This field is used by HyperShift to select the appropriate marketplace image (Gen1 or Gen2)
+	// from the release payload metadata when publisher, offer, sku, and version are not explicitly provided.
+	// It is not passed to CAPZ (Cluster API Provider Azure); the generation information is
+	// encoded into the SKU field that CAPZ uses.
+	// Valid values are Gen1 and Gen2. If unspecified, defaults to Gen2.
+	//
+	// +optional
+	// +kubebuilder:default=Gen2
+	ImageGeneration *AzureVMImageGeneration `json:"imageGeneration,omitempty"`
+
 	// publisher is the name of the organization that created the image.
 	// It must be between 3 and 50 characters in length, and consist of only lowercase letters, numbers, and hyphens (-) and underscores (_).
 	// It must start with a lowercase letter or a number.
@@ -141,16 +173,16 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9][a-z0-9-_]{2,49}$`
 	// +kubebuilder:validation:MinLength=3
 	// +kubebuilder:validation:MaxLength=50
-	// +required
-	Publisher string `json:"publisher"`
+	// +optional
+	Publisher string `json:"publisher,omitempty"`
 
 	// offer specifies the name of a group of related images created by the publisher.
 	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
 	//
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
-	// +required
-	Offer string `json:"offer"`
+	// +optional
+	Offer string `json:"offer,omitempty"`
 
 	// sku specifies an instance of an offer, such as a major release of a distribution.
 	// For example, 22_04-lts-gen2, 8-lvm-gen2.
@@ -160,8 +192,8 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:validation:Pattern=`^[a-z0-9-_]+$`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
-	// +required
-	SKU string `json:"sku"`
+	// +optional
+	SKU string `json:"sku,omitempty"`
 
 	// version specifies the version of an image sku. The allowed formats are Major.Minor.Build or 'latest'. Major,
 	// Minor, and Build are decimal numbers, e.g. '1.2.0'. Specify 'latest' to use the latest version of an image available at
@@ -171,8 +203,8 @@ type AzureMarketplaceImage struct {
 	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+$|^latest$`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=32
-	// +required
-	Version string `json:"version"`
+	// +optional
+	Version string `json:"version,omitempty"`
 }
 
 // AzureDiagnosticsStorageAccountType specifies the type of storage account for storing Azure VM diagnostics data.

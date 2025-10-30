@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hypershift
+resources:
+- serviceaccount.yaml
+- role.yaml
+- rolebinding.yaml
+- service.yaml
+- deployment.yaml
+- mutatingwebhook.yaml
+configMapGenerator:
+- behavior: create
+  files:
+  - config.yaml=config.yaml
+  name: gomaxprocs-webhook
+  namespace: hypershift
+  options:
+    disableNameSuffixHash: true
+images:
+- name: gomaxprocs-webhook
+  newName: quay.io/hypershift/gomaxprocs-webhook
+  newTag: latest

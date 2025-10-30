@@ -17,19 +17,32 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AzureMarketplaceImageApplyConfiguration represents a declarative configuration of the AzureMarketplaceImage type for use
 // with apply.
 type AzureMarketplaceImageApplyConfiguration struct {
-	Publisher *string `json:"publisher,omitempty"`
-	Offer     *string `json:"offer,omitempty"`
-	SKU       *string `json:"sku,omitempty"`
-	Version   *string `json:"version,omitempty"`
+	ImageGeneration *hypershiftv1beta1.AzureVMImageGeneration `json:"imageGeneration,omitempty"`
+	Publisher       *string                                   `json:"publisher,omitempty"`
+	Offer           *string                                   `json:"offer,omitempty"`
+	SKU             *string                                   `json:"sku,omitempty"`
+	Version         *string                                   `json:"version,omitempty"`
 }
 
 // AzureMarketplaceImageApplyConfiguration constructs a declarative configuration of the AzureMarketplaceImage type for use with
 // apply.
 func AzureMarketplaceImage() *AzureMarketplaceImageApplyConfiguration {
 	return &AzureMarketplaceImageApplyConfiguration{}
+}
+
+// WithImageGeneration sets the ImageGeneration field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageGeneration field is set to the value of the last call.
+func (b *AzureMarketplaceImageApplyConfiguration) WithImageGeneration(value hypershiftv1beta1.AzureVMImageGeneration) *AzureMarketplaceImageApplyConfiguration {
+	b.ImageGeneration = &value
+	return b
 }
 
 // WithPublisher sets the Publisher field in the declarative configuration to the given value

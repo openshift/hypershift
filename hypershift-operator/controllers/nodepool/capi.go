@@ -755,7 +755,7 @@ func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, erro
 	case hyperv1.KubevirtPlatform:
 		template, err = c.kubevirtMachineTemplate(templateNameGenerator)
 	case hyperv1.AzurePlatform:
-		template, err = c.azureMachineTemplate(templateNameGenerator)
+		template, err = c.azureMachineTemplate(ctx, templateNameGenerator)
 	case hyperv1.PowerVSPlatform:
 		template, err = c.ibmPowerVSMachineTemplate(templateNameGenerator)
 	case hyperv1.OpenStackPlatform:

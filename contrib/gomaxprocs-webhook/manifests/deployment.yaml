@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gomaxprocs-webhook
+  namespace: hypershift
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gomaxprocs-webhook
+  template:
+    metadata:
+      labels:
+        app: gomaxprocs-webhook
+    spec:
+      serviceAccountName: gomaxprocs-webhook
+      containers:
+      - name: webhook
+        image: gomaxprocs-webhook
+        imagePullPolicy: Always
+        args:
+        - serve
+        - --config-path=/etc/config/config.yaml
+        ports:
+        - name: https
+          containerPort: 9443
+        volumeMounts:
+        - name: tls
+          mountPath: /var/run/secrets/serving-cert
+          readOnly: true
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+      volumes:
+      - name: tls
+        secret:
+          secretName: gomaxprocs-webhook-tls
+      - name: config
+        configMap:
+          name: gomaxprocs-webhook
+
+
+

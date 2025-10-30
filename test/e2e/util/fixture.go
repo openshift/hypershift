@@ -234,6 +234,7 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		InfraID:            createOpts.InfraID,
 		ClusterGracePeriod: 15 * time.Minute,
 		Log:                zapr.NewLogger(destroyLogger),
+		RedactBaseDomain:   createOpts.RedactBaseDomain,
 	}
 	switch hc.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:

@@ -23,7 +23,10 @@ INSTANCE_IPS="${INSTANCE_IPS:-}"
 # agent via ssh-add
 SSH_PRIVATE_KEY="${SSH_PRIVATE_KEY:-}"
 
-if [[ -z "${BASTION_IP}" ]]; then
+# AWS_MACHINE_PUBLIC_IPS is true if the cluster is using public IPs. If empty, it is assumed that the cluster is not using public IPs.
+AWS_MACHINE_PUBLIC_IPS="${AWS_MACHINE_PUBLIC_IPS:-}"
+
+if [[ -z "${BASTION_IP}" && -z "${AWS_MACHINE_PUBLIC_IPS}" ]]; then
   if [[ -z "${INFRAID}" ]]; then
     echo "INFRAID must be set when BASTION_IP is not set."
     exit 1
@@ -72,25 +75,36 @@ failed_copy=0
 function copylog {
   local machine_ip="${1}"
   local config_file="$(mktemp)"
-  cat << EOF > "${config_file}"
-Host bastion
-    User                   ec2-user
-    ForwardAgent           yes
-    Hostname               ${BASTION_IP}
-    StrictHostKeyChecking  no
-    PasswordAuthentication no
-    UserKnownHostsFile     /dev/null
-    LogLevel               ERROR
-Host machine
-    User                   core
-    Hostname               ${machine_ip}
-    StrictHostKeyChecking  no
-    PasswordAuthentication no
-    UserKnownHostsFile     /dev/null
-    ProxyJump              bastion
-    LogLevel               ERROR
+  if [[ -z "${AWS_MACHINE_PUBLIC_IPS}" ]]; then
+    cat << EOF > "${config_file}"
+    Host bastion
+        User                   ec2-user
+        ForwardAgent           yes
+        Hostname               ${BASTION_IP}
+        StrictHostKeyChecking  no
+        PasswordAuthentication no
+        UserKnownHostsFile     /dev/null
+        LogLevel               ERROR
+    Host machine
+        User                   core
+        Hostname               ${machine_ip}
+        StrictHostKeyChecking  no
+        PasswordAuthentication no
+        UserKnownHostsFile     /dev/null
+        ProxyJump              bastion
+        LogLevel               ERROR
 EOF
-
+  else
+    cat << EOF > "${config_file}"
+    Host machine
+      User                   core
+      Hostname               ${machine_ip}
+      StrictHostKeyChecking  no
+      PasswordAuthentication no
+      UserKnownHostsFile     /dev/null
+      LogLevel               ERROR
+EOF
+  fi
   if retryonfailure ssh -F "${config_file}" -n machine "sudo journalctl > /tmp/journal.log && gzip -f /tmp/journal.log" || dump_config "${machine_ip}" "${config_file}"; then
     retryonfailure scp -F "${config_file}" machine:/tmp/journal.log.gz "${DEST_DIR}/journal_${machine_ip}.log.gz"
   else
