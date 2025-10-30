@@ -5965,8 +5965,8 @@ GCPEndpointAccessType
 </td>
 <td>
 <em>(Optional)</em>
-<p>endpointAccess controls cluster endpoint accessibility.
-Defaults to &ldquo;Private&rdquo;.</p>
+<p>endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults to &ldquo;Private&rdquo;.</p>
 </td>
 </tr>
 </tbody>
