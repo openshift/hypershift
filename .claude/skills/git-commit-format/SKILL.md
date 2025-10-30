@@ -123,7 +123,7 @@ When creating commits:
 - [ ] Include `Signed-off-by` footer
 - [ ] Include `Commit-Message-Assisted-by: Claude (via Claude Code)` footer
 - [ ] Validate with `make run-gitlint`
-- [ ] Use `!` or `BREAKING CHANGE` for breaking changes
+- [ ] Use "!" or `BREAKING CHANGE` for breaking changes
 
 ## Reference
 
