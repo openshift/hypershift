@@ -102,7 +102,8 @@ CertificateSigningRequestApprovalStatus
 </table>
 ##GCPPrivateServiceConnect { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect }
 <p>
-<p>GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure</p>
+<p>GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure.
+This resource is feature-gated behind the GCPPlatform feature gate.</p>
 </p>
 <table>
 <thead>
@@ -193,7 +194,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the Hypershift Operator</p>
+Auto-populated by the HyperShift Operator</p>
 </td>
 </tr>
 </table>
@@ -6020,7 +6021,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the Hypershift Operator</p>
+Auto-populated by the HyperShift Operator</p>
 </td>
 </tr>
 </tbody>
