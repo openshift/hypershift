@@ -77,8 +77,8 @@ type GCPPlatformSpec struct {
 
 	// customerNetworkConfig specifies customer VPC configuration for PSC.
 	// Required for customer VPC configuration in PSC deployments.
-	// +optional
-	CustomerNetworkConfig *GCPNetworkConfigCustomer `json:"customerNetworkConfig,omitempty"`
+	// +required
+	CustomerNetworkConfig GCPNetworkConfigCustomer `json:"customerNetworkConfig"`
 
 	// endpointAccess controls cluster endpoint accessibility.
 	// Defaults to "Private".
