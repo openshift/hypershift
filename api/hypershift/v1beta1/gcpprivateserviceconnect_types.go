@@ -55,7 +55,7 @@ type GCPPrivateServiceConnectSpec struct {
 	ConsumerAcceptList []string `json:"consumerAcceptList"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
-	// Auto-populated by the Hypershift Operator (implementation out of scope)
+	// Auto-populated by the Hypershift Operator
 	// +optional
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
