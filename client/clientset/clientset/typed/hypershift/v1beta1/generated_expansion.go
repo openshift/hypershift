@@ -19,6 +19,8 @@ package v1beta1
 
 type CertificateSigningRequestApprovalExpansion interface{}
 
+type GCPPrivateServiceConnectExpansion interface{}
+
 type HostedClusterExpansion interface{}
 
 type HostedControlPlaneExpansion interface{}
