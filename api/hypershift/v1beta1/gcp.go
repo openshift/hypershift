@@ -26,8 +26,7 @@ const (
 	GCPEndpointAccessPrivate GCPEndpointAccessType = "Private"
 )
 
-// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters.
-// Customer-focused configuration for PSC endpoint creation.
+// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.
 type GCPNetworkConfigCustomer struct {
 	// project is the customer's GCP project ID.
 	// +required
