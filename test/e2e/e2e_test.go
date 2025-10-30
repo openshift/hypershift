@@ -5,7 +5,6 @@ package e2e
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,26 +17,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/go-logr/logr"
-	"github.com/go-logr/zapr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-
-	"github.com/openshift/hypershift/support/certs"
-	"github.com/openshift/hypershift/support/oidc"
 )
 
 var (
@@ -205,7 +195,7 @@ func main(m *testing.M) int {
 		cancel()
 
 		if globalOpts.Platform == hyperv1.AWSPlatform {
-			cleanupSharedOIDCProvider()
+			e2eutil.CleanupSharedOIDCProvider(globalOpts, log)
 		}
 	}()
 
@@ -217,11 +207,11 @@ func main(m *testing.M) int {
 	defer alertSLOs(testContext)
 
 	if globalOpts.Platform == hyperv1.AWSPlatform {
-		if err := setupSharedOIDCProvider(globalOpts.ArtifactDir); err != nil {
+		if err := e2eutil.SetupSharedOIDCProvider(globalOpts, globalOpts.ArtifactDir); err != nil {
 			log.Error(err, "failed to setup shared OIDC provider")
 			return -1
 		}
-		defer cleanupSharedOIDCProvider()
+		defer e2eutil.CleanupSharedOIDCProvider(globalOpts, log)
 	}
 
 	// Set the semantic version of the previous release image for version gating tests.
@@ -239,98 +229,6 @@ func main(m *testing.M) int {
 	// Everything's okay to run tests
 	log.Info("executing e2e tests")
 	return m.Run()
-}
-
-// setup a shared OIDC provider to be used by all HostedClusters
-func setupSharedOIDCProvider(artifactDir string) error {
-	if globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName == "" {
-		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
-	}
-
-	iamClient := e2eutil.GetIAMClient(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
-	s3Client := e2eutil.GetS3Client(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
-
-	providerID := e2eutil.SimpleNameGenerator.GenerateName("e2e-oidc-provider-")
-	issuerURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName, globalOpts.ConfigurableClusterOptions.Region, providerID)
-
-	key, err := certs.PrivateKey()
-	if err != nil {
-		return fmt.Errorf("failed generating a private key: %w", err)
-	}
-
-	keyBytes := certs.PrivateKeyToPem(key)
-	publicKeyBytes, err := certs.PublicKeyToPem(&key.PublicKey)
-	if err != nil {
-		return fmt.Errorf("failed to generate public key from private key: %w", err)
-	}
-
-	// create openid configuration
-	params := oidc.ODICGeneratorParams{
-		IssuerURL: issuerURL,
-		PubKey:    publicKeyBytes,
-	}
-
-	oidcGenerators := map[string]oidc.OIDCDocumentGeneratorFunc{
-		"/.well-known/openid-configuration": oidc.GenerateConfigurationDocument,
-		oidc.JWKSURI:                        oidc.GenerateJWKSDocument,
-	}
-
-	for path, generator := range oidcGenerators {
-		bodyReader, err := generator(params)
-		if err != nil {
-			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
-		}
-		_, err = s3Client.PutObject(&s3.PutObjectInput{
-			Body:   bodyReader,
-			Bucket: aws.String(globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName),
-			Key:    aws.String(providerID + path),
-		})
-		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName)
-			if awsErr, ok := err.(awserr.Error); ok {
-				// Generally, the underlying message from AWS has unique per-request
-				// info not suitable for publishing as condition messages, so just
-				// return the code.
-				wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
-			}
-			return wrapped
-		}
-	}
-
-	iamOptions := awsinfra.CreateIAMOptions{
-		IssuerURL:      issuerURL,
-		AdditionalTags: globalOpts.AdditionalTags,
-	}
-	iamOptions.ParseAdditionalTags()
-
-	createLogFile := filepath.Join(artifactDir, "create-oidc-provider.log")
-	createLog, err := os.Create(createLogFile)
-	if err != nil {
-		return fmt.Errorf("failed to create create log: %w", err)
-	}
-	createLogger := zap.New(zapcore.NewCore(zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()), zapcore.Lock(createLog), zap.DebugLevel))
-	defer func() {
-		if err := createLogger.Sync(); err != nil {
-			fmt.Printf("failed to sync createLogger: %v\n", err)
-		}
-	}()
-
-	if _, err := iamOptions.CreateOIDCProvider(iamClient, zapr.NewLogger(createLogger)); err != nil {
-		return fmt.Errorf("failed to create OIDC provider: %w", err)
-	}
-
-	globalOpts.IssuerURL = issuerURL
-	globalOpts.ServiceAccountSigningKey = keyBytes
-
-	return nil
-}
-
-func cleanupSharedOIDCProvider() {
-	iamClient := e2eutil.GetIAMClient(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
-	s3Client := e2eutil.GetS3Client(globalOpts.ConfigurableClusterOptions.AWSCredentialsFile, globalOpts.ConfigurableClusterOptions.Region)
-
-	e2eutil.DestroyOIDCProvider(log, iamClient, globalOpts.IssuerURL)
-	e2eutil.CleanupOIDCBucketObjects(log, s3Client, globalOpts.ConfigurableClusterOptions.AWSOidcS3BucketName, globalOpts.IssuerURL)
 }
 
 // alertSLOs creates alert for our SLO/SLIs and log when firing.

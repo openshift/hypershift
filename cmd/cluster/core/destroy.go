@@ -43,6 +43,7 @@ type DestroyOptions struct {
 	DestroyCloudResources bool
 	Log                   logr.Logger
 	CredentialSecretName  string
+	RedactBaseDomain      bool
 }
 
 type AWSPlatformDestroyOptions struct {

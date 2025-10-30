@@ -177,6 +177,7 @@ type RawCreateOptions struct {
 	KubeAPIServerDNSName             string
 	DisableMultiNetwork              bool
 	VersionCheck                     bool
+	RedactBaseDomain                 bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
