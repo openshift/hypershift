@@ -31,8 +31,9 @@ const (
 type GCPNetworkConfigCustomer struct {
 	// project is the customer's GCP project ID.
 	// +required
+	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`
 	Project string `json:"project"`
 
 	// network is the customer's VPC network name
@@ -55,8 +56,9 @@ type GCPPlatformSpec struct {
 	//
 	// +required
 	// +immutable
+	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project is immutable"
 	Project string `json:"project"`
 
