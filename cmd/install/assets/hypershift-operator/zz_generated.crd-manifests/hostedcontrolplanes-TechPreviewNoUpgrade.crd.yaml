@@ -4876,6 +4876,53 @@ spec:
                     description: gcp specifies configuration for clusters running
                       on Google Cloud Platform.
                     properties:
+                      customerNetworkConfig:
+                        description: |-
+                          customerNetworkConfig specifies customer VPC configuration for PSC.
+                          Required for customer VPC configuration in PSC deployments.
+                        properties:
+                          network:
+                            description: network is the customer's VPC network name
+                            properties:
+                              name:
+                                description: name is the name of the GCP resource
+                                maxLength: 63
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          project:
+                            description: project is the customer's GCP project ID.
+                            maxLength: 30
+                            pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                            type: string
+                          pscSubnet:
+                            description: pscSubnet is the customer's subnet for PSC
+                              endpoint and workers
+                            properties:
+                              name:
+                                description: name is the name of the GCP resource
+                                maxLength: 63
+                                minLength: 1
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - network
+                        - project
+                        - pscSubnet
+                        type: object
+                      endpointAccess:
+                        default: Private
+                        description: |-
+                          endpointAccess controls cluster endpoint accessibility.
+                          Defaults to "Private".
+                        enum:
+                        - PublicAndPrivate
+                        - Private
+                        type: string
                       project:
                         description: |-
                           project is the GCP project ID.

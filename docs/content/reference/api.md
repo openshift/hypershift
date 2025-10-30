@@ -100,6 +100,120 @@ CertificateSigningRequestApprovalStatus
 </tr>
 </tbody>
 </table>
+##GCPPrivateServiceConnect { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect }
+<p>
+<p>GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>GCPPrivateServiceConnect</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the GCPPrivateServiceConnect.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">
+GCPPrivateServiceConnectSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spec is the specification for the GCPPrivateServiceConnect.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>forwardingRuleName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consumerAcceptList</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>consumerAcceptList specifies which customer projects can connect</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnet is the subnet used for NAT by the Service Attachment
+Auto-populated by the Hypershift Operator (implementation out of scope)</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectStatus">
+GCPPrivateServiceConnectStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the GCPPrivateServiceConnect.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##HostedCluster { #hypershift.openshift.io/v1beta1.HostedCluster }
 <p>
 <p>HostedCluster is the primary representation of a HyperShift cluster and encapsulates
@@ -4782,6 +4896,21 @@ recovery job was triggered.</p>
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 and registered correctly.</p>
 </td>
+</tr><tr><td><p>&#34;GCPDNSReady&#34;</p></td>
+<td><p>GCPDNSReady indicates whether the DNS configuration has been
+created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPEndpointReady&#34;</p></td>
+<td><p>GCPEndpointReady indicates whether the GCP PSC Endpoint has been
+created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPPrivateServiceConnectReady&#34;</p></td>
+<td><p>GCPPrivateServiceConnectReady indicates overall PSC infrastructure readiness</p>
+</td>
+</tr><tr><td><p>&#34;GCPServiceAttachmentReady&#34;</p></td>
+<td><p>GCPServiceAttachmentReady indicates whether the GCP Service Attachment
+has been created for the specified Internal Load Balancer in the management VPC</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.
@@ -5679,6 +5808,88 @@ which contain any of the given tags will be excluded from the result.</p>
 </tr>
 </tbody>
 </table>
+###GCPEndpointAccessType { #hypershift.openshift.io/v1beta1.GCPEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPEndpointAccessType defines the endpoint access type for GCP clusters.
+Equivalent to AWS EndpointAccessType but adapted for GCP networking model.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>GCPEndpointAccessPrivate endpoint access allows only private API server access and private
+node communication with the control plane via PSC.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>GCPEndpointAccessPublicAndPrivate endpoint access allows public API server access and
+private node communication with the control plane via PSC.</p>
+</td>
+</tr></tbody>
+</table>
+###GCPNetworkConfigCustomer { #hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters.
+Customer-focused configuration for PSC endpoint creation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>project</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>project is the customer&rsquo;s GCP project ID.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
+GCPResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>network is the customer&rsquo;s VPC network name</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>pscSubnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
+GCPResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>pscSubnet is the customer&rsquo;s subnet for PSC endpoint and workers</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPPlatformSpec { #hypershift.openshift.io/v1beta1.GCPPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -5726,6 +5937,214 @@ characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>)
 valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;
 region must not include zone suffixes (e.g., &ldquo;-a&rdquo;).
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customerNetworkConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer">
+GCPNetworkConfigCustomer
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>customerNetworkConfig specifies customer VPC configuration for PSC.
+Required for customer VPC configuration in PSC deployments.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPEndpointAccessType">
+GCPEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointAccess controls cluster endpoint accessibility.
+Defaults to &ldquo;Private&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPPrivateServiceConnectSpec { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect">GCPPrivateServiceConnect</a>)
+</p>
+<p>
+<p>GCPPrivateServiceConnectSpec defines the desired state of PSC infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>forwardingRuleName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consumerAcceptList</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>consumerAcceptList specifies which customer projects can connect</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnet is the subnet used for NAT by the Service Attachment
+Auto-populated by the Hypershift Operator (implementation out of scope)</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPPrivateServiceConnectStatus { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect">GCPPrivateServiceConnect</a>)
+</p>
+<p>
+<p>GCPPrivateServiceConnectStatus defines the observed state of PSC infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PSC infrastructure
+Current condition types are: &ldquo;GCPPrivateServiceConnectReady&rdquo;, &ldquo;GCPServiceAttachmentReady&rdquo;, &ldquo;GCPEndpointReady&rdquo;, &ldquo;GCPDNSReady&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAttachmentName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAttachmentName is the name of the created Service Attachment</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAttachmentURI</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAttachmentURI is the URI customers use to connect
+Format: projects/{project}/regions/{region}/serviceAttachments/{name}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointIP is the reserved IP address for the PSC endpoint</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the private DNS zone name</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsRecords</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsRecords lists the created DNS A records</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer">GCPNetworkConfigCustomer</a>)
+</p>
+<p>
+<p>GCPResourceReference represents a reference to a GCP resource by name.
+Follows GCP naming patterns (name-based APIs, not ID-based like AWS).
+See <a href="https://google.aip.dev/122">https://google.aip.dev/122</a> for GCP resource name standards.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the GCP resource</p>
 </td>
 </tr>
 </tbody>
