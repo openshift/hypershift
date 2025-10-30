@@ -5886,7 +5886,7 @@ GCPResourceReference
 </em>
 </td>
 <td>
-<p>pscSubnet is the customer&rsquo;s subnet for PSC endpoint</p>
+<p>pscSubnet is the customer&rsquo;s subnet for PSC endpoints</p>
 </td>
 </tr>
 </tbody>
