@@ -46,11 +46,12 @@ type GCPPrivateServiceConnectSpec struct {
 	ForwardingRuleName string `json:"forwardingRuleName"`
 
 	// consumerAcceptList specifies which customer projects can connect
+	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=30
-	// +kubebuilder:validation:items:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:items:Pattern=`^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$`
 	ConsumerAcceptList []string `json:"consumerAcceptList"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
