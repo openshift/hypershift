@@ -193,7 +193,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the Hypershift Operator (implementation out of scope)</p>
+Auto-populated by the Hypershift Operator</p>
 </td>
 </tr>
 </table>
@@ -6020,7 +6020,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the Hypershift Operator (implementation out of scope)</p>
+Auto-populated by the Hypershift Operator</p>
 </td>
 </tr>
 </tbody>

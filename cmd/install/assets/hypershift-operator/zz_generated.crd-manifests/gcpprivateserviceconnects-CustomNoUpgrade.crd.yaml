@@ -81,7 +81,7 @@ spec:
               natSubnet:
                 description: |-
                   natSubnet is the subnet used for NAT by the Service Attachment
-                  Auto-populated by the Hypershift Operator (implementation out of scope)
+                  Auto-populated by the Hypershift Operator
                 maxLength: 63
                 pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                 type: string
