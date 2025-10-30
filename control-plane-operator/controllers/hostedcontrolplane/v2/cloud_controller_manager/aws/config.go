@@ -6,6 +6,7 @@ import (
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -19,8 +20,8 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	if config != nil {
 		zone = config.Zone
 		vpc = config.VPC
-		if id := config.Subnet.ID; id != nil {
-			subnetID = *id
+		if config.Subnet != nil {
+			subnetID = ptr.Deref(config.Subnet.ID, "")
 		}
 	}
 
