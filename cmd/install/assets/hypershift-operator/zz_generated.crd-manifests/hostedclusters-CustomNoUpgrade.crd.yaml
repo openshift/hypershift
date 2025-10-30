@@ -5097,7 +5097,7 @@ spec:
                             type: string
                           pscSubnet:
                             description: pscSubnet is the customer's subnet for PSC
-                              endpoint and workers
+                              endpoint
                             properties:
                               name:
                                 description: name is the name of the GCP resource
