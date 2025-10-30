@@ -5093,7 +5093,8 @@ spec:
                           project:
                             description: project is the customer's GCP project ID.
                             maxLength: 30
-                            pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                            minLength: 6
+                            pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
                             type: string
                           pscSubnet:
                             description: pscSubnet is the customer's subnet for PSC
@@ -5131,7 +5132,8 @@ spec:
                             start and end: Must begin with a lowercase letter and must not end with a hyphen
                             valid examples: "my-project", "my-project-1", "my-project-123".
                         maxLength: 30
-                        pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                        minLength: 6
+                        pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
                         type: string
                         x-kubernetes-validations:
                         - message: Project is immutable
