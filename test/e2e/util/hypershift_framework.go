@@ -107,9 +107,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	h.before(hostedCluster, opts, platform)
 
 	if h.test != nil && !h.Failed() {
-		h.Run("Main", func(t *testing.T) {
-			h.test(t, NewWithT(t), h.client, hostedCluster)
-		})
+		h.test(h.T, NewWithT(h.T), h.client, hostedCluster)
 	}
 
 	h.after(hostedCluster, platform)
@@ -123,21 +121,21 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
-	h.Run("ValidateHostedCluster", func(t *testing.T) {
-		if platform != hyperv1.NonePlatform {
-			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
-				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
-			} else {
-				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
-			}
-
-			// The following validation is here since TestHAEtcdChaos runs as NonePlatform and it's broken.
-			// TODO(ahmed): when OCPBUGS-61291 is fixed, we should move this validation outside of this if block.
-			if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
-				ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
-			}
+	t := h.T
+	t.Logf("ValidateHostedCluster Before Test")
+	if platform != hyperv1.NonePlatform {
+		if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
+			ValidatePrivateCluster(t, t.Context(), h.client, hostedCluster, opts)
+		} else {
+			ValidatePublicCluster(t, t.Context(), h.client, hostedCluster, opts)
 		}
-	})
+
+		// The following validation is here since TestHAEtcdChaos runs as NonePlatform and it's broken.
+		// TODO(ahmed): when OCPBUGS-61291 is fixed, we should move this validation outside of this if block.
+		if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
+			ValidateAuthenticationSpec(t, t.Context(), h.client, hostedCluster, opts.ExtOIDCConfig)
+		}
+	}
 }
 
 // runs after each test.
@@ -146,75 +144,76 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// skip if Main failed
 		return
 	}
-	h.Run("EnsureHostedCluster", func(t *testing.T) {
-		hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	t := h.T
+	t.Logf("EnsureHostedCluster After Test")
 
-		EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
-		EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
-		EnsureReadOnlyRootFilesystem(t, context.Background(), h.client, hcpNs)
-		EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
-		EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
-		EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
-		EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
-		EnsureNoRapidDeploymentRollouts(t, context.Background(), h.client, hostedCluster)
-		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
-		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
-		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
+	hcpNs := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
-		if platform == hyperv1.AWSPlatform {
-			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
-		}
-		EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
-		// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
-		// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
-		if platform != hyperv1.NonePlatform {
-			EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
-		}
-		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
-			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
-		}
-		metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
-			hcmetrics.LimitedSupportEnabledMetricName,
-			hcmetrics.ProxyMetricName,
-			HypershiftOperatorInfoName,
-			npmetrics.SizeMetricName,
-			npmetrics.AvailableReplicasMetricName,
-		}
-		AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName}
+	EnsurePayloadArchSetCorrectly(t, context.Background(), h.client, hostedCluster)
+	EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t, context.Background(), h.client, hcpNs)
+	EnsureReadOnlyRootFilesystem(t, context.Background(), h.client, hcpNs)
+	EnsureAllContainersHavePullPolicyIfNotPresent(t, context.Background(), h.client, hostedCluster)
+	EnsureAllContainersHaveTerminationMessagePolicyFallbackToLogsOnError(t, context.Background(), h.client, hostedCluster)
+	EnsureHCPContainersHaveResourceRequests(t, context.Background(), h.client, hostedCluster)
+	EnsureNoPodsWithTooHighPriority(t, context.Background(), h.client, hostedCluster)
+	EnsureNoRapidDeploymentRollouts(t, context.Background(), h.client, hostedCluster)
+	NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
+	EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
+	EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
 
-		AzureMetrics := []string{
-			hcmetrics.HostedClusterManagedAzureInfoMetricName,
-			/* only Managed Azure ARO at the moment
-			//hcmetrics.HostedClusterAzureInfoMetricName,
-			*/
-		}
+	if platform == hyperv1.AWSPlatform {
+		EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
+	}
+	EnsureSATokenNotMountedUnlessNecessary(t, context.Background(), h.client, hostedCluster)
+	// HCCO installs the admission policies, however, NonePlatform clusters can be ready before
+	// the HCCO is fully up and reconciling, resulting in a potential race and flaky test assertions.
+	if platform != hyperv1.NonePlatform {
+		EnsureAdmissionPolicies(t, context.Background(), h.client, hostedCluster)
+	}
+	if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
+		EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
+	}
+	metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
+		hcmetrics.LimitedSupportEnabledMetricName,
+		hcmetrics.ProxyMetricName,
+		HypershiftOperatorInfoName,
+		npmetrics.SizeMetricName,
+		npmetrics.AvailableReplicasMetricName,
+	}
+	AWSMetrics := []string{hcmetrics.InvalidAwsCredsMetricName}
 
-		switch platform {
-		case hyperv1.AWSPlatform:
-			metricsToValidate = append(metricsToValidate, AWSMetrics...)
-		case hyperv1.AzurePlatform:
-			metricsToValidate = append(metricsToValidate, AzureMetrics...)
-		}
+	AzureMetrics := []string{
+		hcmetrics.HostedClusterManagedAzureInfoMetricName,
+		/* only Managed Azure ARO at the moment
+		//hcmetrics.HostedClusterAzureInfoMetricName,
+		*/
+	}
 
-		ValidateMetrics(t, context.Background(), h.client, hostedCluster, metricsToValidate, true)
+	switch platform {
+	case hyperv1.AWSPlatform:
+		metricsToValidate = append(metricsToValidate, AWSMetrics...)
+	case hyperv1.AzurePlatform:
+		metricsToValidate = append(metricsToValidate, AzureMetrics...)
+	}
 
-		// TestHAEtcdChaos runs as NonePlatform and it's broken.
-		// so skipping until we fix it.
-		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
-		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
-			// Private clusters may won't be reachable from the test runner; assume workers exist.
-			hasWorkerNodes := true
-			if !util.IsPrivateHC(hostedCluster) {
-				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
-				var nodeList corev1.NodeList
-				if err := guestClient.List(t.Context(), &nodeList); err != nil {
-					t.Errorf("failed to list nodes in guest cluster: %v", err)
-				}
-				hasWorkerNodes = len(nodeList.Items) > 0
+	ValidateMetrics(t, context.Background(), h.client, hostedCluster, metricsToValidate, true)
+
+	// TestHAEtcdChaos runs as NonePlatform and it's broken.
+	// so skipping until we fix it.
+	// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
+	if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
+		// Private clusters may won't be reachable from the test runner; assume workers exist.
+		hasWorkerNodes := true
+		if !util.IsPrivateHC(hostedCluster) {
+			guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
+			var nodeList corev1.NodeList
+			if err := guestClient.List(t.Context(), &nodeList); err != nil {
+				t.Errorf("failed to list nodes in guest cluster: %v", err)
 			}
-			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+			hasWorkerNodes = len(nodeList.Items) > 0
 		}
-	})
+		ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+	}
 }
 
 func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, artifactDir string, cleanupPhase bool) {
@@ -225,15 +224,10 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 	}
 	h.hasBeenTornedDown = true
 
-	// t.Run() is not supported in cleanup phase
-	if cleanupPhase {
-		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
-		return
-	}
+	t := h.T
+	t.Logf("Teardown")
 
-	h.Run("Teardown", func(t *testing.T) {
-		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
-	})
+	teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
 }
 
 func (h *hypershiftTest) postTeardown(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {

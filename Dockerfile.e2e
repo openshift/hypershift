@@ -4,7 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make e2e
+RUN make e2e junit-post-process
 
 # Reuse the same image as builder because we need go command in ci-test-e2e.sh
 # Multi-stage build lets us drop the source code and build cache from the final image
@@ -16,6 +16,7 @@ RUN mkdir -p /hypershift/bin /hypershift/hack
 COPY --from=builder /hypershift/bin/test-e2e /hypershift/bin/test-e2e
 COPY --from=builder /hypershift/bin/test-setup /hypershift//bin/test-setup
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
+COPY --from=builder /hypershift/bin/junit-post-process /hypershift/bin/junit-post-process
 
 RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
     dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \
