@@ -37,8 +37,9 @@ spec:
     name: v1beta1
     schema:
       openAPIV3Schema:
-        description: GCPPrivateServiceConnect represents GCP Private Service Connect
-          infrastructure
+        description: |-
+          GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure.
+          This resource is feature-gated behind the GCPPlatform feature gate.
         properties:
           apiVersion:
             description: |-
@@ -81,7 +82,7 @@ spec:
               natSubnet:
                 description: |-
                   natSubnet is the subnet used for NAT by the Service Attachment
-                  Auto-populated by the Hypershift Operator
+                  Auto-populated by the HyperShift Operator
                 maxLength: 63
                 pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                 type: string
