@@ -4290,8 +4290,8 @@ spec:
                       endpointAccess:
                         default: Private
                         description: |-
-                          endpointAccess controls cluster endpoint accessibility.
-                          Defaults to "Private".
+                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
                         enum:
                         - PublicAndPrivate
                         - Private
