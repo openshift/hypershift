@@ -1,81 +1,88 @@
 package v1beta1
 
 import (
+	"reflect"
+	"regexp"
+	"strings"
 	"testing"
 )
 
 func TestGCPResourceReference_Validation(t *testing.T) {
-	tests := []struct {
-		name    string
-		ref     GCPResourceReference
-		isValid bool
-		desc    string
-	}{
-		{
-			name: "valid resource name",
-			ref: GCPResourceReference{
-				Name: "my-resource-name",
-			},
-			isValid: true,
-			desc:    "should accept valid resource names with hyphens",
-		},
-		{
-			name: "valid single character name",
-			ref: GCPResourceReference{
-				Name: "a",
-			},
-			isValid: true,
-			desc:    "should accept single character names",
-		},
-		{
-			name: "valid 63 character name",
-			ref: GCPResourceReference{
-				Name: "this-is-exactly-sixty-three-characters-long-resource-name-abc",
-			},
-			isValid: true,
-			desc:    "should accept 63 character names (max length)",
-		},
-		{
-			name: "empty name",
-			ref: GCPResourceReference{
-				Name: "",
-			},
-			isValid: false,
-			desc:    "should reject empty names",
-		},
-		{
-			name: "name too long",
-			ref: GCPResourceReference{
-				Name: "this-name-is-longer-than-sixty-three-characters-and-should-fail-validation-test",
-			},
-			isValid: false,
-			desc:    "should reject names longer than 63 characters",
-		},
-	}
+	// Verify JSON tag is correctly set
+	t.Run("json tag validation", func(t *testing.T) {
+		field, ok := reflect.TypeOf(GCPResourceReference{}).FieldByName("Name")
+		if !ok {
+			t.Fatal("Name field not found on GCPResourceReference")
+		}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			// Test name length constraints
-			if test.isValid {
-				if len(test.ref.Name) < 1 {
-					t.Errorf("valid names should have at least 1 character, got length %d", len(test.ref.Name))
-				}
-				if len(test.ref.Name) > 63 {
-					t.Errorf("valid names should have at most 63 characters, got length %d", len(test.ref.Name))
-				}
-			} else {
-				if test.ref.Name == "" {
-					if len(test.ref.Name) != 0 {
-						t.Errorf("empty names should be detected, got length %d", len(test.ref.Name))
-					}
-				} else {
-					if len(test.ref.Name) <= 63 {
-						t.Errorf("names over 63 characters should be detected, got length %d", len(test.ref.Name))
-					}
-				}
+		jsonTag := field.Tag.Get("json")
+		if jsonTag != "name" {
+			t.Errorf("expected json tag 'name', got %q", jsonTag)
+		}
+	})
+
+	// Test the GCP naming pattern matches the kubebuilder validation
+	// Pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
+	t.Run("GCP naming pattern validation", func(t *testing.T) {
+		pattern := regexp.MustCompile(`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`)
+
+		validNames := []string{
+			"a",                    // single char
+			"my-resource",          // valid with hyphens
+			"resource123",          // with numbers
+			"my-resource-123",      // mixed
+			"abc",                  // simple
+			"test-subnet-1",        // realistic name
+			"a-b",                  // simple hyphen
+			"my-long-resource-name", // multiple hyphens
+		}
+
+		invalidNames := []string{
+			"",                     // empty (though MinLength handles this)
+			"A",                    // uppercase
+			"My-Resource",          // mixed case
+			"123-resource",         // starts with number
+			"resource-",            // ends with hyphen
+			"-resource",            // starts with hyphen
+			"resource--name",       // consecutive hyphens
+			"resource_name",        // underscore
+			"resource.name",        // dot
+			"resource name",        // space
+			"resource@name",        // special char
+		}
+
+		for _, name := range validNames {
+			if !pattern.MatchString(name) {
+				t.Errorf("expected valid name %q to match GCP pattern", name)
 			}
-		})
-	}
+		}
+
+		for _, name := range invalidNames {
+			if pattern.MatchString(name) {
+				t.Errorf("expected invalid name %q to NOT match GCP pattern", name)
+			}
+		}
+	})
+
+	// Test edge cases around length constraints
+	t.Run("length edge cases", func(t *testing.T) {
+		pattern := regexp.MustCompile(`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`)
+
+		// Test exactly 63 chars (max length)
+		maxLengthName := "a" + strings.Repeat("b", 61) + "c" // exactly 63 chars
+		if len(maxLengthName) != 63 {
+			t.Fatalf("test setup error: expected 63 chars, got %d", len(maxLengthName))
+		}
+		if !pattern.MatchString(maxLengthName) {
+			t.Errorf("63-character name should match pattern, got %q", maxLengthName)
+		}
+
+		// Test pattern still works beyond 63 chars (kubebuilder handles length limit)
+		tooLongName := maxLengthName + "d"
+		if !pattern.MatchString(tooLongName) {
+			t.Errorf("pattern should match regardless of length (kubebuilder validates length)")
+		}
+	})
 }
 
 func TestGCPEndpointAccessType_Values(t *testing.T) {
