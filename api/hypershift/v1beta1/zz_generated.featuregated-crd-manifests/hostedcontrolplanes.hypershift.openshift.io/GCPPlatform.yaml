@@ -4150,6 +4150,7 @@ spec:
                                 description: name is the name of the GCP resource
                                 maxLength: 63
                                 minLength: 1
+                                pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
                                 type: string
                             required:
                             - name
@@ -4167,6 +4168,7 @@ spec:
                                 description: name is the name of the GCP resource
                                 maxLength: 63
                                 minLength: 1
+                                pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
                                 type: string
                             required:
                             - name
