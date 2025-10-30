@@ -189,6 +189,26 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string,
 		return nil
 	}
 
+	// Detach managed policies
+	attachedPolicies, err := client.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
+		RoleName: aws.String(roleName),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
+	}
+
+	for _, policy := range attachedPolicies.AttachedPolicies {
+		_, err = client.DetachRolePolicy(&iam.DetachRolePolicyInput{
+			PolicyArn: policy.PolicyArn,
+			RoleName:  aws.String(roleName),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
+		}
+		o.Log.Info("Detached role policy", "role", roleName, "policy", *policy.PolicyArn)
+	}
+
+	// Delete inline policies
 	policyNames := []string{
 		roleName,
 	}
@@ -214,25 +234,6 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string,
 			o.Log.Info("Deleted role policy", "role", roleName, "policy", policyName)
 		}
 	}
-
-	attachedPolicies, err := client.ListAttachedRolePolicies(&iam.ListAttachedRolePoliciesInput{
-		RoleName: aws.String(roleName),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
-	}
-
-	for _, policy := range attachedPolicies.AttachedPolicies {
-		_, err = client.DetachRolePolicy(&iam.DetachRolePolicyInput{
-			PolicyArn: policy.PolicyArn,
-			RoleName:  aws.String(roleName),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
-		}
-		o.Log.Info("Detached role policy", "role", roleName, "policy", *policy.PolicyArn)
-	}
-
 	_, err = client.DeleteRole(&iam.DeleteRoleInput{
 		RoleName: aws.String(roleName),
 	})
