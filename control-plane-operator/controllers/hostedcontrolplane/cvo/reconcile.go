@@ -120,7 +120,7 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
+func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, cvoImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -176,7 +176,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterVersionJSON)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(cvoImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -394,12 +394,12 @@ done
 	return fmt.Sprintf(scriptTemplate, payloadDir, string(clusterVersionJSON))
 }
 
-func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
+func buildCVOContainerMain(cvoImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
 	return func(c *corev1.Container) {
-		c.Image = controlPlaneReleaseImage
+		c.Image = cvoImage
 		c.TerminationMessagePolicy = corev1.TerminationMessageFallbackToLogsOnError
 		c.Command = []string{"cluster-version-operator"}
 		c.Args = []string{
