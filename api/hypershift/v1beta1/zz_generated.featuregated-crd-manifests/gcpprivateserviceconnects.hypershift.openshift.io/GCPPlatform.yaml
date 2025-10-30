@@ -24,9 +24,9 @@ spec:
       jsonPath: .status.endpointIP
       name: Endpoint IP
       type: string
-    - description: Overall PSC readiness status
-      jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectReady")].status
-      name: Ready
+    - description: Overall PSC availability status
+      jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectAvailable")].status
+      name: Available
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -92,7 +92,7 @@ spec:
               conditions:
                 description: |-
                   conditions represent the current state of PSC infrastructure
-                  Current condition types are: "GCPPrivateServiceConnectReady", "GCPServiceAttachmentReady", "GCPEndpointReady", "GCPDNSReady"
+                  Current condition types are: "GCPPrivateServiceConnectAvailable", "GCPServiceAttachmentAvailable", "GCPEndpointAvailable", "GCPDNSAvailable"
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

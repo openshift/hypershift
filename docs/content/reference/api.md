@@ -4897,19 +4897,19 @@ recovery job was triggered.</p>
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 and registered correctly.</p>
 </td>
-</tr><tr><td><p>&#34;GCPDNSReady&#34;</p></td>
-<td><p>GCPDNSReady indicates whether the DNS configuration has been
+</tr><tr><td><p>&#34;GCPDNSAvailable&#34;</p></td>
+<td><p>GCPDNSAvailable indicates whether the DNS configuration has been
 created in the customer VPC</p>
 </td>
-</tr><tr><td><p>&#34;GCPEndpointReady&#34;</p></td>
-<td><p>GCPEndpointReady indicates whether the GCP PSC Endpoint has been
+</tr><tr><td><p>&#34;GCPEndpointAvailable&#34;</p></td>
+<td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 created in the customer VPC</p>
 </td>
-</tr><tr><td><p>&#34;GCPPrivateServiceConnectReady&#34;</p></td>
-<td><p>GCPPrivateServiceConnectReady indicates overall PSC infrastructure readiness</p>
+</tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
+<td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
 </td>
-</tr><tr><td><p>&#34;GCPServiceAttachmentReady&#34;</p></td>
-<td><p>GCPServiceAttachmentReady indicates whether the GCP Service Attachment
+</tr><tr><td><p>&#34;GCPServiceAttachmentAvailable&#34;</p></td>
+<td><p>GCPServiceAttachmentAvailable indicates whether the GCP Service Attachment
 has been created for the specified Internal Load Balancer in the management VPC</p>
 </td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
@@ -6053,7 +6053,7 @@ Auto-populated by the Hypershift Operator (implementation out of scope)</p>
 <td>
 <em>(Optional)</em>
 <p>conditions represent the current state of PSC infrastructure
-Current condition types are: &ldquo;GCPPrivateServiceConnectReady&rdquo;, &ldquo;GCPServiceAttachmentReady&rdquo;, &ldquo;GCPEndpointReady&rdquo;, &ldquo;GCPDNSReady&rdquo;</p>
+Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;</p>
 </td>
 </tr>
 <tr>
