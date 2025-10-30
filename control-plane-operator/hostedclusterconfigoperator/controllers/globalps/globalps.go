@@ -134,9 +134,6 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"openshift.io/required-scc": "restricted-v2",
-					},
 					Labels: map[string]string{
 						"name": manifests.GlobalPullSecretDSName,
 					},
