@@ -5842,8 +5842,7 @@ private node communication with the control plane via PSC.</p>
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
-<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters.
-Customer-focused configuration for PSC endpoint creation.</p>
+<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.</p>
 </p>
 <table>
 <thead>
