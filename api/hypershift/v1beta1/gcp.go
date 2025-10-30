@@ -82,8 +82,8 @@ type GCPPlatformSpec struct {
 	// +required
 	CustomerNetworkConfig GCPNetworkConfigCustomer `json:"customerNetworkConfig"`
 
-	// endpointAccess controls cluster endpoint accessibility.
-	// Defaults to "Private".
+	// endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+	// Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
 	// +kubebuilder:validation:Enum=PublicAndPrivate;Private
 	// +kubebuilder:default=Private
 	// +optional
