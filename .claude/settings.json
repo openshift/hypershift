@@ -1,6 +1,6 @@
 {
   "extraKnownMarketplaces": {
-    "openshift-ai-helpers": {
+    "ai-helpers": {
       "source": {
         "source": "github",
         "repo": "openshift-eng/ai-helpers"
