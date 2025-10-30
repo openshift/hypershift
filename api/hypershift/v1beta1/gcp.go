@@ -39,7 +39,7 @@ type GCPNetworkConfigCustomer struct {
 	// +required
 	Network GCPResourceReference `json:"network"`
 
-	// pscSubnet is the customer's subnet for PSC endpoint and workers
+	// pscSubnet is the customer's subnet for PSC endpoint
 	// +required
 	PSCSubnet GCPResourceReference `json:"pscSubnet"`
 }
