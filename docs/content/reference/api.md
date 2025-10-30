@@ -179,7 +179,8 @@ string
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect</p>
+<p>consumerAcceptList specifies which customer projects can connect
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
 </td>
 </tr>
 <tr>
@@ -6005,7 +6006,8 @@ string
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect</p>
+<p>consumerAcceptList specifies which customer projects can connect
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
 </td>
 </tr>
 <tr>

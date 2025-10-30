@@ -61,11 +61,12 @@ spec:
             description: spec is the specification for the GCPPrivateServiceConnect.
             properties:
               consumerAcceptList:
-                description: consumerAcceptList specifies which customer projects
-                  can connect
+                description: |-
+                  consumerAcceptList specifies which customer projects can connect
+                  Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
                 items:
                   maxLength: 30
-                  pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                  pattern: ^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$
                   type: string
                 maxItems: 50
                 minItems: 1
