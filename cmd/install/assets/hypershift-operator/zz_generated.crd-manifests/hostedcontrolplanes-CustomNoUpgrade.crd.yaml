@@ -5044,6 +5044,7 @@ spec:
                         - message: Region is immutable
                           rule: self == oldSelf
                     required:
+                    - customerNetworkConfig
                     - project
                     - region
                     type: object

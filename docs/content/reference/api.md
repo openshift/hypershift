@@ -5949,7 +5949,6 @@ GCPNetworkConfigCustomer
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>customerNetworkConfig specifies customer VPC configuration for PSC.
 Required for customer VPC configuration in PSC deployments.</p>
 </td>
