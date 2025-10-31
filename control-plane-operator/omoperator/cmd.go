@@ -77,6 +77,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.AddCommand(NewTransformDeploymentCommand())
 	cmd.AddCommand(NewHTTPProxyCommand())
+	cmd.AddCommand(NewHTTPProxy2Command())
 
 	return cmd
 }
