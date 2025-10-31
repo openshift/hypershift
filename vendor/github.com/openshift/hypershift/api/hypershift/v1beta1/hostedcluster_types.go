@@ -444,7 +444,7 @@ type Capabilities struct {
 
 // HostedClusterSpec is the desired behavior of a HostedCluster.
 
-// +kubebuilder:validation:XValidation:rule="self.platform.type == 'IBMCloud' ? size(self.services) >= 3 : size(self.services) >= 4",message="spec.services in body should have at least 4 items or 3 for IBMCloud"
+// +kubebuilder:validation:XValidation:rule="size(self.services) >= 3",message="spec.services in body should have at least 3 items"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type != "IBMCloud" ? self.services == oldSelf.services : true`, message="Services is immutable. Changes might result in unpredictable and disruptive behavior."
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "OAuthServer" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires OAuthServer to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Konnectivity" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Konnectivity to use Route service publishing strategy"
@@ -580,7 +580,7 @@ type HostedClusterSpec struct {
 	Etcd EtcdSpec `json:"etcd"`
 
 	// services specifies how individual control plane services endpoints are published for consumption.
-	// This requires APIServer;OAuthServer;Konnectivity;Ignition.
+	// This requires APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
 	// This field is immutable for all platforms but IBMCloud.
 	// Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.
 	//
@@ -814,7 +814,7 @@ type ImageContentSource struct {
 }
 
 // ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
-// This includes APIServer;OAuthServer;Konnectivity;Ignition.
+// This includes APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
 // If a given service is not present in this list, it will be exposed publicly by default.
 type ServicePublishingStrategyMapping struct {
 	// service identifies the type of service being published.
