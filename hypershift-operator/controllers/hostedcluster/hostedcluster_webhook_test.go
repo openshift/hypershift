@@ -3,7 +3,9 @@ package hostedcluster
 import (
 	"reflect"
 	"testing"
+	"time"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 
@@ -642,6 +644,118 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 			}
 			if np.Spec.Management.UpgradeType != testCase.expectedUpgradeType {
 				tt.Errorf("Expected upgrade type %s, but got %s", testCase.expectedUpgradeType, np.Spec.Management.UpgradeType)
+			}
+		})
+	}
+}
+
+// TestValidateOAuthTokenConfig tests the validation of OAuth tokenConfig.accessTokenInactivityTimeout
+func TestValidateOAuthTokenConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		hc          *v1beta1.HostedCluster
+		expectError bool
+	}{
+		{
+			name: "When no OAuth configuration exists it should pass validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{},
+			},
+			expectError: false,
+		},
+		{
+			name: "When OAuth configuration exists but tokenConfig is not set it should pass validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When accessTokenInactivityTimeout is not set it should pass validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							TokenConfig: configv1.TokenConfig{},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When accessTokenInactivityTimeout is exactly 300s it should pass validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							TokenConfig: configv1.TokenConfig{
+								AccessTokenInactivityTimeout: &metav1.Duration{Duration: 300 * time.Second},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When accessTokenInactivityTimeout is greater than 300s it should pass validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							TokenConfig: configv1.TokenConfig{
+								AccessTokenInactivityTimeout: &metav1.Duration{Duration: 600 * time.Second},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When accessTokenInactivityTimeout is 299s it should fail validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							TokenConfig: configv1.TokenConfig{
+								AccessTokenInactivityTimeout: &metav1.Duration{Duration: 299 * time.Second},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When accessTokenInactivityTimeout is 100s it should fail validation",
+			hc: &v1beta1.HostedCluster{
+				Spec: v1beta1.HostedClusterSpec{
+					Configuration: &v1beta1.ClusterConfiguration{
+						OAuth: &configv1.OAuthSpec{
+							TokenConfig: configv1.TokenConfig{
+								AccessTokenInactivityTimeout: &metav1.Duration{Duration: 100 * time.Second},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+		},
+	} {
+		t.Run(tc.name, func(tt *testing.T) {
+			err := validateOAuthTokenConfig(tc.hc)
+			if (err != nil) != tc.expectError {
+				errMsgBool := []string{" ", "did"}
+				if !tc.expectError {
+					errMsgBool = []string{" not ", "didn't"}
+				}
+				tt.Errorf("should%sreturn error, but it %s. error: %v", errMsgBool[0], errMsgBool[1], err)
 			}
 		})
 	}
