@@ -299,7 +299,25 @@ func (r *NodePoolReconciler) setAWSConditions(ctx context.Context, nodePool *hyp
 	return nil
 }
 
+// validateResourceTags checks that all tag keys in the provided list are unique.
+// Returns an error if duplicate keys are found.
+func validateResourceTags(tags []hyperv1.AWSResourceTag) error {
+	seenKeys := make(map[string]bool, len(tags))
+	for _, tag := range tags {
+		if seenKeys[tag.Key] {
+			return fmt.Errorf("invalid tags, user tag keys must be unique, duplicate key '%s' found", tag.Key)
+		}
+		seenKeys[tag.Key] = true
+	}
+	return nil
+}
+
 func (r NodePoolReconciler) validateAWSPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hc *hyperv1.HostedCluster, oldCondition *hyperv1.NodePoolCondition) error {
+	// Validate that resource tags have unique keys
+	if err := validateResourceTags(nodePool.Spec.Platform.AWS.ResourceTags); err != nil {
+		return err
+	}
+
 	if nodePool.Spec.Platform.AWS.Placement != nil && nodePool.Spec.Platform.AWS.Placement.CapacityReservation != nil {
 		pullSecretBytes, err := r.getPullSecretBytes(ctx, hc)
 		if err != nil {
