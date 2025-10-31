@@ -20,12 +20,8 @@ const (
 )
 
 func NewKubeAPIServerServiceParams(hcp *hyperv1.HostedControlPlane) *KubeAPIServerServiceParams {
-	var allowedCIDRBlocks []string
-	for _, block := range util.AllowedCIDRBlocks(hcp) {
-		allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
-	}
 	return &KubeAPIServerServiceParams{
-		AllowedCIDRBlocks: allowedCIDRBlocks,
+		AllowedCIDRBlocks: util.AllowedCIDRBlocks(hcp),
 		OwnerReference:    config.ControllerOwnerRef(hcp),
 	}
 }
