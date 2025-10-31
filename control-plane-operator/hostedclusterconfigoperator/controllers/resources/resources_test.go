@@ -2349,3 +2349,251 @@ func TestReconcileAuthOIDC(t *testing.T) {
 		})
 	}
 }
+
+func TestCleanupOrphanedOIDCResources(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name                      string
+		existingConfigMaps        []corev1.ConfigMap
+		existingSecrets           []corev1.Secret
+		expectedConfigMaps        sets.Set[string]
+		expectedSecrets           sets.Set[string]
+		expectDeletedConfigMaps   []string
+		expectDeletedSecrets      []string
+		expectRemainingConfigMaps []string
+		expectRemainingSecrets    []string
+	}{
+		{
+			name: "When OIDC provider is removed all resources are deleted",
+			existingConfigMaps: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-client-secret",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			expectedConfigMaps:        sets.New[string](),
+			expectedSecrets:           sets.New[string](),
+			expectDeletedConfigMaps:   []string{"oidc-ca"},
+			expectDeletedSecrets:      []string{"oidc-client-secret"},
+			expectRemainingConfigMaps: []string{},
+			expectRemainingSecrets:    []string{},
+		},
+		{
+			name: "When CA reference is removed only CA configmap is deleted",
+			existingConfigMaps: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-client-secret",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			expectedConfigMaps:        sets.New[string](),
+			expectedSecrets:           sets.New[string]("oidc-client-secret"),
+			expectDeletedConfigMaps:   []string{"oidc-ca"},
+			expectDeletedSecrets:      []string{},
+			expectRemainingConfigMaps: []string{},
+			expectRemainingSecrets:    []string{"oidc-client-secret"},
+		},
+		{
+			name: "When OIDCClient is removed only its secret is deleted",
+			existingConfigMaps: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-client-secret-1",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-client-secret-2",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			expectedConfigMaps:        sets.New[string]("oidc-ca"),
+			expectedSecrets:           sets.New[string]("oidc-client-secret-1"),
+			expectDeletedConfigMaps:   []string{},
+			expectDeletedSecrets:      []string{"oidc-client-secret-2"},
+			expectRemainingConfigMaps: []string{"oidc-ca"},
+			expectRemainingSecrets:    []string{"oidc-client-secret-1"},
+		},
+		{
+			name: "Resources without managed label are not deleted",
+			existingConfigMaps: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-managed",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca-unmanaged",
+						Namespace: ConfigNamespace,
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-secret-managed",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-secret-unmanaged",
+						Namespace: ConfigNamespace,
+					},
+				},
+			},
+			expectedConfigMaps:        sets.New[string](),
+			expectedSecrets:           sets.New[string](),
+			expectDeletedConfigMaps:   []string{"oidc-ca-managed"},
+			expectDeletedSecrets:      []string{"oidc-secret-managed"},
+			expectRemainingConfigMaps: []string{"oidc-ca-unmanaged"},
+			expectRemainingSecrets:    []string{"oidc-secret-unmanaged"},
+		},
+		{
+			name: "No resources are deleted when all are still referenced",
+			existingConfigMaps: []corev1.ConfigMap{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-ca",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			existingSecrets: []corev1.Secret{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oidc-client-secret",
+						Namespace: ConfigNamespace,
+						Labels: map[string]string{
+							OIDCProviderManagedLabel: "true",
+						},
+					},
+				},
+			},
+			expectedConfigMaps:        sets.New[string]("oidc-ca"),
+			expectedSecrets:           sets.New[string]("oidc-client-secret"),
+			expectDeletedConfigMaps:   []string{},
+			expectDeletedSecrets:      []string{},
+			expectRemainingConfigMaps: []string{"oidc-ca"},
+			expectRemainingSecrets:    []string{"oidc-client-secret"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create fake clients with existing resources
+			objects := []client.Object{}
+			for i := range test.existingConfigMaps {
+				objects = append(objects, &test.existingConfigMaps[i])
+			}
+			for i := range test.existingSecrets {
+				objects = append(objects, &test.existingSecrets[i])
+			}
+
+			hcClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			r := &reconciler{
+				client: hcClient,
+			}
+
+			// Call cleanup function
+			err := r.cleanupOrphanedOIDCResources(ctx, test.expectedConfigMaps, test.expectedSecrets)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Verify deleted ConfigMaps
+			for _, name := range test.expectDeletedConfigMaps {
+				cm := &corev1.ConfigMap{}
+				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, cm)
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "ConfigMap %s should have been deleted", name)
+			}
+
+			// Verify remaining ConfigMaps
+			for _, name := range test.expectRemainingConfigMaps {
+				cm := &corev1.ConfigMap{}
+				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, cm)
+				g.Expect(err).ToNot(HaveOccurred(), "ConfigMap %s should still exist", name)
+			}
+
+			// Verify deleted Secrets
+			for _, name := range test.expectDeletedSecrets {
+				secret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, secret)
+				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "Secret %s should have been deleted", name)
+			}
+
+			// Verify remaining Secrets
+			for _, name := range test.expectRemainingSecrets {
+				secret := &corev1.Secret{}
+				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, secret)
+				g.Expect(err).ToNot(HaveOccurred(), "Secret %s should still exist", name)
+			}
+		})
+	}
+}

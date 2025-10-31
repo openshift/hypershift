@@ -96,7 +96,11 @@ const (
 	ConfigNamespace        = "openshift-config"
 	ConfigManagedNamespace = "openshift-config-managed"
 	CloudProviderCMName    = "cloud-provider-config"
-	awsCredentialsTemplate = `[default]
+	// OIDCProviderManagedLabel is used to identify ConfigMaps and Secrets in the guest cluster
+	// that are managed by the OIDC provider reconciliation logic. Resources with this label
+	// will be subject to cleanup when they are no longer referenced in the HCP configuration.
+	OIDCProviderManagedLabel = "hypershift.openshift.io/oidc-provider-managed"
+	awsCredentialsTemplate   = `[default]
 role_arn = %s
 web_identity_token_file = /var/run/secrets/openshift/serviceaccount/token
 sts_regional_endpoints = regional
@@ -1238,6 +1242,11 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var errs []error
+
+	// Track expected resources that should exist based on current HCP configuration
+	expectedConfigMaps := sets.New[string]()
+	expectedSecrets := sets.New[string]()
+
 	if !util.HCPOAuthEnabled(hcp) &&
 		len(hcp.Spec.Configuration.Authentication.OIDCProviders) != 0 {
 
@@ -1245,6 +1254,8 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		provider := hcp.Spec.Configuration.Authentication.OIDCProviders[0]
 		if provider.Issuer.CertificateAuthority.Name != "" {
 			name := provider.Issuer.CertificateAuthority.Name
+			expectedConfigMaps.Insert(name)
+
 			var src corev1.ConfigMap
 			err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: name}, &src)
 			if err != nil {
@@ -1260,7 +1271,11 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 					if dest.Data == nil {
 						dest.Data = map[string]string{}
 					}
+					if dest.Labels == nil {
+						dest.Labels = map[string]string{}
+					}
 					dest.Data["ca-bundle.crt"] = src.Data["ca-bundle.crt"]
+					dest.Labels[OIDCProviderManagedLabel] = "true"
 					return nil
 				})
 				if err != nil {
@@ -1273,6 +1288,8 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 		if len(hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients) > 0 {
 			for _, oidcClient := range hcp.Spec.Configuration.Authentication.OIDCProviders[0].OIDCClients {
 				if oidcClient.ClientSecret.Name != "" {
+					expectedSecrets.Insert(oidcClient.ClientSecret.Name)
+
 					var src corev1.Secret
 					err := r.cpClient.Get(ctx, client.ObjectKey{Namespace: hcp.Namespace, Name: oidcClient.ClientSecret.Name}, &src)
 					if err != nil {
@@ -1293,17 +1310,73 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 						if dest.Data == nil {
 							dest.Data = map[string][]byte{}
 						}
+						if dest.Labels == nil {
+							dest.Labels = map[string]string{}
+						}
 						dest.Data["clientSecret"] = src.Data["clientSecret"]
+						dest.Labels[OIDCProviderManagedLabel] = "true"
 						return nil
 					})
 					if err != nil {
 						errs = append(errs, fmt.Errorf("failed to reconcile OIDCClient secret %s: %w", dest.Name, err))
-
 					}
 				}
 			}
 		}
 	}
+
+	// Clean up orphaned OIDC resources that are no longer referenced in the HCP configuration
+	if err := r.cleanupOrphanedOIDCResources(ctx, expectedConfigMaps, expectedSecrets); err != nil {
+		errs = append(errs, err)
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+// cleanupOrphanedOIDCResources removes ConfigMaps and Secrets in the openshift-config namespace
+// that were previously created for OIDC authentication but are no longer referenced in the
+// HCP configuration. This prevents orphaned resources from accumulating when OIDC providers
+// are removed or their configurations change.
+func (r *reconciler) cleanupOrphanedOIDCResources(ctx context.Context, expectedConfigMaps, expectedSecrets sets.Set[string]) error {
+	log := ctrl.LoggerFrom(ctx)
+	var errs []error
+
+	// Clean up orphaned ConfigMaps
+	configMapList := &corev1.ConfigMapList{}
+	if err := r.client.List(ctx, configMapList, client.InNamespace(ConfigNamespace), client.HasLabels{OIDCProviderManagedLabel}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list OIDC managed configmaps: %w", err))
+	} else {
+		for i := range configMapList.Items {
+			cm := &configMapList.Items[i]
+			if !expectedConfigMaps.Has(cm.Name) {
+				log.Info("deleting orphaned OIDC configmap", "name", cm.Name, "namespace", cm.Namespace)
+				if err := r.client.Delete(ctx, cm); err != nil {
+					if !apierrors.IsNotFound(err) {
+						errs = append(errs, fmt.Errorf("failed to delete orphaned OIDC configmap %s: %w", cm.Name, err))
+					}
+				}
+			}
+		}
+	}
+
+	// Clean up orphaned Secrets
+	secretList := &corev1.SecretList{}
+	if err := r.client.List(ctx, secretList, client.InNamespace(ConfigNamespace), client.HasLabels{OIDCProviderManagedLabel}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to list OIDC managed secrets: %w", err))
+	} else {
+		for i := range secretList.Items {
+			secret := &secretList.Items[i]
+			if !expectedSecrets.Has(secret.Name) {
+				log.Info("deleting orphaned OIDC secret", "name", secret.Name, "namespace", secret.Namespace)
+				if err := r.client.Delete(ctx, secret); err != nil {
+					if !apierrors.IsNotFound(err) {
+						errs = append(errs, fmt.Errorf("failed to delete orphaned OIDC secret %s: %w", secret.Name, err))
+					}
+				}
+			}
+		}
+	}
+
 	return utilerrors.NewAggregate(errs)
 }
 
