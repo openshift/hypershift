@@ -4893,12 +4893,6 @@ spec:
                             required:
                             - name
                             type: object
-                          project:
-                            description: project is the customer's GCP project ID.
-                            maxLength: 30
-                            minLength: 6
-                            pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
-                            type: string
                           pscSubnet:
                             description: pscSubnet is the customer's subnet for PSC
                               endpoints
@@ -4914,7 +4908,6 @@ spec:
                             type: object
                         required:
                         - network
-                        - project
                         - pscSubnet
                         type: object
                       endpointAccess:

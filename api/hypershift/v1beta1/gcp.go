@@ -28,13 +28,6 @@ const (
 
 // GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.
 type GCPNetworkConfigCustomer struct {
-	// project is the customer's GCP project ID.
-	// +required
-	// +kubebuilder:validation:MinLength=6
-	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`
-	Project string `json:"project"`
-
 	// network is the customer's VPC network name
 	// +required
 	Network GCPResourceReference `json:"network"`

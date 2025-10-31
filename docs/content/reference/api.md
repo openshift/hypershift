@@ -5854,17 +5854,6 @@ private node communication with the control plane via PSC.</p>
 <tbody>
 <tr>
 <td>
-<code>project</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>project is the customer&rsquo;s GCP project ID.</p>
-</td>
-</tr>
-<tr>
-<td>
 <code>network</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
