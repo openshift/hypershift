@@ -1,0 +1,53 @@
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  annotations:
+    build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
+    build.appstudio.redhat.com/commit_sha: '{{revision}}'
+    build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
+    pipelinesascode.tekton.dev/max-keep-runs: "3"
+    pipelinesascode.tekton.dev/on-cel-expression: |
+      event == "push"
+      && target_branch == "ho-hotfix-ocpbugs-61296"
+      && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
+  creationTimestamp:
+  labels:
+    appstudio.openshift.io/application: hypershift-operator-hotfix-ocpbugs-61296
+    appstudio.openshift.io/component: hypershift-operator-hotfix-ocpbugs-61296
+    pipelines.appstudio.openshift.io/type: build
+  name: hypershift-operator-hotfix-ocpbugs-61296-on-push
+  namespace: crt-redhat-acm-tenant
+spec:
+  params:
+  - name: git-url
+    value: '{{source_url}}'
+  - name: revision
+    value: '{{revision}}'
+  - name: output-image
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-ocpbugs-61296:{{revision}}
+  - name: image-expires-after
+    value: ""
+  - name: build-platforms
+    value:
+    - linux/x86_64
+  - name: dockerfile
+    value: Containerfile.operator
+  - name: path-context
+    value: .
+  pipelineRef:
+    resolver: git
+    params:
+    - name: url
+      value: https://github.com/openshift/hypershift.git
+    - name: revision
+      value: main
+    - name: pathInRepo
+      value: .tekton/pipelines/common-operator-build.yaml
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-hypershift-operator-hotfix-ocpbugs-61296
+  workspaces:
+  - name: git-auth
+    secret:
+      secretName: '{{ git_auth_secret }}'
+status: {}
