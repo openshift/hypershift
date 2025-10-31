@@ -34,8 +34,11 @@ func reconcileCatalogSource(cs *operatorsv1alpha1.CatalogSource, address string,
 	cs.Spec = operatorsv1alpha1.CatalogSourceSpec{
 		SourceType:  operatorsv1alpha1.SourceTypeGrpc,
 		DisplayName: displayName,
-		Publisher:   "Red Hat",
-		Priority:    priority,
+		GrpcPodConfig: &operatorsv1alpha1.GrpcPodConfig{
+			SecurityContextConfig: operatorsv1alpha1.Restricted,
+		},
+		Publisher: "Red Hat",
+		Priority:  priority,
 		UpdateStrategy: &operatorsv1alpha1.UpdateStrategy{
 			RegistryPoll: &operatorsv1alpha1.RegistryPoll{
 				RawInterval: "10m",
