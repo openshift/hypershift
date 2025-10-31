@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/azureutil"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
@@ -18,19 +21,25 @@ import (
 type NetworkManager struct {
 	subscriptionID string
 	creds          azcore.TokenCredential
+	cloud          string
 }
 
 // NewNetworkManager creates a new NetworkManager
-func NewNetworkManager(subscriptionID string, creds azcore.TokenCredential) *NetworkManager {
+func NewNetworkManager(subscriptionID string, creds azcore.TokenCredential, cloud string) *NetworkManager {
 	return &NetworkManager{
 		subscriptionID: subscriptionID,
 		creds:          creds,
+		cloud:          cloud,
 	}
 }
 
 // GetBaseDomainID gets the resource group ID for the resource group containing the base domain
 func (n *NetworkManager) GetBaseDomainID(ctx context.Context, baseDomain string) (string, error) {
-	zonesClient, err := armdns.NewZonesClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	zonesClient, err := armdns.NewZonesClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return "", fmt.Errorf("failed to create dns zone %s: %w", baseDomain, err)
 	}
@@ -53,7 +62,11 @@ func (n *NetworkManager) GetBaseDomainID(ctx context.Context, baseDomain string)
 
 // CreateSecurityGroup creates the security group the virtual network will use
 func (n *NetworkManager) CreateSecurityGroup(ctx context.Context, resourceGroupName string, name string, infraID string, location string) (string, error) {
-	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return "", fmt.Errorf("failed to create security group client: %w", err)
 	}
@@ -98,7 +111,11 @@ func NewVirtualNetwork(location string, vnetAddrPrefix string) armnetwork.Virtua
 func (n *NetworkManager) CreateVirtualNetwork(ctx context.Context, resourceGroupName string, name string, infraID string, location string, subnetID string, securityGroupID string) (armnetwork.VirtualNetworksClientCreateOrUpdateResponse, error) {
 	l := ctrl.LoggerFrom(ctx)
 
-	networksClient, err := armnetwork.NewVirtualNetworksClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	networksClient, err := armnetwork.NewVirtualNetworksClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return armnetwork.VirtualNetworksClientCreateOrUpdateResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
 	}
@@ -148,7 +165,11 @@ func (n *NetworkManager) CreateVirtualNetwork(ctx context.Context, resourceGroup
 
 // CreatePrivateDNSZone creates the private DNS zone
 func (n *NetworkManager) CreatePrivateDNSZone(ctx context.Context, resourceGroupName string, name string, baseDomain string) (string, string, error) {
-	privateZoneClient, err := armprivatedns.NewPrivateZonesClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	privateZoneClient, err := armprivatedns.NewPrivateZonesClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create new private zones client: %w", err)
 	}
@@ -188,7 +209,11 @@ func NewVirtualNetworkLink(location string, vnetID string, registrationEnabled b
 
 // CreatePrivateDNSZoneLink creates the private DNS Zone network link
 func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceGroupName string, name string, infraID string, vnetID string, privateDNSZoneName string) error {
-	privateZoneLinkClient, err := armprivatedns.NewVirtualNetworkLinksClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	privateZoneLinkClient, err := armprivatedns.NewVirtualNetworkLinksClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return fmt.Errorf("failed to create new virtual network links client: %w", err)
 	}
@@ -236,7 +261,11 @@ func NewPublicIPAddress(name string, location string) armnetwork.PublicIPAddress
 
 // CreatePublicIPAddressForLB creates a public IP address to use for the outbound rule in the load balancer
 func (n *NetworkManager) CreatePublicIPAddressForLB(ctx context.Context, resourceGroupName string, infraID string, location string) (*armnetwork.PublicIPAddress, error) {
-	publicIPAddressClient, err := armnetwork.NewPublicIPAddressesClient(n.subscriptionID, n.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	publicIPAddressClient, err := armnetwork.NewPublicIPAddressesClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create public IP address client, %w", err)
 	}

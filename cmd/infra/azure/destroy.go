@@ -7,7 +7,10 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/azureutil"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -23,6 +26,7 @@ type DestroyInfraOptions struct {
 	Credentials           *util.AzureCreds
 	ResourceGroupName     string
 	PreserveResourceGroup bool
+	Cloud                 string
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -34,11 +38,13 @@ func NewDestroyCommand() *cobra.Command {
 
 	opts := DestroyInfraOptions{
 		Location: "eastus",
+		Cloud:    "AzurePublicCloud",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
 	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to a credentials file (required)")
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Location where cluster infra should be created")
+	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the cluster")
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
 	cmd.Flags().BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, "When true, the managed/main resource group will not be deleted during cluster destroy. Only cluster-specific resources within the resource group will be cleaned up.")
@@ -74,14 +80,21 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		return fmt.Errorf("failed to setup Azure credentials: %w", err)
 	}
 
+	// Setup cloud configuration
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(o.Cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
 	// Setup Azure resource group client
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
 
 	// Setup Azure resources client for per-resource deletion
-	resourcesClient, err := armresources.NewClient(subscriptionID, azureCreds, nil)
+	resourcesClient, err := armresources.NewClient(subscriptionID, azureCreds, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create new resources client: %w", err)
 	}

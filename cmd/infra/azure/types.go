@@ -29,6 +29,7 @@ type CreateInfraOptions struct {
 	OIDCIssuerURL                string
 	GenerateManagedIdentities    bool
 	WorkloadIdentitiesOutputFile string
+	Cloud                        string
 }
 
 type CreateInfraOutput struct {
