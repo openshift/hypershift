@@ -8,6 +8,7 @@ type GCPResourceReference struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]*[a-z0-9])?$`
 	Name string `json:"name"`
 }
 
@@ -25,20 +26,20 @@ const (
 	GCPEndpointAccessPrivate GCPEndpointAccessType = "Private"
 )
 
-// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters.
-// Customer-focused configuration for PSC endpoint creation.
+// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.
 type GCPNetworkConfigCustomer struct {
 	// project is the customer's GCP project ID.
 	// +required
+	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`
 	Project string `json:"project"`
 
 	// network is the customer's VPC network name
 	// +required
 	Network GCPResourceReference `json:"network"`
 
-	// pscSubnet is the customer's subnet for PSC endpoint and workers
+	// pscSubnet is the customer's subnet for PSC endpoints
 	// +required
 	PSCSubnet GCPResourceReference `json:"pscSubnet"`
 }
@@ -54,8 +55,9 @@ type GCPPlatformSpec struct {
 	//
 	// +required
 	// +immutable
+	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project is immutable"
 	Project string `json:"project"`
 
@@ -76,11 +78,11 @@ type GCPPlatformSpec struct {
 
 	// customerNetworkConfig specifies customer VPC configuration for PSC.
 	// Required for customer VPC configuration in PSC deployments.
-	// +optional
-	CustomerNetworkConfig *GCPNetworkConfigCustomer `json:"customerNetworkConfig,omitempty"`
+	// +required
+	CustomerNetworkConfig GCPNetworkConfigCustomer `json:"customerNetworkConfig"`
 
-	// endpointAccess controls cluster endpoint accessibility.
-	// Defaults to "Private".
+	// endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+	// Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
 	// +kubebuilder:validation:Enum=PublicAndPrivate;Private
 	// +kubebuilder:default=Private
 	// +optional

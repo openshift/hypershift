@@ -17,20 +17,20 @@ func init() {
 
 // The following are reasons and condition types for GCP Private Service Connect.
 const (
-	// GCPPrivateServiceConnectReady indicates overall PSC infrastructure readiness
-	GCPPrivateServiceConnectReady ConditionType = "GCPPrivateServiceConnectReady"
+	// GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability
+	GCPPrivateServiceConnectAvailable ConditionType = "GCPPrivateServiceConnectAvailable"
 
-	// GCPServiceAttachmentReady indicates whether the GCP Service Attachment
+	// GCPServiceAttachmentAvailable indicates whether the GCP Service Attachment
 	// has been created for the specified Internal Load Balancer in the management VPC
-	GCPServiceAttachmentReady ConditionType = "GCPServiceAttachmentReady"
+	GCPServiceAttachmentAvailable ConditionType = "GCPServiceAttachmentAvailable"
 
-	// GCPEndpointReady indicates whether the GCP PSC Endpoint has been
+	// GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
 	// created in the customer VPC
-	GCPEndpointReady ConditionType = "GCPEndpointReady"
+	GCPEndpointAvailable ConditionType = "GCPEndpointAvailable"
 
-	// GCPDNSReady indicates whether the DNS configuration has been
+	// GCPDNSAvailable indicates whether the DNS configuration has been
 	// created in the customer VPC
-	GCPDNSReady ConditionType = "GCPDNSReady"
+	GCPDNSAvailable ConditionType = "GCPDNSAvailable"
 
 	GCPSuccessReason string = "GCPSuccess"
 	GCPErrorReason   string = "GCPError"
@@ -46,15 +46,16 @@ type GCPPrivateServiceConnectSpec struct {
 	ForwardingRuleName string `json:"forwardingRuleName"`
 
 	// consumerAcceptList specifies which customer projects can connect
+	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=30
-	// +kubebuilder:validation:items:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`
+	// +kubebuilder:validation:items:Pattern=`^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$`
 	ConsumerAcceptList []string `json:"consumerAcceptList"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
-	// Auto-populated by the Hypershift Operator (implementation out of scope)
+	// Auto-populated by the HyperShift Operator
 	// +optional
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
@@ -64,7 +65,7 @@ type GCPPrivateServiceConnectSpec struct {
 // GCPPrivateServiceConnectStatus defines the observed state of PSC infrastructure
 type GCPPrivateServiceConnectStatus struct {
 	// conditions represent the current state of PSC infrastructure
-	// Current condition types are: "GCPPrivateServiceConnectReady", "GCPServiceAttachmentReady", "GCPEndpointReady", "GCPDNSReady"
+	// Current condition types are: "GCPPrivateServiceConnectAvailable", "GCPServiceAttachmentAvailable", "GCPEndpointAvailable", "GCPDNSAvailable"
 	// +optional
 	// +listType=map
 	// +listMapKey=type
@@ -91,6 +92,7 @@ type GCPPrivateServiceConnectStatus struct {
 
 	// endpointIP is the reserved IP address for the PSC endpoint
 	// +optional
+	// +kubebuilder:validation:MaxLength=15
 	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$`
 	EndpointIP string `json:"endpointIP,omitempty"`
 
@@ -113,11 +115,12 @@ type GCPPrivateServiceConnectStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Service Attachment",type="string",JSONPath=".status.serviceAttachmentName",description="Name of the Service Attachment"
 // +kubebuilder:printcolumn:name="Endpoint IP",type="string",JSONPath=".status.endpointIP",description="IP address of the PSC endpoint"
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.conditions[?(@.type==\"GCPPrivateServiceConnectReady\")].status",description="Overall PSC readiness status"
+// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"GCPPrivateServiceConnectAvailable\")].status",description="Overall PSC availability status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +openshift:enable:FeatureGate=GCPPlatform
 
-// GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure
+// GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure.
+// This resource is feature-gated behind the GCPPlatform feature gate.
 type GCPPrivateServiceConnect struct {
 	metav1.TypeMeta `json:",inline"`
 	// metadata is the metadata for the GCPPrivateServiceConnect.
