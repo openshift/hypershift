@@ -1,0 +1,36 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-scheduler
+  namespace: HCP_NAMESPACE
+spec:
+  endpoints:
+    - metricRelabelings:
+        - action: keep
+          regex: (kube_pod_resource_request|kube_pod_resource_limit)
+          sourceLabels:
+            - __name__
+      path: /metrics/resources
+      honorLabels: true
+      interval: 30s
+      scheme: https
+      targetPort: client
+      tlsConfig:
+        ca:
+          configMap:
+            key: ca.crt
+            name: root-ca
+        cert:
+          secret:
+            key: tls.crt
+            name: kube-scheduler-server
+        keySecret:
+          key: tls.key
+          name: kube-scheduler-server
+        serverName: kube-scheduler
+  namespaceSelector:
+    matchNames:
+      - HCP_NAMESPACE
+  selector:
+    matchLabels:
+      app: kube-scheduler
