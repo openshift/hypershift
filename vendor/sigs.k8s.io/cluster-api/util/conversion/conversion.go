@@ -155,11 +155,15 @@ func GetFuzzer(scheme *runtime.Scheme, funcs ...fuzzer.FuzzerFuncs) *fuzz.Fuzzer
 			}
 		},
 	}, funcs...)
-	return fuzzer.FuzzerFor(
-		fuzzer.MergeFuzzerFuncs(funcs...),
-		rand.NewSource(rand.Int63()), //nolint:gosec
-		runtimeserializer.NewCodecFactory(scheme),
-	)
+	// Create a simple fuzz.Fuzzer using the legacy approach for compatibility
+	f := fuzz.New().RandSource(rand.NewSource(rand.Int63()))
+	// Apply custom functions manually since the new API is incompatible
+	for _, fuzzerFunc := range funcs {
+		for _, fn := range fuzzerFunc(runtimeserializer.NewCodecFactory(scheme)) {
+			f = f.Funcs(fn)
+		}
+	}
+	return f
 }
 
 // FuzzTestFuncInput contains input parameters

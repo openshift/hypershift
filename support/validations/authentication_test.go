@@ -36,9 +36,7 @@ func TestValidateAuthenticationSpec(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoPrefix,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "email",
-								},
+								Claim: "email",
 							},
 							Groups: configv1.PrefixedClaimMapping{
 								TokenClaimMapping: configv1.TokenClaimMapping{
@@ -83,9 +81,7 @@ func TestValidateAuthenticationSpec(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoPrefix,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "email",
-								},
+								Claim: "email",
 							},
 							Groups: configv1.PrefixedClaimMapping{
 								TokenClaimMapping: configv1.TokenClaimMapping{
