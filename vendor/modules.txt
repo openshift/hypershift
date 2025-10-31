@@ -684,7 +684,7 @@ github.com/google/shlex
 # github.com/google/uuid v1.6.0
 ## explicit
 github.com/google/uuid
-# github.com/gophercloud/gophercloud/v2 v2.4.0
+# github.com/gophercloud/gophercloud/v2 v2.8.0
 ## explicit; go 1.22
 github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
