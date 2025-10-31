@@ -173,6 +173,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() && !IsLessThan(Version420) {
 			EnsureSecurityContextUID(t, context.Background(), h.client, hostedCluster)
 		}
+		if platform == hyperv1.AzurePlatform && azureutil.IsAroHCP() {
+			EnsureCiliumNetworkPoliciesARO(t, context.Background(), h.client, hostedCluster)
+		}
 		metricsToValidate := []string{hcmetrics.SilenceAlertsMetricName, // common metrics
 			hcmetrics.LimitedSupportEnabledMetricName,
 			hcmetrics.ProxyMetricName,
