@@ -31,7 +31,7 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -65,6 +65,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
@@ -1807,219 +1808,208 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 	})
 }
 
-func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) error {
-	t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-		AtLeast(t, Version419)
-		// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
-		// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
-		if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			t.Skip("test only supported on platform ARO or AWS")
+func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
+	AtLeast(t, Version419)
+	// TODO (jparrill): Change check of release version `releaseVersion.GT(Version420)` to `releaseVersion.GE(Version420)`
+	// during the backport to 4.20 of this PR https://github.com/openshift/hypershift/pull/6736
+	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform ARO or AWS")
+	}
+
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
+		t.Skip("AWS platform not supported on version 4.20 or less")
+	}
+
+	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
+		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
+	}
+
+	// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
+	// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
+	// after the triggers the kubelet restart
+	if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
+		t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
+	}
+
+	if !util.IsPublicHC(entryHostedCluster) {
+		t.Skip("test only supported on public clusters")
+	}
+
+	var (
+		dummyImageTagMultiarch = "quay.io/hypershift/sleep:multiarch"
+		dummyImageTag12        = "quay.io/hypershift/sleep:1.2.0"
+		err                    error
+
+		// Additional Pull Secret
+		additionalPullSecretName            = "additional-pull-secret"
+		additionalPullSecretNamespace       = "kube-system"
+		additionalPullSecretDummyData       = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
+		additionalPullSecretReadOnlyE2EData = []byte(`{"auths": {"quay.io/hypershift": {"auth": "aHlwZXJzaGlmdCtlMmVfcmVhZG9ubHk6R1U2V0ZDTzVaVkJHVDJPREE1VVAxT0lCOVlNMFg2TlY0UkZCT1lJSjE3TDBWOFpTVlFGVE5BS0daNTNNQVAzRA=="}}}`)
+		oldglobalPullSecretData             []byte
+		dsImage                             string
+		g                                   = NewWithT(t)
+	)
+
+	guestClient := WaitForGuestClient(t, ctx, mgmtClient, entryHostedCluster)
+
+	// Get NodePool List
+	npList := &hyperv1.NodePoolList{}
+	err = mgmtClient.List(ctx, npList, crclient.InNamespace(entryHostedCluster.Namespace))
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			t.Skip("NodePool is not found, skipping EnsureGlobalPullSecret test")
 		}
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePoolList")
+	}
 
-		if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
-			t.Skip("AWS platform not supported on version 4.20 or less")
-		}
+	// Get the first NodePool
+	np := &hyperv1.NodePool{}
+	err = mgmtClient.Get(ctx, client.ObjectKey{Name: npList.Items[0].Name, Namespace: npList.Items[0].Namespace}, np)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	g.Expect(np.Spec.Replicas).NotTo(BeNil(), "NodePool replicas are not set")
 
-		var (
-			dummyImageTagMultiarch = "quay.io/hypershift/sleep:multiarch"
-			dummyImageTag12        = "quay.io/hypershift/sleep:1.2.0"
-			err                    error
+	if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		t.Skip("InPlace upgrade type is not supported for GlobalPullSecret")
+	}
 
-			// Additional Pull Secret
-			additionalPullSecretName            = "additional-pull-secret"
-			additionalPullSecretNamespace       = "kube-system"
-			pullSecretNamespace                 = "openshift-config"
-			additionalPullSecretDummyData       = []byte(`{"auths": {"quay.io": {"auth": "YWRtaW46cGFzc3dvcmQ="}}}`)
-			additionalPullSecretReadOnlyE2EData = []byte(`{"auths": {"quay.io": {"auth": "aHlwZXJzaGlmdCtlMmVfcmVhZG9ubHk6R1U2V0ZDTzVaVkJHVDJPREE1VVAxT0lCOVlNMFg2TlY0UkZCT1lJSjE3TDBWOFpTVlFGVE5BS0daNTNNQVAzRA=="}}}`)
-			oldglobalPullSecretData             []byte
-			dsImage                             string
-			g                                   = NewWithT(t)
-		)
+	// Get current available nodes count instead of using NodePool replicas
+	// This is because the test runs in parallel with other tests, and the actual number of nodes
+	// may differ from the NodePool replicas due to multi-zone configuration or other test interference
+	nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
 
-		guestClient := WaitForGuestClient(t, ctx, mgmtClient, entryHostedCluster)
+	t.Logf("NodePool replicas: %d, Available nodes: %d", *np.Spec.Replicas, nodeCount)
 
-		// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
-		// The dummy pull secret is authorized to pull restricted images.
-		err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret secret")
+	// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
+	// The dummy pull secret is not authorized to pull restricted images.
+	err = createAdditionalPullSecret(ctx, guestClient, additionalPullSecretDummyData, additionalPullSecretName, additionalPullSecretNamespace)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret secret")
 
-		// Check if HCCO generates the GlobalPullSecret secret in the kube-system namespace in the DataPlane
-		t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
-			globalPullSecret := hccomanifests.GlobalPullSecret()
-			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				oldglobalPullSecretData = globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not present")
-		})
-
-		// Check if the additional RBAC is present in the DataPlane
-		t.Run("Check if the additional RBAC is present in the DataPlane", func(t *testing.T) {
-			g.Eventually(func() error {
-				// Check RBAC in kube-system and openshift-config namespace
-				role := hccomanifests.GlobalPullSecretSyncerRole(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
-					return err
-				}
-
-				roleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
-					return err
-				}
-
-				openshiftConfigRole := hccomanifests.GlobalPullSecretSyncerRole(pullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRole.Name, Namespace: openshiftConfigRole.Namespace}, openshiftConfigRole); err != nil {
-					return err
-				}
-
-				openshiftConfigRoleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(pullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRoleBinding.Name, Namespace: openshiftConfigRoleBinding.Namespace}, openshiftConfigRoleBinding); err != nil {
-					return err
-				}
-
-				serviceAccount := hccomanifests.GlobalPullSecretSyncerServiceAccount()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
-					return err
-				}
-
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "RBAC is not present")
-		})
-
-		// Check if the DaemonSet is present in the DataPlane
-		t.Run("Check if the DaemonSet is present in the DataPlane", func(t *testing.T) {
-			g.Eventually(func() error {
-				daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
-					return err
-				}
-				dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "DaemonSet is not present")
-		})
-
-		// Check if we can pull restricted images
-		t.Run("Check if we can pull restricted images, should fail", func(t *testing.T) {
-			g.Eventually(func() error {
-				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				_, _, _, err := registryclient.GetMetadata(ctx, dummyImageTagMultiarch, pullSecretData)
-				if err == nil {
-					return fmt.Errorf("succeeded to get metadata for restricted image, should fail")
-				}
-				return nil
-			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "should not be able to get repo setup")
-		})
-
-		// Create a pod which uses the restricted image, should fail
-		t.Run("Create a pod which uses the restricted image, should fail", func(t *testing.T) {
-			shouldFail := true
-			runAndCheckPod(t, ctx, guestClient, dummyImageTagMultiarch, additionalPullSecretNamespace, "global-pull-secret-fail", shouldFail)
-		})
-
-		// Modify the additional-pull-secret secret in the DataPlane
-		t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
-			additionalPullSecret := hccomanifests.AdditionalPullSecret()
-			err := guestClient.Get(ctx, crclient.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
-			additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
-			err = guestClient.Update(ctx, additionalPullSecret)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to update additional-pull-secret secret")
-		})
-
-		// Check if GlobalPullSecret secret is updated in the DataPlane
-		t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
-			globalPullSecret := hccomanifests.GlobalPullSecret()
-			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
-				if bytes.Equal(globalPullSecret.Data[corev1.DockerConfigJsonKey], oldglobalPullSecretData) {
-					return fmt.Errorf("global-pull-secret secret is equal to the old global-pull-secret secret, should be different")
-				}
-				return nil
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not updated")
-		})
-
-		// Check if we can pull other restricted images, should succeed
-		t.Run("Check if we can pull other restricted images, should succeed", func(t *testing.T) {
-			g.Eventually(func() error {
-				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					return err
-				}
-				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
-				_, _, _, err := registryclient.GetMetadata(ctx, dummyImageTag12, pullSecretData)
-				if err != nil {
-					return fmt.Errorf("failed to get metadata for restricted image: %v", err)
-				}
-				return nil
-			}, 1*time.Minute, 5*time.Second).Should(Succeed(), "should be able to pull other restricted images")
-		})
-
-		// Check if we can run a pod with the restricted image
-		t.Run("Create a pod which uses the restricted image, should succeed", func(t *testing.T) {
-			shouldFail := false
-			runAndCheckPod(t, ctx, guestClient, dummyImageTag12, additionalPullSecretNamespace, "global-pull-secret-success", shouldFail)
-		})
-
-		// Delete the additional-pull-secret secret in the DataPlane
-		t.Log("Deleting the additional-pull-secret secret in the DataPlane")
-		err = guestClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: additionalPullSecretName, Namespace: additionalPullSecretNamespace}})
-		g.Expect(err).NotTo(HaveOccurred(), "failed to delete additional-pull-secret secret")
-
-		// Check if the GlobalPullSecret secret is deleted in the DataPlane
-		t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
-			g.Eventually(func() error {
-				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
-					if !apierrors.IsNotFound(err) {
-						return err
-					}
-					return nil
-				}
-				return fmt.Errorf("global-pull-secret secret is still present")
-			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
-		})
-
-		// Wait for all nodes to stabilize after global-pull-secret deletion
-		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
-			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
-
-			// Wait for the GlobalPullSecretDaemonSet to be ready and stable after processing the deletion
-			EventuallyObject(t, ctx, "GlobalPullSecretDaemonSet to be ready after global-pull-secret deletion", func(ctx context.Context) (*appsv1.DaemonSet, error) {
-				ds := hccomanifests.GlobalPullSecretDaemonSet()
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: ds.Name, Namespace: ds.Namespace}, ds)
-				return ds, err
-			}, []Predicate[*appsv1.DaemonSet]{func(ds *appsv1.DaemonSet) (done bool, reasons string, err error) {
-				if ds.Status.ObservedGeneration < ds.Generation {
-					return false, fmt.Sprintf("DaemonSet status has not observed generation %d yet (current %d)", ds.Generation, ds.Status.ObservedGeneration), nil
-				}
-				if ds.Status.UpdatedNumberScheduled != ds.Status.DesiredNumberScheduled {
-					return false, fmt.Sprintf("DaemonSet update in flight: %d/%d pods updated", ds.Status.UpdatedNumberScheduled, ds.Status.DesiredNumberScheduled), nil
-				}
-				if ds.Status.NumberReady != ds.Status.DesiredNumberScheduled {
-					return false, fmt.Sprintf("DaemonSet not ready: %d/%d pods ready", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
-				}
-				return true, fmt.Sprintf("DaemonSet ready: %d/%d pods", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled), nil
-			}}, WithTimeout(5*time.Minute), WithInterval(10*time.Second))
-		})
-
-		// Check if the config.json is updated in all of the nodes
-		t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
-			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage)
-		})
+	// Check if HCCO generates the GlobalPullSecret secret in the kube-system namespace in the DataPlane
+	t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
+		globalPullSecret := hccomanifests.GlobalPullSecret()
+		g.Eventually(func() error {
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				return err
+			}
+			g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
+			g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
+			oldglobalPullSecretData = globalPullSecret.Data[corev1.DockerConfigJsonKey]
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not present")
 	})
 
-	return nil
+	// Check if the DaemonSet is present in the DataPlane
+	t.Run("Check if the DaemonSet is present in the DataPlane", func(t *testing.T) {
+		g.Eventually(func() error {
+			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "DaemonSet is not present")
+	})
+
+	t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
+		}
+
+		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Create a pod which uses the restricted image, should fail
+	t.Run("Create a pod which uses the restricted image, should fail", func(t *testing.T) {
+		shouldFail := true
+		runAndCheckPod(t, ctx, guestClient, dummyImageTagMultiarch, additionalPullSecretNamespace, "global-pull-secret-fail", shouldFail)
+	})
+
+	// Modify the additional-pull-secret secret in the DataPlane
+	t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
+		additionalPullSecret := hccomanifests.AdditionalPullSecret()
+		err := guestClient.Get(ctx, client.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
+		additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
+		err = guestClient.Update(ctx, additionalPullSecret)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to update additional-pull-secret secret")
+	})
+
+	// Check if GlobalPullSecret secret is updated in the DataPlane
+	t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
+		globalPullSecret := hccomanifests.GlobalPullSecret()
+		g.Eventually(func() error {
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				return err
+			}
+			g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
+			if bytes.Equal(globalPullSecret.Data[corev1.DockerConfigJsonKey], oldglobalPullSecretData) {
+				return fmt.Errorf("global-pull-secret secret is equal to the old global-pull-secret secret, should be different")
+			}
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not updated")
+	})
+
+	t.Run("Wait for critical DaemonSets to be ready - second check", func(t *testing.T) {
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
+		}
+
+		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Check if we can run a pod with the restricted image
+	t.Run("Create a pod which uses the restricted image, should succeed", func(t *testing.T) {
+		shouldFail := false
+		runAndCheckPod(t, ctx, guestClient, dummyImageTag12, additionalPullSecretNamespace, "global-pull-secret-success", shouldFail)
+	})
+
+	// Delete the additional-pull-secret secret in the DataPlane
+	t.Log("Deleting the additional-pull-secret secret in the DataPlane")
+	err = guestClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: additionalPullSecretName, Namespace: additionalPullSecretNamespace}})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to delete additional-pull-secret secret")
+
+	// Check if the GlobalPullSecret secret is deleted in the DataPlane
+	t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
+		g.Eventually(func() error {
+			globalPullSecret := hccomanifests.GlobalPullSecret()
+			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return err
+				}
+				return nil
+			}
+			return fmt.Errorf("global-pull-secret secret is still present")
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
+	})
+
+	// Wait for all nodes to stabilize after global-pull-secret deletion
+	t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
+		t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
+
+		// Get current available nodes count instead of using DesiredNumberScheduled
+		// This is because the test runs in parallel with other tests, and some nodes may be unavailable, causing flakes in the CI.
+		availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
+		}
+
+		err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Check if the config.json is updated in all of the nodes
+	t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
+		VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage)
+	})
 }
 
 func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client, pullSecretData []byte, registrySecretName, registryNamespace string) error {
@@ -2036,6 +2026,77 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 
 	if err := guestClient.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
 		return fmt.Errorf("failed to create secret: %v", err)
+	}
+
+	return nil
+}
+
+// DaemonSetManifest represents a DaemonSet to be verified
+type DaemonSetManifest struct {
+	GetFunc           func() *appsv1.DaemonSet
+	AllowPartialNodes bool
+}
+
+// waitForDaemonSetsReady waits for all specified DaemonSets to be ready
+func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crclient.Client, daemonSets []DaemonSetManifest, nodeCount int32) error {
+	for _, dsManifest := range daemonSets {
+		daemonSetTemplate := dsManifest.GetFunc()
+		dsName := daemonSetTemplate.Name
+		allowPartialNodes := dsManifest.AllowPartialNodes
+
+		if allowPartialNodes {
+			t.Logf("Waiting for %s DaemonSet to be ready with ≤%d available nodes", dsName, nodeCount)
+		} else {
+			t.Logf("Waiting for %s DaemonSet to be ready with %d nodes", dsName, nodeCount)
+		}
+
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+			daemonSet := dsManifest.GetFunc()
+			err = guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet)
+			if err != nil {
+				t.Logf("Failed to get DaemonSet %s: %v", dsName, err)
+				return false, nil
+			}
+
+			if daemonSet.Status.ObservedGeneration < daemonSet.Generation {
+				t.Logf("DaemonSet %s status has not observed generation %d yet (current %d)", dsName, daemonSet.Generation, daemonSet.Status.ObservedGeneration)
+				return false, nil
+			}
+
+			actualReady := daemonSet.Status.NumberReady
+
+			if allowPartialNodes {
+				// Check UpdatedNumberScheduled for partial nodes mode
+				if daemonSet.Status.UpdatedNumberScheduled > nodeCount {
+					t.Logf("DaemonSet %s update in flight: %d/%d pods updated (based on available nodes)", dsName, daemonSet.Status.UpdatedNumberScheduled, nodeCount)
+					return false, nil
+				}
+
+				// Allow NumberReady to be <= nodeCount
+				if actualReady > nodeCount {
+					t.Logf("DaemonSet %s not ready: %d/%d pods ready (based on available nodes)", dsName, actualReady, nodeCount)
+					return false, nil
+				}
+
+				t.Logf("DaemonSet %s ready: %d/%d pods (based on available nodes)", dsName, actualReady, nodeCount)
+				return true, nil
+			} else {
+				// Exact match for normal mode
+				if actualReady != nodeCount {
+					t.Logf("DaemonSet %s not ready: %d/%d pods ready", dsName, actualReady, nodeCount)
+					return false, nil
+				}
+
+				t.Logf("DaemonSet %s ready: %d/%d pods", dsName, actualReady, nodeCount)
+				return true, nil
+			}
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", dsName, err)
+		}
+
+		t.Logf("✓ %s DaemonSet is ready", dsName)
 	}
 
 	return nil
@@ -3690,14 +3751,20 @@ func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Clie
 			return err
 		}
 		if shouldFail {
-			if pod.Status.ContainerStatuses != nil && pod.Status.ContainerStatuses[0].State.Waiting.Reason == "ImagePullBackOff" {
-				return fmt.Errorf("pod is not running")
+			if pod.Status.Phase == corev1.PodFailed ||
+				(len(pod.Status.ContainerStatuses) > 0 &&
+					((pod.Status.ContainerStatuses[0].State.Waiting != nil &&
+						pod.Status.ContainerStatuses[0].State.Waiting.Reason == "ImagePullBackOff") ||
+						(pod.Status.ContainerStatuses[0].State.Terminated != nil))) {
+				return nil
 			}
-			return nil
+			return fmt.Errorf("pod should fail but is not in failure state yet, current phase: %s", pod.Status.Phase)
 		} else {
+			t.Logf("Pod phase: %s, shouldFail: %t", pod.Status.Phase, shouldFail)
 			if pod.Status.Phase != corev1.PodRunning {
-				return fmt.Errorf("pod is running")
+				return fmt.Errorf("pod is not running yet, current phase: %s", pod.Status.Phase)
 			}
+			t.Logf("Pod is running! Continuing...")
 			return nil
 		}
 	}, 7*time.Minute, 5*time.Second).Should(Succeed(), "pod is not running")
