@@ -1,0 +1,194 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    operator.openshift.io/rvs-hash: WrHTv18i2lr7lLoVCGQpABTUgSoy9TOpZUMBEMdl3WuGuWfnyRl7JC-j-QgLyjLQEy46efojRNEy_fuTQClmqA
+    operator.openshift.io/spec-hash: d476a2318c87820a3bc4dfafc89c0546a62e2a8613dcf47475d3d1d5a830ffd3
+  creationTimestamp: null
+  labels:
+    app: oauth-openshift
+  name: oauth-openshift
+  namespace: openshift-authentication
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app: oauth-openshift
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        openshift.io/required-scc: privileged
+        operator.openshift.io/rvs-hash: WrHTv18i2lr7lLoVCGQpABTUgSoy9TOpZUMBEMdl3WuGuWfnyRl7JC-j-QgLyjLQEy46efojRNEy_fuTQClmqA
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      creationTimestamp: null
+      labels:
+        app: oauth-openshift
+        oauth-openshift-anti-affinity: "true"
+      name: oauth-openshift
+      namespace: openshift-authentication
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: oauth-openshift
+                oauth-openshift-anti-affinity: "true"
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - |
+          if [ -s /var/config/system/configmaps/v4-0-config-system-trusted-ca-bundle/ca-bundle.crt ]; then
+              echo "Copying system trust bundle"
+              cp -f /var/config/system/configmaps/v4-0-config-system-trusted-ca-bundle/ca-bundle.crt /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
+          fi
+          exec oauth-server osinserver \
+          --config=/var/config/system/configmaps/v4-0-config-system-cliconfig/v4-0-config-system-cliconfig \
+          --v=2 \
+          --audit-log-format=json \
+          --audit-log-maxbackup=10 \
+          --audit-log-maxsize=100 \
+          --audit-log-path=/var/log/oauth-server/audit.log \
+          --audit-policy-file=/var/run/configmaps/audit/audit.yaml
+        command:
+        - /bin/bash
+        - -ec
+        image: quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:9284d17da287a1b30e75394e6f62259c3a6944a4ecc7313c6220ea80da10d7e0
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - sleep
+              - "25"
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 6443
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        name: oauth-openshift
+        ports:
+        - containerPort: 6443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 6443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 1
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        securityContext:
+          privileged: true
+          readOnlyRootFilesystem: false
+          runAsUser: 0
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/configmaps/audit
+          name: audit-policies
+        - mountPath: /var/log/oauth-server
+          name: audit-dir
+        - mountPath: /var/config/system/secrets/v4-0-config-system-session
+          name: v4-0-config-system-session
+          readOnly: true
+        - mountPath: /var/config/system/configmaps/v4-0-config-system-cliconfig
+          name: v4-0-config-system-cliconfig
+          readOnly: true
+        - mountPath: /var/config/system/secrets/v4-0-config-system-serving-cert
+          name: v4-0-config-system-serving-cert
+          readOnly: true
+        - mountPath: /var/config/system/configmaps/v4-0-config-system-service-ca
+          name: v4-0-config-system-service-ca
+          readOnly: true
+        - mountPath: /var/config/system/secrets/v4-0-config-system-router-certs
+          name: v4-0-config-system-router-certs
+          readOnly: true
+        - mountPath: /var/config/system/secrets/v4-0-config-system-ocp-branding-template
+          name: v4-0-config-system-ocp-branding-template
+          readOnly: true
+        - mountPath: /var/config/user/template/secret/v4-0-config-user-template-login
+          name: v4-0-config-user-template-login
+          readOnly: true
+        - mountPath: /var/config/user/template/secret/v4-0-config-user-template-provider-selection
+          name: v4-0-config-user-template-provider-selection
+          readOnly: true
+        - mountPath: /var/config/user/template/secret/v4-0-config-user-template-error
+          name: v4-0-config-user-template-error
+          readOnly: true
+        - mountPath: /var/config/system/configmaps/v4-0-config-system-trusted-ca-bundle
+          name: v4-0-config-system-trusted-ca-bundle
+          readOnly: true
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: system-cluster-critical
+      serviceAccountName: oauth-openshift
+      terminationGracePeriodSeconds: 40
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 120
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 120
+      volumes:
+      - configMap:
+          name: audit
+        name: audit-policies
+      - hostPath:
+          path: /var/log/oauth-server
+        name: audit-dir
+      - name: v4-0-config-system-session
+        secret:
+          secretName: v4-0-config-system-session
+      - configMap:
+          name: v4-0-config-system-cliconfig
+        name: v4-0-config-system-cliconfig
+      - name: v4-0-config-system-serving-cert
+        secret:
+          secretName: v4-0-config-system-serving-cert
+      - configMap:
+          name: v4-0-config-system-service-ca
+        name: v4-0-config-system-service-ca
+      - name: v4-0-config-system-router-certs
+        secret:
+          secretName: v4-0-config-system-router-certs
+      - name: v4-0-config-system-ocp-branding-template
+        secret:
+          secretName: v4-0-config-system-ocp-branding-template
+      - name: v4-0-config-user-template-login
+        secret:
+          optional: true
+          secretName: v4-0-config-user-template-login
+      - name: v4-0-config-user-template-provider-selection
+        secret:
+          optional: true
+          secretName: v4-0-config-user-template-provider-selection
+      - name: v4-0-config-user-template-error
+        secret:
+          optional: true
+          secretName: v4-0-config-user-template-error
+      - configMap:
+          name: v4-0-config-system-trusted-ca-bundle
+          optional: true
+        name: v4-0-config-system-trusted-ca-bundle
+status: {}
