@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/onsi/ginkgo/v2"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
@@ -60,9 +61,32 @@ func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pull
 	return nil
 }
 
+func SetReleaseVersionFromHostedCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster) error {
+	if hostedCluster.Status.Version == nil || len(hostedCluster.Status.Version.History) == 0 || hostedCluster.Status.Version.History[0].Version == "" {
+		ginkgo.GinkgoWriter.Write([]byte("WARNING: cannot determine release version from HostedCluster"))
+		return nil
+	}
+	hcVersion := hostedCluster.Status.Version.History[0].Version
+	var err error
+	releaseVersion, err = semver.Parse(hcVersion)
+	if err != nil {
+		return fmt.Errorf("error parsing version: %v", err)
+	}
+	releaseVersion.Patch = 0
+	releaseVersion.Pre = nil
+	releaseVersion.Build = nil
+	return nil
+}
+
 func AtLeast(t *testing.T, version semver.Version) {
 	if releaseVersion.LT(version) {
 		t.Skipf("Only tested in %s and later", version)
+	}
+}
+
+func GinkgoAtLeast(version semver.Version) {
+	if releaseVersion.LT(version) {
+		ginkgo.Skip(fmt.Sprintf("Only tested in %s and later", version))
 	}
 }
 
