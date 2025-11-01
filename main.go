@@ -26,6 +26,7 @@ import (
 	"github.com/openshift/hypershift/cmd/consolelogs"
 	createcmd "github.com/openshift/hypershift/cmd/create"
 	destroycmd "github.com/openshift/hypershift/cmd/destroy"
+	drcmd "github.com/openshift/hypershift/cmd/dr"
 	dumpcmd "github.com/openshift/hypershift/cmd/dump"
 	installcmd "github.com/openshift/hypershift/cmd/install"
 	cliversion "github.com/openshift/hypershift/cmd/version"
@@ -63,6 +64,7 @@ func main() {
 	cmd.AddCommand(installcmd.NewCommand())
 	cmd.AddCommand(createcmd.NewCommand())
 	cmd.AddCommand(destroycmd.NewCommand())
+	cmd.AddCommand(drcmd.NewCommand())
 	cmd.AddCommand(dumpcmd.NewCommand())
 	cmd.AddCommand(consolelogs.NewCommand())
 	cmd.AddCommand(cliversion.NewVersionCommand())
